@@ -2,7 +2,9 @@
 
 > Public-Key Addressable Resource Records
 
-This project explores the potential of using Distributed Hash Tables (DHTs) and other overlay networks to map keys to small [resource records](https://en.wikipedia.org/wiki/Domain_Name_System#Resource_records), effectively turning any ed25519 key into a sovereign Top-Level Domain.
+This project aims to investigate the possibility of using Distributed Hash Tables (DHTs) and/or other overlay networks to create a distributed alternative DNS root where public keys serve as the self-certifying top-level domain.
+
+Where we are going, this https://4kr433kci4nkogpfaj7jgj44bdrchxo67yosdcxfhxp78g9h33zy resolves!
 
 ## Why
 
