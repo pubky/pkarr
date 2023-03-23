@@ -7,7 +7,7 @@ The simplest possible streamlined integration between the Domain Name System and
 Where we are going, this https://j9afjgmrb65bipi6wreogf8b1emczatecuy9tuzbbwnzsdacpohy resolves!
 
 ## TLDR
-To publish DNS records for your key, sign a small payload (<1000 bytes) and send it to a custom DNS server that commits it to a DHT. To resolve websites or resources belonging to others' keys, applications send regular [DNS Queries over HTTPS (DoH)](https://www.rfc-editor.org/rfc/rfc8484) to Pkarr DNS servers or request the signed payload to verify themselves. Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. The DHT drops records after a few hours, but if a refresher (you manually, or the services mentioned in the records, or a volunteer) recommits the signed payload periodically, high availability is maintained for DNS resolvers, even beyond their TTL.
+To publish DNS records for your key, sign a small payload (<1000 bytes) and send it to a custom DNS server that commits it to a DHT. To resolve websites or resources belonging to others' keys, applications send regular [DNS Queries over HTTPS (DoH)](https://www.rfc-editor.org/rfc/rfc8484) to Pkarr DNS servers or request the signed payload to verify themselves. Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. The DHT drops records after a few hours, but if a refresher (you manually, or the services mentioned in the records, or a volunteer) recommits the signed payload periodically, high availability is maintained for DNS resolvers making first uncached requests.
 
 ## Why would you need resource records for keys?
 
@@ -24,12 +24,25 @@ But before that, you need to efficiently and consistently discover the multiple 
 
 Addressing Distributed Discovery first makes the most sense for several reasons:
 
-- The difficulty of these three challenges is inversely correlated with their order.
+- The difficulty of these three challenges inversely correlates with their order.
 - The marginal utility of solving these challenges positively correlates with their order.
 
-    In existing and emerging open social network protocols, users do tolerate limited interoperability between clients, second-class identifiers controlled by hosting or domain servers, inefficient conflict-free replication between data stores, and the absence of local-first or offline support. However, their most common complaints involve unavailability, censorship, deplatforming, and difficulty in securely managing keys.
+    In existing and emerging open social network protocols, users do tolerate limited interoperability between clients, second-class identifiers controlled by hosting or domain servers, inefficient or non-existent conflict-free replication between data stores, and the absence of local-first or offline support. However, their most common complaints involve unavailability, censorship, deplatforming, and difficulty in securely managing keys.
 
 - Distributed Discovery offers the greatest assured leverage by abstracting over current and emerging solutions for (1) and (2) as they compete, complement, and develop independently, all while maintaining the same long lasting identifier, so you don't have to start from scratch or be locked in.
+
+### leverage
+
+**Solve the most issues...**
+
+Pkarr solves **unavailability** by turning public-keys to resolvable URL: resource **locator**.
+Pkarr solves **censorship and deplatforming** by allowing users to conveniently change DNS records to point to other providers or platforms. While there are other ways to do that, it is never as reliable and authoritative as DNS.
+Pkarr help with **key management** by enabling users to maintain a long lasting identity tied to one key, rarely used, and hopefully kept offline at all times.
+
+Finally, by solving censorship and deplatforming ina sovereign way, the need for signed data becomes less urgent, and we buy more time to figure out the UX of signing everything everywhere all the time.
+
+
+**with least work**
 
 ## Architecture
 
@@ -110,9 +123,13 @@ The client-server architecture enables the coordination and potential migration 
 
 ## How do we get there?
 
- - [x] Test Mainline_DHT's [Nodejs implementation](https://github.com/webtorrent/bittorrent-dht) to understand its behaviour.
+ - [x] Test Mainline_DHT's [Nodejs implementation](https://github.com/webtorrent/bittorrent-dht) to confirm its behaviour under favorable conditions.
  - [ ] Build a quick Proof of Concept of servers and clients.
- - [ ] Test the PoC with as many volunteers as we can, and get feedback.
+     - [ ] Trustless endpoints proxying GET and PUT request to the DHT.
+     - [ ] Web app to create and query records.
+     - [ ] Auto refresh records (conservatively).
+     - [ ] Trusted DNS over HTTPs server to work with OS DNS resolvers.
+ - [ ] Test the PoC with as many volunteers as we can, stress test it, and get feedback.
  - [ ] Reach a stable and minimal API between clients and servers.
  - [ ] Reimplement the Client in Rust and Javascript, after the initial feedback.
  - [ ] Reimplement the server and the DHT in Rust, to make it more accessible for future improvements.
