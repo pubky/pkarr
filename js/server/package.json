@@ -1,0 +1,17 @@
+{
+  "name": "pkarr-server",
+  "version": "1.0.0-alpha.0",
+  "description": "DNS servers for public-key addressable resource records",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bittorrent-dht": "^11.0.4",
+    "sodium-native": "^4.0.1"
+  }
+}
