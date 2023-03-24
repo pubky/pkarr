@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- <link rel="icon" href="images/favicon.ico" /> -->
+  <title>Pkarr demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100%;
+      min-width: 320px;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 2rem;
+      font-family: "IBM Plex Sans", Helvetica, sans-serif;
+    }
+
+    button:disabled {
+      pointer-events: none;
+      opacity: 0.4;
+    }
+
+    main {
+      height: 100%;
+      margin: 1rem 0;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    a {
+      color: #000;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .small {
+      font-size: 0.8rem;
+    }
+
+    #server-input {
+      flex: 1;
+      margin: 0 1rem;
+      padding: 0 .3rem;
+    }
+
+    .tabs {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 1rem;
+      width: 100%
+    }
+
+    .tab-button {
+      width: 100%;
+      padding: .5rem;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: color 0.3s, border-color 0.3s;
+      color: #333;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background: #f0f0f0;
+      color: #666;
+    }
+
+    .tab-button:hover {
+      color: #000;
+      border-color: #333;
+    }
+
+    .tab-button.active {
+      color: #000;
+      border-color: black;
+      background: #ddd;
+    }
+
+    .tab-content {
+      text-align: center;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class='row'>
+      <h1>Pkarr</h1>
+      <a href="https://github.com/nuhvi/pkarr" target="_blank">learn more</a>
+    </div>
+    <h3>Resolvable sovereign keys, now!</h3>
+  </header>
+
+  <main>
+    <div class="tabs">
+      <button id="publish-tab" class="tab-button active">Publish</button>
+      <button id="resolve-tab" class="tab-button">Resolve</button>
+    </div>
+
+    <div id="publish-content" class="tab-content">
+      <h2>Publish</h2>
+      <p>Content for the Publish tab...</p>
+      <h4 id='public-key'></h4>
+    </div>
+
+    <div id="resolve-content" class="tab-content hidden">
+      <h2>Resolve</h2>
+      <p>Content for the Resolve tab...</p>
+    </div>
+  </main>
+
+  <footer>
+    <form class='row' id="server-form">
+      <label for="key">Server:</label>
+      <input type="text" name="key" id="server-input" value="">
+      <a href="https://github.com/nuhvi/pkarr" target="_blank" class="small">Run your own</a>
+    </form>
+  <footer>
+
+  <script type="module" src="index.js"></script>
+</body>
+</html>

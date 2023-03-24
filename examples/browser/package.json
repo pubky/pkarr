@@ -1,0 +1,21 @@
+{
+  "source": "src/index.html",
+  "browserslist": "> 0.5%, last 2 versions, not dead",
+  "scripts": {
+    "start": "open http://localhost:8002 ; parcel -p 8002",
+    "build": "parcel build"
+  },
+  "dependencies": {
+    "b4a": "^1.6.3",
+    "bittorrent-dht-sodium": "^1.2.0",
+    "parcel": "^2.0.1",
+    "sodium-universal": "^4.0.0",
+    "z32": "^1.0.0"
+  },
+  "devDependencies": {
+    "buffer": "^5.7.1",
+    "os-browserify": "^0.3.0",
+    "path-browserify": "^1.0.1",
+    "process": "^0.11.10"
+  }
+}
