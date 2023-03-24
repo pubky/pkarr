@@ -129,6 +129,7 @@ The client-server architecture enables the coordination and potential migration 
      - [ ] Web app to create and query records.
      - [ ] Auto refresh records (conservatively).
      - [ ] Trusted DNS over HTTPs server to work with OS DNS resolvers.
+     - [ ] Test Key derivation to add privacy (see GNU NS).
  - [ ] Test the PoC with as many volunteers as we can, stress test it, and get feedback.
  - [ ] Reach a stable and minimal API between clients and servers.
  - [ ] Reimplement the Client in Rust and Javascript, after the initial feedback.
@@ -141,6 +142,13 @@ The client-server architecture enables the coordination and potential migration 
 1. **Why not human readable domains on a blockchain?**
 
     Introducing scarcity to names, arguably the most subjective and personal thing in our lives, serves noone except rent seekers. We already know how to use phonebooks, we just need to upgrade small numbers, to bigger sovereign keys.
+    
+1. **Why not GNU Name System?**
+
+    [GNU Name System](https://lsd.gnunet.org/lsd0001/) sounds great, and I am excited to test it, but there are two main differences that I can identify so far:
+    
+    - It has a builtin support for [The Petname System](http://www.skyhunter.com/marcs/petnames/IntroPetNames.html), which I think belongs to the application layer, but objectively it must demand more out of the DHT than a bounded 1000 bytes or resource records. Maybe that is not an issue, I need to confirm.
+    - It has fancy encryption and access control to its records, which I don't think is needed for the sake of privacy (if you don't support petnames), but it might be a good idea to deincentivize scrapping and crawling the DHT.
 
 2. **Why not [insert ad hoc solution] instead?**
 Open social networks often attempt to solve discovery natively within their network of participants. However, this approach has several issues:
