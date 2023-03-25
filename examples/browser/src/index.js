@@ -43,7 +43,7 @@ function init () {
   // document.getElementById('public-key').innerHTML = publicKey32
   
   setupTabs()
-  setupFooter()
+  setupModal()
 }
 
 function generateKeyPairIfMissing () {
@@ -127,12 +127,18 @@ function setupTabs() {
   }
 }
 
-function setupFooter() {
-  const serverForm = document.getElementById('server-form');
-  serverForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    console.log(e)
-  })
+function setupModal() {
+  const modalContainer = document.getElementById('modal-container');
+  const modalContent = document.getElementById('modal-content');
+  const modalClose = document.getElementById('modal-close');
 
-  document.getElementById('server-input').value = state.server
+  modalClose.addEventListener('click', () => {
+    modalContainer.classList.add('hidden');
+  });
+
+  const settingsButton = document.getElementById('settings-button');
+
+  settingsButton.addEventListener('click', () => {
+    modalContainer.classList.remove('hidden');
+  });
 }
