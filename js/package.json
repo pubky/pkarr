@@ -1,0 +1,24 @@
+{
+  "name": "pkarr",
+  "version": "1.0.0-alpha.0",
+  "description": "client and server for public-key addressable resource records",
+  "type": "module",
+  "main": "index.js",
+  "browser": "browser.js",
+  "scripts": {
+    "lint": "standard --fix"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "b4a": "^1.6.3",
+    "bittorrent-dht": "^11.0.4",
+    "sodium-universal": "^4.0.0",
+    "z32": "^1.0.0"
+  },
+  "devDependencies": {
+    "node-fetch": "^3.3.1",
+    "standard": "^17.0.0"
+  }
+}
