@@ -1,7 +1,8 @@
 import http from 'http'
 import DHT from 'bittorrent-dht'
+import sodium from 'sodium-universal'
 
-import { decode, verify } from './client.js'
+export const verify = sodium.crypto_sign_verify_detached
 
 export default class Server {
   constructor (opts = {}) {
@@ -88,10 +89,9 @@ function handlePut (req, res, dht, { key }) {
     const opts = {
       k: key,
       seq: payload.seq || 0,
-      v: decode(payload.v, true),
-      sign: () => decode(payload.sig)
+      v: Buffer.from(payload.v, 'hex'),
+      sign: () => Buffer.from(payload.sig, 'hex')
     }
-    console.log(opts)
 
     try { 
       dht.put(opts, (err) => {
@@ -131,7 +131,7 @@ function boilerplate (req, res) {
   }
 
   try {
-    return decode(path[2])
+    return Buffer.from(path[2], 'hex')
   } catch (error) {
     if (!res.writableEnded) {
       res.end(JSON.stringify({ error: error.message }))

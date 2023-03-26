@@ -31,7 +31,7 @@
     }
 
     button {
-      background-color: none;
+      background: none;
       border: none;
       cursor: pointer;
     }
@@ -116,27 +116,18 @@
       font-size: 1rem;
       cursor: pointer;
       transition: color 0.3s, border-color 0.3s;
-      color: #333;
-      background: none;
       border: none;
-      border-bottom: 2px solid transparent;
-      background: #f0f0f0;
-      color: #666;
+      border-bottom: 3px solid transparent;
+      color: #999;
     }
 
     .tab-button:hover {
-      color: #000;
-      border-color: #333;
+      color: #555;
     }
 
     .tab-button.active {
       color: #000;
       border-color: black;
-      background: #ddd;
-    }
-
-    .tab-content {
-      text-align: center;
     }
 
     .hidden {
@@ -153,7 +144,8 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 2rem
+      padding: 2rem;
+      background-color:  rgba(0, 0, 0, .1)
     }
 
     #modal-content {
@@ -171,6 +163,95 @@
       background:none;
       cursor: pointer;
       margin-bottom: 1rem
+    }
+
+    #public-key {
+      max-width: 100%;
+      font-size: 1rem;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .buttons-record-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 1rem 0;
+      grid-gap: 1rem
+    }
+
+    .buttons-record-container  button {
+      width: 100%;
+      height: 2rem;
+      padding: .4rem .8rem;
+      font-size: .9rem;
+      cursor: pointer;
+      border: 2px solid #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #add-record-button span {
+      font-size: 1.3em;
+      margin-right: .5rem;
+    }
+
+    .buttons-record-container  button:hover {
+      background-color: #000;
+      color: #fff;
+    }
+
+    .table {
+      margin: 1rem 0 2rem 0;
+    }
+    .table-header, .table-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid #ddd;
+    }
+    .table-header-cell {
+      font-size: .9rem;
+      font-weight: 700;
+      padding: .5rem 0;
+      border-bottom: 1px solid #333;
+    }
+    .table-row input {
+      font-size: 1rem;
+      width: 100%;
+      height: 2rem;
+      padding: .3rem;
+      border: none;
+      box-shadow: none;
+      border-radius: 0;
+      border-bottom: 2px solid #0000;
+    }
+    .table-row input:focus {
+      outline: none;
+      border-bottom: 2px solid #000;
+    }
+    .details {
+      margin-top: .5rem;
+      display: flex;
+      justify-content: space-between;
+    }
+    .details * {
+      font-size: .9rem;
+    }
+    .fine-text {
+      font-size: .8rem;
+    }
+    .fine-text p {
+      margin-bottom: .3rem;
+    }
+    button.primary {
+      background: black;
+      color: white;
+    }
+    button.primary:hover{
+      background: #222;
     }
   </style>
 </head>
@@ -196,13 +277,33 @@
     </div>
 
     <article id="publish-content" class="tab-content">
-      <h2>Publish</h2>
-      <p>Content for the Publish tab...</p>
-      <h4 id='public-key'></h4>
+      <h3 id='public-key'></h3>
+      <div class="table">
+        <div class="table-header">
+          <div class="table-header-cell">Name</div>
+          <div class="table-header-cell">Value</div>
+          <!-- <div class="table-header-cell">Type</div> -->
+          <!-- <div class="table-header-cell">TTL</div> -->
+        </div>
+        <form id="records-form"></form>
+      <div class="details">
+        <div><b>date:</b> unpublished yet.</div>
+        <div><b>size:</b> <span id='size'>2</span>/1000 bytes</div>
+      </div>
+      </div>
+      <div class="buttons-record-container">
+        <button id="add-record-button"><span>+</span> Add Record</button>
+        <button id="publish-button" class="primary">Publish</button>
+      </div>
+      <div class="fine-text">
+        <p>Add some records to your public-key, and publish it to the DHT when you are ready.</p>
+        <p>Copy and share your key (above) with your contacts to resolve your records at any time.</p>
+        <p>To keep your records alive on the DHT, make sure to republish your records every few hours, or _trustlessly_ delegate that to your service providers.</p>
+      </div>
     </article>
 
     <article id="resolve-content" class="tab-content hidden">
-      <h2>Resolve</h2>
+      <h2>Lookup</h2>
       <p>Content for the Resolve tab...</p>
     </article>
   </main>

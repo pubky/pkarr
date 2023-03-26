@@ -1,59 +1,35 @@
-import sodium from 'sodium-universal'
+import * as pkarr from './pkarr.js';
 import b4a from 'b4a'
-import z32 from 'z32'
 
 const state = {
-  server: 'http://api.pkarr.nuhvi.com:3000',
-  keyPair: { pk: null, sk: null },
-}
-
-const crypto = {
-  verify: sodium.crypto_sign_verify_detached,
-  sign (msg, sk) {
-    const sig = Buffer.alloc(sodium.crypto_sign_BYTES)
-    sodium.crypto_sign_detached(sig, msg, sk)
-    return sig
-  },
-  keygen (sk) {
-    const pk = Buffer.alloc(sodium.crypto_sign_PUBLICKEYBYTES)
-    if (sk == null) {
-      sk = sodium.sodium_malloc(sodium.crypto_sign_SECRETKEYBYTES)
-      sodium.crypto_sign_keypair(pk, sk)
-    } else {
-      sodium.crypto_sign_ed25519_sk_to_pk(pk, sk)
-    }
-
-    return { pk, sk }
-  },
-  salt () {
-    const s = Buffer.alloc(64)
-    sodium.randombytes_buf(s)
-    return s
-  }
+  keyPair: {publicKey: null, secretKey: null },
+  records: [],
+  servers: [
+    'http://api.pkarr.nuhvi.com:3000'
+  ],
 }
 
 init()
 
 function init () {
-  state.keyPair = generateKeyPairIfMissing() 
-  console.log(state)
-
-
-  const publicKey32 = z32.encode(b4a.toString(state.keyPair.pk, 'hex'))
-  // document.getElementById('public-key').innerHTML = publicKey32
-  
+  generateKeyPairIfMissing() 
   setupTabs()
   setupModal()
+  setupRecordsForm()
 }
 
 function generateKeyPairIfMissing () {
   if (localStorage.getItem('secretKey')) {
-    return crypto.keygen(b4a.from(localStorage.getItem('secretKey'), 'hex'))
+    const secretKey = localStorage.getItem('secretKey')
+    state.keyPair = pkarr.keygen(b4a.from(secretKey, 'hex'))
+  } else {
+    state.keyPair = pkarr.keygen()
+    localStorage.setItem('secretKey', b4a.toString(state.keyPair.secretKey, 'hex'))
   }
-  const keyPair = crypto.keygen()
-  localStorage.setItem('secretKey', b4a.toString(keyPair.sk, 'hex'))
+  console.log(state)
 
-  return keyPair
+  const publicKey32 = pkarr.encode(state.keyPair.publicKey)
+  document.getElementById('public-key').innerHTML = publicKey32
 }
 
 // const resolveButton = document.getElementById('resolve')
@@ -141,4 +117,91 @@ function setupModal() {
   settingsButton.addEventListener('click', () => {
     modalContainer.classList.remove('hidden');
   });
+}
+
+function setupRecordsForm () {
+  const form = document.getElementById('records-form');
+  const inputs = form.querySelectorAll('input, textarea, select');
+  const size = document.getElementById('size');
+  const addRecordButton = document.getElementById('add-record-button');
+  const publishButton = document.getElementById('publish-button');
+
+  const stringified = localStorage.getItem('records')
+  if (stringified) {
+    try {
+      const data = JSON.parse(stringified)
+      data.forEach((entry) => {
+        const inputs = addRecord()
+        inputs[0].value = entry[0]
+        inputs[1].value = entry[1]
+      }) 
+      state.records = data
+    } catch (error) {}
+  } else {
+    addRecord()
+  }
+
+  publishButton.addEventListener('click', () => {
+    publishButton.innerHTML = 'Publishing...'
+    publishButton.disabled = true
+    pkarr.put(
+      state.keyPair,
+      state.records,
+      state.servers
+    ).then((response) => {
+      console.log("done", response)
+    }).catch((error) => {
+      console.log("error", error)
+    })
+  })
+
+  function onUpdate(x) {
+    const inputs = form.querySelectorAll('input')
+    let data = []
+    let entry = []
+    for (let i=0; i < inputs.length; i++) {
+      entry.push(inputs[i].value)
+      if (entry.length % 2 === 0) {
+        data.push(entry)
+        entry = []
+      }
+    }
+    state.records = data
+    const stringified = JSON.stringify(data)
+    localStorage.setItem('records', stringified)
+    size.innerHTML = stringified.length
+  }
+
+  inputs.forEach(input => {
+    input.addEventListener('input', onUpdate);
+    input.addEventListener('change', onUpdate);
+  });
+
+  addRecordButton.addEventListener('click', addRecord)
+
+  function addRecord() {
+    const row = document.createElement('div');
+    const newRow = form.appendChild(row)
+    newRow.classList.add('table-row')
+
+    newRow.innerHTML = `
+        <input type="text" />
+        <input type="text" />
+    `
+    const newInputs = newRow.querySelectorAll('input');
+
+    newInputs[0].focus()
+    newInputs[1].addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        addRecord()
+      }
+    })
+
+    newInputs.forEach(input => {
+      input.addEventListener('input', onUpdate);
+      input.addEventListener('change', onUpdate);
+    })
+
+    return newInputs
+  }
 }
