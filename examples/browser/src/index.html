@@ -182,7 +182,8 @@
       grid-gap: 1rem
     }
 
-    .buttons-record-container  button {
+    .buttons-record-container  button, .modal-body button {
+      min-width: 90px;
       width: 100%;
       height: 2rem;
       padding: .4rem .8rem;
@@ -194,12 +195,17 @@
       align-items: center;
     }
 
+    .modal-body button {
+      width: auto
+    }
+
     #add-record-button span {
       font-size: 1.3em;
       margin-right: .5rem;
     }
 
-    .buttons-record-container  button:hover {
+    .buttons-record-container  button:hover ,
+    .modal-body button:hover {
       background-color: #000;
       color: #fff;
     }
@@ -253,6 +259,44 @@
     button.primary:hover{
       background: #222;
     }
+    .modal-body .row {
+      flex-direction: column
+    }
+    .modal-body input{
+      border: 1px solid #000;
+    }
+    .modal-body label{
+      font-weight: 700;
+      margin: 1rem 0 .5rem;
+    }
+    .modal-body button{
+      margin: .5rem 0 0 auto;
+    }
+    .modal-body button.primary {
+      width: 100%;
+      margin: 2rem auto 0 
+    }
+    #seed {
+      width: 100%;
+      height: 2rem;
+      border-radius: 0;
+      outline: none;
+      padding: .5rem;
+      font-size: 1rem;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    textarea {
+      padding: .5rem;
+      width: 100%;
+      resize: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 </head>
 <body>
@@ -282,13 +326,11 @@
         <div class="table-header">
           <div class="table-header-cell">Name</div>
           <div class="table-header-cell">Value</div>
-          <!-- <div class="table-header-cell">Type</div> -->
-          <!-- <div class="table-header-cell">TTL</div> -->
         </div>
         <form id="records-form"></form>
       <div class="details">
-        <div><b>date:</b> unpublished yet.</div>
-        <div><b>size:</b> <span id='size'>2</span>/1000 bytes</div>
+        <div><b>last update: </b><span id="last-published"> unpublished yet.</span></div>
+        <div><b>size: </b> <span id='size'>2</span>/1000 bytes</div>
       </div>
       </div>
       <div class="buttons-record-container">
@@ -302,25 +344,31 @@
       </div>
     </article>
 
-    <article id="resolve-content" class="tab-content hidden">
+    <div id="resolve-content" class="tab-content hidden">
       <h2>Lookup</h2>
       <p>Content for the Resolve tab...</p>
-    </article>
+    </div>
   </main>
 
   <div id='modal-container' class='hidden'>
     <div id='modal-content'>
       <div class='row'> 
-        <h2>Configure Servers</h2>
+        <h2>Configure</h2>
         <button id='modal-close'>&times;</button>
       </div>
-      <div class="modal-subcontent hidden" id="settings">
+      <div class="modal-body" id="settings">
+        <div class="row">
+          <label>Secret key</label>
+          <input id="seed"></input>
+          <button id="generate">generate</button>
+        </div>
+        <div class="row">
+          <label>Servers</label>
+          <textarea id="servers" rows="5"></textarea>
+          <button id='reset-servers'>reset</button>
+        </div>
+        <button class="primary" id="settings-save-button">Save</button>
       </div>
-      <div class="modal-subcontent hidden" id="settings">
-      </div>
-      <div class="modal-subcontent hidden" id="settings">
-      </div>
-      <p>Content for the Configure Servers modal...</p>
     </div>
   </div>
 

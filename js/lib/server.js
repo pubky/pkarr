@@ -15,7 +15,6 @@ export default class Server {
         const key = boilerplate(req, res)
         if (!key) return
 
-        // Handle GET /pkarr/:key
         if (req.method === 'GET') {
           handleGet(req, res, dht, { key })
         } else if (req.method === 'PUT') {
@@ -24,7 +23,7 @@ export default class Server {
       } catch (error) {
         console.error('Unexpected Error', error)
         res.statusCode = 500
-        res.end(JSON.stringify({ error: 'An unexpected error occurred on the server' }));
+        res.end(JSON.stringify({ error: 'An unexpected error occurred on the server' }))
       }
     })
   }
@@ -54,22 +53,23 @@ export default class Server {
 }
 
 function handleGet (_, res, dht, { key }) {
-  dht.get(key, (err, response) => {
+  const hash = dht._hash(key)
+  dht.get(hash, (err, response) => {
     if (err) {
       res.statusCode = 500
-      res.end(JSON.stringify({error: 'Failed to fetch value from DHT'}))
+      res.end(JSON.stringify({ error: 'Failed to fetch value from DHT' }))
       return
     }
 
     if (!response) {
       res.statusCode = 404
-      res.end(JSON.stringify({ error: 'Value not found in DHT'}))
+      res.end(JSON.stringify({ error: 'Value not found in DHT' }))
       return
     }
 
     res.end(JSON.stringify({
-      k: response.k.toString('hex'),
       s: response.seq || 0,
+      k: response.k.toString('hex'),
       v: response.v.toString('hex')
     }))
   })
@@ -77,13 +77,14 @@ function handleGet (_, res, dht, { key }) {
 
 function handlePut (req, res, dht, { key }) {
   let body = ''
-  req.on('data', chunk => body += chunk)
+  req.on('data', chunk => { body += chunk })
   req.on('end', async () => {
-    const payload = jsonSafeParse(body);
+    const payload = jsonSafeParse(body)
 
     if (!payload) {
+      res.statusCode = 400
       res.end(JSON.stringify({ error: 'Invalid payload', payload }))
-      return 
+      return
     }
 
     const opts = {
@@ -93,16 +94,17 @@ function handlePut (req, res, dht, { key }) {
       sign: () => Buffer.from(payload.sig, 'hex')
     }
 
-    try { 
+    try {
       dht.put(opts, (err) => {
         if (err) {
           res.statusCode = 500
           res.end(JSON.stringify({ error: err.message }))
           return
         }
-        res.end(JSON.stringify({ key: key.toString('hex') }))
+        res.end(JSON.stringify({ status: 'ok' }))
       })
     } catch (error) {
+      res.statusCode = 500
       res.end(JSON.stringify({ error: error.message }))
     }
   })
@@ -116,10 +118,10 @@ function boilerplate (req, res) {
   res.setHeader('Content-Type', 'application/json')
 
   // Preflight request. Reply successfully:
-  if(req.method === 'OPTIONS') {
+  if (req.method === 'OPTIONS') {
     res.statusCode = 204
     res.end()
-    return;
+    return
   }
 
   const path = req.url.split('/')
@@ -134,6 +136,7 @@ function boilerplate (req, res) {
     return Buffer.from(path[2], 'hex')
   } catch (error) {
     if (!res.writableEnded) {
+      res.statusCode = 400
       res.end(JSON.stringify({ error: error.message }))
     }
   }
