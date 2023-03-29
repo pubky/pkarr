@@ -5,7 +5,7 @@ import assert from 'assert'
 
 // https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-binary-formats-and-compression-methods/
 
-let records = `
+const records = `
 cloudflare.com. 300 IN CAA 0 issuewild "digicert.com\; cansignhttpexchanges=yes"
 cloudflare.com.		146 IN A 104.16.132.229
 cloudflare.com.		146 IN A 104.16.133.229
@@ -76,10 +76,10 @@ const cborBrtoli = brotli.compress(cbor.encode(records));
 console.log("\nCBOR + brotli:", cborBrtoli.byteLength, (cborBrtoli.byteLength / json.length).toFixed(2))
 console.timeEnd('brotli + cbor')
 
-// console.time('\ndecode - json + brotli')
-// const d1 = JSON.parse(Buffer.from(brotli.decompress(jsonBrotil)))
-// assert.deepEqual(d1, records)
-// console.timeEnd('\ndecode - json + brotli')
+console.time('\ndecode - json + brotli')
+const d1 = JSON.parse(Buffer.from(brotli.decompress(jsonBrotil)))
+assert.deepEqual(d1, records)
+console.timeEnd('\ndecode - json + brotli')
 
 console.time('\ndecode - cbor + brotli')
 const d2 = cbor.decode(Buffer.from(brotli.decompress(cborBrtoli)))
