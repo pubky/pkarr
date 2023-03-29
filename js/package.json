@@ -8,7 +8,7 @@
   "scripts": {
     "lint": "standard --fix",
     "start": "node start.js",
-    "test": "brittle test/*"
+    "test": "brittle test/* --cov"
   },
   "files": [
     "index.js",
@@ -21,10 +21,11 @@
   "license": "ISC",
   "dependencies": {
     "b4a": "^1.6.3",
+    "bencode": "^3.0.3",
     "bittorrent-dht": "^11.0.4",
+    "cbor": "^8.1.0",
     "fastify": "^4.15.0",
-    "sodium-universal": "^4.0.0",
-    "z32": "^1.0.0"
+    "sodium-universal": "^4.0.0"
   },
   "devDependencies": {
     "brittle": "^3.2.1",

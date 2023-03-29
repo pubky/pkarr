@@ -1,151 +1,87 @@
-import http from 'http'
 import DHT from 'bittorrent-dht'
 import sodium from 'sodium-universal'
+import fastify from 'fastify'
 
 export const verify = sodium.crypto_sign_verify_detached
 
 export default class Server {
-  constructor (opts = {}) {
-    const dht = new DHT({ verify })
+  /**
+   * @param {object} [opts] 
+   * @param {*} [opts.dht] optional dht instance for mocking
+   */
+  constructor(opts = {}) {
+    const dht = opts.dht || new DHT({ verify })
     dht.listen(6881)
     this.dht = dht
 
-    this.server = http.createServer(function (req, res) {
-      try {
-        const key = boilerplate(req, res)
-        if (!key) return
-
-        if (req.method === 'GET') {
-          handleGet(req, res, dht, { key })
-        } else if (req.method === 'PUT') {
-          handlePut(req, res, dht, { key })
+    this.app = fastify({ logger: !(opts.logger === false) })
+    this.app.route({
+      method: 'PUT',
+      url: '/pkarr/:key',
+      schema: {
+        params: {
+          type: 'object',
+          required: ['key'],
+          properties: {
+            key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
+          }
+        },
+        body: {
+          type: 'object',
+          required: ['seq', 'sig', 'v'],
+          properties: {
+            seq: { type: 'number' },
+            sig: { type: 'string', pattern: '^[a-fA-F0-9]{128}$' },
+            v: { type: "string", contentEncoding: "base64" }
+          }
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              hash: { type: 'string', pattern: '^[a-fA-F0-9]{128}$' }
+            }
+          }
         }
-      } catch (error) {
-        console.error('Unexpected Error', error)
-        res.statusCode = 500
-        res.end(JSON.stringify({ error: 'An unexpected error occurred on the server' }))
+      },
+      handler: async (request, reply) => {
+        const key = Buffer.from(request.params.key, 'hex')
+        const opts = {
+          k: key,
+          seq: request.body.seq,
+          v: Buffer.from(request.body.v, 'base64'),
+          sign: () => Buffer.from(request.body.sig, 'hex')
+        }
+
+        return new Promise((resolve, reject) => {
+          this.dht.put(opts, (err, hash) => {
+            if (err) reject(err)
+            else resolve(hash)
+          })
+        })
+          .then(hash => reply.code(200).send({ hash: hash.toString('hex') }))
+          .catch((error) => reply.code(400).send(error))
       }
     })
   }
 
-  static async start (opts) {
+  static async start(opts = {}) {
     const server = new Server(opts)
-    await server.listen()
+    await server.listen(opts.port)
     return server
   }
 
-  async listen (port = 3000) {
-    return new Promise((resolve, reject) => this.server.listen(port, err => err ? reject(err) : resolve()))
-  }
-
-  async destroy () {
-    this.dht.destroy()
+  listen(port) {
     return new Promise((resolve, reject) => {
-      this.server.close(err => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve()
-        }
+      this.app.listen({ port }, (err) => {
+        if (err) reject(err)
+        resolve()
       })
     })
   }
-}
 
-function handleGet (_, res, dht, { key }) {
-  const hash = dht._hash(key)
-  dht.get(hash, (err, response) => {
-    if (err) {
-      res.statusCode = 500
-      res.end(JSON.stringify({ error: 'Failed to fetch value from DHT' }))
-      return
-    }
-
-    if (!response) {
-      res.statusCode = 404
-      res.end(JSON.stringify({ error: 'Value not found in DHT' }))
-      return
-    }
-
-    res.end(JSON.stringify({
-      s: response.seq || 0,
-      k: response.k.toString('hex'),
-      v: response.v.toString('hex')
-    }))
-  })
-}
-
-function handlePut (req, res, dht, { key }) {
-  let body = ''
-  req.on('data', chunk => { body += chunk })
-  req.on('end', async () => {
-    const payload = jsonSafeParse(body)
-
-    if (!payload) {
-      res.statusCode = 400
-      res.end(JSON.stringify({ error: 'Invalid payload', payload }))
-      return
-    }
-
-    const opts = {
-      k: key,
-      seq: payload.seq || 0,
-      v: Buffer.from(payload.v, 'hex'),
-      sign: () => Buffer.from(payload.sig, 'hex')
-    }
-
-    try {
-      dht.put(opts, (err) => {
-        if (err) {
-          res.statusCode = 500
-          res.end(JSON.stringify({ error: err.message }))
-          return
-        }
-        res.end(JSON.stringify({ status: 'ok' }))
-      })
-    } catch (error) {
-      res.statusCode = 500
-      res.end(JSON.stringify({ error: error.message }))
-    }
-  })
-}
-
-function boilerplate (req, res) {
-  // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET,PUT')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-  res.setHeader('Content-Type', 'application/json')
-
-  // Preflight request. Reply successfully:
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204
-    res.end()
-    return
-  }
-
-  const path = req.url.split('/')
-
-  if (!path[1] === 'pkarr') {
-    res.statusCode = 404
-    res.end(JSON.stringify({ error: 'Not Found' }))
-    return
-  }
-
-  try {
-    return Buffer.from(path[2], 'hex')
-  } catch (error) {
-    if (!res.writableEnded) {
-      res.statusCode = 400
-      res.end(JSON.stringify({ error: error.message }))
-    }
-  }
-}
-
-function jsonSafeParse (str) {
-  try {
-    return JSON.parse(str)
-  } catch (error) {
-    return null
+  destroy() {
+    this.dht.destroy()
+    this.app.server.close()
   }
 }

@@ -5,3 +5,5 @@ dist/
 
 # Local Netlify folder
 .netlify
+
+coverage/
