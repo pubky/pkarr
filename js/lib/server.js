@@ -19,7 +19,6 @@ const logger =
 export default class Server {
   constructor() {
     this.dht = new DHT({ verify })
-    this.dht.listen()
 
     this.app = fastify({ logger })
     // Register the fastify-cors plugin
@@ -69,7 +68,7 @@ export default class Server {
           k: key,
           seq: request.body.seq,
           v: Buffer.from(request.body.v, 'base64'),
-          sign: () => Buffer.from(request.body.sig, 'hex')
+          sig: Buffer.from(request.body.sig, 'hex')
         }
         return new Promise((resolve, reject) => {
           this.dht.put(opts, (err, hash) => {
@@ -116,16 +115,17 @@ export default class Server {
         // TODO: skip returning values that the user already saw?
         // const { after } = request.query;
 
-        const hash = this.dht._hash(key);
+        const hash = this.dht._hash(Buffer.from(key, 'hex'));
 
         return new Promise((resolve, reject) => {
-          this.dht.get(hash, (err, hash) => {
+          this.dht.get(hash, (err, response) => {
             if (err) reject(err)
-            else resolve(hash)
+            else resolve(response)
           })
         })
           .then((response) => {
-            reply.code(200).send({
+            if (!response) reply.code(404).send(null)
+            else reply.code(200).send({
               seq: response.seq,
               v: response.v.toString('base64'),
               sig: response.sig.toString('hex')

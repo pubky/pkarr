@@ -4,7 +4,6 @@
   "description": "client and server for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
-  "browser": "browser.js",
   "scripts": {
     "lint": "standard --fix",
     "start": "node start.js",
@@ -12,7 +11,6 @@
   },
   "files": [
     "index.js",
-    "browser.js",
     "lib/**.js",
     "start.js"
   ],
