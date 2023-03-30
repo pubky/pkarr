@@ -23,7 +23,6 @@
     "b4a": "^1.6.3",
     "bencode": "^3.0.3",
     "bittorrent-dht": "^11.0.4",
-    "cbor": "^8.1.0",
     "fastify": "^4.15.0",
     "sodium-universal": "^4.0.0"
   },

@@ -2,6 +2,7 @@ import cbor from 'cbor'
 import lz4 from 'lz4'
 import brotli from 'brotli'
 import assert from 'assert'
+import bencode from 'bencode'
 
 // https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-binary-formats-and-compression-methods/
 
@@ -46,8 +47,13 @@ cloudflare.com.		300 IN CAA 0 issuewild "letsencrypt.org"
 cloudflare.com.		300 IN CAA 0 issuewild "pki.goog\; cansignhttpexchanges=yes"
 cloudflare.com.		300 IN CAA 0 issue "pki.goog\; cansignhttpexchanges=yes"
 `
-  .split(/\n/g).filter(Boolean).map(
+  .split(/\n/g).filter(Boolean)
+  .map(
     row => row.split(/\s/g).filter(Boolean)
+      .map(s => {
+        const n = Number(s)
+        return Number.isNaN(n) ? s : n
+      })
   )
 
 const json = JSON.stringify(records)
@@ -71,6 +77,11 @@ const jsonBrotil = brotli.compress(Buffer.from(json));
 console.log("\nJSON + brotli:", jsonBrotil.byteLength, (jsonBrotil.byteLength / json.length).toFixed(2))
 console.timeEnd('json + brotli')
 
+console.time('brotli + bencode')
+const bencodeBrotli = brotli.compress(bencode.encode(records));
+console.log("\nBencode + brotli:", bencodeBrotli.byteLength, (bencodeBrotli.byteLength / json.length).toFixed(2))
+console.timeEnd('brotli + bencode')
+
 console.time('brotli + cbor')
 const cborBrtoli = brotli.compress(cbor.encode(records));
 console.log("\nCBOR + brotli:", cborBrtoli.byteLength, (cborBrtoli.byteLength / json.length).toFixed(2))
@@ -85,3 +96,9 @@ console.time('\ndecode - cbor + brotli')
 const d2 = cbor.decode(Buffer.from(brotli.decompress(cborBrtoli)))
 assert.deepEqual(d2, records)
 console.timeEnd('\ndecode - cbor + brotli')
+
+console.time('\ndecode - bencode + brotli')
+const d3 = bencode.decode(Buffer.from(brotli.decompress(bencodeBrotli)), 'utf-8')
+assert.deepEqual(d3, records)
+console.timeEnd('\ndecode - bencode + brotli')
+
