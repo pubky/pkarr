@@ -9,6 +9,8 @@ Where we are going, this https://j9afjgmrb65bipi6wreogf8b1emczatecuy9tuzbbwnzsda
 ## TLDR
 To publish DNS records for your key, sign a small payload (<1000 bytes) and send it to a custom DNS server that commits it to a DHT. To resolve websites or resources belonging to others' keys, applications send regular [DNS Queries over HTTPS (DoH)](https://www.rfc-editor.org/rfc/rfc8484) to Pkarr DNS servers or request the signed payload to verify themselves. Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. The DHT drops records after a few hours, but if a refresher (you manually, or the services mentioned in the records, or a volunteer) recommits the signed payload periodically, high availability is maintained for DNS resolvers making first uncached requests.
 
+[Try it](./js/README.md)
+
 ## Why would you need resource records for keys?
 
 In pursuit of a sovereign, distributed, and open web, we identify three challenges:
@@ -125,12 +127,12 @@ The client-server architecture enables the coordination and potential migration 
 
  - [x] Test Mainline_DHT's [Nodejs implementation](https://github.com/webtorrent/bittorrent-dht) to confirm its behaviour under favorable conditions.
  - [ ] Build a quick Proof of Concept of servers and clients.
-     - [ ] Trustless endpoints proxying GET and PUT request to the DHT.
+     - [x] Trustless endpoints proxying GET and PUT request to the DHT.
      - [ ] Web app to create and query records.
      - [ ] Auto refresh records (conservatively).
      - [ ] Trusted DNS over HTTPs server to work with OS DNS resolvers.
-     - [ ] Test Key derivation to add privacy (see GNU NS).
- - [ ] Test the PoC with as many volunteers as we can, stress test it, and get feedback.
+     - [ ] Test Key derivation to add privacy and plausible deniability (see GNU NS).
+ - [ ] Test the PoC with as ma/ny volunteers as we can, stress test it, and get feedback.
  - [ ] Reach a stable and minimal API between clients and servers.
  - [ ] Reimplement the Client in Rust and Javascript, after the initial feedback.
  - [ ] Reimplement the server and the DHT in Rust, to make it more accessible for future improvements.
@@ -145,10 +147,11 @@ The client-server architecture enables the coordination and potential migration 
     
 1. **Why not GNU Name System?**
 
-    [GNU Name System](https://lsd.gnunet.org/lsd0001/) sounds great, and I am excited to test it, but there are two main differences that I can identify so far:
+    The GNU net is exciting and impressive, but I didn't have enough time to test it or understand how hard it would be to build a PoC on top of it.
     
-    - It has a builtin support for [The Petname System](http://www.skyhunter.com/marcs/petnames/IntroPetNames.html), which I think belongs to the application layer, but objectively it must demand more out of the DHT than a bounded 1000 bytes or resource records. Maybe that is not an issue, I need to confirm.
-    - It has fancy encryption and access control to its records, which I don't think is needed for the sake of privacy (if you don't support petnames), but it might be a good idea to deincentivize scrapping and crawling the DHT.
+    GNU name system seems to support [Petname system](http://www.skyhunter.com/marcs/petnames/IntroPetNames.html)  natively, which means it does require more storage and bandwith from the DHT than a 1000 bytes max size enforced by Mainline DHT. I believe that petnameing should be left to application layer. 
+
+    Luckily GNU net uses ed25519 key as well, so there is always a path for migration if we are careful.
 
 2. **Why not [insert ad hoc solution] instead?**
 Open social networks often attempt to solve discovery natively within their network of participants. However, this approach has several issues:
