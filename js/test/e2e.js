@@ -6,6 +6,7 @@ import pkarr from '../index.js'
 
 const SERVERS = [
   // Add servers to test against
+  'https://ps.nuhvi.com'
 ]
 
 if (SERVERS.length === 0) throw new Error('Need some publicly addressable servers to test against')
