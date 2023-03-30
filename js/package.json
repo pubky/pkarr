@@ -20,16 +20,19 @@
   "author": "Nuh (@nuhvi)",
   "license": "ISC",
   "dependencies": {
+    "@fastify/cors": "^8.2.1",
     "b4a": "^1.6.3",
     "bencode": "^3.0.3",
     "bittorrent-dht": "^11.0.4",
     "fastify": "^4.15.0",
+    "pino": "^8.11.0",
     "sodium-universal": "^4.0.0"
   },
   "devDependencies": {
     "brittle": "^3.2.1",
     "brotli": "^1.3.3",
     "node-fetch": "^3.3.1",
+    "pino-pretty": "^10.0.0",
     "standard": "^17.0.0"
   }
 }

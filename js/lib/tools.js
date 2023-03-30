@@ -3,12 +3,17 @@ import sodium from 'sodium-universal'
 import bencode from 'bencode'
 import codec from './codec.js'
 
+export function randomBytes(n = 32) {
+  const buf = Buffer.alloc(n)
+  sodium.randombytes_buf(buf)
+  return buf
+}
+
 /**
  * Returns seq as timestamp in seconds
  * @returns {Promise<
- *   { statusCode: number, error: string, message: string } |
- *   { statusCode: number, error: string, message: string, server: string }[] |
- *   { hash: string }
+ *   { ok: false, request: PutRequest, errors: Array<{server: string, message: string}>} |
+ *   { ok: true , request: PutRequest, server: string, response: Response }
  * >}
  */
 export async function put(keyPair, records, servers) {
@@ -16,7 +21,7 @@ export async function put(keyPair, records, servers) {
   const key = b4a.toString(keyPair.publicKey, 'hex')
 
   const promises = servers.map(
-    server => fetch(makeURL(server, key), {
+    server => fetch(makeURL(server, key).slice(0,), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -26,30 +31,37 @@ export async function put(keyPair, records, servers) {
   )
 
   return new Promise((resolve, reject) => {
-    for (const promise of promises) {
+    promises.forEach((promise, index) => {
       promise.then((response) => {
-        if (response.ok) {
-          response.text().then(resolve)
-        }
+        if (response.ok) resolve({
+          ok: true,
+          response,
+          server: servers[index],
+          request: req,
+        })
       })
-    }
+        .catch((error) => error)
+    })
 
-    return Promise.all(promises)
+    return Promise.allSettled(promises)
+      // Assume all failed at this point
       .then(responses => {
-        if (responses.every(response => !response.ok)) {
-          Promise.all(
-            responses.map(response => response.json())
-          )
-            .then(responses => responses.map((r, i) => ({ ...r, server: servers[i] })))
-            .then(resolve)
-            .catch(reject)
-        }
+        resolve({
+          ok: false,
+          errors: responses.map((response, index) => {
+            return {
+              server: servers[index],
+              response: response.reason
+            }
+          })
+        })
       })
   })
 }
 
 /**
  * Sign and create a put request
+ * @returns {PutRequest}
  */
 export function createPutRequest(keyPair, records) {
   const msg = {
@@ -104,3 +116,11 @@ export function generateKeyPair(seed) {
     secretKey
   }
 }
+
+/**
+ * @typedef {
+ *  seq: number,
+ *  v: string,
+ *  sig: string
+ * } PutRequest
+ */
