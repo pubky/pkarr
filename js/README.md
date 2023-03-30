@@ -23,7 +23,7 @@ Consider adding your server to the [list of free and public servers](../servers.
 
 ### Client 
 
-```
+```js
 import { pkarr } from 'pkarr'
 
 const records = [
