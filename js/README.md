@@ -21,6 +21,16 @@ $ PORT=3000 pkarr
 
 Consider adding your server to the [list of free and public servers](../servers.txt)
 
+### CLI 
+
+after installing you can init a new keypair, add records, or resolve records.
+
+```
+pkarr run
+
+pkarr resolve <z-base32 key>
+```
+
 ### Client 
 
 ```js
@@ -58,30 +68,30 @@ Simple proxy to the relevant parts of [BEP 44](https://www.bittorrent.org/beps/b
 
 ```json
 {
-    params: {
-      type: 'object',
-      required: ['key'],
-      properties: {
-        key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
-      }
-    },
-    body: {
-      type: 'object',
-      required: ['seq', 'sig', 'v'],
-      properties: {
-        seq: { type: 'number' },
-        sig: { type: 'string', pattern: '^[a-fA-F0-9]{128}$' },
-        v: { type: "string", contentEncoding: "base64" }
-      }
-    },
-    response: {
-      200: {
-        type: 'object',
-        properties: {
-          hash: { type: 'string', pattern: '^[a-fA-F0-9]{128}$' }
-        }
+  "params": {
+    "type": "object",
+    "required": ["key"],
+    "properties": {
+      "key": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+    }
+  },
+  "body": {
+    "type": "object",
+    "required": ["seq", "sig", "v"],
+    "properties": {
+      "seq": { "type": "number" },
+      "sig": { "type": "string", "pattern": "^[a-fA-F0-9]{128}$" },
+      "v": { "type": "string", "contentEncoding": "base64" }
+    }
+  },
+  "response": {
+    "200": {
+      "type": "object",
+      "properties": {
+        "hash": { "type": "string", "pattern": "^[a-fA-F0-9]{128}$" }
       }
     }
+  }
 }
 ```
 
@@ -89,29 +99,29 @@ Simple proxy to the relevant parts of [BEP 44](https://www.bittorrent.org/beps/b
 
 ```json
 {
-  params: {
-    type: 'object',
-    required: ['key'],
-    properties: {
-      key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
+  "params": {
+    "type": "object",
+    "required": ["key"],
+    "properties": {
+      "key": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
     }
   },
-  querystring: {
-    type: 'object',
-    properties: {
-      after: { type: 'number' },
-    },
+  "querystring": {
+    "type": "object",
+    "properties": {
+      "after": { "type": "number" }
+    }
   },
-  response: {
-    200: {
-      type: 'object',
-      properties: {
-        seq: { type: 'number' },
-        sig: { type: 'string', pattern: '^[a-fA-F0-9]{128}$' },
-        v: { type: 'string', contentEncoding: 'base64' },
+  "response": {
+    "200": {
+      "type": "object",
+      "properties": {
+        "seq": { "type": "number" },
+        "sig": { "type": "string", "pattern": "^[a-fA-F0-9]{128}$" },
+        "v": { "type": "string", "contentEncoding": "base64" }
       },
-      required: ['seq', 'sig', 'v'],
-    },
-  },
+      "required": ["seq", "sig", "v"]
+    }
+  }
 }
 ```

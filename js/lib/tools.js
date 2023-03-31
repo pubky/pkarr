@@ -1,9 +1,11 @@
 import b4a from 'b4a'
 import sodium from 'sodium-universal'
 import bencode from 'bencode'
-import codec from './codec.js'
+import _codec from './codec.js'
 
 export const verify = sodium.crypto_sign_verify_detached
+
+export const codec = _codec
 
 export function randomBytes (n = 32) {
   const buf = Buffer.alloc(n)
@@ -20,12 +22,12 @@ export function randomBytes (n = 32) {
  * @param {string[]} servers
  *
  * @returns {Promise<
- *   { ok: false, request: PutRequest, errors: Array<{server: string, error: { status?: string, statusCode?: number, message: string}}> }
+ *   { ok: false, request: PutRequest, errors: Array<{server: string, error: { status?: string, statusCode?: number, message: string}}> } |
  *   { ok: true , request: PutRequest, server: string, response: {hash: string} }
  * >}
  */
 export async function put (keyPair, records, servers) {
-  const req = createPutRequest(keyPair, records)
+  const req = await createPutRequest(keyPair, records)
   const key = b4a.toString(keyPair.publicKey, 'hex')
 
   return raceToSuccess(
@@ -61,10 +63,10 @@ export async function put (keyPair, records, servers) {
  * Sign and create a put request
  * @returns {PutRequest}
  */
-export function createPutRequest (keyPair, records) {
+export async function createPutRequest (keyPair, records) {
   const msg = {
     seq: Math.ceil(Date.now() / 1000),
-    v: codec.encode(records)
+    v: await codec.encode(records)
   }
   const signature = _sign(encodeSigData(msg), keyPair.secretKey)
   return {
@@ -125,7 +127,7 @@ export function generateKeyPair (seed) {
  * @param {string[]} servers
  * @returns {Promise<
  *  {ok: true, seq: number, records: object} |
- *  {ok: false, errors: {server: string, error: { status?: string, statusCode?: number, message: string}} }
+ *  {ok: false, errors: {server: string, error: { status?: string, statusCode?: number, message: string}}[] }
  * >}
  */
 export async function get (key, servers) {
@@ -147,12 +149,18 @@ export async function get (key, servers) {
             const valid = verify(sig, b4a.from(sigData), key)
             if (!valid) throw 'Invalid signature'
 
-            const records = codec.decode(v)
+            const records = await codec.decode(v)
 
             return {
               ok: response.ok,
               seq: body.seq,
               records
+            }
+          }
+          if (response.status === 404) {
+            return {
+              ok: false,
+              error: 'Not found'
             }
           }
           throw body

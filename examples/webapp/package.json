@@ -2,21 +2,22 @@
   "source": "src/index.html",
   "browserslist": "> 0.5%, last 2 versions, not dead",
   "scripts": {
-    "start": "open http://localhost:8002 ; parcel -p 8002",
+    "start": "parcel -p 8003",
     "build": "parcel build"
   },
   "dependencies": {
     "b4a": "^1.6.3",
     "bencode": "^3.0.3",
     "parcel": "^2.0.1",
+    "pkarr": "^1.0.0-alpha.2",
     "sodium-universal": "^4.0.0",
+    "solid-js": "^1.7.0",
     "z32": "^1.0.0"
   },
   "devDependencies": {
+    "babel-preset-solid": "^1.2.5",
     "buffer": "^5.7.1",
-    "events": "^3.3.0",
-    "os-browserify": "^0.3.0",
-    "path-browserify": "^1.0.1",
-    "process": "^0.11.10"
+    "parcel": "^2.0.1",
+    "solid-refresh": "^0.2.2"
   }
 }
