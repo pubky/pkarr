@@ -1,9 +1,11 @@
 import b4a from 'b4a'
 import sodium from 'sodium-universal'
 import bencode from 'bencode'
-import codec from './codec.js'
+import _codec from './codec.js'
 
 export const verify = sodium.crypto_sign_verify_detached
+
+export const codec = _codec
 
 export function randomBytes (n = 32) {
   const buf = Buffer.alloc(n)
@@ -20,7 +22,7 @@ export function randomBytes (n = 32) {
  * @param {string[]} servers
  *
  * @returns {Promise<
- *   { ok: false, request: PutRequest, errors: Array<{server: string, error: { status?: string, statusCode?: number, message: string}}> }
+ *   { ok: false, request: PutRequest, errors: Array<{server: string, error: { status?: string, statusCode?: number, message: string}}> } |
  *   { ok: true , request: PutRequest, server: string, response: {hash: string} }
  * >}
  */

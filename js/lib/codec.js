@@ -5,10 +5,11 @@ const brotli = _brotli.default || _brotli
 
 export default {
   /**
-   * @param {Uint8Array} records
+   * @param {Array<Array<string | number>> | string} records
    */
   async encode (records) {
-    const encoded = b4a.from(JSON.stringify(records))
+    const string = typeof records === 'string' ? records : JSON.stringify(records)
+    const encoded = b4a.from(string)
     const compressed = await brotli.compress(encoded)
     const version = b4a.from([0])
 

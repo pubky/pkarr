@@ -1,0 +1,19 @@
+{
+  "env": {
+    "development": {
+      "presets": [
+        ["babel-preset-solid"]
+      ],
+      "plugins": [
+        ["module:solid-refresh/babel"]
+      ]
+    },
+    "production": {
+      "presets": [
+        ["babel-preset-solid"]
+      ],
+      "plugins": [
+      ]
+    }
+  }
+}
