@@ -4,6 +4,8 @@ import store from './store.js'
 
 const App = () => {
   const [showSettings, setShowSettings] = createSignal(false);
+  const [tab, setTab] = createSignal(0);
+  const [target, setTarget] = createSignal(null);
 
   createEffect(() => {
     const location = window.location
@@ -13,6 +15,10 @@ const App = () => {
 
   const toggleSettings = () => {
     setShowSettings(!showSettings())
+  }
+
+  const toggleTab = () => {
+    setTab(tab() === 0 ? 1 : 0)
   }
 
   return (<>
@@ -32,19 +38,13 @@ const App = () => {
 
     <main>
       <div class="tabs">
-        <button id="publish-tab" class="tab-button active">Publish</button>
-        <button id="resolve-tab" class="tab-button">Resolve</button>
+        <button id="publish-tab" class={`tab-button ${tab() === 0 && 'active'}`} onClick={toggleTab}>Publish</button>
+        <button id="resolve-tab" class={`tab-button ${tab() === 1 && 'active'}`} onClick={toggleTab}>Resolve</button>
       </div>
 
-      <article id="publish-content" class="tab-content">
+      <article id="publish-content" class={"tab-content" + ` ${tab() === 1 && 'hidden'}`}>
         <h3 id='public-key'>{store.pk()}</h3>
-        <div class="table">
-          <div class="table-header">
-            <div class="table-header-cell">Name</div>
-            <div class="table-header-cell">Value</div>
-          </div>
-          <Records />
-        </div>
+        <Records />
         <ul class="fine-text">
           <li>Add some records to your public-key, and publish it to the DHT when you are ready.</li>
           <li>Copy your key `pk:...` and share with your friends so they can fecth and watch your records.</li>
@@ -57,11 +57,12 @@ const App = () => {
         </ul>
       </article>
 
-      <div id="resolve-content" class="tab-content hidden">
-        <h2>Lookup</h2>
-        <p>Content for the Resolve tab...</p>
-      </div>
-    </main>
+      <article id="resolve-content" class={"tab-content" + ` ${tab() === 0 && 'hidden'}`}>
+        <h3>Resolve</h3>
+        <input id="resolve-input" autofocus placeholder="paste a public-key to lookup and resolve" onInput={(e) => setTarget(e.target.value)}></input>
+        <Records resolver target={target} />
+      </article>
+    </main >
 
     <div id='modal-container' class={!showSettings() && 'hidden'}>
       <div id='modal-content'>
@@ -101,7 +102,7 @@ const App = () => {
   );
 };
 
-function Records() {
+function Records({ resolver, target }) {
   let form;
 
   function addRecord(e) {
@@ -123,38 +124,61 @@ function Records() {
     store.publish()
   }
 
-  return <div class='records'>
-    <form ref={form} id="records-form" onKeyDown={onKeyDown} >
-      <For each={store.records}>
-        {(row, rowIndex) => {
-          return <div class="table-row">
-            <input
-              type="text"
-              placeholder={'key'}
-              value={row[0] || ""}
-              onInput={(e) => store.updateRecord(e, rowIndex(), 0)}
-              autofocus
-            />
-            <input
-              type="text"
-              placeholder={`value`}
-              value={row[1] || ""}
-              onInput={(e) => store.updateRecord(e, rowIndex(), 1)}
-            />
-          </div>
-        }
-        }
-      </For>
-    </form>
-    <div class="details">
-      <div><b>last update: </b><span id="last-published">{store.lastPublished}</span></div>
-      <div><b>compressed size: </b> <span id='size'>{store.recordsSize}</span>/1000 bytes</div>
-      <button id="add-record-button" onClick={addRecord}><span>+</span> Add Record</button>
+  function handleResolve(e) {
+    e?.preventDefault();
+    store.resolve(target())
+  }
+
+  return <div class="table">
+    <div class="table-header">
+      <div class="table-header-cell">Name</div>
+      <div class="table-header-cell">Value</div>
     </div>
-    <div class="buttons-record-container">
-      <button id="publish-button" class="primary" disabled={store.publishing} onClick={handlePublish}>
-        {store.publishing ? 'Publishing... this may take few seconds' : 'Publish'}
-      </button>
+    <div class='records'>
+      <form ref={form} id="records-form" onKeyDown={onKeyDown} >
+        <For each={resolver ? store.resolved : store.records}>
+          {(row, rowIndex) => {
+            return <div class="table-row">
+              <input
+                type="text"
+                disabled={resolver}
+                placeholder={!resolver ? 'name' : 'No records yet...'}
+                value={row[0] || ""}
+                onInput={(e) => store.updateRecord(e, rowIndex(), 0)}
+                autofocus
+              />
+              <input
+                type="text"
+                disabled={resolver}
+                placeholder={!resolver ? 'value' : ''}
+                value={row[1] || ""}
+                onInput={(e) => store.updateRecord(e, rowIndex(), 1)}
+              />
+            </div>
+          }}
+        </For>
+      </form>
+      <div class="details">
+        <div><b>last update: </b><span id="last-published">{resolver ? store.resolvedLastPublished : store.lastPublished}</span></div>
+        <div><b>compressed size: </b> <span id='size'>{store.recordsSize}</span>/1000 bytes</div>
+      </div>
+      <div id="add-record-button-container">
+        {!resolver && <button id="add-record-button" onClick={addRecord}><span>+</span> Add Record</button>}
+      </div>
+      <div class="buttons-record-container">
+        <button id="publish-button" class="primary"
+          disabled={resolver ? store.resolving : store.publishing}
+          onClick={resolver ? handleResolve : handlePublish}
+        >
+          {
+            (resolver
+              ? store.resolving ? 'Resolving... this may take few seconds' : 'Resolve'
+              : store.publishing ? 'Publishing... this may take few seconds' : 'Publish'
+            )
+            + (store.temporaryMessage || "")
+          }
+        </button>
+      </div>
     </div>
   </div>
 }

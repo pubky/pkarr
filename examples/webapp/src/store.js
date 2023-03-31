@@ -44,11 +44,53 @@ const store = createMutable({
 
     this.publishing = true
 
+    const start = Date.now()
     pkarr.put(keyPair, records, servers)
       .then(result => {
         if (result.ok) {
           this.publishing = false;
           this.lastPublished = new Date(result.request.seq * 1000).toLocaleString()
+
+          const time = Date.now() - start
+          this.temporaryMessage = "Published ... took " + time + " ms"
+          setTimeout(() => this.temporaryMessage = null, 2000)
+        } else {
+          alert(
+            'Error publishing to all servers:\n' +
+            result.errors.map(e => e.server + ": " + e.error.message).join('\n')
+          )
+        }
+      })
+  },
+
+  resolved: [[]],
+  resolving: false,
+  resolvedLastPublished: 'Not resolved yet...',
+  temporaryMessage: null,
+  resolve(target) {
+    let key = target.replace('pk:', '')
+    try {
+      key = z32.decode(key)
+    } catch (error) {
+      console.log("error: can't decode key", key)
+      return
+    }
+
+    this.resolving = true
+
+    const servers = [...this.servers]
+
+    const start = Date.now()
+    pkarr.get(key, servers)
+      .then(result => {
+        if (result.ok) {
+          this.resolved = result.records
+          this.resolvedLastPublished = new Date(result.seq * 1000).toLocaleString()
+          this.resolving = false;
+
+          const time = Date.now() - start
+          this.temporaryMessage = "Resolved ... took " + time + " ms"
+          setTimeout(() => this.temporaryMessage = null, 2000)
         } else {
           alert(
             'Error publishing to all servers:\n' +
