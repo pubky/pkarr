@@ -1,6 +1,6 @@
 import cbor from 'cbor'
 import lz4 from 'lz4'
-import brotli from 'brotli'
+import brotli from 'brotli-compress'
 import assert from 'assert'
 import bencode from 'bencode'
 
@@ -73,31 +73,31 @@ const cborLZ4 = lz4.encode(cborEncoded)
 console.log('\nCBOR + lz4   :', cborLZ4.byteLength, (cborLZ4.byteLength / json.length).toFixed(2))
 
 console.time('json + brotli')
-const jsonBrotil = brotli.compress(Buffer.from(json))
+const jsonBrotil = await brotli.compress(Buffer.from(json))
 console.log('\nJSON + brotli:', jsonBrotil.byteLength, (jsonBrotil.byteLength / json.length).toFixed(2))
 console.timeEnd('json + brotli')
 
 console.time('brotli + bencode')
-const bencodeBrotli = brotli.compress(bencode.encode(records))
+const bencodeBrotli = await brotli.compress(bencode.encode(records))
 console.log('\nBencode + brotli:', bencodeBrotli.byteLength, (bencodeBrotli.byteLength / json.length).toFixed(2))
 console.timeEnd('brotli + bencode')
 
 console.time('brotli + cbor')
-const cborBrtoli = brotli.compress(cbor.encode(records))
+const cborBrtoli = await brotli.compress(cbor.encode(records))
 console.log('\nCBOR + brotli:', cborBrtoli.byteLength, (cborBrtoli.byteLength / json.length).toFixed(2))
 console.timeEnd('brotli + cbor')
 
 console.time('\ndecode - json + brotli')
-const d1 = JSON.parse(Buffer.from(brotli.decompress(jsonBrotil)))
+const d1 = JSON.parse(Buffer.from(await brotli.decompress(jsonBrotil)))
 assert.deepEqual(d1, records)
 console.timeEnd('\ndecode - json + brotli')
 
 console.time('\ndecode - cbor + brotli')
-const d2 = cbor.decode(Buffer.from(brotli.decompress(cborBrtoli)))
+const d2 = cbor.decode(Buffer.from(await brotli.decompress(cborBrtoli)))
 assert.deepEqual(d2, records)
 console.timeEnd('\ndecode - cbor + brotli')
 
 console.time('\ndecode - bencode + brotli')
-const d3 = bencode.decode(Buffer.from(brotli.decompress(bencodeBrotli)), 'utf-8')
+const d3 = bencode.decode(Buffer.from(await brotli.decompress(bencodeBrotli)), 'utf-8')
 assert.deepEqual(d3, records)
 console.timeEnd('\ndecode - bencode + brotli')
