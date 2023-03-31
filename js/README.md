@@ -21,6 +21,16 @@ $ PORT=3000 pkarr
 
 Consider adding your server to the [list of free and public servers](../servers.txt)
 
+### CLI 
+
+after installing you can init a new keypair, add records, or resolve records.
+
+```
+pkarr run
+
+pkarr resolve <z-base32 key>
+```
+
 ### Client 
 
 ```js

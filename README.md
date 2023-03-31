@@ -9,7 +9,11 @@ Where we are going, this https://j9afjgmrb65bipi6wreogf8b1emczatecuy9tuzbbwnzsda
 ## TLDR
 To publish DNS records for your key, sign a small payload (<1000 bytes) and send it to a custom DNS server that commits it to a DHT. To resolve websites or resources belonging to others' keys, applications send regular [DNS Queries over HTTPS (DoH)](https://www.rfc-editor.org/rfc/rfc8484) to Pkarr DNS servers or request the signed payload to verify themselves. Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. The DHT drops records after a few hours, but if a refresher (you manually, or the services mentioned in the records, or a volunteer) recommits the signed payload periodically, high availability is maintained for DNS resolvers making first uncached requests.
 
-[Try it](./js/README.md)
+## DEMO 
+
+Try the [web app demo](pkarr-nuhvi.com).
+
+Or if you prefer a [CLI](./js/README.md#cli) 
 
 ## Why would you need resource records for keys?
 

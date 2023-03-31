@@ -1,11 +1,11 @@
 {
   "name": "pkarr",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "description": "client and server for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
   "bin": {
-    "pkarr": "start.js"
+    "pkarr": "bin.js"
   },
   "scripts": {
     "lint": "standard --fix",
@@ -28,7 +28,9 @@
     "brotli-compress": "^1.3.3",
     "fastify": "^4.15.0",
     "pino": "^8.11.0",
-    "sodium-universal": "^4.0.0"
+    "pm2": "^5.3.0",
+    "sodium-universal": "^4.0.0",
+    "z32": "^1.0.0"
   },
   "devDependencies": {
     "brittle": "^3.2.1",
