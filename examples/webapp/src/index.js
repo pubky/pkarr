@@ -1,5 +1,5 @@
 import { render } from 'solid-js/web';
-import { createSignal, createEffect, For, ref, onMount } from 'solid-js';
+import { createSignal, createEffect, For, createMemo } from 'solid-js';
 import store from './store.js'
 
 const App = () => {
@@ -7,10 +7,14 @@ const App = () => {
   const [tab, setTab] = createSignal(0);
   const [target, setTarget] = createSignal(null);
 
+
   createEffect(() => {
     const location = window.location
     const path = location.pathname
-    console.log("window", path)
+    const _key = path.split('/')[1].replace('pk:', '')
+    if (!_key || _key.length !== 52) return
+    setTarget(_key)
+    setTab(1)
   });
 
   const toggleSettings = () => {
@@ -18,6 +22,9 @@ const App = () => {
   }
 
   const toggleTab = () => {
+    // if (tab() === 1) {
+    // window.location.pathname = ''
+    // }
     setTab(tab() === 0 ? 1 : 0)
   }
 
@@ -59,7 +66,7 @@ const App = () => {
 
       <article id="resolve-content" class={"tab-content" + ` ${tab() === 0 && 'hidden'}`}>
         <h3>Resolve</h3>
-        <input id="resolve-input" autofocus placeholder="paste a public-key to lookup and resolve" onInput={(e) => setTarget(e.target.value)}></input>
+        <input id="resolve-input" autofocus placeholder="paste a public-key to lookup and resolve" onInput={(e) => setTarget(e.target.value)} value={target()}></input>
         <Records resolver target={target} />
       </article>
     </main >
