@@ -1,23 +1,60 @@
 import { render } from 'solid-js/web';
-import { createSignal, createEffect, For, ref, onMount } from 'solid-js';
+import { createSignal, createEffect, For, createMemo } from 'solid-js';
+import pkarr from 'pkarr'
+import b4a from 'b4a'
+
 import store from './store.js'
 
 const App = () => {
   const [showSettings, setShowSettings] = createSignal(false);
   const [tab, setTab] = createSignal(0);
   const [target, setTarget] = createSignal(null);
+  const [settingsSeed, setSettingsSeed] = createSignal(store.seed)
+  const [copySeedText, setCopySeedText] = createSignal('copy seed')
+  const [settingsServers, setSettingsServers] = createSignal(store.servers)
 
   createEffect(() => {
     const location = window.location
-    const path = location.pathname
-    console.log("window", path)
+    const pk = new URL(location.toString()).searchParams.get('pk')
+    if (!pk || pk.length !== 52) return
+    setTarget(pk)
+    setTab(1)
   });
 
   const toggleSettings = () => {
+    setSettingsSeed(store.seed)
     setShowSettings(!showSettings())
   }
 
+  const copySeed = async () => {
+    try {
+      await navigator.clipboard.writeText(settingsSeed());
+      setCopySeedText('Copied to clipboard!')
+    } catch (err) {
+      console.error("Error copying text to clipboard:", err);
+      setCopySeedText('Errorr copying to clipboard!')
+    } finally {
+      setTimeout(() => setCopySeedText('copy seed'), 1000)
+    }
+  }
+
+  const handleSaveSettings = () => {
+    store.updateSettings(settingsSeed(), settingsServers())
+    setShowSettings(false)
+  }
+
+  const handleSettingsServerChange = (event) => {
+    setSettingsServers(event.target.value.split('\n'))
+  }
+  const handleResetServers = () => {
+    store.resetServers()
+    setSettingsServers(store.servers)
+  }
+
   const toggleTab = () => {
+    if (tab() === 1) {
+      window.location.search = ''
+    }
     setTab(tab() === 0 ? 1 : 0)
   }
 
@@ -59,7 +96,7 @@ const App = () => {
 
       <article id="resolve-content" class={"tab-content" + ` ${tab() === 0 && 'hidden'}`}>
         <h3>Resolve</h3>
-        <input id="resolve-input" autofocus placeholder="paste a public-key to lookup and resolve" onInput={(e) => setTarget(e.target.value)}></input>
+        <input id="resolve-input" autofocus placeholder="paste a public-key to lookup and resolve" onInput={(e) => setTarget(e.target.value)} value={target()}></input>
         <Records resolver target={target} />
       </article>
     </main >
@@ -73,15 +110,18 @@ const App = () => {
         <div class="modal-body" id="settings">
           <div class="row">
             <label>Secret key</label>
-            <input id="seed" value="************************************"></input>
-            <button id="generate">generate</button>
+            <input id="seed" value={settingsSeed().slice(0, 8) + "*".repeat(56)}></input>
+            <div id="seed-buttons">
+              <button id="copy-seed" onClick={copySeed}>{copySeedText()}</button>
+              <button id="generate-seed" onClick={() => setSettingsSeed(b4a.toString(pkarr.randomBytes(32), 'hex'))}>generate</button>
+            </div>
           </div>
           <div class="row">
             <label>Servers</label>
-            <textarea id="servers" rows="5"></textarea>
-            <button id='reset-servers'>reset</button>
+            <textarea id="servers" rows="5" onChange={handleSettingsServerChange}>{settingsServers().join('\n')}</textarea>
+            <button id='reset-servers' onClick={handleResetServers}>reset</button>
           </div>
-          <button class="primary" id="settings-save-button">Save</button>
+          <button class="primary" id="settings-save-button" onClick={handleSaveSettings}>Save</button>
         </div>
       </div>
     </div>
@@ -127,6 +167,7 @@ function Records({ resolver, target }) {
   function handleResolve(e) {
     e?.preventDefault();
     store.resolve(target())
+    window.history.replaceState(null, '', `?pk=${target()}`)
   }
 
   return <div class="table">
@@ -160,7 +201,7 @@ function Records({ resolver, target }) {
       </form>
       <div class="details">
         <div><b>last update: </b><span id="last-published">{resolver ? store.resolvedLastPublished : store.lastPublished}</span></div>
-        <div><b>compressed size: </b> <span id='size'>{store.recordsSize}</span>/1000 bytes</div>
+        <div><b>compressed size: </b> <span id='size'>{resolver ? store.resolvedSize : store.recordsSize}</span>/1000 bytes</div>
       </div>
       <div id="add-record-button-container">
         {!resolver && <button id="add-record-button" onClick={addRecord}><span>+</span> Add Record</button>}

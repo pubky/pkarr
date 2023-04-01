@@ -50,6 +50,7 @@ const store = createMutable({
         if (result.ok) {
           this.publishing = false;
           this.lastPublished = new Date(result.request.seq * 1000).toLocaleString()
+          localStorage.setItem('lastPublished', this.lastPublished)
 
           const time = Date.now() - start
           this.temporaryMessage = "Published ... took " + time + " ms"
@@ -65,6 +66,7 @@ const store = createMutable({
 
   resolved: [[]],
   resolving: false,
+  resolvedSize: 0,
   resolvedLastPublished: 'Not resolved yet...',
   temporaryMessage: null,
   resolve(target) {
@@ -88,6 +90,10 @@ const store = createMutable({
           this.resolvedLastPublished = new Date(result.seq * 1000).toLocaleString()
           this.resolving = false;
 
+          pkarr.codec.encode(result.records).then(bytes => {
+            this.resolvedSize = bytes.byteLength || 0
+          })
+
           const time = Date.now() - start
           this.temporaryMessage = "Resolved ... took " + time + " ms"
           setTimeout(() => this.temporaryMessage = null, 2000)
@@ -99,6 +105,17 @@ const store = createMutable({
         }
       })
   },
+  updateSettings(seed, servers) {
+    this.seed = seed
+    this.keyPair = pkarr.generateKeyPair(b4a.from(seed, 'hex'))
+    this.servers = servers
+
+    localStorage.setItem('seed', seed)
+    localStorage.setItem('servers', JSON.stringify(servers))
+  },
+  resetServers() {
+    this.servers = DEFAULT_SERVERS
+  },
 
   load() {
     {
@@ -107,10 +124,17 @@ const store = createMutable({
       const seed = string ? b4a.from(string, 'hex') : pkarr.randomBytes()
 
       this.seed = string || b4a.toString(seed, 'hex')
-      window.localStorage.setItem('seed', this.seed)
+      localStorage.setItem('seed', this.seed)
 
       // keyPair
       this.keyPair = pkarr.generateKeyPair(seed)
+    }
+    {
+      // Servers
+      const servers = localStorage.getItem('servers')
+      try {
+        this.servers = JSON.parse(servers) || DEFAULT_SERVERS
+      } catch { }
     }
     {
       // Records
@@ -120,6 +144,10 @@ const store = createMutable({
           this.records = JSON.parse(records)
         } catch { }
       }
+    }
+    {
+      // Last published
+      this.lastPublished = localStorage.getItem('lastPublished')
     }
   },
 })
