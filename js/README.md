@@ -23,7 +23,7 @@ Consider adding your server to the [list of free and public servers](../servers.
 
 ### CLI 
 
-after installing you can init a new keypair, add records, or resolve records.
+after installing you can resolve records from the DHT:
 
 ```
 pkarr run
