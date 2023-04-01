@@ -11,7 +11,7 @@ To publish DNS records for your key, sign a small payload (<1000 bytes) and send
 
 ## DEMO 
 
-Try the [web app demo](pkarr-nuhvi.com).
+Try the [web app demo](htpps://pkarr-nuhvi.com).
 
 Or if you prefer a [CLI](./js/README.md#cli) 
 
