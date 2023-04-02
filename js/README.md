@@ -106,12 +106,6 @@ Simple proxy to the relevant parts of [BEP 44](https://www.bittorrent.org/beps/b
       "key": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
     }
   },
-  "querystring": {
-    "type": "object",
-    "properties": {
-      "after": { "type": "number" }
-    }
-  },
   "response": {
     "200": {
       "type": "object",

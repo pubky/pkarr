@@ -17,7 +17,7 @@ const logger =
     }))
 
 export default class Server {
-  constructor () {
+  constructor() {
     this.dht = new DHT({ verify })
 
     this.app = fastify({ logger })
@@ -92,12 +92,6 @@ export default class Server {
             key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
           }
         },
-        querystring: {
-          type: 'object',
-          properties: {
-            after: { type: 'number' }
-          }
-        },
         response: {
           200: {
             type: 'object',
@@ -113,7 +107,6 @@ export default class Server {
       handler: async (request, reply) => {
         const { key } = request.params
         // TODO: skip returning values that the user already saw?
-        // const { after } = request.query;
 
         const hash = this.dht._hash(Buffer.from(key, 'hex'))
 
@@ -138,13 +131,13 @@ export default class Server {
     })
   }
 
-  static async start (opts = {}) {
+  static async start(opts = {}) {
     const server = new Server()
     await server.listen({ host: '0.0.0.0', ...opts })
     return server
   }
 
-  destroy () {
+  destroy() {
     this.dht.destroy()
     this.app.server.close()
   }
