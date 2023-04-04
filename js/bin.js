@@ -2,6 +2,10 @@
 import pm2 from 'pm2'
 import z32 from 'z32'
 import pkarr from './index.js'
+import path from 'path'
+
+export const ROOT_DIR = path.join(import.meta.url.slice(5), '../')
+const startScript = path.join(ROOT_DIR, 'start.js')
 
 const serverName = 'pkarr-server'
 
@@ -12,7 +16,7 @@ const runServer = () => {
       process.exit(2)
     }
     pm2.start({
-      script: './start.js',
+      script: startScript,
       name: serverName
     }, (err) => {
       pm2.disconnect()
@@ -129,6 +133,6 @@ switch (command) {
     showHelp()
     break
   default:
-    console.error('Invalid command')
+    showHelp()
     process.exit(1)
 }
