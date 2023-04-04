@@ -49,7 +49,7 @@ Finally, by solving censorship and deplatforming ina sovereign way, the need for
 
 **with least work**
 
-Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table with millions of nodes, and good old web servers. 
+Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table with millions of nodes, and good old web servers.
  
 ## Architecture
 
@@ -70,7 +70,7 @@ These are existing resolvers in every operating system, completely oblivious to 
 Good old DNS over HTTPs servers, with couple additional responsilities:
     
  1. Relaying Get and Put messages from clients to the DHT.
- 2.  Implement Caching and backoff to reduce traffic on the DHT.
+ 2. Implement Caching and backoff to reduce traffic on the DHT.
 
 ## Use cases
 
@@ -127,6 +127,17 @@ Reasons for choosing Mainline include:
 Servers must diligently stay good citizens within the Mainline DHT and strive to minimize traffic across it. This ensures that the marginal increase in the cost of operating DHT nodes, resulting from Pkarr, remains insignificant.
 
 The client-server architecture enables the coordination and potential migration to more efficient alternatives, or even the parallel use of other DHTs alongside Mainline DHT. However, it is challenging to surpass the performance of a system that has proven to be effective and reliable for such an extended period.
+
+
+## Roadmap
+
+1. [x] Implement a web server as a mere proxy over DHT.
+2. [x] Implement client-side tools for making queries and validating responses.
+3. [x] Implement a web app to represent the UX and DX of client side.
+4. [ ] Add optional caching and republishing of records on GET requests **<< we ar here**
+5. [ ] Implement a standalone republisher and test keeping 100s of thousands of records alive.
+6. [ ] Reimplement everything in Rust once the JS implementation is tested with some scale.
+7. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr servers in OS and browser's configurations.
 
 ## FAQ
 
