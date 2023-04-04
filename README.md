@@ -47,9 +47,10 @@ Pkarr help with **key management** by enabling users to maintain a long lasting 
 
 Finally, by solving censorship and deplatforming ina sovereign way, the need for signed data becomes less urgent, and we buy more time to figure out the UX of signing everything everywhere all the time.
 
-
 **with least work**
 
+Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table with millions of nodes, and good old web servers. 
+ 
 ## Architecture
 
 ### Clients
@@ -126,22 +127,6 @@ Reasons for choosing Mainline include:
 Servers must diligently stay good citizens within the Mainline DHT and strive to minimize traffic across it. This ensures that the marginal increase in the cost of operating DHT nodes, resulting from Pkarr, remains insignificant.
 
 The client-server architecture enables the coordination and potential migration to more efficient alternatives, or even the parallel use of other DHTs alongside Mainline DHT. However, it is challenging to surpass the performance of a system that has proven to be effective and reliable for such an extended period.
-
-## How do we get there?
-
- - [x] Test Mainline_DHT's [Nodejs implementation](https://github.com/webtorrent/bittorrent-dht) to confirm its behaviour under favorable conditions.
- - [ ] Build a quick Proof of Concept of servers and clients.
-     - [x] Trustless endpoints proxying GET and PUT request to the DHT.
-     - [ ] Web app to create and query records.
-     - [ ] Auto refresh records (conservatively).
-     - [ ] Trusted DNS over HTTPs server to work with OS DNS resolvers.
-     - [ ] Test Key derivation to add privacy and plausible deniability (see GNU NS).
- - [ ] Test the PoC with as ma/ny volunteers as we can, stress test it, and get feedback.
- - [ ] Reach a stable and minimal API between clients and servers.
- - [ ] Reimplement the Client in Rust and Javascript, after the initial feedback.
- - [ ] Reimplement the server and the DHT in Rust, to make it more accessible for future improvements.
- - [ ] Add missing improvements from the NodeJS implementation, like [DHT security](https://www.bittorrent.org/beps/bep_0042.html) and [Holepunch](https://www.bittorrent.org/beps/bep_0055.html) extensions if needed.
- - [ ] Explore how to make setting DNS servers as convenient as possible for end users.
 
 ## FAQ
 
