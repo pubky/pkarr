@@ -3,7 +3,8 @@
   "browserslist": "> 0.5%, last 2 versions, not dead",
   "scripts": {
     "start": "parcel -p 8003",
-    "build": "parcel build"
+    "build": "parcel build",
+    "postbuild": "cp -r public/* dist/"
   },
   "dependencies": {
     "b4a": "^1.6.3",
