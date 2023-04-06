@@ -171,8 +171,9 @@ function Records({ resolver, target }) {
   }
 
   onMount(() => {
-    if (!target) return
-    store.resolve(target())
+    const _target = target?.()
+    if (!_target) return
+    store.resolve(_target)
   })
 
   let typingTimer;
