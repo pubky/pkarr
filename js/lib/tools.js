@@ -45,7 +45,11 @@ export async function put (keyPair, records, servers) {
             return {
               ok: response.ok,
               response: body,
-              request: req
+              request: {
+                ...req,
+                sig: b4a.toString(req.sig, 'hex'),
+                v: b4a.toString(req.b, 'base64')
+              }
             }
           }
           throw body
@@ -60,20 +64,18 @@ export async function put (keyPair, records, servers) {
 }
 
 /**
- * Sign and create a put request
- * @returns {PutRequest}
+ * Endoced records, sign it and create a put request
+ * @param {{publicKey: Uint8Array, secretKey: Uint8Array}} keyPair
+ * @param {object} records
  */
 export async function createPutRequest (keyPair, records) {
   const msg = {
     seq: Math.ceil(Date.now() / 1000),
     v: await codec.encode(records)
   }
-  const signature = _sign(encodeSigData(msg), keyPair.secretKey)
-  return {
-    ...msg,
-    sig: b4a.toString(signature, 'hex'),
-    v: b4a.toString(msg.v, 'base64')
-  }
+  const sig = _sign(encodeSigData(msg), keyPair.secretKey)
+
+  return { ...msg, sig }
 }
 
 // Copied from bittorrent-dht
@@ -211,9 +213,9 @@ function raceToSuccess (promises) {
 }
 
 /**
- * @typedef {
+ * @typedef {{
  *  seq: number,
  *  v: string,
  *  sig: string
- * } PutRequest
+ * }} PutRequest
  */

@@ -1,88 +1,21 @@
 #!/usr/bin/env node
-import pm2 from 'pm2'
 import z32 from 'z32'
-import pkarr from './index.js'
-import path from 'path'
 
-export const ROOT_DIR = path.join(import.meta.url.slice(5), '../')
-const startScript = path.join(ROOT_DIR, 'start.js')
+import DHT from './lib/dht.js'
 
-const serverName = 'pkarr-server'
-
-const runServer = () => {
-  pm2.connect((err) => {
-    if (err) {
-      console.error('Error connecting to PM2:', err)
-      process.exit(2)
-    }
-    pm2.start({
-      script: startScript,
-      name: serverName
-    }, (err) => {
-      pm2.disconnect()
-      if (err) {
-        console.error('Error starting Pkarr server with PM2:', err)
-        process.exit(2)
-      }
-      console.log('Pkarr server started using PM2')
-    })
-  })
-}
-
-const stopServer = () => {
-  pm2.connect((err) => {
-    if (err) {
-      console.error('Error connecting to PM2:', err)
-      process.exit(2)
-    }
-    pm2.stop(serverName, (err) => {
-      pm2.disconnect()
-      if (err) {
-        console.error('Error stopping Pkarr server with PM2:', err)
-        process.exit(2)
-      }
-      console.log('Pkarr server stopped using PM2')
-    })
-  })
-}
-
-const checkStatus = () => {
-  pm2.connect((err) => {
-    if (err) {
-      console.error('Error connecting to PM2:', err)
-      process.exit(2)
-    }
-    pm2.describe(serverName, (err, processDescription) => {
-      pm2.disconnect()
-      if (err) {
-        console.error('Error getting Pkarr server status with PM2:', err)
-        process.exit(2)
-      }
-
-      if (processDescription[0] && processDescription[0].pm2_env.status === 'online') {
-        console.log('Pkarr server is running')
-      } else {
-        console.log('Pkarr server is not running')
-      }
-    })
-  })
-}
-
-const resolveKey = async (key, server = 'http://0.0.0.0:7527') => {
-  const keyBytes = z32.decode(key.replace('pk:', ''))
-  try {
-    const result = await pkarr.get(keyBytes, [server])
-    if (result.ok) {
-      console.log('Resolved key', key, 'to:\n', JSON.stringify({
-        last_updated: new Date(result.seq * 1000).toLocaleString(),
-        records: result.records
-      }, null, 2))
-    } else {
-      console.log('Erorr resolving key', key, result.errors[0])
-    }
-  } catch (error) {
-    console.log('Erorr resolving key', key, error)
+const resolveKey = async (key) => {
+  if (!key) {
+    console.error('Please provide a key to resolve')
+    return
   }
+
+  const dht = new DHT()
+
+  const keyBytes = z32.decode(key.replace('pk:', ''))
+  const response = await dht.get(keyBytes)
+  console.log(response)
+
+  dht.destroy()
 }
 
 const showHelp = () => {
@@ -90,20 +23,11 @@ const showHelp = () => {
 Usage: pkarr [command] [options]
 
 Commands:
-  run                    Run Pkarr server using PM2 (has to listen on a publicly addressable IP)
-  resolve <key> [server] Make a request to the server (default to 0.0.0.0:7527) and log the response
-  stop                   Stop the server server using PM2
-  status                 Check the status of the server process
-  help                   Show this help message
-
-Options:
-  <key>              The key to be resolved by the 'resolve' command
+  resolve <key> Resolve resource records for a given key
+  help          Show this help message
 
 Examples:
-  pkarr run
-  pkarr resolve example-key
-  pkarr stop
-  pkarr status
+  pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
   pkarr help
 `)
 }
@@ -111,22 +35,8 @@ Examples:
 const command = process.argv[2]
 
 switch (command) {
-  case 'run':
-    runServer()
-    break
   case 'resolve':
-    const [, , , key, server] = process.argv
-    if (!key) {
-      console.error('Please provide a key to resolve')
-      process.exit(1)
-    }
-    resolveKey(key, server)
-    break
-  case 'stop':
-    stopServer()
-    break
-  case 'status':
-    checkStatus()
+    resolveKey(process.argv[3])
     break
   case '-h':
   case 'help':
