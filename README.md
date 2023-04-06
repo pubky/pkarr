@@ -4,10 +4,14 @@
 
 The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable domains. This system would be accessible to anyone capable of maintaining a private key.
 
-Where we are going, this https://j9afjgmrb65bipi6wreogf8b1emczatecuy9tuzbbwnzsdacpohy resolves!
+Where we are going, this [https://54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y](https://pkarr.nuhvi.com/?pk=54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y) resolves!
 
 ## TLDR
-To publish DNS records for your key, sign a small payload (<1000 bytes) and send it to a custom DNS server that commits it to a DHT. To resolve websites or resources belonging to others' keys, applications send regular [DNS Queries over HTTPS (DoH)](https://www.rfc-editor.org/rfc/rfc8484) to Pkarr DNS servers or request the signed payload to verify themselves. Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. The DHT drops records after a few hours, but if a refresher (you manually, or the services mentioned in the records, or a volunteer) recommits the signed payload periodically, high availability is maintained for DNS resolvers making first uncached requests.
+- To publish resource records for your key, sign a small payload (<= ~3000 bytes) and publish it on the DHT (throug a relay if necessary).
+- To resolve some key's resources, applications query the DHT directly, or through a relay, and verify the signature themselves. 
+- Existing applications unaware of Pkarr make normal DNS Queries over HTTPS ([DoH](https://www.rfc-editor.org/rfc/rfc8484)) to Pkarr servers. 
+- Clients and Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. 
+- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT. Also Pkarr servers could republish records recently requested, to keep popular records alive too.
 
 ## DEMO 
 
