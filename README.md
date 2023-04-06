@@ -15,7 +15,92 @@ Try the [web app demo](https://pkarr.nuhvi.com).
 
 Or if you prefer a [CLI](./js/README.md#cli) 
 
-## Why would you need resource records for keys?
+## TOC
+- [Architecture](#Architecture)
+- [Expectations](#Expectations)
+- [Why](#Why)
+- [Roadmap](#Roadmap)
+- [FAQ](#FAQ)
+ 
+## Architecture
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    participant DHT
+    participant Republisher
+
+    Client->>Server: Publish
+    note over Client, Server: Optional DHT proxy
+    Server->>DHT: Put
+    Note over Server,DHT: Store RRs (resource records)
+
+    Client->>Republisher: Republish request
+    note over Client, Republisher: Notify Hosting provider mentioned in RRs
+
+    loop Periodic Republish
+        Republisher->>DHT: Republish
+    end
+
+    Client->>Server: Get
+    Server->>DHT: Get
+    DHT->>Server: Response
+    Server->>Client: Response
+    note over Client, Server: Optional DNS over HTTPS server
+```
+
+### Clients
+ #### Pkarr enabled applications.
+ 
+ Native applications, can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr server as a relay.
+
+ Browser web apps should try calling local Pkarr server at the default port `7527`, if not accessible, they have to query a remote server instead. Eitherway, these apps should allow users to configure servers of their choice.
+ 
+ Clients with private keys are also capable of submitting signed records either to the DHT directly, or through Pkarr server, to update user's records when needed.
+ 
+ #### Existing applications
+ To support existing applications totally oblivious of Pkarr, users will have to (manually or programatically) edit their OS DNS servers to add one or more Pkarr servers to proxy DHT records as DNS over HTTPS.
+
+### Servers
+
+Pkarr servers are optional but they:
+1. Trustlessly relay requests from Web apps and applications behind NAT or firewall, to the DHT.
+2. Offer a DoH interface for applications that aren't aware of Pkarr at all, so they can resolve something like `https://<key>` as usual.
+
+Servers are very light and cheap to operate, that they can easily run altruistically, but private, and paid servers are possible too.
+
+### Republishers
+
+Services and hosting providers mentioned in Resource Records of a user, are incentivized to republish these records and keep them alive on the DHT, for the same reasons they are incentivized to gain that user in the first place.
+
+### DHT
+
+Pkarr will use [Mainline_DHT](https://en.wikipedia.org/wiki/Mainline_DHT) as the overlay network.
+Specifically [BEP44](https://www.bittorrent.org/beps/bep_0044.html) for storing ephemeral arbitrary data.
+
+Reasons for choosing Mainline include:
+1. 15 years of proven track record facilitating trackerless torrent for people around the world.
+2. Biggest DHT in existence with estimated 10 million nodes.
+3. It is fairly generous with its retaining of mutable data, reducing the need to frequently refresh records, thus reducing traffic.
+4. It has implementation in most languagues, well understood (by many smart people, that may be willing to guide us), and stable enough to make a minimal implementation from scratch if we need to.
+
+## Expectations
+
+To ensure a good chance of scalability and resilience, a few expectations need to be set straight:
+
+1. This is **not a storage platform**
+    - Records are ephemeral, and without refreshing them regularly they will be dropped by the DHT.
+    - Popular records may or may not be refreshed by the DNS servers as they get queries for them.
+2. This is **not a realtime communication** medium
+    - Records are heavily cached like in any DNS system.
+    - You are expected to update your records rarely, so you should expect servers to enforce harsh rate-limiting and maybe demand proof of work.
+    - Records are going to be cached heavily to reduce traffic on the DHT, so updates might take some time to propagate, even if you set TTL to 1 second.
+    - In case of a chache miss, traversing the DHT might take few seconds.
+
+## Why?
+
+> Why would you need resource records for keys
 
 In pursuit of a sovereign, distributed, and open web, we identify three challenges:
 
@@ -50,84 +135,6 @@ Finally, by solving censorship and deplatforming ina sovereign way, the need for
 **with least work**
 
 Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table with millions of nodes, and good old web servers.
- 
-## Architecture
-
-### Clients
- #### Recursive DNS resolvers.
- 
-These are existing resolvers in every operating system, completely oblivious to Pkarr, yet by adding one or more trusted Pkarr servers (maybe even running your own), URLs like https://j9afjgmrb65bipi6wreogf8b1emczatecuy9tuzbbwnzsdacpohy should work in browsers and any other application on your device.
-
- #### Pkarr enabled applications.
- 
- For applications aware of Pkarr, they can directly query the signed payload and verify it themselves in a trustless manner.
- To increase user's privacy they should allow users to use a custom server of their choosing, including a local server if that's available.
- 
- These clients are also capable of submitting signed records to any server to be published on the DHT on their behalf.
-
-### Servers
-
-Good old DNS over HTTPs servers, with couple additional responsilities:
-    
- 1. Relaying Get and Put messages from clients to the DHT.
- 2. Implement Caching and backoff to reduce traffic on the DHT.
-
-## Use cases
-
-1. Alice is hosting her blog on a paid web hosting service that offers refreshing Alice's records.
-2. Bob mentiones their LN node address in a TXT record, so they run a refresher along side said node.
-3. Carol wants to migrate from a service provider to another in an open network, so she updates here corrisponding record.
-
-If you think of more, please open a PR.
-
-## Expectations
-
-To ensure a good chance of scalability and resilience, a few expectations need to be set straight:
-
-1. This is **not a storage platform**
-    - Records are ephemeral, and without refreshing them regularly they will be dropped by the DHT.
-    - Popular records may or may not be refreshed by the DNS servers as they get queries for them.
-2. This is **not a realtime communication** medium
-    - Records are heavily cached like in any DNS system.
-    - You are expected to update your records rarely, so you should expect servers to enforce harsh rate-limiting and maybe demand proof of work.
-    - Records are going to be cached heavily to reduce traffic on the DHT, so updates might take some time to propagate, even if you set TTL to 1 second.
-    - In case of a chache miss, traversing the DHT might take few seconds.
-
-## Bootstrapping and Incentives
-
-### clients
-
-By conforming to DNS spec, we ensure that exsiting clients like browsers don't need to do anything, once the user setup their DNS settings to use a set Pkarr servers.
-
-For applications that want to opt-in without requiring such manual configuration, or if they need to verify the signed records, they only need an extra HTTPs call and few lines of code.
-
-### Servers
-
-Pkarr server should be light enough that you can run one on your own, locally or on your VPS.
-They should also be be cheap enough to volunteer running one for your friends or community.
-Donations can keep more popular and beefy servers running.
-
-Businesses can offer private servers that offer resolving records, and regular refreshing to keep records alive on the DHT.
-
-Service providers (e.g a web hosting service) are also incintivized to refresh their customer's records as long as they are pointing to them.
-
-Crucially, thanks to the long history of optimization and infrastructure around DNS, these servers benefit from many layers of caching DNS queries.
-
-### DHT
-
-Pkarr will use [Mainline_DHT](https://en.wikipedia.org/wiki/Mainline_DHT) as the overlay network.
-Specifically [BEP44](https://www.bittorrent.org/beps/bep_0044.html) for storing ephemeral arbitrary data.
-
-Reasons for choosing Mainline include:
-1. 15 years of proven track record facilitating trackerless torrent for people around the world.
-2. Biggest DHT in existence with estimated 10 million nodes.
-3. It is fairly generous with its retaining of mutable data, reducing the need to frequently refresh records, thus reducing traffic.
-4. It has implementation in most languagues, well understood (by many smart people, that may be willing to guide us), and stable enough to make a minimal implementation from scratch if we need to.
-
-Servers must diligently stay good citizens within the Mainline DHT and strive to minimize traffic across it. This ensures that the marginal increase in the cost of operating DHT nodes, resulting from Pkarr, remains insignificant.
-
-The client-server architecture enables the coordination and potential migration to more efficient alternatives, or even the parallel use of other DHTs alongside Mainline DHT. However, it is challenging to surpass the performance of a system that has proven to be effective and reliable for such an extended period.
-
 
 ## Roadmap
 
