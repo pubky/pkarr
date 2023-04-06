@@ -1,5 +1,5 @@
 import { render } from 'solid-js/web';
-import { createSignal, createEffect, For, createMemo } from 'solid-js';
+import { createSignal, createEffect, For, onMount } from 'solid-js';
 import pkarr from 'pkarr'
 import b4a from 'b4a'
 
@@ -169,6 +169,11 @@ function Records({ resolver, target }) {
     store.resolve(target())
     window.history.replaceState(null, '', `?pk=${target()}`)
   }
+
+  onMount(() => {
+    if (!target) return
+    store.resolve(target())
+  })
 
   let typingTimer;
 
