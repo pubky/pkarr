@@ -109,7 +109,7 @@ const App = () => {
         </div>
         <div class="modal-body" id="settings">
           <div class="row">
-            <label>Secret key</label>
+            <label>Seed</label>
             <input id="seed" value={settingsSeed().slice(0, 8) + "*".repeat(56)}></input>
             <div id="seed-buttons">
               <button id="copy-seed" onClick={copySeed}>{copySeedText()}</button>
@@ -170,6 +170,17 @@ function Records({ resolver, target }) {
     window.history.replaceState(null, '', `?pk=${target()}`)
   }
 
+  let typingTimer;
+
+
+  function handleInput(e, rowIndex, colIndex) {
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(
+      () => store.updateRecord(e, rowIndex, colIndex),
+      1000
+    )
+  }
+
   return <div class="table">
     <div class="table-header">
       <div class="table-header-cell">Name</div>
@@ -185,7 +196,7 @@ function Records({ resolver, target }) {
                 disabled={resolver}
                 placeholder={!resolver ? 'name' : 'No records yet...'}
                 value={row[0] || ""}
-                onInput={(e) => store.updateRecord(e, rowIndex(), 0)}
+                onInput={(e) => handleInput(e, rowIndex(), 0)}
                 autofocus
               />
               <input
@@ -193,7 +204,7 @@ function Records({ resolver, target }) {
                 disabled={resolver}
                 placeholder={!resolver ? 'value' : ''}
                 value={row[1] || ""}
-                onInput={(e) => store.updateRecord(e, rowIndex(), 1)}
+                onInput={(e) => handleInput(e, rowIndex(), 1)}
               />
             </div>
           }}
