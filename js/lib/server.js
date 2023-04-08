@@ -16,10 +16,10 @@ const logger =
  * Pkarr web server
  */
 export default class Server {
-  /** 
+  /**
    * @param {import('./dht.js').default} dht
    */
-  constructor(dht) {
+  constructor (dht) {
     /** @type {import('./dht.js').default} */
     this.dht = dht
 
@@ -71,7 +71,7 @@ export default class Server {
         const req = {
           seq: request.body.seq,
           v: Buffer.from(request.body.v, 'base64'),
-          sig: Buffer.from(request.body.sig, 'hex'),
+          sig: Buffer.from(request.body.sig, 'hex')
         }
 
         return this.dht.put(key, req)
@@ -117,13 +117,13 @@ export default class Server {
     })
   }
 
-  static async start(opts = {}) {
+  static async start (opts = {}) {
     const server = new Server(opts.dht)
     await server.listen({ host: '0.0.0.0', ...opts })
     return server
   }
 
-  destroy() {
+  destroy () {
     this.dht.destroy()
     this.app.server.close()
   }
