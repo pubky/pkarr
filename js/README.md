@@ -6,16 +6,17 @@ JavaScript implementation of [Pkarr](https://github.com/nuhvi/pkarr).
 
 ### Server
 
-Install and run a server on a publicly addressable machine
+clone this repo, navigate to js/ directory, then run start script.
 
 ```
-npm install -g pkarr
+$ git clone https://github.com/Nuhvi/pkarr.git
+$ cd pkarr
 ```
 
 By default it will run on port `7527` but you can override it using environment variables
 
 ```
-$ PORT=3000 pkarr
+$ PORT=3000 npm start
 > [21:45:58.826] INFO (9863): Server listening at http://0.0.0.0:3000
 ```
 
