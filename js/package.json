@@ -1,6 +1,6 @@
 {
   "name": "pkarr",
-  "version": "1.0.0-alpha.5",
+  "version": "1.0.0-alpha.6",
   "description": "client and server for public-key addressable resource records",
   "type": "module",
   "main": "index.js",

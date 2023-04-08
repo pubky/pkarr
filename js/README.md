@@ -23,15 +23,41 @@ Consider adding your server to the [list of free and public servers](../servers.
 
 ### CLI 
 
-after installing you can resolve records from the DHT:
+Publish resource records by passing a path for the seed file (32 bytes hex encoded), followed by names and values
 
+```bash
+$ pkarr publish ./seed foo bar answer 42
+Publishing records for pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
+
+Published Resource Records in 6.0 seconds
 ```
-pkarr run
 
-pkarr resolve <z-base32 key>
+Resolve resource records of a public key
+```bash
+$ pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
+Resolving pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y ...
+Resolved Resource Records in 8.06 seconds
+┌────────┬───────┐
+│ name   │ value │
+├────────┼───────┤
+│ foo    │ bar   │
+├────────┼───────┤
+│ answer │ 42    │
+└────────┴───────┘
+┌───────────────────┬──────────────────────┐
+│ metadata          │ value                │
+├───────────────────┼──────────────────────┤
+│ last update       │ 4/8/2023, 6:00:08 PM │
+├───────────────────┼──────────────────────┤
+│ size              │ 36/1000 bytes        │
+├───────────────────┼──────────────────────┤
+│ responding nodes  │ 5                    │
+└───────────────────┴──────────────────────┘
 ```
 
 ### Client 
+
+In browsers and devices behind NAT, you can make HTTP requests to a any pkarr server.
 
 ```js
 import { pkarr } from 'pkarr'

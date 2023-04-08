@@ -60,10 +60,10 @@ const publish = async (seedPath, records) => {
   const keyPair = pkarr.generateKeyPair(seed)
 
   console.log('Publishing records for', 'pk:' + z32.encode(keyPair.publicKey) + '\n')
-  const start = Date.now()
   try {
     const request = await pkarr.createPutRequest(keyPair, records)
 
+    const start = Date.now()
     await dht.put(keyPair.publicKey, request)
     console.log(chalk.green('Published Resource Records in ' + (Date.now() - start) / 1000 + ' seconds'))
   } catch (error) {
