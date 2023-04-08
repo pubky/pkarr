@@ -145,10 +145,11 @@ Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 ye
 1. [x] Implement a web server as a mere proxy over DHT.
 2. [x] Implement client-side tools for making queries and validating responses.
 3. [x] Implement a web app to represent the UX and DX of client side.
-4. [ ] Add optional caching and republishing of records on GET requests **<< we ar here**
-5. [ ] Implement a standalone republisher and test keeping 100s of thousands of records alive.
-6. [ ] Reimplement everything in Rust once the JS implementation is tested with some scale.
-7. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr servers in OS and browser's configurations.
+4. [x] ClI - publish and resolve resource records.
+5. [ ] Add optional caching and republishing of records on GET requests **<< we ar here**
+6. [ ] Implement a standalone republisher and test keeping 100s of thousands of records alive.
+7. [ ] Reimplement everything in Rust once the JS implementation is tested with some scale.
+8. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr servers in OS and browser's configurations.
 
 ## FAQ
 

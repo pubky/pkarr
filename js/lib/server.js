@@ -1,11 +1,7 @@
-import DHT from 'bittorrent-dht'
-import sodium from 'sodium-universal'
 import fastify from 'fastify'
 import fastifyCors from '@fastify/cors'
 import pinoPretty from 'pino-pretty'
 import pino from 'pino'
-
-export const verify = sodium.crypto_sign_verify_detached
 
 const logger =
   process.env.NODE_ENV === 'production'
@@ -16,9 +12,16 @@ const logger =
       colorizeObjects: true
     }))
 
+/**
+ * Pkarr web server
+ */
 export default class Server {
-  constructor() {
-    this.dht = new DHT({ verify })
+  /**
+   * @param {import('./dht.js').default} dht
+   */
+  constructor (dht) {
+    /** @type {import('./dht.js').default} */
+    this.dht = dht
 
     this.app = fastify({ logger })
     // Register the fastify-cors plugin
@@ -64,20 +67,15 @@ export default class Server {
       },
       handler: async (request, reply) => {
         const key = Buffer.from(request.params.key, 'hex')
-        const opts = {
-          k: key,
+
+        const req = {
           seq: request.body.seq,
           v: Buffer.from(request.body.v, 'base64'),
           sig: Buffer.from(request.body.sig, 'hex')
         }
-        return new Promise((resolve, reject) => {
-          this.dht.put(opts, (err, hash) => {
-            if (err) reject(err)
-            else resolve(hash)
-          })
-        })
+
+        return this.dht.put(key, req)
           .then(hash => reply.code(200).send({ hash: hash.toString('hex') }))
-          .catch((error) => reply.code(400).send(error))
       }
     })
 
@@ -105,39 +103,27 @@ export default class Server {
         }
       },
       handler: async (request, reply) => {
-        const { key } = request.params
-        // TODO: skip returning values that the user already saw?
+        const response = await this.dht.get(request.params.key)
 
-        const hash = this.dht._hash(Buffer.from(key, 'hex'))
-
-        return new Promise((resolve, reject) => {
-          this.dht.get(hash, (err, response) => {
-            if (err) reject(err)
-            else resolve(response)
+        if (!response) reply.code(404).send(null)
+        else {
+          reply.code(200).send({
+            seq: response.seq,
+            v: response.v.toString('base64'),
+            sig: response.sig.toString('hex')
           })
-        })
-          .then((response) => {
-            if (!response) reply.code(404).send(null)
-            else {
-              reply.code(200).send({
-                seq: response.seq,
-                v: response.v.toString('base64'),
-                sig: response.sig.toString('hex')
-              })
-            }
-          })
-          .catch((error) => reply.code(400).send(error))
+        }
       }
     })
   }
 
-  static async start(opts = {}) {
-    const server = new Server()
+  static async start (opts = {}) {
+    const server = new Server(opts.dht)
     await server.listen({ host: '0.0.0.0', ...opts })
     return server
   }
 
-  destroy() {
+  destroy () {
     this.dht.destroy()
     this.app.server.close()
   }
