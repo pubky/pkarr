@@ -26,10 +26,10 @@ const store = createMutable({
   addRecord() {
     this.records = [...this.records, []]
   },
-  updateRecord(e, rowIndex, inputIndex) {
-    this.records[rowIndex][inputIndex] = e.target.value;
-    const updated = [...this.records].map(x => [...x])
-    const stringified = JSON.stringify(updated)
+  updateRecords(records) {
+    this.records = records
+    const stringified = JSON.stringify(records)
+
     pkarr.codec.encode(stringified).then(bytes => {
       this.recordsSize = bytes.byteLength || 0
     })
@@ -106,6 +106,11 @@ const store = createMutable({
       })
   },
   updateSettings(seed, servers) {
+    if (this.seed !== seed) {
+      this.records = [[]]
+      localStorage.setItem('records', JSON.stringify(this.records))
+    }
+
     this.seed = seed
     this.keyPair = pkarr.generateKeyPair(b4a.from(seed, 'hex'))
     this.servers = servers

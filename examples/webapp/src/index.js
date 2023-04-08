@@ -29,13 +29,22 @@ const App = () => {
   const copySeed = async () => {
     try {
       await navigator.clipboard.writeText(settingsSeed());
-      setCopySeedText('Copied to clipboard!')
+      setCopySeedText('Copied...')
     } catch (err) {
       console.error("Error copying text to clipboard:", err);
       setCopySeedText('Errorr copying to clipboard!')
     } finally {
       setTimeout(() => setCopySeedText('copy seed'), 1000)
     }
+  }
+
+  const pasteSeed = async () => {
+    const seed = await navigator.clipboard.readText();
+    if (seed.length !== 64) {
+      alert('Seed must be a 64 character hex encoded string')
+      return
+    }
+    setSettingsSeed(seed)
   }
 
   const handleSaveSettings = () => {
@@ -112,6 +121,7 @@ const App = () => {
             <label>Seed</label>
             <input id="seed" value={settingsSeed().slice(0, 8) + "*".repeat(56)}></input>
             <div id="seed-buttons">
+              <button id="paste-seed" onClick={pasteSeed}>paste seed</button>
               <button id="copy-seed" onClick={copySeed}>{copySeedText()}</button>
               <button id="generate-seed" onClick={() => setSettingsSeed(b4a.toString(pkarr.randomBytes(32), 'hex'))}>generate</button>
             </div>
@@ -179,10 +189,21 @@ function Records({ resolver, target }) {
   let typingTimer;
 
 
-  function handleInput(e, rowIndex, colIndex) {
+  function handleInput() {
     clearTimeout(typingTimer);
     typingTimer = setTimeout(
-      () => store.updateRecord(e, rowIndex, colIndex),
+      () => {
+        const records = [...form.querySelectorAll('input')]
+          .reduce((acc, input, i) => {
+            if (i % 2 === 0) {
+              acc.push([input.value])
+            } else {
+              acc[acc.length - 1].push(input.value)
+            }
+            return acc
+          }, [])
+        store.updateRecords(records)
+      },
       1000
     )
   }
