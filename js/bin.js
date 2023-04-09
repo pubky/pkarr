@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import z32 from 'z32'
 import chalk from 'chalk'
-import fs from 'fs'
+import crypto, { generateKeyPair } from 'crypto'
 
 import DHT from './lib/dht.js'
 import * as pkarr from './lib/tools.js'
@@ -32,7 +32,7 @@ const resolveKey = async (key) => {
   const records = await pkarr.codec.decode(response.v)
 
   table(records).forEach((row) => {
-    console.log(chalk.green('  ❯ ') + row.join(' '))
+    console.log(chalk.green('   ❯ ') + row.join(' '))
   })
 
   console.log('')
@@ -43,36 +43,98 @@ const resolveKey = async (key) => {
     ['nodes', response.nodes.length]
   ]
   table(metadata).forEach((row) => {
-    console.log(chalk.dim('  › ' + row.join(': ')))
+    console.log(chalk.dim('   › ' + row.join(': ')))
   })
 
   console.log('')
 }
 
-const publish = async (seedPath, records) => {
-  records = records.reduce((acc, item, index) => {
-    if (index % 2 === 0) {
-      acc.push([item])
-    } else {
-      acc[acc.length - 1].push(item)
-    }
-    return acc
-  }, [])
+const publish = async () => {
+  console.log(chalk.dim('◌ '), "Enter a passphrase", chalk.dim("(learn more at https://www.useapassphrase.com/)"))
+
+  const prompt = chalk.dim('   Passphrase: ')
+  console.log(prompt)
+
+  const stdin = process.stdin;
+  stdin.setRawMode(true);
+
+  const passphrase = await new Promise(resolve => {
+    let pass = ''; + '\n'
+
+    const listener = (char) => {
+      const keyCode = char.toString('utf8').charCodeAt(0);
+      removeLastLine()
+
+      if (keyCode === 13) { // Enter key
+        stdin.removeListener('data', listener)
+        resolve(pass)
+      } else if (keyCode === 127 || keyCode === 8) { // Backspace or Delete key
+        if (pass.length > 0) {
+          pass = pass.slice(0, -1);
+        }
+      } else if (keyCode === 3) { // Ctrl + c
+        process.exit()
+      } else {
+        pass += char;
+      }
+
+      console.log(prompt + pass.split('').map(() => "*").join(''))
+    };
+
+    stdin.on('data', listener)
+  })
+
+  const seed = crypto.createHash('sha256').update(passphrase, 'utf-8').digest()
+  const keyPair = pkarr.generateKeyPair(seed)
+  const pk = 'pk:' + z32.encode(keyPair.publicKey)
+
+  console.log(chalk.green('   ❯', pk))
+
+  console.log(chalk.dim('◌ '), 'Enter records to publish:')
+  console.log(chalk.green("   ❯"), chalk.dim('Add record "<name> <value>" or press enter to submit'))
+
+  const records = await new Promise(resolve => {
+    const _records = [];
+    let current = '';
+
+    stdin.on('data', (char) => {
+      const keyCode = char.toString('utf8').charCodeAt(0);
+
+      if (keyCode === 13) { // Enter key
+        if (current.length > 0) {
+          _records.push(current.split(' '))
+          current = ''
+        } else {
+          resolve(_records)
+          return
+        }
+      } else if (keyCode === 127 || keyCode === 8) { // Backspace or Delete key
+        removeLastLine()
+        if (current.length > 0) {
+          current = current.slice(0, -1);
+        }
+      } else if (keyCode === 3) { // Ctrl + c
+        process.exit()
+      } else {
+        removeLastLine()
+        current += char;
+      }
+
+      console.log(chalk.green("   ❯"), current.length > 0 ? current : chalk.dim("Add record or press enter to submit"))
+    });
+  })
+  stdin.setRawMode(false);
+  stdin.pause()
 
   const dht = new DHT()
+  const request = await pkarr.createPutRequest(keyPair, records)
+  const [success, fail] = loading('Publishing')
 
-  const seed = Buffer.from(fs.readFileSync(seedPath, 'utf-8'), 'hex')
-  const keyPair = pkarr.generateKeyPair(seed)
-
-  console.log('Publishing records for', 'pk:' + z32.encode(keyPair.publicKey) + '\n')
   try {
-    const request = await pkarr.createPutRequest(keyPair, records)
-
-    const start = Date.now()
     await dht.put(keyPair.publicKey, request)
-    console.log(chalk.green('Published Resource Records in ' + (Date.now() - start) / 1000 + ' seconds'))
+    success('Published Resource Records for ' + chalk.green(pk))
   } catch (error) {
-    console.log(chalk.red('Failed to publish. got an error:'))
+    fail('Failed to publish. got an error:')
     console.log(error)
   }
 
@@ -84,13 +146,13 @@ const showHelp = () => {
 Usage: pkarr [command] [options]
 
 Commands:
-  resolve <key>                                 Resolve resource records for a given key
-  publish <seed path (hex string)> [...records] Publish resource records for a given seed
-  help                                          Show this help message
+  resolve <key>  Resolve resource records for a given key
+  publish        Publish resource records for a given seed
+  help           Show this help message
 
 Examples:
   pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
-  pkarr publish ./seed foo bar answer 42
+  pkarr publish
   pkarr help
 `)
 }
