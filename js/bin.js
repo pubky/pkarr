@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import z32 from 'z32'
-import Table from 'cli-table3'
 import chalk from 'chalk'
 import fs from 'fs'
 
@@ -9,39 +8,45 @@ import * as pkarr from './lib/tools.js'
 
 const resolveKey = async (key) => {
   if (!key) {
-    console.error('Please provide a key to resolve')
+    console.error(chalk.red('✘') + ' Please provide a key to resolve!\n')
     return
   }
 
-  console.log(chalk.gray('Resolving ' + key + ' ...'))
-  const start = Date.now()
   const dht = new DHT()
 
   const keyBytes = z32.decode(key.replace('pk:', ''))
+
+  const [success, fail] = loading('Resolving')
   const response = await dht.get(keyBytes)
 
-  if (!response) {
-    console.log(chalk.red("Couldn't resolve records"))
+  if (response) {
+    success('Resolved')
+    dht.destroy()
+  } else {
+    fail("couldn't resolve records!")
+    console.log("")
     dht.destroy()
     return
   }
 
   const records = await pkarr.codec.decode(response.v)
 
-  console.log(chalk.green('Resolved Resource Records in ' + (Date.now() - start) / 1000 + ' seconds'))
-  const table = new Table({
-    head: ['name', 'value']
+  table(records).forEach((row) => {
+    console.log(chalk.green('  ❯ ') + row.join(' '))
   })
-  records.forEach((record) => table.push(record))
-  console.log(table.toString())
 
-  const metadata = new Table({ head: ['metadata', 'value'] })
-  metadata.push(['last update', new Date(response.seq * 1000).toLocaleString()])
-  metadata.push(['size', response.v.byteLength + '/1000 bytes'])
-  metadata.push(['responding nodes ', response.nodes.length])
-  console.log(metadata.toString())
+  console.log('')
 
-  dht.destroy()
+  const metadata = [
+    ['updated_at', new Date(response.seq * 1000).toLocaleString()],
+    ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
+    ['nodes', response.nodes.length]
+  ]
+  table(metadata).forEach((row) => {
+    console.log(chalk.dim('  › ' + row.join(': ')))
+  })
+
+  console.log('')
 }
 
 const publish = async (seedPath, records) => {
@@ -106,4 +111,56 @@ switch (command) {
   default:
     showHelp()
     process.exit(1)
+}
+
+function loading(message) {
+  const start = Date.now()
+  let dots = 1
+  let started = false
+
+  next()
+  const interval = setInterval(next, 200)
+
+  function next() {
+    if (started) removeLastLine()
+    else started = true
+    console.log(chalk.dim(' ◌ '), message + '.'.repeat(dots))
+    dots += 1
+    dots = dots % 4
+  }
+
+  function success(message) {
+    removeLastLine()
+    clearInterval(interval)
+    console.log(chalk.green(' ✔ ' + message + seconds()))
+  }
+  function fail(message) {
+    removeLastLine()
+    clearInterval(interval)
+    clearInterval(interval)
+    console.log(chalk.red(' ✘ '), message + seconds())
+  }
+  function seconds() {
+    return ` (${((Date.now() - start) / 1000).toFixed(2)} seconds)`
+  }
+
+  return [success, fail]
+}
+
+function removeLastLine() {
+  process.stdout.write('\u001B[F\u001B[K')
+}
+
+function table(records) {
+  const pads = {}
+
+  records = records.filter(r => r[0] && r[1])
+
+  records.forEach(record => {
+    record.forEach((element, index) => {
+      pads[index] = Math.max(pads[index] || 0, element?.toString().length || 0)
+    })
+  })
+
+  return records.map(r => r.map((c, i) => c.toString().padEnd(pads[i])))
 }

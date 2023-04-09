@@ -54,7 +54,7 @@ export class DHT {
 
       function done (err) {
         if (err) reject(err)
-        else resolve({ ...value, nodes })
+        else resolve(value && { ...value, nodes })
       }
 
       function onreply (message, from) {
@@ -140,7 +140,9 @@ export class DHT {
   }
 
   destroy () {
-    return this._dht.destroy()
+    try {
+      this._dht.destroy()
+    } catch { }
   }
 }
 
