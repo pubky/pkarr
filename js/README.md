@@ -24,36 +24,30 @@ Consider adding your server to the [list of free and public servers](../servers.
 
 ### CLI 
 
-Publish resource records by passing a path for the seed file (32 bytes hex encoded), followed by names and values
+Publish resource records by passing a [passphrase](https://www.useapassphrase.com/).
 
 ```bash
-$ pkarr publish ./seed foo bar answer 42
-Publishing records for pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
-
-Published Resource Records in 6.0 seconds
+$ pkarr publish
+◌  Enter a passphrase (learn more at https://www.useapassphrase.com/)
+   Passphrase: ***********
+   ❯ pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
+◌  Enter records to publish:
+   ❯ foo bar
+   ❯ answer 42
+   ❯ Add record or press enter to submit
+ ✔ Published Resource Records (8.29 seconds)
 ```
 
 Resolve resource records of a public key
 ```bash
 $ pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
-Resolving pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y ...
-Resolved Resource Records in 8.06 seconds
-┌────────┬───────┐
-│ name   │ value │
-├────────┼───────┤
-│ foo    │ bar   │
-├────────┼───────┤
-│ answer │ 42    │
-└────────┴───────┘
-┌───────────────────┬──────────────────────┐
-│ metadata          │ value                │
-├───────────────────┼──────────────────────┤
-│ last update       │ 4/8/2023, 6:00:08 PM │
-├───────────────────┼──────────────────────┤
-│ size              │ 36/1000 bytes        │
-├───────────────────┼──────────────────────┤
-│ responding nodes  │ 5                    │
-└───────────────────┴──────────────────────┘
+ ✔ Resolved (8.51 seconds)
+  ❯ foo    bar
+  ❯ answer 42
+
+  › updated_at: 4/9/2023, 8:48:21 AM
+  › size      : 39/1000 bytes
+  › nodes     : 5
 ```
 
 ### Client 

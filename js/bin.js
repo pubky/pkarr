@@ -50,9 +50,9 @@ const resolveKey = async (key) => {
 }
 
 const publish = async () => {
-  console.log(chalk.dim('◌ '), "Enter a passphrase", chalk.dim("(learn more at https://www.useapassphrase.com/)"))
+  console.log(chalk.dim(' ◌ '), "Enter a passphrase", chalk.dim("(learn more at https://www.useapassphrase.com/)"))
 
-  const prompt = chalk.dim('   Passphrase: ')
+  const prompt = chalk.dim('    Passphrase: ')
   console.log(prompt)
 
   const stdin = process.stdin;
@@ -88,10 +88,10 @@ const publish = async () => {
   const keyPair = pkarr.generateKeyPair(seed)
   const pk = 'pk:' + z32.encode(keyPair.publicKey)
 
-  console.log(chalk.green('   ❯', pk))
+  console.log(chalk.green('    ❯', pk))
 
-  console.log(chalk.dim('◌ '), 'Enter records to publish:')
-  console.log(chalk.green("   ❯"), chalk.dim('Add record "<name> <value>" or press enter to submit'))
+  console.log(chalk.dim(' ◌ '), 'Enter records to publish:')
+  console.log(chalk.green("    ❯"), chalk.dim('Add record "<name> <value>" or press enter to submit'))
 
   const records = await new Promise(resolve => {
     const _records = [];
@@ -120,7 +120,7 @@ const publish = async () => {
         current += char;
       }
 
-      console.log(chalk.green("   ❯"), current.length > 0 ? current : chalk.dim("Add record or press enter to submit"))
+      console.log(chalk.green("    ❯"), current.length > 0 ? current : chalk.dim("Add record or press enter to submit"))
     });
   })
   stdin.setRawMode(false);
@@ -132,10 +132,10 @@ const publish = async () => {
 
   try {
     await dht.put(keyPair.publicKey, request)
-    success('Published Resource Records for ' + chalk.green(pk))
+    success('Published')
   } catch (error) {
     fail('Failed to publish. got an error:')
-    console.log(error)
+    console.log("    ", error)
   }
 
   dht.destroy()
