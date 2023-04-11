@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import z32 from 'z32'
 import chalk from 'chalk'
-import crypto, { generateKeyPair } from 'crypto'
+import crypto from 'crypto'
 
 import DHT from './lib/dht.js'
 import * as pkarr from './lib/tools.js'
@@ -24,7 +24,7 @@ const resolveKey = async (key) => {
     dht.destroy()
   } else {
     fail("couldn't resolve records!")
-    console.log("")
+    console.log('')
     dht.destroy()
     return
   }
@@ -50,19 +50,19 @@ const resolveKey = async (key) => {
 }
 
 const publish = async () => {
-  console.log(chalk.dim(' ◌ '), "Enter a passphrase", chalk.dim("(learn more at https://www.useapassphrase.com/)"))
+  console.log(chalk.dim(' ◌ '), 'Enter a passphrase', chalk.dim('(learn more at https://www.useapassphrase.com/)'))
 
   const prompt = chalk.dim('    Passphrase: ')
   console.log(prompt)
 
-  const stdin = process.stdin;
-  stdin.setRawMode(true);
+  const stdin = process.stdin
+  stdin.setRawMode(true)
 
   const passphrase = await new Promise(resolve => {
-    let pass = ''; + '\n'
+    let pass = ''
 
     const listener = (char) => {
-      const keyCode = char.toString('utf8').charCodeAt(0);
+      const keyCode = char.toString('utf8').charCodeAt(0)
       removeLastLine()
 
       if (keyCode === 13) { // Enter key
@@ -70,16 +70,16 @@ const publish = async () => {
         resolve(pass)
       } else if (keyCode === 127 || keyCode === 8) { // Backspace or Delete key
         if (pass.length > 0) {
-          pass = pass.slice(0, -1);
+          pass = pass.slice(0, -1)
         }
       } else if (keyCode === 3) { // Ctrl + c
         process.exit()
       } else {
-        pass += char;
+        pass += char
       }
 
-      console.log(prompt + pass.split('').map(() => "*").join(''))
-    };
+      console.log(prompt + pass.split('').map(() => '*').join(''))
+    }
 
     stdin.on('data', listener)
   })
@@ -91,14 +91,14 @@ const publish = async () => {
   console.log(chalk.green('    ❯', pk))
 
   console.log(chalk.dim(' ◌ '), 'Enter records to publish:')
-  console.log(chalk.green("    ❯"), chalk.dim('Add record "<name> <value>" or press enter to submit'))
+  console.log(chalk.green('    ❯'), chalk.dim('Add record "<name> <value>" or press enter to submit'))
 
   const records = await new Promise(resolve => {
-    const _records = [];
-    let current = '';
+    const _records = []
+    let current = ''
 
     stdin.on('data', (char) => {
-      const keyCode = char.toString('utf8').charCodeAt(0);
+      const keyCode = char.toString('utf8').charCodeAt(0)
 
       if (keyCode === 13) { // Enter key
         if (current.length > 0) {
@@ -111,19 +111,19 @@ const publish = async () => {
       } else if (keyCode === 127 || keyCode === 8) { // Backspace or Delete key
         removeLastLine()
         if (current.length > 0) {
-          current = current.slice(0, -1);
+          current = current.slice(0, -1)
         }
       } else if (keyCode === 3) { // Ctrl + c
         process.exit()
       } else {
         removeLastLine()
-        current += char;
+        current += char
       }
 
-      console.log(chalk.green("    ❯"), current.length > 0 ? current : chalk.dim("Add record or press enter to submit"))
-    });
+      console.log(chalk.green('    ❯'), current.length > 0 ? current : chalk.dim('Add record or press enter to submit'))
+    })
   })
-  stdin.setRawMode(false);
+  stdin.setRawMode(false)
   stdin.pause()
 
   const dht = new DHT()
@@ -135,7 +135,7 @@ const publish = async () => {
     success('Published')
   } catch (error) {
     fail('Failed to publish. got an error:')
-    console.log("    ", error)
+    console.log('    ', error)
   }
 
   dht.destroy()
@@ -175,7 +175,7 @@ switch (command) {
     process.exit(1)
 }
 
-function loading(message) {
+function loading (message) {
   const start = Date.now()
   let dots = 1
   let started = false
@@ -183,7 +183,7 @@ function loading(message) {
   next()
   const interval = setInterval(next, 200)
 
-  function next() {
+  function next () {
     if (started) removeLastLine()
     else started = true
     console.log(chalk.dim(' ◌ '), message + '.'.repeat(dots))
@@ -191,29 +191,29 @@ function loading(message) {
     dots = dots % 4
   }
 
-  function success(message) {
+  function success (message) {
     removeLastLine()
     clearInterval(interval)
     console.log(chalk.green(' ✔ ' + message + seconds()))
   }
-  function fail(message) {
+  function fail (message) {
     removeLastLine()
     clearInterval(interval)
     clearInterval(interval)
     console.log(chalk.red(' ✘ '), message + seconds())
   }
-  function seconds() {
+  function seconds () {
     return ` (${((Date.now() - start) / 1000).toFixed(2)} seconds)`
   }
 
   return [success, fail]
 }
 
-function removeLastLine() {
+function removeLastLine () {
   process.stdout.write('\u001B[F\u001B[K')
 }
 
-function table(records) {
+function table (records) {
   const pads = {}
 
   records = records.filter(r => r[0] && r[1])
