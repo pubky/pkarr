@@ -23,7 +23,7 @@ export function randomBytes (n = 32) {
  *
  * @returns {Promise<
  *   { ok: false, request: PutRequest, errors: Array<{server: string, error: { status?: string, statusCode?: number, message: string}}> } |
- *   { ok: true , request: PutRequest, server: string, response: {hash: string} }
+ *   { ok: true , request: PutRequest, server: string, response: Response }
  * >}
  */
 export async function put (keyPair, records, servers) {
@@ -37,7 +37,11 @@ export async function put (keyPair, records, servers) {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(req)
+        body: JSON.stringify({
+          v: b4a.toString(req.v, 'base64'),
+          seq: req.seq,
+          sig: b4a.toString(req.sig, 'hex')
+        })
       })
         .then(async (response) => {
           const body = await response.json()
@@ -48,7 +52,7 @@ export async function put (keyPair, records, servers) {
               request: {
                 ...req,
                 sig: b4a.toString(req.sig, 'hex'),
-                v: b4a.toString(req.b, 'base64')
+                v: b4a.toString(req.v, 'base64')
               }
             }
           }
@@ -142,11 +146,12 @@ export async function get (key, servers) {
       })
         .then(async (response) => {
           const body = await response.json()
+          const record = body.record
 
           if (response.ok) {
-            const seq = body.seq
-            const v = Buffer.from(body.v, 'base64')
-            const sig = b4a.from(body.sig, 'hex')
+            const seq = record.seq
+            const v = Buffer.from(record.v, 'base64')
+            const sig = b4a.from(record.sig, 'hex')
             const sigData = encodeSigData({ seq, v })
             const valid = verify(sig, b4a.from(sigData), key)
             if (!valid) throw 'Invalid signature'
@@ -155,7 +160,7 @@ export async function get (key, servers) {
 
             return {
               ok: response.ok,
-              seq: body.seq,
+              seq: record.seq,
               records
             }
           }
@@ -218,4 +223,9 @@ function raceToSuccess (promises) {
  *  v: string,
  *  sig: string
  * }} PutRequest
+ *
+ * @typedef {{
+ *  record : { seq: number, sig: string, v: string },
+ *  query: { type: 'put' | 'get', nodes: number, time: number }
+ * }} Response
  */

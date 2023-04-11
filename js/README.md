@@ -89,27 +89,78 @@ Simple proxy to the relevant parts of [BEP 44](https://www.bittorrent.org/beps/b
 
 ```json
 {
-  "params": {
-    "type": "object",
-    "required": ["key"],
-    "properties": {
-      "key": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+  params: {
+    type: 'object',
+    properties: {
+      key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
     }
   },
-  "body": {
-    "type": "object",
-    "required": ["seq", "sig", "v"],
-    "properties": {
-      "seq": { "type": "number" },
-      "sig": { "type": "string", "pattern": "^[a-fA-F0-9]{128}$" },
-      "v": { "type": "string", "contentEncoding": "base64" }
+  body: {
+    description: 'Record parameters to be (or as) stored in the DHT',
+    type: 'object',
+    required: ['seq', 'sig', 'v'],
+    properties: {
+      v: {
+        description: 'Value of the record in base64',
+        type: 'string',
+        contentEncoding: 'base64'
+      },
+      seq: {
+        description: 'Timestamp of the record',
+        type: 'number'
+      },
+      sig: {
+        description: 'Signature of the record value and sequnce number, in hex encoding',
+        type: 'string',
+        pattern: '^[a-fA-F0-9]{128}$'
+      }
     }
-  },
-  "response": {
-    "200": {
-      "type": "object",
-      "properties": {
-        "hash": { "type": "string", "pattern": "^[a-fA-F0-9]{128}$" }
+    },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        record: {
+          description: 'Record parameters to be (or as) stored in the DHT',
+          type: 'object',
+          required: ['seq', 'sig', 'v'],
+          properties: {
+            v: {
+              description: 'Value of the record in base64',
+              type: 'string',
+              contentEncoding: 'base64'
+            },
+            seq: {
+              description: 'Timestamp of the record',
+              type: 'number'
+            },
+            sig: {
+              description: 'Signature of the record value and sequnce number, in hex encoding',
+              type: 'string',
+              pattern: '^[a-fA-F0-9]{128}$'
+            }
+          }
+        },
+        query: {
+          description: 'Last query to the DHT from which the record was retrieved or stored',
+          type: 'object',
+          required: ['type', 'nodes', 'time'],
+          properties: {
+            type: {
+              description: 'Type of the query',
+              type: 'string',
+              enum: ['put', 'get']
+            },
+            nodes: {
+              description: 'Number of responding nodes',
+              type: 'number'
+            },
+            time: {
+              description: 'Timestamp of the query in seconds',
+              type: 'number'
+            }
+          }
+        }
       }
     }
   }
@@ -120,22 +171,59 @@ Simple proxy to the relevant parts of [BEP 44](https://www.bittorrent.org/beps/b
 
 ```json
 {
-  "params": {
-    "type": "object",
-    "required": ["key"],
-    "properties": {
-      "key": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" }
+  params: {
+    type: 'object',
+    required: ['key'],
+    properties: {
+      key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
     }
   },
-  "response": {
-    "200": {
-      "type": "object",
-      "properties": {
-        "seq": { "type": "number" },
-        "sig": { "type": "string", "pattern": "^[a-fA-F0-9]{128}$" },
-        "v": { "type": "string", "contentEncoding": "base64" }
-      },
-      "required": ["seq", "sig", "v"]
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        record: {
+          description: 'Record parameters to be (or as) stored in the DHT',
+          type: 'object',
+          required: ['seq', 'sig', 'v'],
+          properties: {
+            v: {
+              description: 'Value of the record in base64',
+              type: 'string',
+              contentEncoding: 'base64'
+            },
+            seq: {
+              description: 'Timestamp of the record',
+              type: 'number'
+            },
+            sig: {
+              description: 'Signature of the record value and sequnce number, in hex encoding',
+              type: 'string',
+              pattern: '^[a-fA-F0-9]{128}$'
+            }
+          }
+        },
+        query: {
+          description: 'Last query to the DHT from which the record was retrieved or stored',
+          type: 'object',
+          required: ['type', 'nodes', 'time'],
+          properties: {
+            type: {
+              description: 'Type of the query',
+              type: 'string',
+              enum: ['put', 'get']
+            },
+            nodes: {
+              description: 'Number of responding nodes',
+              type: 'number'
+            },
+            time: {
+              description: 'Timestamp of the query in seconds',
+              type: 'number'
+            }
+          }
+        }
+      }
     }
   }
 }
