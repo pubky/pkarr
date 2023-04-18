@@ -49,7 +49,7 @@ const store = createMutable({
       .then(result => {
         if (result.ok) {
           this.publishing = false;
-          this.lastPublished = new Date(result.request.seq * 1000).toLocaleString()
+          this.lastPublished = new Date(result.response.record.seq * 1000).toLocaleString()
           localStorage.setItem('lastPublished', this.lastPublished)
 
           const time = Date.now() - start

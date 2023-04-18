@@ -177,7 +177,7 @@ function Records({ resolver, target }) {
   function handleResolve(e) {
     e?.preventDefault();
     store.resolve(target())
-    window.history.replaceState(null, '', `?pk=${target()}`)
+    window.history.replaceState(null, '', `?pk=${target().replace('pk:', '')}`)
   }
 
   onMount(() => {

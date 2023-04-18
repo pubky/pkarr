@@ -1,7 +1,7 @@
 {
   "name": "pkarr",
-  "version": "1.0.0-alpha.6",
-  "description": "client and server for public-key addressable resource records",
+  "version": "1.0.0-alpha.7",
+  "description": "client, server and CLI for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
   "bin": {
