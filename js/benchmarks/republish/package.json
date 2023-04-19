@@ -1,0 +1,18 @@
+{
+  "name": "republish",
+  "version": "1.0.0",
+  "description": "The goal of this is to validate the scalability of republishing records on behalf of users.",
+  "type": "module",
+  "main": "generate.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bencode": "^3.0.3",
+    "pkarr": "^1.0.0-alpha.7",
+    "sodium-universal": "^4.0.0"
+  }
+}
