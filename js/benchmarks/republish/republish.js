@@ -2,7 +2,7 @@ import fs from 'fs'
 import DHT from 'pkarr/lib/dht.js'
 
 const REPUBLISH_INTERVAL = 1 * 1000 // 1 request per second
-const LOG_INTERVAL = 60 * 60 * 1000 // log every minute
+const MAX_BATCH_SIZE = 1000 // log every 1000 requests
 
 const PATH = './data/results.csv'
 
@@ -38,13 +38,13 @@ async function republish(key, sig) {
     let response = await dht.get(key)
 
     const nodes = response?.nodes.length || 0
-    log(key.toString('hex'), "GET", "nodes", nodes)
 
     batch.set(key.toString('hex'), nodes)
 
+    log(key.toString('hex'), "GET", "nodes", nodes, "batch", batch.size)
+
     if (nodes < 8) {
       response = await dht.put(key, { v, seq, sig })
-      // log(key.toString('hex'), "PUT",  "nodes", response.nodes.length)
     }
   } catch (error) {
     log("ERROR", error)
@@ -52,7 +52,7 @@ async function republish(key, sig) {
 }
 
 function flushBatchMaybe() {
-  if (batch.size < LOG_INTERVAL / REPUBLISH_INTERVAL) return
+  if (batch.size < MAX_BATCH_SIZE) return
 
   const checkout = [...batch.entries()]
   batch.clear()
