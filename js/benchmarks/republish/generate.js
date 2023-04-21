@@ -4,9 +4,9 @@ import sodium from 'sodium-universal'
 import fs from 'fs'
 
 // Count of keys to generate
-const COUNT = process.argv[2] || 30 * 1000
+const COUNT = Number(process.argv[2]) || 30 * 1000
 // Seed to generate a different set of keys
-const SEED = process.argv[3] || '2'
+const SEED = process.argv[3] || Math.random().toString()
 
 const v = Buffer.from('000b0c805b5b225f74657374222c227374696c6c20616c697665225d5d03', 'hex')
 const seq = 1681656800

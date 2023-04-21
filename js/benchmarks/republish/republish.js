@@ -1,86 +1,70 @@
 import fs from 'fs'
-import DHT from 'pkarr/lib/dht.js'
+import DHT from '../../lib/dht.js'
 
-const REPUBLISH_INTERVAL = 1 * 1000 // 1 request per second
-const MAX_BATCH_SIZE = 1000 // log every 1000 requests
-
-const PATH = './data/results.csv'
-
-const dht = new DHT()
+const v = Buffer.from('000b0c805b5b225f74657374222c227374696c6c20616c697665225d5d03', 'hex');
+const seq = 1681656800
 
 const users = fs.readFileSync('./data/users.csv')
   .toString()
   .split(/\n/)
   .filter(Boolean)
-  .map(r => r.split(',').map(e => Buffer.from(e, 'hex')))
+  .map(r => {
+    const [key, sig] = r.split(',').map(e => Buffer.from(e, 'hex'))
+    return [key, v, seq, sig]
+  })
 
-const v = Buffer.from('000b0c805b5b225f74657374222c227374696c6c20616c697665225d5d03', 'hex');
-const seq = 1681656800
+const REPUBLISH_INTERVAL = 2 // once per two hours
+const MAX_CONCURRENCY = users.length / 40 / REPUBLISH_INTERVAL // 40 is an emperical constant! (fancy for trial and error)
 
-const batch = new Map()
 
-onInterval()
-setInterval(onInterval, REPUBLISH_INTERVAL);
+const dht = new DHT({ concurrency: MAX_CONCURRENCY })
+await dht.ready()
+console.log('done')
 
-function onInterval() {
-  flushBatchMaybe()
-  const [key, sig] = next()
-  republish(key, sig)
+let count = 0;
+
+republishAll()
+setInterval(republishAll, REPUBLISH_INTERVAL * 60 * 60 * 1000)
+
+function republishAll() {
+  log("Republishing all")
+  count = 0; // reset count
+  users.map(u => republish(...u))
 }
 
-/**
+/*
  * @param {Buffer} key
  * @param {Buffer} sig
  */
-async function republish(key, sig) {
+async function republish(key, v, seq, sig) {
   try {
+    let shouldPut = false;
 
-    let response = await dht.get(key)
+    {
+      let response = await dht.get(key)
+      const nodes = response?.nodes.length || 0
+      log(key.toString('hex'), "GET", "nodes", nodes)
+      shouldPut = nodes < 8
+    }
 
-    const nodes = response?.nodes.length || 0
+    if (shouldPut) {
+      const response = await dht.put(key, { v, seq, sig })
+      const nodes = response?.nodes.length || 0
+      if (nodes > 1) count += 1
 
-    batch.set(key.toString('hex'), nodes)
-
-    log(key.toString('hex'), "GET", "nodes", nodes, "batch", batch.size)
-
-    if (nodes < 8) {
-      response = await dht.put(key, { v, seq, sig })
+      log(key.toString('hex'), "PUT", "nodes", nodes, "count", count)
+    } else {
+      count += 1
     }
   } catch (error) {
-    log("ERROR", error)
+    log("ERROR", key.toString('hex'), error)
   }
 }
 
-function flushBatchMaybe() {
-  if (batch.size < MAX_BATCH_SIZE) return
-
-  const checkout = [...batch.entries()]
-  batch.clear()
-
-  const resolved = checkout.filter(entry => entry[1] > 0)
-  const ratio = resolved.length / checkout.length
-
-  const datetime = new Date().toISOString().replace(/\..*$/g, '').replace(/-/g, '/').split('T').join(' ')
-
-  const line = [datetime, checkout.length, ratio].join(',') + '\n'
-  log("Appending line", line)
-
-  fs.appendFileSync(PATH, line)
-}
-
-/**
- * @returns {[Buffer, Buffer]}
- */
-function next() {
-  const randomIndex = Math.floor(Math.random() * users.length);
-  const [key, sig] = users[randomIndex]
-
-  // already in current batch
-  if (batch.has(key.toString('hex'))) return next()
-
-  return [key, sig]
-}
-
 function log(...args) {
-  console.log(new Date().toLocaleString(), ...args)
+  console.log(now(), ...args)
+}
+
+function now() {
+  return new Date().toLocaleString('en-GB', { timeZone: 'Asia/Istanbul' }).replace(',', '')
 }
