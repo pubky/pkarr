@@ -23,7 +23,7 @@ const batch = new Map()
 onInterval()
 setInterval(onInterval, INTERVAL)
 
-function onInterval() {
+function onInterval () {
   flushBatchMaybe()
   const key = sample()
   check(key)
@@ -32,7 +32,7 @@ function onInterval() {
 /**
  * @param {string} key
  */
-async function check(key) {
+async function check (key) {
   try {
     const response = await dht.get(Buffer.from(key, 'hex'))
 
@@ -46,14 +46,14 @@ async function check(key) {
   }
 }
 
-function successRate() {
+function successRate () {
   const checkout = [...batch.entries()]
   const resolved = checkout.filter(entry => entry[1] > 0)
   const rate = resolved.length / checkout.length
   return rate.toFixed(2)
 }
 
-function flushBatchMaybe() {
+function flushBatchMaybe () {
   if (batch.size < MAX_SAMPLE_SIZE) return
 
   const rate = successRate()
@@ -69,7 +69,7 @@ function flushBatchMaybe() {
 /**
  * @returns {string}
  */
-function sample() {
+function sample () {
   const randomIndex = Math.floor(Math.random() * users.length)
   const key = users[randomIndex]
 
@@ -79,10 +79,10 @@ function sample() {
   return key
 }
 
-function log(...args) {
+function log (...args) {
   console.log(now(), ...args)
 }
 
-function now() {
+function now () {
   return new Date().toLocaleString('en-GB', { timeZone: 'Asia/Istanbul' }).replace(',', '')
 }

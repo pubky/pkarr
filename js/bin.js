@@ -2,9 +2,16 @@
 import z32 from 'z32'
 import chalk from 'chalk'
 import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
+import { homedir } from 'os'
 
 import DHT from './lib/dht.js'
 import * as pkarr from './lib/tools.js'
+import Republisher from './lib/republisher.js'
+
+const ROOT_DIR = path.join(homedir(), '.pkarr')
+const KEEP_ALIVE_PATH = path.join(ROOT_DIR, 'keepalive.json')
 
 const resolveKey = async (key) => {
   if (!key) {
@@ -141,18 +148,102 @@ const publish = async () => {
   dht.destroy()
 }
 
+function keepalive(command, ...args) {
+  let set = new Set()
+  try {
+    set = new Set(JSON.parse(fs.readFileSync(KEEP_ALIVE_PATH).toString()))
+  } catch {
+    try {
+      fs.mkdirSync(ROOT_DIR)
+    } catch { }
+  }
+
+  let keys = set
+
+  // Validate args
+  if (['add', 'remove'].includes(command)) {
+    if (args.length === 0) {
+      console.error(chalk.red('✘') + ' Please provide key(s) to add to the list of keys to keep alive!\n')
+      return
+    }
+
+    args = args.map(arg => arg.replace('pk:', ''))
+
+    keys = args
+  }
+
+  // Validate keys
+  for (const key of keys) {
+    try {
+      const decoded = z32.decode(key)
+      if (decoded.byteLength !== 32) throw new Error('Invalid key')
+    } catch {
+      console.error(chalk.red('✘') + ` Key ${key} is not valid\n`, chalk.dim('keys must be z-base32 encoded 32 bytes'))
+      return
+    }
+  }
+
+  switch (command) {
+    case 'add':
+      for (const key of args) {
+        set.add(key)
+      }
+      break
+
+    case 'remove':
+      for (const key of args) {
+        set.delete(key)
+      }
+      break
+
+    case 'list':
+      for (const key of set) {
+        console.log(chalk.green('    ❯'), key)
+      }
+      break
+
+    case undefined:
+      if (set.size === 0) {
+        console.error(chalk.red('✘') + ' keep alive list is empty!')
+        return
+      }
+
+      console.log(chalk.green('Starting republisher...'))
+
+      Republisher.start([...set].map(key => ({ key: z32.decode(key) })))
+      break
+
+    default:
+      console.error(chalk.red('✘') + ` Unknown command "${command}"`)
+      break
+  }
+
+
+  if (['add', 'remove'].includes(command)) {
+    fs.writeFileSync(KEEP_ALIVE_PATH, JSON.stringify([...set]))
+    console.log(chalk.green(' ✔ '), 'Successfully updated list of keys!')
+  }
+}
+
 const showHelp = () => {
   console.log(`
 Usage: pkarr [command] [options]
 
 Commands:
-  resolve <key>  Resolve resource records for a given key
-  publish        Publish resource records for a given seed
-  help           Show this help message
+  resolve <key>                       Resolve resource records for a given key
+  publish                             Publish resource records for a given seed
+  keepalive [add | remove] [...keys]  Add or remove keys to the list of keys to keepalive
+  keepalive list                      List stored keys
+  keepalive                           Run the publisher to keep stored keys alive
+  help                                Show this help message
 
 Examples:
   pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
   pkarr publish
+  pkarr keepalive add pk:yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
+  pkarr keepalive remove yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
+  pkarr keepalive list
+  pkarr keepalive
   pkarr help
 `)
 }
@@ -166,6 +257,9 @@ switch (command) {
   case 'publish':
     publish(process.argv[3], process.argv.slice(4))
     break
+  case 'keepalive':
+    keepalive(...process.argv.slice(3))
+    break
   case '-h':
   case 'help':
     showHelp()
@@ -175,7 +269,7 @@ switch (command) {
     process.exit(1)
 }
 
-function loading (message) {
+function loading(message) {
   const start = Date.now()
   let dots = 1
   let started = false
@@ -183,7 +277,7 @@ function loading (message) {
   next()
   const interval = setInterval(next, 200)
 
-  function next () {
+  function next() {
     if (started) removeLastLine()
     else started = true
     console.log(chalk.dim(' ◌ '), message + '.'.repeat(dots))
@@ -191,29 +285,29 @@ function loading (message) {
     dots = dots % 4
   }
 
-  function success (message) {
+  function success(message) {
     removeLastLine()
     clearInterval(interval)
     console.log(chalk.green(' ✔ ' + message + seconds()))
   }
-  function fail (message) {
+  function fail(message) {
     removeLastLine()
     clearInterval(interval)
     clearInterval(interval)
     console.log(chalk.red(' ✘ '), message + seconds())
   }
-  function seconds () {
+  function seconds() {
     return ` (${((Date.now() - start) / 1000).toFixed(2)} seconds)`
   }
 
   return [success, fail]
 }
 
-function removeLastLine () {
+function removeLastLine() {
   process.stdout.write('\u001B[F\u001B[K')
 }
 
-function table (records) {
+function table(records) {
   const pads = {}
 
   records = records.filter(r => r[0] && r[1])

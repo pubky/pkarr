@@ -1,8 +1,9 @@
 import DHT from './dht.js'
+import z32 from 'z32'
 
-const REPUBLISH_INTERVAL = 1 * 60 * 60 * 1000
-const MAX_CONCURRENCY = 320
-const LOOP_INTERVAL = 360
+const REPUBLISH_INTERVAL = 1 * 60 * 60 * 1000 // Republish every hour (according to BEP44 recommendations)
+const LOOP_INTERVAL = 360 // Target ~10k per hour!
+const MAX_CONCURRENCY = 360 // allow enough concurrency (20x the default)
 
 export class Republisher {
   /**
@@ -28,7 +29,7 @@ export class Republisher {
     if (!record) return
 
     const key = record.key
-    const keyhex = key.toString('hex')
+    const z32Key = 'pk:' + z32.encode(key)
 
     try {
       const resolved = await this.dht.get(key)
@@ -43,15 +44,19 @@ export class Republisher {
           record.sig = resolved.sig
         }
 
+        if (!record.v || !record.sig) {
+          throw new Error("Couldn't resolve a record to republish!")
+        }
+
         await this.dht.put(key, record)
       }
 
       record.last = Date.now()
 
       this.requests += 1
-      log(keyhex, 'requests', this.requests, 'rate', this.rate())
+      log(z32Key, 'requests', this.requests, 'rate', this.rate())
     } catch (error) {
-      log('ERROR', keyhex, error)
+      log('ERROR', z32Key, error)
     }
   }
 
@@ -85,6 +90,8 @@ function now () {
 }
 
 function noop () { }
+
+export default Republisher
 
 /**
  * @typedef {{key:Uint8Array, v?:Uint8Array, seq?:number, sig?: Uint8Array, last?: number}} Record

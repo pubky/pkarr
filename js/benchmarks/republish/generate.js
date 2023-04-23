@@ -27,7 +27,7 @@ for (let i = 0; i < COUNT; i++) {
 /**
  * @param {{seq: number, v: Uint8Array}} msg
  */
-export function encodeSigData(msg) {
+export function encodeSigData (msg) {
   const ref = { seq: msg.seq || 0, v: msg.v }
   const bencoded = bencode.encode(ref).subarray(1, -1)
   return bencoded
@@ -38,7 +38,7 @@ export function encodeSigData(msg) {
  * @param {Uint8Array} message
  * @param {Uint8Array} secretKey
  */
-function _sign(message, secretKey) {
+function _sign (message, secretKey) {
   const signature = Buffer.alloc(sodium.crypto_sign_BYTES)
   sodium.crypto_sign_detached(signature, message, secretKey)
   return signature

@@ -4,24 +4,6 @@ JavaScript implementation of [Pkarr](https://github.com/nuhvi/pkarr).
 
 ## Usage
 
-### Server
-
-clone this repo, navigate to js/ directory, then run start script.
-
-```
-$ git clone https://github.com/Nuhvi/pkarr.git
-$ cd pkarr
-```
-
-By default it will run on port `7527` but you can override it using environment variables
-
-```
-$ PORT=3000 npm start
-> [21:45:58.826] INFO (9863): Server listening at http://0.0.0.0:3000
-```
-
-Consider adding your server to the [list of free and public servers](../servers.txt)
-
 ### CLI 
 
 Publish resource records by passing a [passphrase](https://www.useapassphrase.com/).
@@ -39,6 +21,7 @@ $ pkarr publish
 ```
 
 Resolve resource records of a public key
+
 ```bash
 $ pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
  ✔ Resolved (8.51 seconds)
@@ -49,6 +32,40 @@ $ pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
   › size      : 39/1000 bytes
   › nodes     : 5
 ```
+
+Keep your or your friend's records alive
+
+```bash
+$ pkarr keepalive add [url1] [url2] ...
+ ✔  Successfully updated list of keys!
+
+$ pkarr keepalive remove [url1] [url2] ...
+ ✔  Successfully updated list of keys!
+
+$ pkarr keepalive list
+  ❯  yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
+
+$ pkarr keepalive
+Starting republisher...
+```
+
+### Server
+
+clone this repo, navigate to js/ directory, then run start script.
+
+```
+$ git clone https://github.com/Nuhvi/pkarr.git
+$ cd pkarr
+```
+
+By default it will run on port `7527` but you can override it using environment variables
+
+```
+$ PORT=3000 npm start
+> [21:45:58.826] INFO (9863): Server listening at http://0.0.0.0:3000
+```
+
+Consider adding your server to the [list of free and public servers](../servers.txt)
 
 ### Client 
 
