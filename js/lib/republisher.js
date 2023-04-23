@@ -12,9 +12,14 @@ export class Republisher {
   constructor (records) {
     this.dht = new DHT({ concurrency: MAX_CONCURRENCY })
     this.records = records
+
+    this.sampled = new Set()
+
     this.requests = 0
     this.start = Date.now()
-    this.interval = setInterval(this.tick.bind(this), LOOP_INTERVAL)
+
+    this.loopInterval = setInterval(this.tick.bind(this), LOOP_INTERVAL)
+    this.republishInterval = setInterval(() => this.sampled.clear(), REPUBLISH_INTERVAL)
   }
 
   /**
@@ -38,7 +43,7 @@ export class Republisher {
       // Assume there are other republisher (according to BEP44 recommendations)
       if ((resolved?.nodes?.length || 0) < 8) {
         // Discovered a more recent version
-        if (resolved && resolved.seq > record.seq) {
+        if (resolved && resolved.seq > (record.seq || -1)) {
           record.v = resolved.v
           record.seq = resolved.seq
           record.sig = resolved.sig
@@ -50,8 +55,6 @@ export class Republisher {
 
         await this.dht.put(key, record)
       }
-
-      record.last = Date.now()
 
       this.requests += 1
       log(z32Key, 'requests', this.requests, 'rate', this.rate())
@@ -69,14 +72,19 @@ export class Republisher {
    * @returns {Record | undefined}
    */
   sample () {
-    const valid = this.records.filter(r => !r.last || (Date.now() - r.last) > REPUBLISH_INTERVAL)
+    const valid = this.records.filter(r => !this.sampled.has(r.key.toString('hex')))
 
     const randomIndex = Math.floor(Math.random() * valid.length)
-    return valid[randomIndex]
+    const record = valid[randomIndex]
+
+    if (record) { this.sampled.add(record.key.toString('hex')) }
+
+    return record
   }
 
   destroy () {
-    clearInterval(this.interval)
+    clearInterval(this.loopInterval)
+    clearInterval(this.republishInterval)
     this.dht.destroy()
   }
 }
@@ -94,5 +102,5 @@ function noop () { }
 export default Republisher
 
 /**
- * @typedef {{key:Uint8Array, v?:Uint8Array, seq?:number, sig?: Uint8Array, last?: number}} Record
+ * @typedef {{key:Uint8Array, v?:Uint8Array, seq?:number, sig?: Uint8Array}} Record
  */

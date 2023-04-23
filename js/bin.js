@@ -3,8 +3,9 @@ import z32 from 'z32'
 import chalk from 'chalk'
 import crypto from 'crypto'
 import fs from 'fs'
-import path from 'path'
+import path, { dirname } from 'path'
 import { homedir } from 'os'
+import { fileURLToPath } from 'url'
 
 import DHT from './lib/dht.js'
 import * as pkarr from './lib/tools.js'
@@ -22,6 +23,13 @@ const resolveKey = async (key) => {
   const dht = new DHT()
 
   const keyBytes = z32.decode(key.replace('pk:', ''))
+
+  try {
+    if (keyBytes.byteLength !== 32) throw new Error('Invalid key')
+  } catch {
+    console.error(chalk.red('✘') + ` Key ${key} is not valid\n`, chalk.dim('keys must be z-base32 encoded 32 bytes'))
+    return
+  }
 
   const [success, fail] = loading('Resolving')
   const response = await dht.get(keyBytes)
@@ -148,7 +156,7 @@ const publish = async () => {
   dht.destroy()
 }
 
-function keepalive(command, ...args) {
+const keepalive = (command, ...args) => {
   let set = new Set()
   try {
     set = new Set(JSON.parse(fs.readFileSync(KEEP_ALIVE_PATH).toString()))
@@ -218,11 +226,17 @@ function keepalive(command, ...args) {
       break
   }
 
-
   if (['add', 'remove'].includes(command)) {
     fs.writeFileSync(KEEP_ALIVE_PATH, JSON.stringify([...set]))
     console.log(chalk.green(' ✔ '), 'Successfully updated list of keys!')
   }
+}
+
+const version = () => {
+  const __filename = fileURLToPath(import.meta.url)
+  const __dirname = dirname(__filename)
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, './package.json')).toString())
+  console.log(pkg.version)
 }
 
 const showHelp = () => {
@@ -238,7 +252,7 @@ Commands:
   help                                Show this help message
 
 Examples:
-  pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
+  pkarr resolve pk:yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
   pkarr publish
   pkarr keepalive add pk:yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
   pkarr keepalive remove yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
@@ -260,6 +274,10 @@ switch (command) {
   case 'keepalive':
     keepalive(...process.argv.slice(3))
     break
+  case '-v':
+  case 'version':
+    version()
+    break
   case '-h':
   case 'help':
     showHelp()
@@ -269,7 +287,7 @@ switch (command) {
     process.exit(1)
 }
 
-function loading(message) {
+function loading (message) {
   const start = Date.now()
   let dots = 1
   let started = false
@@ -277,7 +295,7 @@ function loading(message) {
   next()
   const interval = setInterval(next, 200)
 
-  function next() {
+  function next () {
     if (started) removeLastLine()
     else started = true
     console.log(chalk.dim(' ◌ '), message + '.'.repeat(dots))
@@ -285,29 +303,29 @@ function loading(message) {
     dots = dots % 4
   }
 
-  function success(message) {
+  function success (message) {
     removeLastLine()
     clearInterval(interval)
     console.log(chalk.green(' ✔ ' + message + seconds()))
   }
-  function fail(message) {
+  function fail (message) {
     removeLastLine()
     clearInterval(interval)
     clearInterval(interval)
     console.log(chalk.red(' ✘ '), message + seconds())
   }
-  function seconds() {
+  function seconds () {
     return ` (${((Date.now() - start) / 1000).toFixed(2)} seconds)`
   }
 
   return [success, fail]
 }
 
-function removeLastLine() {
+function removeLastLine () {
   process.stdout.write('\u001B[F\u001B[K')
 }
 
-function table(records) {
+function table (records) {
   const pads = {}
 
   records = records.filter(r => r[0] && r[1])
