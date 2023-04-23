@@ -6,12 +6,18 @@ import bencode from 'bencode'
 const verify = sodium.crypto_sign_verify_detached
 
 export class DHT {
-  constructor(opts) {
+  constructor (opts) {
     this._dht = new _DHT(opts)
+
+    this.opening = this._open()
   }
 
-  async ready() {
+  _open () {
     return new Promise(resolve => this._dht.once('ready', resolve))
+  }
+
+  async ready () {
+    return this.opening
   }
 
   /**
@@ -27,7 +33,9 @@ export class DHT {
    *  nodes?: Array<{ host: string, port: number }>
    * }>}
    */
-  async get(key) {
+  async get (key) {
+    await this.ready()
+
     const target = hash(key)
     const targetHex = target.toString('hex')
 
@@ -56,12 +64,12 @@ export class DHT {
         done
       )
 
-      function done(err) {
+      function done (err) {
         if (err) reject(err)
         else resolve(value && { ...value, nodes })
       }
 
-      function onreply(message, from) {
+      function onreply (message, from) {
         const r = message.r
         if (!r.sig || !r.k) return true
         if (!verify(r.sig, encodeSigData(r), r.k)) return true
@@ -88,10 +96,11 @@ export class DHT {
    *  nodes: Array<{ id: Uint8Array, host: string, port: number }>
    * }>}
    */
-  async put(key, request) {
+  async put (key, request) {
     validate(key, request)
     const target = hash(key)
 
+    await this.ready()
     const _dht = this._dht
 
     let closestNodes = _dht._tables.get(target.toString('hex'))?.closest(target)
@@ -143,7 +152,7 @@ export class DHT {
     })
   }
 
-  destroy() {
+  destroy () {
     try {
       this._dht.destroy()
     } catch { }
@@ -152,7 +161,7 @@ export class DHT {
 
 export default DHT
 
-function validate(key, request) {
+function validate (key, request) {
   if (request.v === undefined) {
     throw new Error('request.v not given')
   }
@@ -173,11 +182,11 @@ function validate(key, request) {
   }
 }
 
-function hash(buf) {
+function hash (buf) {
   return crypto.createHash('sha1').update(buf).digest()
 }
 
-function createGetResponse(id, value, nodes) {
+function createGetResponse (id, value, nodes) {
   return {
     id,
     v: value.v,
@@ -188,7 +197,7 @@ function createGetResponse(id, value, nodes) {
   }
 }
 
-function encodeSigData(msg) {
+function encodeSigData (msg) {
   const ref = { seq: msg.seq || 0, v: msg.v }
   if (msg.salt) ref.salt = msg.salt
   return bencode.encode(ref).slice(1, -1)

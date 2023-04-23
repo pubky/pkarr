@@ -21,7 +21,7 @@ const users = fs.readFileSync('./data/users.csv')
 const batch = new Map()
 
 onInterval()
-setInterval(onInterval, INTERVAL);
+setInterval(onInterval, INTERVAL)
 
 function onInterval() {
   flushBatchMaybe()
@@ -40,9 +40,9 @@ async function check(key) {
 
     batch.set(key, nodes)
 
-    log(key.toString('hex'), "GET", "nodes", nodes, "batch", batch.size, "rate", successRate())
+    log(key.toString('hex'), 'GET', 'nodes', nodes, 'batch', batch.size, 'rate', successRate())
   } catch (error) {
-    log("ERROR", error)
+    log('ERROR', error)
   }
 }
 
@@ -59,7 +59,7 @@ function flushBatchMaybe() {
   const rate = successRate()
 
   const line = [now(), batch.size, rate].join(',') + '\n'
-  log("Appending line", line)
+  log('Appending line', line)
 
   batch.clear()
 
@@ -70,7 +70,7 @@ function flushBatchMaybe() {
  * @returns {string}
  */
 function sample() {
-  const randomIndex = Math.floor(Math.random() * users.length);
+  const randomIndex = Math.floor(Math.random() * users.length)
   const key = users[randomIndex]
 
   // already in current batch
