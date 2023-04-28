@@ -28,3 +28,11 @@ Start sampling random keys to query
 ```bash
 node sampler.js
 ```
+
+## Result
+
+After 7 days of continous running, result was an average of ~96% query success rate.
+
+![success-rate-graph](./republish-benchmark-result-graph.png)
+
+[Data source](https://docs.google.com/spreadsheets/d/12inuULrluZwPw-YLn-PtsYEW2D0hBABVrz506jQbP94/edit#gid=0)
