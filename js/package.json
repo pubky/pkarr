@@ -1,6 +1,6 @@
 {
   "name": "pkarr",
-  "version": "1.0.0-alpha.8",
+  "version": "1.0.0-alpha.9",
   "description": "client, server and CLI for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
@@ -20,7 +20,7 @@
   ],
   "keywords": [],
   "author": "Nuh (@nuhvi)",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@fastify/cors": "^8.2.1",
     "b4a": "^1.6.3",
