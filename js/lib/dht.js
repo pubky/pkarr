@@ -5,8 +5,18 @@ import bencode from 'bencode'
 
 const verify = sodium.crypto_sign_verify_detached
 
+const DEFAULT_BOOTSTRAP = [
+  { host: 'router.bittorrent.com', port: 6881 },
+  { host: 'router.utorrent.com', port: 6881 },
+  { host: 'dht.transmissionbt.com', port: 6881 },
+  // Running a reliable DHT node that responds to requests from behind NAT? please open an issue.
+  { host: 'router.nuh.dev', port: 6881 }
+]
+
 export class DHT {
-  constructor (opts) {
+  constructor (opts = {}) {
+    opts.bootstrap = opts.bootstrap || DEFAULT_BOOTSTRAP
+
     this._dht = new _DHT(opts)
 
     this.opening = this._open()
