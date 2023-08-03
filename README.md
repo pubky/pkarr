@@ -4,7 +4,7 @@
 
 The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable domains. This system would be accessible to anyone capable of maintaining a private key.
 
-Where we are going, this [https://54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y](https://pkarr.nuhvi.com/?pk=54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y) resolves everywhere!
+Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://pkarr.nuh.dev/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
 - To publish resource records for your key, sign a small payload (<= ~3000 bytes) and publish it on the DHT (throug a relay if necessary).
