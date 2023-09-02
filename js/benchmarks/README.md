@@ -4,19 +4,44 @@ This directory keeps track of the tests, benchmarks and stress testing used to j
 
 ### compression-vs-encoding
 
-Assess if using CBOR is worth it instead of JSON compression using brtoli.
+First attempt: ~Assess if using CBOR is worth it instead of JSON compression using brtoli.~ CBOR wasn't really worth it
+
+Second attempt: Do we need JSON encoding (which doesn't come for free in all languages like Javascript)?
+
+Results:
 
 ```
-
-| Operation     | Size | Ratio | Time      |
-|---------------|------|-------|-----------|
-| JSON          | 3448 | 1     |           |
-| CBOR          | 2954 | 0.86  |   3.02  ms|
-| JSON + lz4    | 1481 | 0.43  |   0.697 ms|
-| CBOR + lz4    | 1518 | 0.44  |           |
-| JSON + brotli | 994  | 0.29  |  27.657 ms|
-| CBOR + brotli | 1044 | 0.29  |  16.075 ms|
-| BenC + brotli | 1021 | 0.30  |  15.199 ms|
+ ┌--------------------┬------------┬----------┬------------┐
+ | TYPE               | SIZE RATIO | COMPRESS | DECOMPRESS |
+ |--------------------|------------|----------|------------|
+ | json + brotli      | 0.48       | 1 ms     | 1 ms       |
+ | bencode + lz4      | 0.52       | 0 ms     | 1 ms       |
+ | csv + lz4          | 0.49       | 0 ms     | 1 ms       |
+ | bencode + brotli   | 0.34       | 26 ms    | 0 ms       |
+ | csv + brotli       | 0.33       | 20 ms    | 1 ms       |
+ | custom + brotli    | 0.31       | 14 ms    | 4 ms       |
+ └--------------------┴------------┴----------┴------------┘
 ```
 
-JSON + Bitroli (wasm) seem to be the best combination.
+Conclusion:
+
+`json + brotli` is very fast, but doesn't compress data enough.
+
+`csv + brotli` seems to offer the best compression, fast decoding, and acceptable encoding time.
+
+`custom + brotli` Where we encode dns type by its code ~dosen't offer much benifit, it needs two bytes, which only saves 1 byte for `TXT` and 2 for `AAAA`, while complecating decoding.~ 
+
+Actually encoding ipv4 and ipv6 for what is mostly `A`, `AAAA`, and `TXT` records, it starts to pay off.
+
+```
+ ┌--------------------┬------------┬----------┬------------┐
+ | TYPE               | SIZE RATIO | COMPRESS | DECOMPRESS |
+ |--------------------|------------|----------|------------|
+ | json + brotli      | 0.97       | 1 ms     | 1 ms       |
+ | bencode + lz4      | 1.01       | 0 ms     | 1 ms       |
+ | csv + lz4          | 0.96       | 0 ms     | 1 ms       |
+ | bencode + brotli   | 0.78       | 21 ms    | 0 ms       |
+ | csv + brotli       | 0.77       | 10 ms    | 0 ms       |
+ | custom + brotli    | 0.60       | 13 ms    | 5 ms       |
+ └--------------------┴------------┴----------┴------------┘
+ ```
