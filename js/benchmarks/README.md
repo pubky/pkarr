@@ -37,11 +37,12 @@ Actually encoding ipv4 and ipv6 for what is mostly `A`, `AAAA`, and `TXT` record
  ┌--------------------┬------------┬----------┬------------┐
  | TYPE               | SIZE RATIO | COMPRESS | DECOMPRESS |
  |--------------------|------------|----------|------------|
- | json + brotli      | 0.97       | 1 ms     | 1 ms       |
- | bencode + lz4      | 1.01       | 0 ms     | 1 ms       |
- | csv + lz4          | 0.96       | 0 ms     | 1 ms       |
- | bencode + brotli   | 0.78       | 21 ms    | 0 ms       |
- | csv + brotli       | 0.77       | 10 ms    | 0 ms       |
- | custom + brotli    | 0.60       | 13 ms    | 5 ms       |
+ | json + brotli      | 0.96       | 1 ms     | 1 ms       |
+ | bencode + lz4      | 1.00       | 0 ms     | 1 ms       |
+ | csv + lz4          | 0.96       | 0 ms     | 0 ms       |
+ | bencode + brotli   | 0.74       | 21 ms    | 0 ms       |
+ | csv + brotli       | 0.75       | 9 ms     | 0 ms       |
+ | custom + brotli    | 0.63       | 10 ms    | 1 ms       |
+ | custom + no comp   | 0.73       | 0 ms     | 0 ms       |
  └--------------------┴------------┴----------┴------------┘
  ```

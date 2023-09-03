@@ -13,6 +13,7 @@ router.@,97,IN,AAAA,2606:2800:220:1:248:1893:25c8:19
 @,97,IN,CNAME,nuh.dev
 _atproto.@,300,IN,TXT,"did=did:plc:zki2d3v7nckil3azsodv72sy"
 _matrix.@,1080,IN,TXT,"handle=@nuhvi:matrix.org"
+_nostr.@,2000,IN,TXT,"nprofile1qqsfxrxw7y3h9hf0zczhelz57rdajse4mz63kn38xu3kkqx2kuv0ekgpzemhxue69uhhyetvv9ujumn0wd68ytnzv9hxgme06qp"
 `
 
 const csv = TYPICAL
@@ -137,7 +138,7 @@ const bencoded = bencode.encode(records)
 // Brotli + custom
 {
   const compressStart = Date.now()
-  const compressed = await brotli.compress(encode(csv))
+  const compressed = await brotli.compress(encode(records))
   const compressEnd = Date.now()
 
   const decompressStart = Date.now()
@@ -151,116 +152,148 @@ const bencoded = bencode.encode(records)
     compressTime: compressEnd - compressStart,
     decompressTime: decompressEnd - decompressStart
   }
+}
 
-  function encode (string) {
-    const result = string.split(/\n/g).filter(Boolean).map(row => {
-      const parts = row.split(',')
-      const name = parts[0]
-      const type = parts[3]
-      const data = parts[4]
+// custom without compression
+{
+  const compressStart = Date.now()
+  const compressed = encode(records)
+  const compressEnd = Date.now()
 
-      return Buffer.from([
-        ...(() => {
-          switch (type) {
-            case 'A':
-              return Buffer.from([0, 1])
-            case 'NS':
-              return Buffer.from([0, 2])
-            case 'CNAME':
-              return Buffer.from([0, 5])
-            case 'MX':
-              return Buffer.from([0, 15])
-            case 'AAAA':
-              return Buffer.from([0, 28])
-            case 'TXT':
-              return Buffer.from([0, 16])
-            default:
-              return Buffer.from([0, 255])
-          }
-        })(),
-        ...Buffer.from(name),
-        ...Buffer.from(' '),
-        ...(() => {
-          switch (type) {
-            case 'A':
-              return ipCodec.v4.encode(data)
-            case 'AAAA':
-              return ipCodec.v6.encode(data)
-            case 'TXT':
-              return Buffer.from(data.slice(1, data.length - 2))
-            default:
-              return Buffer.from(data)
-          }
-        })(),
-        ...Buffer.from('\n')
-      ])
-    })
-    return Buffer.concat(result)
+  const decompressStart = Date.now()
+  const decompressed = decode(compressed)
+  const decompressEnd = Date.now()
+
+  assert(decompressed.length === records.length)
+
+  results['custom + no comp'] = {
+    sizeRatio: sizeRatio(compressed),
+    compressTime: compressEnd - compressStart,
+    decompressTime: decompressEnd - decompressStart
   }
+}
 
-  function decode (buf) {
-    const result = []
+function encode (records) {
+  const buffer = Buffer.alloc(1000)
 
-    let row = []
+  let offset = 0
 
-    for (const x of buf) {
-      if (x === Buffer.from('\n')[0]) {
-        const type = row[1]
-        const rest = Buffer.from(row).subarray(2)
-        let name = []
+  for (const record of records) {
+    const name = record[0]
+    const type = record[1]
+    const rdata = record[2]
 
-        for (const d of rest) {
-          if (d === Buffer.from(' ')[0]) {
-            break
-          }
-          name.push(d)
-        }
+    const slice = buffer.subarray(offset)
 
-        name = Buffer.from(name).toString()
-
-        const _row = {
-          type: (() => {
-            switch (type) {
-              case 1:
-                return 'A'
-              case 2:
-                return 'NS'
-              case 5:
-                return 'CNAME'
-              case 15:
-                return 'MX'
-              case 28:
-                return 'AAAA'
-              case 16:
-                return 'TXT'
-              default:
-                return 'ANY'
-            }
-          })(),
-          name: name.replace(/@$/, 'o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.'),
-          data: (() => {
-            const _data = rest.subarray(name.length + 1)
-
-            switch (type) {
-              case 1:
-                return ipCodec.v4.decode(_data)
-              case 28:
-                return ipCodec.v6.decode(_data)
-              default:
-                return _data
-            }
-          })()
-        }
-
-        result.push(_row)
-        row = []
-      } else {
-        row.push(x)
+    slice.writeUint16BE((() => {
+      switch (type) {
+        case 'A':
+          return 1
+        case 'NS':
+          return 2
+        case 'CNAME':
+          return 5
+        case 'MX':
+          return 15
+        case 'AAAA':
+          return 28
+        case 'TXT':
+          return 16
+        default:
+          return 255
       }
-    }
+    })())
 
-    return result
+    slice[2] = name.length
+    slice.write(name, 3)
+
+    const rdataOfsset = 3 + name.length
+    offset += rdataOfsset
+
+    switch (type) {
+      case 'A':
+        slice.set(ipCodec.v4.encode(rdata), rdataOfsset)
+        offset += 4
+        break
+      case 'AAAA':
+        slice.set(ipCodec.v6.encode(rdata), rdataOfsset)
+        offset += 16
+        break
+      case 'TXT':
+        const txt = Buffer.from(rdata.slice(1, rdata.length - 1))
+        slice.set([txt.length], rdataOfsset)
+        slice.set(txt, rdataOfsset + 1)
+        offset += txt.length + 1
+        break
+      default:
+        const any = Buffer.from(rdata)
+        slice.set([any.length], rdataOfsset)
+        slice.set(any, rdataOfsset + 1)
+        offset += any.length + 1
+        break
+    }
   }
+
+  return buffer.subarray(0, offset)
+}
+
+function decode (buffer) {
+  buffer = Buffer.from(buffer)
+
+  const result = []
+
+  let row = {}
+  let offset = 0
+
+  while (true) {
+    const slice = buffer.subarray(offset)
+
+    row.type = ((type) => {
+      switch (type) {
+        case 1:
+          return 'A'
+        case 2:
+          return 'NS'
+        case 5:
+          return 'CNAME'
+        case 15:
+          return 'MX'
+        case 28:
+          return 'AAAA'
+        case 16:
+          return 'TXT'
+        default:
+          return 'ANY'
+      }
+    })(slice.readUint16BE())
+
+    row.name = slice.subarray(3, 3 + slice[2]).toString()
+
+    const rdataOffset = 3 + row.name.length
+    offset += rdataOffset
+
+    row.data = (() => {
+      switch (row.type) {
+        case ('A'):
+          offset += 4
+          return ipCodec.v4.decode(slice.subarray(rdataOffset, rdataOffset + 4))
+        case ('AAAA'):
+          offset += 16
+          return ipCodec.v6.decode(slice.subarray(rdataOffset, rdataOffset + 16))
+        default:
+          const length = slice[rdataOffset]
+          offset += length + 1
+          return slice.subarray(rdataOffset + 1, rdataOffset + 1 + length).toString()
+      }
+    })()
+
+    result.push(row)
+    row = {}
+
+    if (offset >= buffer.length) break
+  }
+
+  return result
 }
 
 function sizeRatio (compressed) {
