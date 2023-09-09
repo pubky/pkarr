@@ -6,6 +6,7 @@ import bencode from 'bencode'
 const verify = sodium.crypto_sign_verify_detached
 
 const DEFAULT_BOOTSTRAP = [
+  { host: 'router.magnets.im', port: 6881 },
   { host: 'router.bittorrent.com', port: 6881 },
   { host: 'router.utorrent.com', port: 6881 },
   { host: 'dht.transmissionbt.com', port: 6881 },
@@ -18,22 +19,15 @@ export class DHT {
     opts.bootstrap = opts.bootstrap || DEFAULT_BOOTSTRAP
 
     this._dht = new _DHT(opts)
-
-    this.opening = this._open()
-  }
-
-  _open () {
-    return new Promise(resolve => this._dht.once('ready', resolve))
-  }
-
-  async ready () {
-    return this.opening
   }
 
   /**
    * Reguest a mutable value from the DHT.
    *
    * @param {Uint8Array} key
+   * @param {object} [options]
+   * @param {boolean} [options.fullLookup] - If true, will perform a full lookup, otherwise return the first valid result.
+   *
    * @returns {Promise<{
    *  id: Uint8Array,
    *  k: Uint8Array,
@@ -43,9 +37,7 @@ export class DHT {
    *  nodes?: Array<{ host: string, port: number }>
    * }>}
    */
-  async get (key) {
-    await this.ready()
-
+  async get (key, options = {}) {
     const target = hash(key)
     const targetHex = target.toString('hex')
 
@@ -87,6 +79,9 @@ export class DHT {
           if (!value || r.seq >= value.seq) {
             nodes.push({ host: from.host || from.address, port: from.port })
             value = r
+            if (!options.fullLookup) {
+              resolve({ ...value, nodes })
+            }
           }
         }
         return true
@@ -110,7 +105,6 @@ export class DHT {
     validate(key, request)
     const target = hash(key)
 
-    await this.ready()
     const _dht = this._dht
 
     let closestNodes = _dht._tables.get(target.toString('hex'))?.closest(target)

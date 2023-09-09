@@ -3,7 +3,6 @@ import brotli from 'brotli-compress'
 import assert from 'assert'
 import bencode from 'bencode'
 import * as ipCodec from '@leichtgewicht/ip-codec'
-import { constrainedMemory } from 'process'
 
 // https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-binary-formats-and-compression-methods/
 
@@ -272,7 +271,7 @@ for (const { name, records } of vectors) {
     }
   })
 
-  function encodeCustom(records) {
+  function encodeCustom (records) {
     const buffer = Buffer.alloc(1000)
 
     let offset = 0
@@ -330,7 +329,7 @@ for (const { name, records } of vectors) {
     return buffer.subarray(0, offset)
   }
 
-  function decodeCustom(buffer) {
+  function decodeCustom (buffer) {
     buffer = Buffer.from(buffer)
 
     const result = []
@@ -389,15 +388,15 @@ for (const { name, records } of vectors) {
     return result
   }
 
-  function encodeCSV(records) {
+  function encodeCSV (records) {
     const rows = records.map(r => r.join(','))
     return Buffer.from(rows.join('\n'))
   }
-  function decodeCSV(buffer) {
+  function decodeCSV (buffer) {
     return Buffer.from(buffer).toString().split(/\n/g).filter(Boolean).map(r => r.split(','))
   }
 
-  async function test(name, cb) {
+  async function test (name, cb) {
     const tries = []
 
     for (let i = 0; i < ITERATIONS; i++) {
