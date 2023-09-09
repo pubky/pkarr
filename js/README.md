@@ -24,13 +24,13 @@ Resolve resource records of a public key
 
 ```bash
 $ pkarr resolve pk:54ftp7om3nkc619oaxwbz4mg4btzesnnu1k63pukonzt36xq144y
- ✔ Resolved (8.51 seconds)
+ ✔ Resolved (1.51 seconds)
   ❯ foo    bar
   ❯ answer 42
 
   › updated_at: 4/9/2023, 8:48:21 AM
   › size      : 39/1000 bytes
-  › nodes     : 5
+  › from      : 129.159.143.235:8999
 ```
 
 Keep your or your friend's records alive
