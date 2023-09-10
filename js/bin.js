@@ -55,7 +55,7 @@ const resolveKey = async (key) => {
   const metadata = [
     ['updated_at', new Date(response.seq * 1000).toLocaleString()],
     ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
-    ['from', response.nodes.map(n => n.host + ':' + n.port).join(', ')]
+    ['from', response.nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
   ]
   table(metadata).forEach((row) => {
     console.log(chalk.dim('   › ' + row.join(': ')))

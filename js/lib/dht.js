@@ -57,7 +57,7 @@ export class DHT extends _DHT {
    *  seq: number,
    *  v: Uint8Array,
    *  sig: Uint8Array,
-   *  nodes?: Array<{ host: string, port: number }>
+   *  nodes?: Array<{ host: string, port: number, client?: string }>
    * }>}
    */
   async get (key, options = {}) {
@@ -98,7 +98,11 @@ export class DHT extends _DHT {
         if (!verify(r.sig, encodeSigData(r), r.k)) return true
         if (hash(r.k).equals(target)) {
           if (!value || r.seq >= value.seq) {
-            nodes.push({ host: from.host || from.address, port: from.port })
+            nodes.push({
+              host: from.host || from.address,
+              port: from.port,
+              client: message.v?.toString().slice(0, 2)
+            })
             value = r
             if (!options.fullLookup) {
               resolve({ ...value, nodes })
