@@ -2,6 +2,10 @@ import _DHT from 'bittorrent-dht'
 import sodium from 'sodium-universal'
 import crypto from 'crypto'
 import bencode from 'bencode'
+import goodbye from 'graceful-goodbye'
+import fs from 'fs'
+import { homedir } from 'os'
+import path from 'path'
 
 const verify = sodium.crypto_sign_verify_detached
 
@@ -14,11 +18,30 @@ const DEFAULT_BOOTSTRAP = [
   { host: 'router.nuh.dev', port: 6881 }
 ]
 
-export class DHT {
-  constructor (opts = {}) {
-    opts.bootstrap = opts.bootstrap || DEFAULT_BOOTSTRAP
+const DEFAULT_STORAGE = path.join(homedir(), '.config', 'pkarr')
 
-    this._dht = new _DHT(opts)
+export class DHT extends _DHT {
+  /**
+   * @param {object} [opts]
+   * @param {{host:string, port:string}[]} [opts.bootstrap] - List of bootstrap nodes. example [{host: "router.utorrent.com", port: 6881}]
+   */
+  constructor (opts = {}) {
+    const _storage = opts.storage || DEFAULT_STORAGE
+
+    opts.bootstrap = opts.bootstrap || loadBootstrap(_storage)
+
+    super(opts)
+
+    goodbye(() => {
+      _saveBootstrap(this, _storage)
+      this.destroy()
+    })
+  }
+
+  bootstrapped () {
+    return new Promise((resolve) => {
+      this.once('ready', resolve)
+    })
   }
 
   /**
@@ -41,24 +64,22 @@ export class DHT {
     const target = hash(key)
     const targetHex = target.toString('hex')
 
-    const _dht = this._dht
-
-    let value = _dht._values.get(targetHex) || null
+    let value = this._values.get(targetHex) || null
     const nodes = []
 
     return new Promise((resolve, reject) => {
       if (value) {
         // If value was directly stored in this node in put request
-        value = createGetResponse(_dht._rpc.id, value)
+        value = createGetResponse(this._rpc.id, value)
         return process.nextTick(done)
       }
 
-      _dht._closest(
+      this._closest(
         target,
         {
           q: 'get',
           a: {
-            id: _dht._rpc.id,
+            id: this._rpc.id,
             target
           }
         },
@@ -105,18 +126,16 @@ export class DHT {
     validate(key, request)
     const target = hash(key)
 
-    const _dht = this._dht
-
-    let closestNodes = _dht._tables.get(target.toString('hex'))?.closest(target)
+    let closestNodes = this._tables.get(target.toString('hex'))?.closest(target)
 
     if (!closestNodes) {
       await new Promise((resolve, reject) => {
-        _dht._closest(
+        this._closest(
           target,
           {
             q: 'get',
             a: {
-              id: _dht._rpc.id,
+              id: this._rpc.id,
               target
             }
           },
@@ -128,13 +147,13 @@ export class DHT {
         )
       })
 
-      closestNodes = _dht._tables.get(target.toString('hex'))?.closest(target)
+      closestNodes = this._tables.get(target.toString('hex'))?.closest(target)
     }
 
     const message = {
       q: 'put',
       a: {
-        id: _dht._rpc.id,
+        id: this._rpc.id,
         token: null, // queryAll sets this
         v: request.v,
         k: key,
@@ -144,7 +163,7 @@ export class DHT {
     }
 
     return new Promise((resolve, reject) => {
-      _dht._rpc.queryAll(
+      this._rpc.queryAll(
         closestNodes,
         message,
         null,
@@ -157,13 +176,51 @@ export class DHT {
   }
 
   destroy () {
-    try {
-      this._dht.destroy()
-    } catch { }
+    return new Promise((resolve, reject) => {
+      try {
+        super.destroy(resolve)
+      } catch (error) {
+        reject(error)
+      }
+    })
   }
 }
 
 export default DHT
+
+function _saveBootstrap (dht, storage) {
+  const filePath = path.join(storage, 'bootstrap.json')
+
+  const nodes = dht._rpc.nodes.toArray().map(n => ({ host: n.host, port: n.port }))
+  const json = JSON.stringify(nodes)
+  try {
+    fs.writeFileSync(filePath, json)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    fs.mkdirSync(storage)
+    fs.writeFileSync(filePath, json)
+  }
+}
+
+function loadBootstrap (storage) {
+  const filepath = path.join(storage, 'bootstrap.json')
+
+  const bootstrap = DEFAULT_BOOTSTRAP
+
+  try {
+    const data = fs.readFileSync(filepath)
+    const string = data.toString()
+    const nodes = JSON.parse(string)
+
+    for (const node of nodes) {
+      bootstrap.push(node)
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+
+  return bootstrap
+}
 
 function validate (key, request) {
   if (request.v === undefined) {
