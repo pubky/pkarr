@@ -10,12 +10,11 @@ import path from 'path'
 const verify = sodium.crypto_sign_verify_detached
 
 const DEFAULT_BOOTSTRAP = [
-  { host: 'router.magnets.im', port: 6881 },
-  { host: 'router.bittorrent.com', port: 6881 },
-  { host: 'router.utorrent.com', port: 6881 },
-  { host: 'dht.transmissionbt.com', port: 6881 },
-  // Running a reliable DHT node that responds to requests from behind NAT? please open an issue.
-  { host: 'router.nuh.dev', port: 6881 }
+  'router.magnets.im:6881',
+  'router.bittorrent.com:6881',
+  'router.utorrent.com:6881',
+  'dht.transmissionbt.com:6881',
+  'router.nuh.dev:6881'
 ]
 
 const DEFAULT_STORAGE_LOCATION = path.join(homedir(), '.config', 'pkarr')
@@ -274,6 +273,8 @@ class Storage {
    */
   constructor (location) {
     this._location = location || DEFAULT_STORAGE_LOCATION
+
+    this._loaded = []
   }
 
   loadBootstrap () {
@@ -293,7 +294,11 @@ class Storage {
       if (error.code !== 'ENOENT') throw error
     }
 
-    return bootstrap
+    this._loaded = bootstrap
+    return bootstrap.map(n => {
+      const [host, port] = n.split(':')
+      return { host, port: Number(port) }
+    })
   }
 
   /**
@@ -303,9 +308,11 @@ class Storage {
     const filePath = path.join(this._location, 'bootstrap.json')
 
     const nodes = dht._rpc.nodes.toArray()
-      .map(/** @param {{host:string, port:number}} n */ n => ({ host: n.host, port: n.port }))
+      .map(/** @param {{host:string, port:number}} n */ n => n.host + ':' + n.port)
 
-    const json = JSON.stringify(nodes)
+    const set = new Set([...nodes, ...this._loaded])
+
+    const json = JSON.stringify([...set])
 
     try {
       fs.writeFileSync(filePath, json)
