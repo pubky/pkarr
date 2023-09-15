@@ -1,6 +1,6 @@
 import { render } from 'solid-js/web';
 import { createSignal, createEffect, For, onMount } from 'solid-js';
-import pkarr from 'pkarr'
+import Pkarr from 'pkarr/relayed.js'
 import b4a from 'b4a'
 
 import store from './store.js'
@@ -11,7 +11,7 @@ const App = () => {
   const [target, setTarget] = createSignal(null);
   const [settingsSeed, setSettingsSeed] = createSignal(store.seed)
   const [copySeedText, setCopySeedText] = createSignal('copy seed')
-  const [settingsServers, setSettingsServers] = createSignal(store.servers)
+  const [settingsRelays, setSettingsRelays] = createSignal(store.relays)
 
   createEffect(() => {
     const location = window.location
@@ -48,16 +48,16 @@ const App = () => {
   }
 
   const handleSaveSettings = () => {
-    store.updateSettings(settingsSeed(), settingsServers())
+    store.updateSettings(settingsSeed(), settingsRelays())
     setShowSettings(false)
   }
 
-  const handleSettingsServerChange = (event) => {
-    setSettingsServers(event.target.value.split('\n'))
+  const handleSettingsRelayChange = (event) => {
+    setSettingsRelays(event.target.value.split('\n'))
   }
-  const handleResetServers = () => {
-    store.resetServers()
-    setSettingsServers(store.servers)
+  const handleResetRelays = () => {
+    store.resetRelays()
+    setSettingsRelays(store.relays)
   }
 
   const toggleTab = () => {
@@ -97,7 +97,7 @@ const App = () => {
           <li>Paste any of your friend's keys in the Resolve tab to get their latest records.</li>
           <li>You need to republish your records every hour or so, otherwise they will be dropped from the DHT.</li>
           <li>Anyone can republish your records, and you can republish your friends records too.</li>
-          <li>Open settings to add or remove servers, you can also <a href="https://github.com/Nuhvi/pkarr/tree/main/js#server" target="_blank">run your own server</a>.</li>
+          <li>Open settings to add or remove relays, you can also <a href="https://github.com/Nuhvi/pkarr/tree/main/js#relays" target="_blank">run your own relay</a>.</li>
           <li>Open settings to export, import, or regenerate new seed.</li>
           <li>It is safe to edit your records from multiple devices, but some changes might be lost.</li>
         </ul>
@@ -123,13 +123,13 @@ const App = () => {
             <div id="seed-buttons">
               <button id="paste-seed" onClick={pasteSeed}>paste seed</button>
               <button id="copy-seed" onClick={copySeed}>{copySeedText()}</button>
-              <button id="generate-seed" onClick={() => setSettingsSeed(b4a.toString(pkarr.randomBytes(32), 'hex'))}>generate</button>
+              <button id="generate-seed" onClick={() => setSettingsSeed(b4a.toString(Pkarr.generateSeed(), 'hex'))}>generate</button>
             </div>
           </div>
           <div class="row">
-            <label>Servers</label>
-            <textarea id="servers" rows="5" onChange={handleSettingsServerChange}>{settingsServers().join('\n')}</textarea>
-            <button id='reset-servers' onClick={handleResetServers}>reset</button>
+            <label>Relays</label>
+            <textarea id="relays" rows="5" onChange={handleSettingsRelayChange}>{settingsRelays().join('\n')}</textarea>
+            <button id='reset-relays' onClick={handleResetRelays}>reset</button>
           </div>
           <button class="primary" id="settings-save-button" onClick={handleSaveSettings}>Save</button>
         </div>
@@ -144,7 +144,7 @@ const App = () => {
         Read the motivation, architecture and how it works, <a href="https://github.com/nuhvi/pkarr" target="_blank">README</a>
       </p>
       <p>
-        Open an <a href="https://github.com/nuhvi/pkarr/issues" target="_blank">Issue</a> offering a free server, your expertise, or help shape the spec.
+        Open an <a href="https://github.com/nuhvi/pkarr/issues" target="_blank">Issue</a> offering a free relay, your expertise, or help shape the spec.
       </p>
     </footer>
 

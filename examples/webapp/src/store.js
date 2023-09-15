@@ -1,16 +1,16 @@
-import pkarr from 'pkarr';
+import Pkarr from 'pkarr/relayed.js';
 import { createMutable } from 'solid-js/store';
 import b4a from 'b4a'
 import z32 from 'z32'
 
-const DEFAULT_SERVERS = [
-  'pkarr1.nuhvi.com'
+const DEFAULT_RELAYS = [
+  'https://relay.pkarr.org'
 ]
 
 const store = createMutable({
   seed: window.localStorage.getItem('seed'),
   records: [],
-  servers: DEFAULT_SERVERS,
+  relays: DEFAULT_RELAYS,
   lastPublished: 'Not published yet',
 
   keyPair: null,
@@ -30,7 +30,7 @@ const store = createMutable({
     this.records = records
     const stringified = JSON.stringify(records)
 
-    pkarr.codec.encode(stringified).then(bytes => {
+    Pkarr.codec.encode(stringified).then(bytes => {
       this.recordsSize = bytes.byteLength || 0
     })
 
@@ -40,26 +40,23 @@ const store = createMutable({
   publish() {
     const keyPair = { ...this.keyPair }
     const records = store.records.map(r => [...r])
-    const servers = [...this.servers]
+    const relays = [...this.relays]
 
     this.publishing = true
 
     const start = Date.now()
-    pkarr.put(keyPair, records, servers)
-      .then(result => {
-        if (result.ok) {
+    Pkarr.publish(keyPair, records, relays)
+      .then(published => {
+        if (published) {
           this.publishing = false;
-          this.lastPublished = new Date(result.response.record.seq * 1000).toLocaleString()
+          this.lastPublished = new Date().toLocaleString()
           localStorage.setItem('lastPublished', this.lastPublished)
 
           const time = Date.now() - start
           this.temporaryMessage = "Published ... took " + time + " ms"
           setTimeout(() => this.temporaryMessage = null, 2000)
         } else {
-          alert(
-            'Error publishing to all servers:\n' +
-            result.errors.map(e => e.server + ": " + e.error.message).join('\n')
-          )
+          alert('Error publishing to all relays')
         }
       })
   },
@@ -80,17 +77,17 @@ const store = createMutable({
 
     this.resolving = true
 
-    const servers = [...this.servers]
+    const relays = [...this.relays]
 
     const start = Date.now()
-    pkarr.get(key, servers)
+    Pkarr.resolve(key, relays)
       .then(result => {
-        if (result.ok) {
+        if (result) {
           this.resolved = result.records
           this.resolvedLastPublished = new Date(result.seq * 1000).toLocaleString()
           this.resolving = false;
 
-          pkarr.codec.encode(result.records).then(bytes => {
+          Pkarr.codec.encode(result.records).then(bytes => {
             this.resolvedSize = bytes.byteLength || 0
           })
 
@@ -98,47 +95,44 @@ const store = createMutable({
           this.temporaryMessage = "Resolved ... took " + time + " ms"
           setTimeout(() => this.temporaryMessage = null, 2000)
         } else {
-          alert(
-            'Error publishing to all servers:\n' +
-            result.errors.map(e => e.server + ": " + e.error.message).join('\n')
-          )
+          alert('No records founds from any relay')
         }
       })
   },
-  updateSettings(seed, servers) {
+  updateSettings(seed, relays) {
     if (this.seed !== seed) {
       this.records = [[]]
       localStorage.setItem('records', JSON.stringify(this.records))
     }
 
     this.seed = seed
-    this.keyPair = pkarr.generateKeyPair(b4a.from(seed, 'hex'))
-    this.servers = servers
+    this.keyPair = Pkarr.generateKeyPair(b4a.from(seed, 'hex'))
+    this.relays = relays
 
     localStorage.setItem('seed', seed)
-    localStorage.setItem('servers', JSON.stringify(servers))
+    localStorage.setItem('relays', JSON.stringify(relays))
   },
-  resetServers() {
-    this.servers = DEFAULT_SERVERS
+  resetRelays() {
+    this.relays = DEFAULT_RELAYS
   },
 
   load() {
     {
       // Seeed
       const string = this.seed;
-      const seed = string ? b4a.from(string, 'hex') : pkarr.randomBytes()
+      const seed = string ? b4a.from(string, 'hex') : Pkarr.generateSeed()
 
       this.seed = string || b4a.toString(seed, 'hex')
       localStorage.setItem('seed', this.seed)
 
       // keyPair
-      this.keyPair = pkarr.generateKeyPair(seed)
+      this.keyPair = Pkarr.generateKeyPair(seed)
     }
     {
-      // Servers
-      const servers = localStorage.getItem('servers')
+      // Relays
+      const relays = localStorage.getItem('relays')
       try {
-        this.servers = JSON.parse(servers) || DEFAULT_SERVERS
+        this.relays = JSON.parse(relays) || DEFAULT_RELAYS
       } catch { }
     }
     {
