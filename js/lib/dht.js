@@ -15,7 +15,10 @@ const DEFAULT_BOOTSTRAP = [
   'router.utorrent.com:6881',
   'dht.transmissionbt.com:6881',
   'router.nuh.dev:6881'
-]
+].map(addr => {
+  const [host, port] = addr.split(':')
+  return { host, port: Number(port) }
+})
 
 const DEFAULT_STORAGE_LOCATION = path.join(homedir(), '.config', 'pkarr')
 
@@ -28,12 +31,14 @@ export class DHT {
    */
   constructor (options = {}) {
     const _storage = options.storage || new Storage(options.storageLocation)
-    options.bootstrap = options.bootstrap || _storage?.loadBootstrap()
+    options.bootstrap = options.bootstrap || DEFAULT_BOOTSTRAP
 
     this._dht = new _DHT(options)
 
+    _storage?.loadRoutingTable(this._dht)
+
     goodbye(() => {
-      _storage?.saveBootstrap(this._dht)
+      _storage?.saveRoutingTable(this._dht)
       this.destroy()
     })
   }
@@ -277,10 +282,11 @@ class Storage {
     this._loaded = []
   }
 
-  loadBootstrap () {
-    const filepath = path.join(this._location, 'bootstrap.json')
-
-    const bootstrap = DEFAULT_BOOTSTRAP
+  /**
+   * @param {_DHT} dht
+   */
+  loadRoutingTable (dht) {
+    const filepath = path.join(this._location, 'routing-table.json')
 
     try {
       const data = fs.readFileSync(filepath)
@@ -288,31 +294,21 @@ class Storage {
       const nodes = JSON.parse(string)
 
       for (const node of nodes) {
-        bootstrap.push(node)
+        dht.addNode(node)
       }
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
     }
-
-    this._loaded = bootstrap
-    return bootstrap.map(n => {
-      const [host, port] = n.split(':')
-      return { host, port: Number(port) }
-    })
   }
 
   /**
    * @param {_DHT} dht
    */
-  saveBootstrap (dht) {
-    const filePath = path.join(this._location, 'bootstrap.json')
+  saveRoutingTable (dht) {
+    const filePath = path.join(this._location, 'routing-table.json')
 
-    const nodes = dht._rpc.nodes.toArray()
-      .map(/** @param {{host:string, port:number}} n */ n => n.host + ':' + n.port)
-
-    const set = new Set([...nodes, ...this._loaded])
-
-    const json = JSON.stringify([...set])
+    const nodes = dht.toJSON().nodes
+    const json = JSON.stringify(nodes)
 
     try {
       fs.writeFileSync(filePath, json)
