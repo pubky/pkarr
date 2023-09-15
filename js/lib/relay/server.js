@@ -31,10 +31,11 @@ export default class Server {
   /**
    * @param {object} [options]
    * @param {DHT} [options.dht]
+   * @param {number} [options.port]
    */
   static start (options) {
     const server = new Server(options)
-    return server.listen()
+    return server.listen(options.port)
   }
 
   get address () {

@@ -10,11 +10,12 @@ import { fileURLToPath } from 'url'
 import DHT from './lib/dht.js'
 import * as pkarr from './lib/tools.js'
 import Republisher from './lib/republisher.js'
+import Server from './lib/relay/server.js'
 
 const ROOT_DIR = path.join(homedir(), '.pkarr')
 const KEEP_ALIVE_PATH = path.join(ROOT_DIR, 'keepalive.json')
 
-const resolveKey = async (key) => {
+const resolveKey = async (key, fullLookup) => {
   if (!key) {
     console.error(chalk.red('✘') + ' Please provide a key to resolve!\n')
     return
@@ -32,7 +33,7 @@ const resolveKey = async (key) => {
   }
 
   const [success, fail] = loading('Resolving')
-  const response = await dht.get(keyBytes)
+  const response = await dht.get(keyBytes, { fullLookup })
 
   if (response) {
     success('Resolved')
@@ -232,6 +233,14 @@ const keepalive = (command, ...args) => {
   }
 }
 
+/**
+ * @param {number} port
+ */
+const relay = async (port = 6881) => {
+  const server = await Server.start({ port })
+  console.log('Relay server is listening on address:', server.address)
+}
+
 const version = () => {
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = dirname(__filename)
@@ -249,7 +258,12 @@ Commands:
   keepalive [add | remove] [...keys]  Add or remove keys to the list of keys to keepalive
   keepalive list                      List stored keys
   keepalive                           Run the publisher to keep stored keys alive
+  relay                               Run a relay server
   help                                Show this help message
+
+Options:
+  -f, --full-lookup                   Perform a full lookup while resolving a key
+  -p, --port                          Port to run the relay server on (default: 6881)
 
 Examples:
   pkarr resolve pk:yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
@@ -266,13 +280,16 @@ const command = process.argv[2]
 
 switch (command) {
   case 'resolve':
-    resolveKey(process.argv[3])
+    resolveKey(process.argv[3], process.argv.find(arg => arg === '-f' || arg === '--full-lookup'))
     break
   case 'publish':
     publish(process.argv[3], process.argv.slice(4))
     break
   case 'keepalive':
     keepalive(...process.argv.slice(3))
+    break
+  case 'relay':
+    relay(process.argv.find(arg => arg.startsWith('-p=') || arg.startsWith('--port'))?.split('=')[1])
     break
   case '-v':
   case 'version':

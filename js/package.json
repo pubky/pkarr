@@ -20,7 +20,6 @@
     "index.js",
     "lib/**.js",
     "bin.js",
-    "start.js",
     "!**/*.tsbuildinfo"
   ],
   "keywords": [],
