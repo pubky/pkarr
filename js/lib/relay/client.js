@@ -1,27 +1,21 @@
 import z32 from 'z32'
 import b4a from 'b4a'
 
-import { createPutRequest, generateKeyPair, verify, codec, decodeSigData } from '../tools.js'
+import { createPutRequest, generateKeyPair, verify, codec, decodeSigData, randomBytes } from '../tools.js'
 
 export class Pkarr {
-  /**
-   * @param {object} options
-   * @param {string[]} options.relays
-   */
-  constructor (options) {
-    this._relays = options.relays
-      .map(relay => !relay.startsWith('http') ? 'https://' + relay : relay)
-  }
-
   static generateKeyPair = generateKeyPair
+  static generateSeed = randomBytes
+  static codec = codec
 
   /**
    * @param {import('../tools.js').KeyPair} keyPair
    * @param {any} records
+   * @param {string[]} relays
    *
    * @returns {Promise<boolean>}
    */
-  async publish (keyPair, records) {
+  static async publish (keyPair, records, relays) {
     const request = await createPutRequest(keyPair, records)
 
     const body = b4a.concat([request.sig, request.msg])
@@ -31,14 +25,14 @@ export class Pkarr {
 
       const notOk = () => {
         count += 1
-        if (count >= this._relays.length) {
+        if (count >= relays.length) {
           resolve(false)
         }
       }
 
-      this._relays.forEach((relay) =>
+      relays.forEach((relay) =>
         fetch(
-          relay + '/' + z32.encode(keyPair.publicKey),
+          relay.replace(/\/+$/, '') + '/' + z32.encode(keyPair.publicKey),
           { method: 'PUT', body }
         )
           .then(async (response) => {
@@ -52,21 +46,24 @@ export class Pkarr {
 
   /**
    * @param {Uint8Array} key
+   * @param {string[]} relays
+   *
+   * @returns {Promise<{seq:number, records: any[]} | null>}
    */
-  async resolve (key) {
+  static async resolve (key, relays) {
     return new Promise(resolve => {
       let count = 0
 
       const notOk = () => {
         count += 1
-        if (count >= this._relays.length) {
+        if (count >= relays.length) {
           resolve(null)
         }
       }
 
-      this._relays.forEach((relay) =>
+      relays.forEach((relay) =>
         fetch(
-          relay + '/' + z32.encode(key),
+          relay.replace(/\/+$/, '') + '/' + z32.encode(key),
           { method: 'GET' }
         )
           .then(async (response) => {

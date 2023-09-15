@@ -18,5 +18,5 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["index.js", "lib", "test"]
+  "include": ["index.js", "lib", "test", "relayed.js"]
 }

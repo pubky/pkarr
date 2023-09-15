@@ -1,6 +1,6 @@
 import test from 'brittle'
 
-import Pkarr from '../lib/relay/client.js'
+import Pkarr from '../relayed.js'
 import Server from '../lib/relay/server.js'
 import DHT from '../lib/dht.js'
 
@@ -16,17 +16,26 @@ test('successful put - get', async (t) => {
     ['_btc.bob', 'https://my.ln-node/.well-known/lnurlp/bob']
   ]
 
-  const publisher = new Pkarr({ relays: [serverA.address] })
-  const published = await publisher.publish(keyPair, records)
+  const published = await Pkarr.publish(keyPair, records, [serverA.address])
 
   t.ok(published)
 
-  const resolver = new Pkarr({ relays: [serverB.address] })
-  const resolved = await resolver.resolve(keyPair.publicKey)
+  const resolved = await Pkarr.resolve(keyPair.publicKey, [serverB.address])
 
   t.ok(resolved)
   t.ok(resolved?.seq)
   t.alike(resolved?.records, records)
+
+  {
+    const updated = await Pkarr.publish(keyPair, records.slice(0, 2), [serverA.address])
+    t.ok(updated)
+
+    const resolved = await Pkarr.resolve(keyPair.publicKey, [serverB.address])
+
+    t.ok(resolved)
+    t.ok(resolved?.seq)
+    t.alike(resolved?.records, records.slice(0, 2))
+  }
 
   serverA.close()
   serverB.close()

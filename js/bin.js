@@ -272,6 +272,7 @@ Examples:
   pkarr keepalive remove yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
   pkarr keepalive list
   pkarr keepalive
+  pkarr relay --port=6881
   pkarr help
 `)
 }

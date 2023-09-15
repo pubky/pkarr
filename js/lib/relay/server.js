@@ -1,15 +1,6 @@
 import http from 'http'
 import z32 from 'z32'
 
-// import os = require('os')
-// import fs = require('fs')
-// import path = require('path')
-// import { createHash } = require('crypto')
-// import SlashURL = require('@synonymdev/slashtags-url')
-// import b4a = require('b4a')
-// import lmdb = require('lmdb')
-// import { URL } = require('url')
-
 import DHT from '../dht.js'
 import { decodeSigData } from '../tools.js'
 
@@ -38,9 +29,13 @@ export default class Server {
     return server.listen(options.port)
   }
 
-  get address () {
+  get port () {
     // @ts-ignore
-    return 'http://localhost:' + this._server.address().port
+    return this._server.address().port
+  }
+
+  get address () {
+    return 'http://localhost:' + this.port
   }
 
   /**
@@ -182,8 +177,8 @@ export default class Server {
 }
 
 /**
- * @param {string} url
- */
+     * @param {string} url
+     */
 function parseURL (url) {
   try {
     const parts = url.split('/')
