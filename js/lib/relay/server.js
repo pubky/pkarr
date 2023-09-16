@@ -2,7 +2,7 @@ import http from 'http'
 import z32 from 'z32'
 
 import DHT from '../dht.js'
-import { decodeSigData } from '../tools.js'
+import { decodeSigData, verify } from '../tools.js'
 
 const DEFAULT_PORT = 0
 
@@ -137,6 +137,11 @@ export default class Server {
 
       const sig = buffer.subarray(0, 64)
       const sigData = buffer.subarray(64)
+
+      if (!verify(sig, sigData, key)) {
+        badRequest(req, res, 'Invalid signature')
+        return
+      }
 
       const { seq, v } = decodeSigData(sigData)
 

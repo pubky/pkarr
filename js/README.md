@@ -51,7 +51,7 @@ Starting republisher...
 
 ### Relay
 
-Run an HTTP relay to use Pkarr in UDP-less environments.
+Run an HTTP relay to use Pkarr in UDP-less environments. [Read more](../design/relays.md)
 
 ```bash
 pkarr relay
