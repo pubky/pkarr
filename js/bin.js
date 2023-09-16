@@ -8,9 +8,9 @@ import { homedir } from 'os'
 import { fileURLToPath } from 'url'
 
 import DHT from './lib/dht.js'
-import * as pkarr from './lib/tools.js'
 import Republisher from './lib/republisher.js'
 import Server from './lib/relay/server.js'
+import Pkarr from './index.js'
 
 const ROOT_DIR = path.join(homedir(), '.pkarr')
 const KEEP_ALIVE_PATH = path.join(ROOT_DIR, 'keepalive.json')
@@ -21,48 +21,44 @@ const resolveKey = async (key, fullLookup) => {
     return
   }
 
-  const dht = new DHT()
+  const [success, fail] = loading('Resolving')
 
-  const keyBytes = z32.decode(key.replace('pk:', ''))
+  let response
 
   try {
-    if (keyBytes.byteLength !== 32) throw new Error('Invalid key')
-  } catch {
-    console.error(chalk.red('✘') + ` Key ${key} is not valid\n`, chalk.dim('keys must be z-base32 encoded 32 bytes'))
-    return
-  }
+    response = await Pkarr.resolve(key, { fullLookup })
 
-  const [success, fail] = loading('Resolving')
-  const response = await dht.get(keyBytes, { fullLookup })
+    if (response) {
+      success('Resolved')
+    } else {
+      fail("couldn't resolve records!")
+      console.log('')
+      return
+    }
 
-  if (response) {
-    success('Resolved')
-    dht.destroy()
-  } else {
-    fail("couldn't resolve records!")
+    table(response.records).forEach((row) => {
+      console.log(chalk.green('   ❯ ') + row.join(' '))
+    })
+
     console.log('')
-    dht.destroy()
-    return
+
+    const metadata = [
+      ['updated_at', new Date(response.seq * 1000).toLocaleString()],
+      ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
+      ['from', response.nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
+    ]
+    table(metadata).forEach((row) => {
+      console.log(chalk.dim('   › ' + row.join(': ')))
+    })
+
+    console.log('')
+  } catch (error) {
+    if (error.message === 'Invalid key') {
+      fail(` Key ${key} is not valid\n`, chalk.dim('keys must be z-base32 encoded 32 bytes'))
+    } else {
+      console.error(error)
+    }
   }
-
-  const records = await pkarr.codec.decode(response.v)
-
-  table(records).forEach((row) => {
-    console.log(chalk.green('   ❯ ') + row.join(' '))
-  })
-
-  console.log('')
-
-  const metadata = [
-    ['updated_at', new Date(response.seq * 1000).toLocaleString()],
-    ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
-    ['from', response.nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
-  ]
-  table(metadata).forEach((row) => {
-    console.log(chalk.dim('   › ' + row.join(': ')))
-  })
-
-  console.log('')
 }
 
 const publish = async () => {
@@ -101,7 +97,7 @@ const publish = async () => {
   })
 
   const seed = crypto.createHash('sha256').update(passphrase, 'utf-8').digest()
-  const keyPair = pkarr.generateKeyPair(seed)
+  const keyPair = Pkarr.generateKeyPair(seed)
   const pk = 'pk:' + z32.encode(keyPair.publicKey)
 
   console.log(chalk.green('    ❯', pk))
@@ -143,11 +139,10 @@ const publish = async () => {
   stdin.pause()
 
   const dht = new DHT()
-  const request = await pkarr.createPutRequest(keyPair, records)
   const [success, fail] = loading('Publishing')
 
   try {
-    await dht.put(keyPair.publicKey, request)
+    await Pkarr.publish(keyPair, records)
     success('Published')
   } catch (error) {
     fail('Failed to publish. got an error:')

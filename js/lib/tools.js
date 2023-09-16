@@ -1,6 +1,7 @@
 import b4a from 'b4a'
 import sodium from 'sodium-universal'
 import bencode from 'bencode'
+import z32 from 'z32'
 import _codec from './codec.js'
 
 export const verify = sodium.crypto_sign_verify_detached
@@ -79,6 +80,23 @@ export const generateKeyPair = (seed) => {
     publicKey,
     secretKey
   }
+}
+
+/**
+ * @param {string | Uint8Array} url
+ *
+ * @returns {Uint8Array}
+ */
+export const decodeKey = (url) => {
+  if (typeof url !== 'string') return url
+
+  const keyBytes = z32.decode(url.replace('pk:', ''))
+
+  if (keyBytes.byteLength !== 32) {
+    throw new Error('Invalid key')
+  }
+
+  return keyBytes
 }
 
 /**
