@@ -49,30 +49,21 @@ $ pkarr keepalive
 Starting republisher...
 ```
 
-### Server
+### Relay
 
-clone this repo, navigate to js/ directory, then run start script.
+Run an HTTP relay to use Pkarr in UDP-less environments. [Read more](../design/relays.md)
 
+```bash
+pkarr relay
 ```
-$ git clone https://github.com/Nuhvi/pkarr.git
-$ cd pkarr
-```
-
-By default it will run on port `7527` but you can override it using environment variables
-
-```
-$ PORT=3000 npm start
-> [21:45:58.826] INFO (9863): Server listening at http://0.0.0.0:3000
-```
-
-Consider adding your server to the [list of free and public servers](../servers.txt)
+Consider adding your relay to the [list of free and public relays](../relays.txt)
 
 ### Client 
 
 In browsers and devices behind NAT, you can make HTTP requests to a any pkarr server.
 
 ```js
-import { pkarr } from 'pkarr'
+import Pkarr from 'pkarr/relayed.js'
 
 const records = [
   ['_matrix', '@foobar:example.com'],
@@ -82,166 +73,11 @@ const records = [
 ]
 
 // Genearate a keyPair from a 32 bytes seed
-const keyPair = pkarr.generateKeyPair(seed)
+const keyPair = Pkarr.generateKeyPair(seed)
 
 // Create a recrord, sign it and submit it to one or more servers
-await pkarr.put(keyPair, records, ["pkarr1.nuhvi.com"])
+await Pkarr.publish(keyPair, records, ["relay.pkarr.org"])
 
 // Get records of a public key from another server
-const response = pkarr.get(key, ["pkarr2.nuhvi.com"])
-// { 
-//   ok: true, 
-//   seq: 423412341, unix timestamp in seconds
-//   records: [...]  same as records above same as records above same as records above same as records above
-// }
-```
-
-## HTTP API
-
-HTTP endpoints expected from server implementation
-
-#### PUT `/pkarr/:key`
-
-Simple proxy to the relevant parts of [BEP 44](https://www.bittorrent.org/beps/bep_0044.html) mutable put request/response.
-
-```json
-{
-  params: {
-    type: 'object',
-    properties: {
-      key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
-    }
-  },
-  body: {
-    description: 'Record parameters to be (or as) stored in the DHT',
-    type: 'object',
-    required: ['seq', 'sig', 'v'],
-    properties: {
-      v: {
-        description: 'Value of the record in base64',
-        type: 'string',
-        contentEncoding: 'base64'
-      },
-      seq: {
-        description: 'Timestamp of the record',
-        type: 'number'
-      },
-      sig: {
-        description: 'Signature of the record value and sequnce number, in hex encoding',
-        type: 'string',
-        pattern: '^[a-fA-F0-9]{128}$'
-      }
-    }
-    },
-  response: {
-    200: {
-      type: 'object',
-      properties: {
-        record: {
-          description: 'Record parameters to be (or as) stored in the DHT',
-          type: 'object',
-          required: ['seq', 'sig', 'v'],
-          properties: {
-            v: {
-              description: 'Value of the record in base64',
-              type: 'string',
-              contentEncoding: 'base64'
-            },
-            seq: {
-              description: 'Timestamp of the record',
-              type: 'number'
-            },
-            sig: {
-              description: 'Signature of the record value and sequnce number, in hex encoding',
-              type: 'string',
-              pattern: '^[a-fA-F0-9]{128}$'
-            }
-          }
-        },
-        query: {
-          description: 'Last query to the DHT from which the record was retrieved or stored',
-          type: 'object',
-          required: ['type', 'nodes', 'time'],
-          properties: {
-            type: {
-              description: 'Type of the query',
-              type: 'string',
-              enum: ['put', 'get']
-            },
-            nodes: {
-              description: 'Number of responding nodes',
-              type: 'number'
-            },
-            time: {
-              description: 'Timestamp of the query in seconds',
-              type: 'number'
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-#### GET `/pkarr:key`
-
-```json
-{
-  params: {
-    type: 'object',
-    required: ['key'],
-    properties: {
-      key: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }
-    }
-  },
-  response: {
-    200: {
-      type: 'object',
-      properties: {
-        record: {
-          description: 'Record parameters to be (or as) stored in the DHT',
-          type: 'object',
-          required: ['seq', 'sig', 'v'],
-          properties: {
-            v: {
-              description: 'Value of the record in base64',
-              type: 'string',
-              contentEncoding: 'base64'
-            },
-            seq: {
-              description: 'Timestamp of the record',
-              type: 'number'
-            },
-            sig: {
-              description: 'Signature of the record value and sequnce number, in hex encoding',
-              type: 'string',
-              pattern: '^[a-fA-F0-9]{128}$'
-            }
-          }
-        },
-        query: {
-          description: 'Last query to the DHT from which the record was retrieved or stored',
-          type: 'object',
-          required: ['type', 'nodes', 'time'],
-          properties: {
-            type: {
-              description: 'Type of the query',
-              type: 'string',
-              enum: ['put', 'get']
-            },
-            nodes: {
-              description: 'Number of responding nodes',
-              type: 'number'
-            },
-            time: {
-              description: 'Timestamp of the query in seconds',
-              type: 'number'
-            }
-          }
-        }
-      }
-    }
-  }
-}
+const {seq, records} = Pkarr.resolve(key, ["relay.pkarr.org"])
 ```

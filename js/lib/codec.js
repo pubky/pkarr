@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as _brotli from 'brotli-compress'
 import b4a from 'b4a'
 

@@ -8,60 +8,57 @@ import { homedir } from 'os'
 import { fileURLToPath } from 'url'
 
 import DHT from './lib/dht.js'
-import * as pkarr from './lib/tools.js'
 import Republisher from './lib/republisher.js'
+import Server from './lib/relay/server.js'
+import Pkarr from './index.js'
 
 const ROOT_DIR = path.join(homedir(), '.pkarr')
 const KEEP_ALIVE_PATH = path.join(ROOT_DIR, 'keepalive.json')
 
-const resolveKey = async (key) => {
+const resolveKey = async (key, fullLookup) => {
   if (!key) {
     console.error(chalk.red('✘') + ' Please provide a key to resolve!\n')
     return
   }
 
-  const dht = new DHT()
+  const [success, fail] = loading('Resolving')
 
-  const keyBytes = z32.decode(key.replace('pk:', ''))
+  let response
 
   try {
-    if (keyBytes.byteLength !== 32) throw new Error('Invalid key')
-  } catch {
-    console.error(chalk.red('✘') + ` Key ${key} is not valid\n`, chalk.dim('keys must be z-base32 encoded 32 bytes'))
-    return
-  }
+    response = await Pkarr.resolve(key, { fullLookup })
 
-  const [success, fail] = loading('Resolving')
-  const response = await dht.get(keyBytes)
+    if (response) {
+      success('Resolved')
+    } else {
+      fail("couldn't resolve records!")
+      console.log('')
+      return
+    }
 
-  if (response) {
-    success('Resolved')
-    dht.destroy()
-  } else {
-    fail("couldn't resolve records!")
+    table(response.records).forEach((row) => {
+      console.log(chalk.green('   ❯ ') + row.join(' '))
+    })
+
     console.log('')
-    dht.destroy()
-    return
+
+    const metadata = [
+      ['updated_at', new Date(response.seq * 1000).toLocaleString()],
+      ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
+      ['from', response.nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
+    ]
+    table(metadata).forEach((row) => {
+      console.log(chalk.dim('   › ' + row.join(': ')))
+    })
+
+    console.log('')
+  } catch (error) {
+    if (error.message === 'Invalid key') {
+      fail(` Key ${key} is not valid\n`, chalk.dim('keys must be z-base32 encoded 32 bytes'))
+    } else {
+      console.error(error)
+    }
   }
-
-  const records = await pkarr.codec.decode(response.v)
-
-  table(records).forEach((row) => {
-    console.log(chalk.green('   ❯ ') + row.join(' '))
-  })
-
-  console.log('')
-
-  const metadata = [
-    ['updated_at', new Date(response.seq * 1000).toLocaleString()],
-    ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
-    ['from', response.nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
-  ]
-  table(metadata).forEach((row) => {
-    console.log(chalk.dim('   › ' + row.join(': ')))
-  })
-
-  console.log('')
 }
 
 const publish = async () => {
@@ -100,7 +97,7 @@ const publish = async () => {
   })
 
   const seed = crypto.createHash('sha256').update(passphrase, 'utf-8').digest()
-  const keyPair = pkarr.generateKeyPair(seed)
+  const keyPair = Pkarr.generateKeyPair(seed)
   const pk = 'pk:' + z32.encode(keyPair.publicKey)
 
   console.log(chalk.green('    ❯', pk))
@@ -142,11 +139,10 @@ const publish = async () => {
   stdin.pause()
 
   const dht = new DHT()
-  const request = await pkarr.createPutRequest(keyPair, records)
   const [success, fail] = loading('Publishing')
 
   try {
-    await dht.put(keyPair.publicKey, request)
+    await Pkarr.publish(keyPair, records)
     success('Published')
   } catch (error) {
     fail('Failed to publish. got an error:')
@@ -232,6 +228,14 @@ const keepalive = (command, ...args) => {
   }
 }
 
+/**
+ * @param {number} port
+ */
+const relay = async (port = 6881) => {
+  const server = await Server.start({ port })
+  console.log('Relay server is listening on address:', server.address)
+}
+
 const version = () => {
   const __filename = fileURLToPath(import.meta.url)
   const __dirname = dirname(__filename)
@@ -249,7 +253,12 @@ Commands:
   keepalive [add | remove] [...keys]  Add or remove keys to the list of keys to keepalive
   keepalive list                      List stored keys
   keepalive                           Run the publisher to keep stored keys alive
+  relay                               Run a relay server
   help                                Show this help message
+
+Options:
+  -f, --full-lookup                   Perform a full lookup while resolving a key
+  -p, --port                          Port to run the relay server on (default: 6881)
 
 Examples:
   pkarr resolve pk:yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
@@ -258,6 +267,7 @@ Examples:
   pkarr keepalive remove yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy
   pkarr keepalive list
   pkarr keepalive
+  pkarr relay --port=6881
   pkarr help
 `)
 }
@@ -266,13 +276,16 @@ const command = process.argv[2]
 
 switch (command) {
   case 'resolve':
-    resolveKey(process.argv[3])
+    resolveKey(process.argv[3], process.argv.find(arg => arg === '-f' || arg === '--full-lookup'))
     break
   case 'publish':
     publish(process.argv[3], process.argv.slice(4))
     break
   case 'keepalive':
     keepalive(...process.argv.slice(3))
+    break
+  case 'relay':
+    relay(process.argv.find(arg => arg.startsWith('-p=') || arg.startsWith('--port'))?.split('=')[1])
     break
   case '-v':
   case 'version':

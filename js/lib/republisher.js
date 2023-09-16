@@ -1,3 +1,4 @@
+// @ts-nocheck
 import DHT from './dht.js'
 import z32 from 'z32'
 

@@ -10,37 +10,36 @@ import path from 'path'
 const verify = sodium.crypto_sign_verify_detached
 
 const DEFAULT_BOOTSTRAP = [
-  { host: 'router.magnets.im', port: 6881 },
-  { host: 'router.bittorrent.com', port: 6881 },
-  { host: 'router.utorrent.com', port: 6881 },
-  { host: 'dht.transmissionbt.com', port: 6881 },
-  // Running a reliable DHT node that responds to requests from behind NAT? please open an issue.
-  { host: 'router.nuh.dev', port: 6881 }
-]
+  'router.magnets.im:6881',
+  'router.bittorrent.com:6881',
+  'router.utorrent.com:6881',
+  'dht.transmissionbt.com:6881',
+  'router.nuh.dev:6881'
+].map(addr => {
+  const [host, port] = addr.split(':')
+  return { host, port: Number(port) }
+})
 
-const DEFAULT_STORAGE = path.join(homedir(), '.config', 'pkarr')
+const DEFAULT_STORAGE_LOCATION = path.join(homedir(), '.config', 'pkarr')
 
-export class DHT extends _DHT {
+export class DHT {
   /**
-   * @param {object} [opts]
-   * @param {{host:string, port:string}[]} [opts.bootstrap] - List of bootstrap nodes. example [{host: "router.utorrent.com", port: 6881}]
+   * @param {object} [options]
+   * @param {{host:string, port:number}[]} [options.bootstrap] - List of bootstrap nodes. example [{host: "router.utorrent.com", port: 6881}]
+   * @param {Storage} [options.storage]
+   * @param {string} [options.storageLocation] - location to store bootstrap nodes at
    */
-  constructor (opts = {}) {
-    const _storage = opts.storage || DEFAULT_STORAGE
+  constructor (options = {}) {
+    const _storage = options.storage || new Storage(options.storageLocation)
+    options.bootstrap = options.bootstrap || DEFAULT_BOOTSTRAP
 
-    opts.bootstrap = opts.bootstrap || loadBootstrap(_storage)
+    this._dht = new _DHT(options)
 
-    super(opts)
+    _storage?.loadRoutingTable(this._dht)
 
     goodbye(() => {
-      _saveBootstrap(this, _storage)
+      _storage?.saveRoutingTable(this._dht)
       this.destroy()
-    })
-  }
-
-  bootstrapped () {
-    return new Promise((resolve) => {
-      this.once('ready', resolve)
     })
   }
 
@@ -57,6 +56,7 @@ export class DHT extends _DHT {
    *  seq: number,
    *  v: Uint8Array,
    *  sig: Uint8Array,
+   *  msg: Uint8Array,
    *  nodes?: Array<{ host: string, port: number, client?: string }>
    * }>}
    */
@@ -64,22 +64,22 @@ export class DHT extends _DHT {
     const target = hash(key)
     const targetHex = target.toString('hex')
 
-    let value = this._values.get(targetHex) || null
+    let value = this._dht._values.get(targetHex) || null
     const nodes = []
 
     return new Promise((resolve, reject) => {
       if (value) {
         // If value was directly stored in this node in put request
-        value = createGetResponse(this._rpc.id, value)
+        value = createGetResponse(this._dht._rpc.id, value)
         return process.nextTick(done)
       }
 
-      this._closest(
+      this._dht._closest(
         target,
         {
           q: 'get',
           a: {
-            id: this._rpc.id,
+            id: this._dht._rpc.id,
             target
           }
         },
@@ -87,15 +87,25 @@ export class DHT extends _DHT {
         done
       )
 
+      /**
+       * @param {Error} [err]
+       */
       function done (err) {
         if (err) reject(err)
         else resolve(value && { ...value, nodes })
       }
 
+      /**
+       * @param {MutableGetResponse} message
+       * @param {Node} from
+       */
       function onreply (message, from) {
         const r = message.r
         if (!r.sig || !r.k) return true
-        if (!verify(r.sig, encodeSigData(r), r.k)) return true
+
+        const msg = encodeSigData(r)
+        if (!verify(r.sig, msg, r.k)) return true
+
         if (hash(r.k).equals(target)) {
           if (!value || r.seq >= value.seq) {
             nodes.push({
@@ -105,7 +115,7 @@ export class DHT extends _DHT {
             })
             value = r
             if (!options.fullLookup) {
-              resolve({ ...value, nodes })
+              resolve({ ...value, msg, nodes })
             }
           }
         }
@@ -122,7 +132,7 @@ export class DHT extends _DHT {
    * @param  {number} request.seq
    *
    * @returns {Promise<{
-   *  hash: Uint8Array,
+   *  target: Uint8Array,
    *  nodes: Array<{ id: Uint8Array, host: string, port: number }>
    * }>}
    */
@@ -130,20 +140,24 @@ export class DHT extends _DHT {
     validate(key, request)
     const target = hash(key)
 
-    let closestNodes = this._tables.get(target.toString('hex'))?.closest(target)
+    let closestNodes = this._dht._tables.get(target.toString('hex'))?.closest(target)
 
     if (!closestNodes) {
       await new Promise((resolve, reject) => {
-        this._closest(
+        this._dht._closest(
           target,
           {
             q: 'get',
             a: {
-              id: this._rpc.id,
+              id: this._dht._rpc.id,
               target
             }
           },
           null,
+          /**
+           * @param {Error} [err]
+           * @param {number} [n]
+           */
           (err, n) => {
             if (err) reject(err)
             else resolve(n)
@@ -151,13 +165,13 @@ export class DHT extends _DHT {
         )
       })
 
-      closestNodes = this._tables.get(target.toString('hex'))?.closest(target)
+      closestNodes = this._dht._tables.get(target.toString('hex'))?.closest(target)
     }
 
     const message = {
       q: 'put',
       a: {
-        id: this._rpc.id,
+        id: this._dht._rpc.id,
         token: null, // queryAll sets this
         v: request.v,
         k: key,
@@ -167,11 +181,15 @@ export class DHT extends _DHT {
     }
 
     return new Promise((resolve, reject) => {
-      this._rpc.queryAll(
+      this._dht._rpc.queryAll(
         closestNodes,
         message,
         null,
-        (err, n) => {
+        /**
+         * @param {Error} [err]
+         * @param {number} [_n]
+         */
+        (err, _n) => {
           if (err) reject(err)
           else resolve({ target, nodes: closestNodes })
         }
@@ -182,7 +200,7 @@ export class DHT extends _DHT {
   destroy () {
     return new Promise((resolve, reject) => {
       try {
-        super.destroy(resolve)
+        this._dht.destroy(resolve)
       } catch (error) {
         reject(error)
       }
@@ -190,42 +208,13 @@ export class DHT extends _DHT {
   }
 }
 
-export default DHT
-
-function _saveBootstrap (dht, storage) {
-  const filePath = path.join(storage, 'bootstrap.json')
-
-  const nodes = dht._rpc.nodes.toArray().map(n => ({ host: n.host, port: n.port }))
-  const json = JSON.stringify(nodes)
-  try {
-    fs.writeFileSync(filePath, json)
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error
-    fs.mkdirSync(storage)
-    fs.writeFileSync(filePath, json)
-  }
-}
-
-function loadBootstrap (storage) {
-  const filepath = path.join(storage, 'bootstrap.json')
-
-  const bootstrap = DEFAULT_BOOTSTRAP
-
-  try {
-    const data = fs.readFileSync(filepath)
-    const string = data.toString()
-    const nodes = JSON.parse(string)
-
-    for (const node of nodes) {
-      bootstrap.push(node)
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error
-  }
-
-  return bootstrap
-}
-
+/**
+ * @param {Uint8Array} key
+ * @param {object} request
+ * @param {number} request.seq
+ * @param {Uint8Array} request.v
+ * @param {Uint8Array} request.sig
+ */
 function validate (key, request) {
   if (request.v === undefined) {
     throw new Error('request.v not given')
@@ -245,12 +234,24 @@ function validate (key, request) {
   if (typeof request.seq !== 'number') {
     throw new Error('request.seq not an integer')
   }
+
+  if (!verify(request.sig, encodeSigData(request), key)) {
+    throw new Error('invalid signature')
+  }
 }
 
-function hash (buf) {
-  return crypto.createHash('sha1').update(buf).digest()
+/**
+ * @param {Uint8Array} input
+ */
+function hash (input) {
+  return crypto.createHash('sha1').update(input).digest()
 }
 
+/**
+ * @param {Uint8Array} id
+ * @param {{v:Uint8Array, sig:Uint8Array, k:Uint8Array, seq:number}} value
+ * @param {{host:string, port:number}[]} [nodes]
+ */
 function createGetResponse (id, value, nodes) {
   return {
     id,
@@ -262,8 +263,68 @@ function createGetResponse (id, value, nodes) {
   }
 }
 
+/**
+ * @param {{v:Uint8Array, seq:number}} msg
+ */
 function encodeSigData (msg) {
-  const ref = { seq: msg.seq || 0, v: msg.v }
-  if (msg.salt) ref.salt = msg.salt
-  return bencode.encode(ref).slice(1, -1)
+  return bencode
+    .encode({ seq: msg.seq || 0, v: msg.v })
+    .slice(1, -1)
 }
+
+class Storage {
+  /**
+   * @param {string} location
+   */
+  constructor (location) {
+    this._location = location || DEFAULT_STORAGE_LOCATION
+
+    this._loaded = []
+  }
+
+  /**
+   * @param {_DHT} dht
+   */
+  loadRoutingTable (dht) {
+    const filepath = path.join(this._location, 'routing-table.json')
+
+    try {
+      const data = fs.readFileSync(filepath)
+      const string = data.toString()
+      const nodes = JSON.parse(string)
+
+      for (const node of nodes) {
+        dht.addNode(node)
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+    }
+  }
+
+  /**
+   * @param {_DHT} dht
+   */
+  saveRoutingTable (dht) {
+    const filePath = path.join(this._location, 'routing-table.json')
+
+    const nodes = dht.toJSON().nodes
+    const json = JSON.stringify(nodes)
+
+    try {
+      fs.writeFileSync(filePath, json)
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error
+      fs.mkdirSync(this._location)
+      fs.writeFileSync(filePath, json)
+    }
+  }
+}
+
+export default DHT
+
+/**
+ * @typedef {{host:string, port:number, address?: string}} Node
+ * @typedef {{v: string, r: any}} GenericResponse
+ * @typedef {{sig:Uint8Array, k:Uint8Array, seq:number, v: Uint8Array}} PutRequest
+ * @typedef {GenericResponse & {r: PutRequest}} MutableGetResponse
+ */

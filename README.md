@@ -4,7 +4,7 @@
 
 The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable domains. This system would be accessible to anyone capable of maintaining a private key.
 
-Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://pkarr.nuh.dev/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
+Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
 - To publish resource records for your key, sign a small payload (<= ~3000 bytes) and publish it on the DHT (throug a relay if necessary).
@@ -15,7 +15,7 @@ Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89u
 
 ## DEMO 
 
-Try the [web app demo](https://pkarr.nuhvi.com).
+Try the [web app demo](https://app.pkarr.org).
 
 Or if you prefer a [CLI](./js/README.md#cli) 
 
@@ -31,14 +31,14 @@ Or if you prefer a [CLI](./js/README.md#cli)
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Server
+    participant Relay
     participant DHT
     participant Republisher
 
-    Client->>Server: Publish
-    note over Server: Optional DHT proxy
-    Server->>DHT: Put
-    Note over Server,DHT: Store RRs (resource records)
+    Client->>Relay: Publish
+    note over Relay: Optional DHT Relay
+    Relay->>DHT: Put
+    Note over Relay,DHT: Store RRs (resource records)
 
     Client->>Republisher: Republish request
     note over Client, Republisher: Notify Hosting provider mentioned in RRs
@@ -47,11 +47,11 @@ sequenceDiagram
         Republisher->>DHT: Republish
     end
 
-    Client->>Server: Get
-    Server->>DHT: Get
-    DHT->>Server: Response
-    Server->>Client: Response
-    note over  Server: Optional DNS over HTTPS server
+    Client->>Relay: Get
+    Relay->>DHT: Get
+    DHT->>Relay: Response
+    Relay->>Client: Response
+    note over  Relay: Optional DNS over HTTPS server
 ```
 
 ### Clients
@@ -66,13 +66,13 @@ sequenceDiagram
  #### Existing applications
  To support existing applications totally oblivious of Pkarr, users will have to (manually or programatically) edit their OS DNS servers to add one or more Pkarr servers to proxy DHT records as DNS over HTTPS.
 
-### Servers
+### Relays
 
-Pkarr servers are optional but they:
+Pkarr relays are optional but they:
 1. Trustlessly relay requests from Web apps and applications behind NAT or firewall, to the DHT.
 2. Offer a DoH interface for applications that aren't aware of Pkarr at all, so they can resolve something like `https://<key>` as usual.
 
-Servers are very light and cheap to operate, that they can easily run altruistically, but private, and paid servers are possible too.
+Relays are very light and cheap to operate, that they can easily run altruistically, but private, and paid relays are possible too.
 
 ### Republishers
 
@@ -142,14 +142,14 @@ Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 ye
 
 ## Roadmap
 
-1. [x] Implement a web server as a mere proxy over DHT.
+1. [x] Implement a web DHT relay.
 2. [x] Implement client-side tools for making queries and validating responses.
 3. [x] Implement a web app to represent the UX and DX of client side.
 4. [x] ClI - publish and resolve resource records.
 5. [x] Add optional caching and republishing of records on GET requests. 
 6. [x] Implement a standalone republisher and test keeping 100s of thousands of records alive.
 7. [ ] Reimplement everything in Rust once the JS implementation is tested with some scale. **<< we ar here**
-8. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr servers in OS and browser's configurations.
+8. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr relays in OS and browser's configurations.
 
 ## FAQ
 

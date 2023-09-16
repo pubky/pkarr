@@ -1,22 +1,28 @@
 {
   "name": "pkarr",
-  "version": "1.0.0-alpha.12",
+  "version": "1.0.0-alpha.14",
   "description": "client, server and CLI for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
+  "types": "types/index.d.ts",
   "bin": {
     "pkarr": "bin.js"
   },
   "scripts": {
     "lint": "standard --fix",
     "start": "node start.js",
-    "test": "brittle test/* --cov"
+    "test": "brittle test/* --cov",
+    "build": "rm -rf types && tsc",
+    "fullcheck": "npm run lint && npm run build && npm run test",
+    "prepublishOnly": "npm run fullcheck"
   },
   "files": [
     "index.js",
-    "lib/**.js",
+    "lib",
     "bin.js",
-    "start.js"
+    "relayed.js",
+    "types",
+    "!**/*.tsbuildinfo"
   ],
   "keywords": [],
   "author": "Nuh (@nuhvi)",
@@ -28,7 +34,6 @@
     "bittorrent-dht": "^11.0.4",
     "brotli-compress": "^1.3.3",
     "chalk": "^5.2.0",
-    "fastify": "^4.15.0",
     "graceful-goodbye": "^1.3.0",
     "pino": "^8.11.0",
     "pino-pretty": "^10.0.0",
@@ -38,6 +43,7 @@
   "devDependencies": {
     "brittle": "^3.2.1",
     "node-fetch": "^3.3.1",
-    "standard": "^17.0.0"
+    "standard": "^17.0.0",
+    "typescript": "^5.2.2"
   }
 }

@@ -1,62 +1,42 @@
 import test from 'brittle'
-import fetch from 'node-fetch'
 
-import pkarr from '../index.js'
-import codec from '../lib/codec.js'
-import Server from '../lib/server.js'
+import Pkarr from '../relayed.js'
+import Server from '../lib/relay/server.js'
+import DHT from '../lib/dht.js'
 
-global.fetch = fetch
+test('successful put - get', async (t) => {
+  const serverA = await Server.start({ dht: new DHT({ storage: null }) })
+  const serverB = await Server.start({ dht: new DHT({ storage: null }) })
 
-test('successful put - get', async function (t) {
-  class MockDHT {
-    async put (key, opts) {
-      this._saved = {
-        k: key,
-        ...opts
-      }
-      return {
-        nodes: Array(3).fill(0)
-      }
-    }
-
-    async get () {
-      return {
-        ...this._saved,
-        nodes: Array(5).fill(0)
-      }
-    }
-
-    destroy () { }
-  }
-
-  const dht = new MockDHT()
-
-  const serverA = await Server.start({ dht, log: false })
-  const serverB = await Server.start({ dht, log: false })
-
-  const keyPair = pkarr.generateKeyPair()
+  const keyPair = Pkarr.generateKeyPair()
   const records = [
     ['_matrix', '@foobar:example.com'],
     ['A', 'nuhvi.com'],
     ['_lud16.alice', 'https://my.ln-node/.well-known/lnurlp/alice'],
     ['_btc.bob', 'https://my.ln-node/.well-known/lnurlp/bob']
   ]
-  const result = await pkarr.put(keyPair, records, [serverA.address().toString()])
 
-  t.ok(result.ok)
-  if (result.ok) {
-    t.is(result.response.query.nodes, 3, 'same nodes as the mock')
-    t.alike(
-      await codec.decode(Buffer.from(result.response.record.v, 'base64')),
-      records
-    )
+  const published = await Pkarr.publish(keyPair, records, [serverA.address])
+
+  t.ok(published)
+
+  const resolved = await Pkarr.resolve(keyPair.publicKey, [serverB.address])
+
+  t.ok(resolved)
+  t.ok(resolved?.seq)
+  t.alike(resolved?.records, records)
+
+  {
+    const updated = await Pkarr.publish(keyPair, records.slice(0, 2), [serverA.address])
+    t.ok(updated)
+
+    const resolved = await Pkarr.resolve(keyPair.publicKey, [serverB.address])
+
+    t.ok(resolved)
+    t.ok(resolved?.seq)
+    t.alike(resolved?.records, records.slice(0, 2))
   }
 
-  const resolved = await pkarr.get(keyPair.publicKey, [serverB.address().toString()])
-  t.ok(resolved.ok)
-  t.ok(resolved.seq)
-  t.alike(resolved.records, records)
-
-  serverA.destroy()
-  serverB.destroy()
+  serverA.close()
+  serverB.close()
 })
