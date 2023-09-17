@@ -8,3 +8,6 @@ types
 .netlify
 
 coverage/
+
+# Rust
+target/
