@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ed25519-dalek = "2.0.0"
 ehttp = "0.3.0"
 reqwest = { version = "0.11", features = ["blocking"] }
+url = "2.4.1"
+zbase32 = "0.1.2"
