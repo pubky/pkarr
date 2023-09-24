@@ -20,15 +20,15 @@ export default {
    * @param {Uint8Array} encoded
    */
   async decode (encoded) {
-    // const version = encoded[0]
-    const rest = encoded.subarray(1)
-    const decoded = await brotli.decompress(rest)
-    const string = b4a.toString(b4a.from(decoded, 'hex'))
-
     try {
+      const rest = encoded.subarray(1)
+      const decoded = await brotli.decompress(rest)
+      const string = b4a.toString(b4a.from(decoded, 'hex'))
+
       return JSON.parse(string)
     } catch (error) {
-      console.log('pkarr::codec::decode failed to parse decompressed value', string)
+      // tolerate change of encoding in the coming days.
+      return [['error', 'failed to parse'], ['raw', b4a.toString(encoded)]]
     }
   }
 }
