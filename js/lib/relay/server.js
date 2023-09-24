@@ -2,11 +2,11 @@ import http from 'http'
 import z32 from 'z32'
 
 import DHT from '../dht.js'
-import { decodeSigData, verify } from '../tools.js'
+import { encodeSigData, verify } from '../tools.js'
 
 const DEFAULT_PORT = 0
 
-const MAX_BODY_SIZE = 1000 + 64 + 8 // 100 bytes for value, 64 for signature and 8 for seq
+const MAX_BODY_SIZE = 1000 + 64 + 8 // 1000 bytes for value, 64 for signature and 8 for seq
 
 export default class Server {
   /**
@@ -135,15 +135,29 @@ export default class Server {
         return
       }
 
+      if (buffer.length < 72) {
+        badRequest(req, res, 'Sequence should be 8 bytes')
+        return
+      }
+
       const sig = buffer.subarray(0, 64)
-      const sigData = buffer.subarray(64)
+      const v = buffer.subarray(72)
+
+      /** @type {Number} */
+      let seq
+      try {
+        seq = Number(buffer.subarray(64, 72).readBigInt64BE())
+      } catch (error) {
+        badRequest(req, res, 'Invalid sequence number')
+        return
+      }
+
+      const sigData = encodeSigData({ seq, v })
 
       if (!verify(sig, sigData, key)) {
         badRequest(req, res, 'Invalid signature')
         return
       }
-
-      const { seq, v } = decodeSigData(sigData)
 
       try {
         await this._dht.put(key, { sig, seq, v })
@@ -215,7 +229,7 @@ function success (req, res, body) {
 function badRequest (req, res, message) {
   console.log('bad request', req.method, req.url, message)
   res.writeHead(400, message)
-  res.end()
+  res.end(message)
 }
 
 /**

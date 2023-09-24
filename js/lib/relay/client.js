@@ -18,7 +18,10 @@ export class Pkarr {
   static async publish (keyPair, records, relays) {
     const request = await createPutRequest(keyPair, records)
 
-    const body = b4a.concat([request.sig, request.msg])
+    const body = b4a.alloc(request.v.length + 72)
+    body.set(request.sig)
+    body.writeBigInt64BE(BigInt(request.seq), 64)
+    body.set(request.v, 72)
 
     return new Promise(resolve => {
       let count = 0
