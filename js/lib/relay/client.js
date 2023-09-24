@@ -1,7 +1,9 @@
 import z32 from 'z32'
 import b4a from 'b4a'
 
-import { createPutRequest, generateKeyPair, verify, codec, decodeSigData, randomBytes } from '../tools.js'
+import { createPutRequest, generateKeyPair, codec, randomBytes } from '../tools.js'
+
+import { verifyBody, writeBody } from './shared.js'
 
 export class Pkarr {
   static generateKeyPair = generateKeyPair
@@ -18,7 +20,7 @@ export class Pkarr {
   static async publish (keyPair, records, relays) {
     const request = await createPutRequest(keyPair, records)
 
-    const body = b4a.concat([request.sig, request.msg])
+    const body = writeBody(request)
 
     return new Promise(resolve => {
       let count = 0
@@ -72,17 +74,13 @@ export class Pkarr {
             /** @type {Uint8Array} */
             const body = b4a.from(await response.arrayBuffer())
 
-            const sig = body.subarray(0, 64)
-            const msg = body.subarray(64)
+            const result = verifyBody(key, body)
 
-            const valid = verify(sig, msg, key)
-            if (!valid) return notOk()
-
-            const { seq, v } = decodeSigData(msg)
+            if (result instanceof Error) return notOk()
 
             resolve({
-              seq,
-              records: await codec.decode(v)
+              seq: result.seq,
+              records: await codec.decode(result.v)
             })
           })
           .catch(notOk)

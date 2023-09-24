@@ -15,17 +15,20 @@ PUT /:z-base32-encoded-key HTTP/2
 Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, PUT, OPTIONS
 
-<signature><message>
+<sig><seq>[<v>]
 ```
 
+Body should consist of:
+
+- 64 bytes `sig`
+- 8 bytes `u64` big-endian `seq` 
+- 0-1000 bytes of `v`.
+
 On receiving a PUT request, the relay server should:
-1. Decode the payload such that 
-    - the first *64 bytes* represent the **signature**
-    - the remaining bytes represent the signed **message**
-2. Decode the `seq` and `v` from the signed message, as they should be encoded using *bencode* as follows: `3:seqi<seq>e1:v<len>:<records encoded>`
-3. Verify the signature, if it is invalid, return a `400 Bad Request` response.
-4. Perform the DHT Put request as defined in [BEP0044](https://www.bittorrent.org/beps/bep_0044.html)
-5. If the DHT request is successful, return a `200 OK` response, otherwise if any error occured return a `500 Internal Server Error` response.
+1. Encode the `seq` and `v` to a *bencode* message as follows: `3:seqi<sequence>e1:v<v's length>:<v's bytes>`
+2. Verify that the `sig` matches the encoded message from step 1, if it is invalid, return a `400 Bad Request` response.
+3. Perform the DHT Put request as defined in [BEP0044](https://www.bittorrent.org/beps/bep_0044.html).
+4. If the DHT request is successful, return a `200 OK` response, otherwise if any error occured return a `500 Internal Server Error` response.
 
 ### GET
 
@@ -38,12 +41,18 @@ GET /:z-base32-encoded-key HTTP/2
 ```
 HTTP/2 200 OK
 
-<signature><message>
+<sig><seq>[<v>]
 ```
+
+Body should consist of:
+
+- 64 bytes `sig`
+- 8 bytes `u64` big-endian `seq` 
+- 0-1000 bytes of `v`.
 
 On receiving a GET request, the relay server should:
 1. Perform a DHT mutable GET query as defined in [BEP0044](https://www.bittorrent.org/beps/bep_0044.html)
-2. If the DHT request is successful, encode the `seq` and `v` as described in BEP0044 to represent the signed message, and respond with the concatenated `<signature><message>` body.
+2. Concat the `sig`, big-endian encoded `seq`, and `v`.
 3. If no records were found, respond with `404 Not Found`. 
 
 

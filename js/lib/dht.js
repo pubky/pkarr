@@ -1,11 +1,12 @@
 import _DHT from 'bittorrent-dht'
 import sodium from 'sodium-universal'
 import crypto from 'crypto'
-import bencode from 'bencode'
 import goodbye from 'graceful-goodbye'
 import fs from 'fs'
 import { homedir } from 'os'
 import path from 'path'
+
+import { encodeSigData } from './tools.js'
 
 const verify = sodium.crypto_sign_verify_detached
 
@@ -56,7 +57,6 @@ export class DHT {
    *  seq: number,
    *  v: Uint8Array,
    *  sig: Uint8Array,
-   *  msg: Uint8Array,
    *  nodes?: Array<{ host: string, port: number, client?: string }>
    * }>}
    */
@@ -115,7 +115,7 @@ export class DHT {
             })
             value = r
             if (!options.fullLookup) {
-              resolve({ ...value, msg, nodes })
+              resolve({ ...value, nodes })
             }
           }
         }
@@ -261,15 +261,6 @@ function createGetResponse (id, value, nodes) {
     seq: value.seq,
     nodes
   }
-}
-
-/**
- * @param {{v:Uint8Array, seq:number}} msg
- */
-function encodeSigData (msg) {
-  return bencode
-    .encode({ seq: msg.seq || 0, v: msg.v })
-    .slice(1, -1)
 }
 
 class Storage {

@@ -2,11 +2,11 @@ import http from 'http'
 import z32 from 'z32'
 
 import DHT from '../dht.js'
-import { decodeSigData, verify } from '../tools.js'
+import { verifyBody, writeBody } from './shared.js'
 
 const DEFAULT_PORT = 0
 
-const MAX_BODY_SIZE = 1000 + 64 + 8 // 100 bytes for value, 64 for signature and 8 for seq
+const MAX_BODY_SIZE = 1000 + 64 + 8 // 1000 bytes for value, 64 for signature and 8 for seq
 
 export default class Server {
   /**
@@ -128,25 +128,13 @@ export default class Server {
     req.on('end', async () => {
       // Process the request body (requestBody) as needed.
       // For this example, we'll just log it.
-      const buffer = Buffer.concat(requestBodyChunks)
+      const body = Buffer.concat(requestBodyChunks)
 
-      if (buffer.length < 64) {
-        badRequest(req, res, 'Signature should be 64 bytes')
-        return
-      }
-
-      const sig = buffer.subarray(0, 64)
-      const sigData = buffer.subarray(64)
-
-      if (!verify(sig, sigData, key)) {
-        badRequest(req, res, 'Invalid signature')
-        return
-      }
-
-      const { seq, v } = decodeSigData(sigData)
+      const request = verifyBody(key, body)
+      if (request instanceof Error) return badRequest(req, res, request.message)
 
       try {
-        await this._dht.put(key, { sig, seq, v })
+        await this._dht.put(key, request)
 
         success(req, res)
       } catch (error) {
@@ -173,17 +161,15 @@ export default class Server {
       return
     }
 
-    const body = Buffer.alloc(response.sig.length + response.msg.length)
-    body.set(response.sig)
-    body.set(response.msg, 64)
+    const body = writeBody(response)
 
     success(req, res, body)
   }
 }
 
 /**
-     * @param {string} url
-     */
+         * @param {string} url
+         */
 function parseURL (url) {
   try {
     const parts = url.split('/')
@@ -215,7 +201,7 @@ function success (req, res, body) {
 function badRequest (req, res, message) {
   console.log('bad request', req.method, req.url, message)
   res.writeHead(400, message)
-  res.end()
+  res.end(message)
 }
 
 /**
