@@ -98,10 +98,10 @@ impl Bep44PutArgs {
 
         dbg!(String::from_utf8(signable.as_bytes().to_vec()));
 
-        let signature = signer.sign(&signable.as_bytes());
+        let signature = signer.sign(signable.as_bytes());
 
         Self {
-            key: signer.verifying_key().as_bytes().clone(),
+            key: *signer.verifying_key().as_bytes(),
             sequence,
             value,
             signable: signable.into(),
