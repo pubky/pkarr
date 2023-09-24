@@ -25,13 +25,16 @@ impl RelayClient {
         Ok(Self { url: _url })
     }
 
-    fn get(self: RelayClient) -> Option<bytes::Bytes> {
+    fn get(self: RelayClient, id: &str) -> Option<bytes::Bytes> {
         let mut url = self.url.to_owned();
-        url.set_path("o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy");
+        url.set_path(id);
 
         let response = match reqwest::blocking::get(url) {
             Ok(response) => response,
-            Err(_) => return None,
+            Err(err) => {
+                dbg!(err);
+                return None;
+            }
         };
 
         if response.status() != reqwest::StatusCode::OK {
@@ -40,13 +43,16 @@ impl RelayClient {
 
         let bytes = match response.bytes() {
             Ok(bytes) => bytes,
-            Err(_) => return None,
+            Err(err) => {
+                dbg!(err);
+                return None;
+            }
         };
 
         Some(bytes)
     }
 
-    fn put(self: RelayClient, bep44_put_args: &Bep44PutArgs) -> Result<()> {
+    fn put(self: &RelayClient, bep44_put_args: &Bep44PutArgs) -> Result<()> {
         let z32_key = zbase32::encode_full_bytes(&bep44_put_args.key);
 
         let mut url = self.url.to_owned();
@@ -54,18 +60,24 @@ impl RelayClient {
 
         let client = reqwest::blocking::Client::new();
 
-        let response = match client.put(url).body(bep44_put_args.clone()).send() {
+        let response = match client
+            .put(url.to_owned())
+            .body(bep44_put_args.clone())
+            .send()
+        {
             Ok(response) => response,
             Err(err) => {
-                dbg!(err);
-                return Err(Error::Static("Relay PUT request failed"));
+                return Err(Error::Generic(format!("Relay PUT request failed {}", &url)));
             }
         };
 
         match response.status() {
             reqwest::StatusCode::OK => (),
             reqwest::StatusCode::BAD_REQUEST => {
-                return Err(Error::Static("Relay PUT response: BAD_REQUEST"));
+                return Err(Error::Generic(format!(
+                    "Relay PUT response: BAD_REQUEST {}",
+                    &url
+                )));
             }
             _ => (),
         }
@@ -85,7 +97,7 @@ struct Bep44PutArgs {
 }
 
 impl Bep44PutArgs {
-    fn new_current(signer: SigningKey, value: Vec<u8>) -> Self {
+    fn new_current(signer: &SigningKey, value: Vec<u8>) -> Self {
         let sequence = system_time_now();
         let mut signable = format!(
             "3:seqi{}e1:v{}:{}",
@@ -144,21 +156,30 @@ fn system_time_now() -> u64 {
         .as_micros() as u64
 }
 
+fn relays_from_urls(urls: Vec<&str>) -> Vec<RelayClient> {
+    urls.into_iter()
+        .map(|url| RelayClient::new(url).unwrap())
+        .collect()
+}
+
 impl Pkarr {
     fn new() -> Self {
         let default_relay_clients = vec!["https://relay.pkarr.org"];
 
         Self {
-            relays: default_relay_clients
-                .into_iter()
-                .map(|url| RelayClient::new(url).unwrap())
-                .collect(),
+            relays: relays_from_urls(default_relay_clients),
         }
     }
 
-    fn resolve(self: Pkarr) -> Option<bytes::Bytes> {
+    fn set_relays(self: &mut Pkarr, relays: Vec<&str>) -> () {
+        self.relays = relays_from_urls(relays)
+    }
+
+    fn resolve(self: Pkarr, key: &[u8; 32]) -> Option<bytes::Bytes> {
+        let id = zbase32::encode_full_bytes(key);
+
         for relay in self.relays {
-            match relay.get() {
+            match relay.get(&id) {
                 Some(bytes) => return Some(bytes),
                 None => continue,
             }
@@ -167,19 +188,20 @@ impl Pkarr {
         None
     }
 
-    fn publish(self: Pkarr, signer: SigningKey) -> Result<()> {
+    fn publish(self: &Pkarr, signer: &SigningKey, value: Vec<u8>) -> Result<()> {
         let sequence = system_time_now();
-        let value = bytes::Bytes::from("Hello world!");
-
-        let bep44_put_args = Bep44PutArgs::new_current(signer, value.into());
+        let bep44_put_args = Bep44PutArgs::new_current(signer, value);
 
         // TODO: try publishing to the DHT directly if we have udp support. (requires DHT client)
 
-        for relay in self.relays {
+        for relay in &self.relays {
             match relay.put(&bep44_put_args) {
                 // Eagerly return success as long as one relay successfully publishes to the DHT.
                 Ok(bytes) => return Ok(()),
-                Err(err) => continue,
+                Err(err) => {
+                    dbg!(err);
+                    continue;
+                }
             }
         }
 
@@ -189,11 +211,20 @@ impl Pkarr {
 }
 
 fn main() -> Result<()> {
-    let client = Pkarr::new();
+    let key = SigningKey::from([1; 32]);
 
-    let x = client.publish(SigningKey::from([0; 32]));
+    let mut alice = Pkarr::new();
+    alice.set_relays(vec!["http://localhost:6881"]);
 
+    let value = bytes::Bytes::from("[[\"foo\", \"zar\"]]");
+    let x = alice.publish(&key, value.to_vec());
     dbg!(x);
+
+    let mut bob = Pkarr::new();
+    bob.set_relays(vec!["http://localhost:6882"]);
+
+    let y = bob.resolve(key.verifying_key().as_bytes());
+    dbg!(y);
 
     Ok(())
 }
