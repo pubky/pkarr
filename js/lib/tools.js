@@ -22,17 +22,16 @@ export function randomBytes (n = 32) {
 export const createPutRequest = async (keyPair, records) => {
   const seq = Math.ceil(Date.now() / 1000)
   const v = await codec.encode(records)
-  const msg = encodeSigData({ seq, v })
-  const sig = sign(msg, keyPair.secretKey)
+  const sig = sign(encodeSigData({ seq, v }), keyPair.secretKey)
 
-  return { seq, v, sig, msg }
+  return { seq, v, sig }
 }
 
 // Copied from bittorrent-dht
 /**
  * @param {{seq: number, v: Uint8Array}} msg
  */
-const encodeSigData = (msg) => {
+export const encodeSigData = (msg) => {
   const ref = { seq: msg.seq || 0, v: msg.v }
   const bencoded = bencode.encode(ref).subarray(1, -1)
   return bencoded
