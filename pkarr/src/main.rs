@@ -76,7 +76,7 @@ impl RelayClient {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Bep44PutArgs {
     key: [u8; 32],
     sequence: u64,
@@ -89,15 +89,16 @@ struct Bep44PutArgs {
 impl Bep44PutArgs {
     fn new_current(signer: SigningKey, value: Vec<u8>) -> Self {
         let sequence = system_time_now();
-        let mut signable = format!("3:seqi{}e1:v{}:", sequence, value.len())
-            .as_bytes()
-            .to_vec();
+        let mut signable = format!(
+            "3:seqi{}e1:v{}:{}",
+            sequence,
+            value.len(),
+            String::from_utf8(value.clone()).unwrap()
+        );
 
-        signable.extend(&value);
+        dbg!(String::from_utf8(signable.as_bytes().to_vec()));
 
-        dbg!(String::from_utf8(signable.clone()));
-
-        let signature = signer.sign(&signable);
+        let signature = signer.sign(&signable.as_bytes());
 
         Self {
             key: signer.verifying_key().as_bytes().clone(),
@@ -107,14 +108,16 @@ impl Bep44PutArgs {
             signature: signature.to_bytes(),
         }
     }
+}
 
-    fn clone(self: Self) -> Self {
+impl Clone for Bep44PutArgs {
+    fn clone(&self) -> Self {
         Self {
             key: self.key,
-            sequence: self.sequence.clone(),
+            sequence: self.sequence,
             value: self.value.clone(),
             signable: self.signable.clone(),
-            signature: self.signature.clone(),
+            signature: self.signature,
         }
     }
 }
