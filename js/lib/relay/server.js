@@ -2,7 +2,7 @@ import http from 'http'
 import z32 from 'z32'
 
 import DHT from '../dht.js'
-import { encodeSigData, verify } from '../tools.js'
+import { verifyBody, writeBody } from './shared.js'
 
 const DEFAULT_PORT = 0
 
@@ -128,39 +128,13 @@ export default class Server {
     req.on('end', async () => {
       // Process the request body (requestBody) as needed.
       // For this example, we'll just log it.
-      const buffer = Buffer.concat(requestBodyChunks)
+      const body = Buffer.concat(requestBodyChunks)
 
-      if (buffer.length < 64) {
-        badRequest(req, res, 'Signature should be 64 bytes')
-        return
-      }
-
-      if (buffer.length < 72) {
-        badRequest(req, res, 'Sequence should be 8 bytes')
-        return
-      }
-
-      const sig = buffer.subarray(0, 64)
-      const v = buffer.subarray(72)
-
-      /** @type {Number} */
-      let seq
-      try {
-        seq = Number(buffer.subarray(64, 72).readBigInt64BE())
-      } catch (error) {
-        badRequest(req, res, 'Invalid sequence number')
-        return
-      }
-
-      const sigData = encodeSigData({ seq, v })
-
-      if (!verify(sig, sigData, key)) {
-        badRequest(req, res, 'Invalid signature')
-        return
-      }
+      const request = verifyBody(key, body)
+      if (request instanceof Error) return badRequest(req, res, request.message)
 
       try {
-        await this._dht.put(key, { sig, seq, v })
+        await this._dht.put(key, request)
 
         success(req, res)
       } catch (error) {
@@ -187,17 +161,15 @@ export default class Server {
       return
     }
 
-    const body = Buffer.alloc(response.sig.length + response.msg.length)
-    body.set(response.sig)
-    body.set(response.msg, 64)
+    const body = writeBody(response)
 
     success(req, res, body)
   }
 }
 
 /**
-     * @param {string} url
-     */
+         * @param {string} url
+         */
 function parseURL (url) {
   try {
     const parts = url.split('/')
