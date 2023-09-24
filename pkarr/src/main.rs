@@ -52,22 +52,20 @@ impl RelayClient {
         let mut url = self.url.to_owned();
         url.set_path(&z32_key);
 
-        dbg!(&url);
-
         let client = reqwest::blocking::Client::new();
 
         let response = match client.put(url).body(bep44_put_args.clone()).send() {
             Ok(response) => response,
             Err(err) => {
                 dbg!(err);
-                return Err(Error::Static("PUT request failed"));
+                return Err(Error::Static("Relay PUT request failed"));
             }
         };
 
         match response.status() {
             reqwest::StatusCode::OK => (),
             reqwest::StatusCode::BAD_REQUEST => {
-                dbg!(response.bytes());
+                return Err(Error::Static("Relay PUT response: BAD_REQUEST"));
             }
             _ => (),
         }
@@ -96,8 +94,6 @@ impl Bep44PutArgs {
             String::from_utf8(value.clone()).unwrap()
         );
 
-        dbg!(String::from_utf8(signable.as_bytes().to_vec()));
-
         let signature = signer.sign(signable.as_bytes());
 
         Self {
@@ -124,10 +120,11 @@ impl Clone for Bep44PutArgs {
 
 impl From<Bep44PutArgs> for reqwest::blocking::Body {
     fn from(bep44_put_args: Bep44PutArgs) -> reqwest::blocking::Body {
-        let mut body = Vec::new();
+        let mut body = Vec::with_capacity(64 + 8 + bep44_put_args.value.len());
 
         body.extend_from_slice(&bep44_put_args.signature);
-        body.extend_from_slice(&bep44_put_args.signable);
+        body.extend_from_slice(&bep44_put_args.sequence.to_be_bytes());
+        body.extend_from_slice(&bep44_put_args.value);
 
         reqwest::blocking::Body::from(body)
     }
@@ -176,14 +173,18 @@ impl Pkarr {
 
         let bep44_put_args = Bep44PutArgs::new_current(signer, value.into());
 
+        // TODO: try publishing to the DHT directly if we have udp support. (requires DHT client)
+
         for relay in self.relays {
             match relay.put(&bep44_put_args) {
-                Ok(bytes) => continue,
-                Err(_) => continue,
+                // Eagerly return success as long as one relay successfully publishes to the DHT.
+                Ok(bytes) => return Ok(()),
+                Err(err) => continue,
             }
         }
 
-        Ok(())
+        // All publishing attempts failed at this point.
+        Err(Error::Static("Failed to publish"))
     }
 }
 
