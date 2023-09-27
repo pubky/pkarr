@@ -7,10 +7,15 @@ use reqwest::blocking;
 use std::time::SystemTime;
 use url::Url;
 
+pub use simple_dns::Packet;
+pub use simple_dns::ResourceRecord;
+pub use simple_dns::{rdata::*, Name, CLASS};
+pub use std::net::Ipv4Addr;
+
 mod error;
 mod prelude;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RelayClient {
     url: Url,
 }
@@ -25,31 +30,37 @@ impl RelayClient {
         Ok(Self { url: _url })
     }
 
-    fn get(self: RelayClient, id: &str) -> Option<bytes::Bytes> {
+    fn get(self: RelayClient, id: &str) -> Result<Vec<u8>> {
         let mut url = self.url.to_owned();
-        url.set_path(id);
+        url.set_path(&id);
 
         let response = match reqwest::blocking::get(url) {
             Ok(response) => response,
             Err(err) => {
                 dbg!(err);
-                return None;
+                return Err(Error::Static("REQWUEST ERROR"));
             }
         };
 
         if response.status() != reqwest::StatusCode::OK {
-            return None;
+            return Err(Error::Static("RELAY NON-OK STATUS"));
         }
 
         let bytes = match response.bytes() {
             Ok(bytes) => bytes,
             Err(err) => {
                 dbg!(err);
-                return None;
+                return Err(Error::Static("COULD NOT READ BYTES"));
             }
         };
 
-        Some(bytes)
+        // let sig = bytes[0..64];
+        // let seq = bytes[64..72];
+        // let v = bytes[72..];
+        let mut v: Vec<u8> = Vec::with_capacity(1000);
+        v.extend_from_slice(&bytes[72..]);
+
+        Ok(v)
     }
 
     fn put(self: &RelayClient, bep44_put_args: &Bep44PutArgs) -> Result<()> {
@@ -99,14 +110,15 @@ struct Bep44PutArgs {
 impl Bep44PutArgs {
     fn new_current(signer: &SigningKey, value: Vec<u8>) -> Self {
         let sequence = system_time_now();
-        let mut signable = format!(
-            "3:seqi{}e1:v{}:{}",
-            sequence,
-            value.len(),
-            String::from_utf8(value.clone()).unwrap()
-        );
+        let mut signable = format!("3:seqi{}e1:v{}:", sequence, value.len())
+            .as_bytes()
+            .to_vec();
 
-        let signature = signer.sign(signable.as_bytes());
+        signable.extend(&value);
+
+        dbg!(&signable);
+
+        let signature = signer.sign(&signable);
 
         Self {
             key: *signer.verifying_key().as_bytes(),
@@ -171,25 +183,32 @@ impl Pkarr {
         }
     }
 
-    fn set_relays(self: &mut Pkarr, relays: Vec<&str>) -> () {
+    fn set_relays(self: &mut Pkarr, relays: Vec<&str>) {
         self.relays = relays_from_urls(relays)
     }
 
-    fn resolve(self: Pkarr, key: &[u8; 32]) -> Option<bytes::Bytes> {
-        let id = zbase32::encode_full_bytes(key);
+    fn resolve(self: Pkarr, key: VerifyingKey) -> Option<Vec<u8>> {
+        let id = zbase32::encode_full_bytes(key.as_bytes());
 
-        for relay in self.relays {
-            match relay.get(&id) {
-                Some(bytes) => return Some(bytes),
-                None => continue,
+        match self.relays.first().unwrap().clone().get(&id) {
+            Ok(v) => {
+                return Some(v);
             }
+            Err(_) => {}
         }
 
         None
     }
 
-    fn publish(self: &Pkarr, signer: &SigningKey, value: Vec<u8>) -> Result<()> {
+    fn publish(self: &Pkarr, signer: &SigningKey, records: Vec<ResourceRecord>) -> Result<()> {
         let sequence = system_time_now();
+
+        // Convert records into an encoded DNS Packet
+        let mut packet = Packet::new_reply(0);
+        packet.answers = records;
+        let value = packet.build_bytes_vec_compressed()?;
+        dbg!(&value, &value.len());
+
         let bep44_put_args = Bep44PutArgs::new_current(signer, value);
 
         // TODO: try publishing to the DHT directly if we have udp support. (requires DHT client)
@@ -217,14 +236,35 @@ fn main() -> Result<()> {
     alice.set_relays(vec!["http://localhost:6881"]);
 
     let value = bytes::Bytes::from("[[\"foo\", \"zar\"]]");
-    let x = alice.publish(&key, value.to_vec());
+    let x = alice.publish(
+        &key,
+        vec![
+            ResourceRecord::new(
+                Name::new("fff.foo").unwrap(),
+                CLASS::IN,
+                30,
+                RData::A(A {
+                    address: Ipv4Addr::new(127, 0, 0, 1).into(),
+                }),
+            ),
+            ResourceRecord::new(
+                Name::new("fff.foo").unwrap(),
+                CLASS::IN,
+                30,
+                RData::A(A {
+                    address: Ipv4Addr::new(127, 0, 0, 2).into(),
+                }),
+            ),
+        ],
+    );
     dbg!(x);
 
     let mut bob = Pkarr::new();
     bob.set_relays(vec!["http://localhost:6882"]);
 
-    let y = bob.resolve(key.verifying_key().as_bytes());
-    dbg!(y);
+    let z = bob.resolve(key.verifying_key()).unwrap();
+    let y = Packet::parse(&z).unwrap();
+    dbg!(&y);
 
     Ok(())
 }

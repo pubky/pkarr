@@ -1,4 +1,5 @@
 //! Main Crate Error
+use simple_dns::SimpleDnsError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -11,4 +12,7 @@ pub enum Error {
 
     #[error(transparent)]
     IO(#[from] std::io::Error),
+
+    #[error(transparent)]
+    DnsError(#[from] simple_dns::SimpleDnsError),
 }
