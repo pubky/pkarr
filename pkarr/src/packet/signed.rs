@@ -1,25 +1,44 @@
 use crate::{prelude::*, Keypair, PublicKey};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
-use reqwest;
 use simple_dns::Packet;
 use std::time::{Instant, SystemTime};
 
-/// Arguments for the [BEP0044](https://www.bittorrent.org/beps/bep_0044.html) `put` and `get`
-/// methods for mutable items.
 #[derive(Debug)]
-pub struct Bep44Args {
+pub struct SignedPacket {
     pub k: PublicKey,
     seq: u64,
     v: Bytes,
     sig: Signature,
 }
 
-impl Bep44Args {
+impl SignedPacket {
+    /// Create a new [SignedPacket] from a DNS [Packet] and a [Keypair].
+    pub fn new<'a>(keypair: &'a Keypair, packet: &Packet<'a>) -> Result<SignedPacket> {
+        let v = packet.build_bytes_vec_compressed()?;
+        let seq = system_time_now();
+
+        let signable = signable(&seq, &v);
+
+        let signature = keypair.sign(&signable);
+
+        let v = Bytes::from(v);
+
+        Ok(SignedPacket {
+            k: keypair.public_key(),
+            sig: signature,
+            seq,
+            v,
+        })
+    }
+
+    /// Try parsing a relay's GET response and verify the signature to create a [SignedPacket].
+    ///
+    /// Read more about [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md)
     pub fn try_from_relay_response<'a>(
         public_key: &'a PublicKey,
         bytes: Bytes,
-    ) -> Result<Bep44Args> {
+    ) -> Result<SignedPacket> {
         let bytes_length = bytes.len();
 
         let sig = if bytes_length < 64 {
@@ -41,7 +60,7 @@ impl Bep44Args {
 
         public_key.verify(&signable, &sig)?;
 
-        Ok(Bep44Args {
+        Ok(SignedPacket {
             k: PublicKey(public_key.0.clone()),
             seq,
             sig,
@@ -49,39 +68,17 @@ impl Bep44Args {
         })
     }
 
-    pub fn try_from_packet<'a>(keypair: &'a Keypair, packet: &Packet<'a>) -> Result<Bep44Args> {
-        let v = packet.build_bytes_vec_compressed()?;
-        let seq = system_time_now();
-
-        let signable = signable(&seq, &v);
-
-        let signature = keypair.sign(&signable);
-
-        let v = Bytes::from(v);
-
-        Ok(Bep44Args {
-            k: keypair.public_key(),
-            sig: signature,
-            seq,
-            v,
-        })
-    }
-
-    fn relay_payload(&self) -> Vec<u8> {
-        let mut body = Vec::with_capacity(64 + 8 + self.v.len());
+    /// Convert the [SignedPacket] int the body of a relay's PUT request.
+    ///
+    /// Read more about [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md)
+    pub fn into_relay_payload(&self) -> Bytes {
+        let mut body = BytesMut::with_capacity((64 + 8 + self.v.len()));
 
         body.extend_from_slice(&self.sig.to_bytes());
         body.extend_from_slice(&self.seq.to_be_bytes());
         body.extend_from_slice(&self.v);
 
-        body
-    }
-}
-
-impl From<&Bep44Args> for reqwest::blocking::Body {
-    fn from(bep44args: &Bep44Args) -> reqwest::blocking::Body {
-        let body = bep44args.relay_payload();
-        reqwest::blocking::Body::from(body)
+        body.into()
     }
 }
 
@@ -120,7 +117,7 @@ mod tests {
         let invalid_sig_len = Bytes::from("");
 
         assert!(
-            Bep44Args::try_from_relay_response(&keypair.public_key(), invalid_sig_len).is_err()
+            SignedPacket::try_from_relay_response(&keypair.public_key(), invalid_sig_len).is_err()
         );
     }
 
@@ -138,7 +135,7 @@ mod tests {
             }),
         ));
 
-        let args = Bep44Args::try_from_packet(&keypair, &packet).unwrap();
+        let args = SignedPacket::new(&keypair, &packet).unwrap();
     }
 
     #[test]
@@ -155,9 +152,9 @@ mod tests {
             }),
         ));
 
-        let args = Bep44Args::try_from_packet(&keypair, &packet).unwrap();
-        let payload = Bytes::from(args.relay_payload());
+        let args = SignedPacket::new(&keypair, &packet).unwrap();
+        let payload = Bytes::from(args.into_relay_payload());
 
-        assert!(Bep44Args::try_from_relay_response(&args.k, payload).is_ok());
+        assert!(SignedPacket::try_from_relay_response(&args.k, payload).is_ok());
     }
 }
