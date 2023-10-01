@@ -1,70 +1,88 @@
 use crate::{prelude::*, Keypair, PublicKey};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
+use ouroboros::*;
+use self_cell::self_cell;
 use simple_dns::Packet;
 use std::time::{Instant, SystemTime};
 
+self_cell!(
+    struct DnsPacket {
+        owner: Bytes,
+
+        #[covariant]
+        dependent: Packet,
+    }
+
+    impl {Debug}
+);
+
 #[derive(Debug)]
 pub struct SignedPacket {
-    pub k: PublicKey,
-    seq: u64,
-    v: Bytes,
-    sig: Signature,
+    /// The public key of the signer of this packet.
+    pub public_key: PublicKey,
+    /// Time of signing in milliseconds since the UNIX epoch
+    timestamp: u64,
+    /// Signature over the bencode encoded timestamp and packet_bytes as `seq` and `v` respectively
+    /// according to [BEP0044](https://www.bittorrent.org/beps/bep_0044.html) message.
+    signature: Signature,
+    /// DNS [Packet].
+    /// and its encoded compressed form serving as the `v` value in the [BEP0044](https://www.bittorrent.org/beps/bep_0044.html) message.
+    packet: DnsPacket,
 }
 
 impl SignedPacket {
     /// Create a new [SignedPacket] from a DNS [Packet] and a [Keypair].
-    pub fn new<'a>(keypair: &'a Keypair, packet: &Packet<'a>) -> Result<SignedPacket> {
-        let v = packet.build_bytes_vec_compressed()?;
-        let seq = system_time_now();
+    pub fn new<'a>(keypair: &Keypair, packet: &Packet<'a>) -> Result<SignedPacket> {
+        let packet_bytes = packet.build_bytes_vec_compressed()?;
+        let timestamp = system_time_now();
 
-        let signable = signable(&seq, &v);
+        let signable = signable(&timestamp, &packet_bytes);
 
         let signature = keypair.sign(&signable);
 
-        let v = Bytes::from(v);
+        let packet_bytes = Bytes::from(packet_bytes);
 
         Ok(SignedPacket {
-            k: keypair.public_key(),
-            sig: signature,
-            seq,
-            v,
+            public_key: keypair.public_key(),
+            signature,
+            timestamp,
+            packet: DnsPacket::new(packet_bytes, |packet_bytes| {
+                Packet::parse(packet_bytes).unwrap()
+            }),
         })
     }
 
     /// Try parsing a relay's GET response and verify the signature to create a [SignedPacket].
     ///
     /// Read more about [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md)
-    pub fn try_from_relay_response<'a>(
-        public_key: &'a PublicKey,
-        bytes: Bytes,
-    ) -> Result<SignedPacket> {
+    pub fn try_from_relay_response(public_key: PublicKey, bytes: Bytes) -> Result<SignedPacket> {
         let bytes_length = bytes.len();
 
-        let sig = if bytes_length < 64 {
+        let signature = if bytes_length < 64 {
             return Err(Error::RelayPayloadInvalidSignatureLength(bytes_length));
         } else {
             // Unwrap is safe ase we already checked for the length of `sig_bytes` above.
             Signature::try_from(bytes.slice(..64).as_ref()).unwrap()
         };
 
-        let seq = if bytes_length < 72 {
+        let timestamp = if bytes_length < 72 {
             return Err(Error::RelayPayloadInvalidSequenceLength(bytes_length - 64));
         } else {
             // Unwrap is safe ase we already checked for the length of `seq_bytes` above.
             u64::from_be_bytes(bytes.slice(64..72).as_ref().try_into().unwrap())
         };
 
-        let v = bytes.slice(72..);
-        let signable = signable(&seq, v.as_ref());
+        let packet_bytes = bytes.slice(72..);
+        let signable = signable(&timestamp, packet_bytes.as_ref());
 
-        public_key.verify(&signable, &sig)?;
+        public_key.verify(&signable, &signature)?;
 
         Ok(SignedPacket {
-            k: PublicKey(public_key.0.clone()),
-            seq,
-            sig,
-            v,
+            public_key: PublicKey(public_key.0),
+            timestamp,
+            signature,
+            packet: DnsPacket::try_new(packet_bytes, |packet_bytes| Packet::parse(packet_bytes))?,
         })
     }
 
@@ -72,11 +90,12 @@ impl SignedPacket {
     ///
     /// Read more about [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md)
     pub fn into_relay_payload(&self) -> Bytes {
-        let mut body = BytesMut::with_capacity((64 + 8 + self.v.len()));
+        let packet_bytes = self.packet.borrow_owner();
+        let mut body = BytesMut::with_capacity((64 + 8 + packet_bytes.len()));
 
-        body.extend_from_slice(&self.sig.to_bytes());
-        body.extend_from_slice(&self.seq.to_be_bytes());
-        body.extend_from_slice(&self.v);
+        body.extend_from_slice(&self.signature.to_bytes());
+        body.extend_from_slice(&self.timestamp.to_be_bytes());
+        body.extend_from_slice(packet_bytes);
 
         body.into()
     }
@@ -117,7 +136,7 @@ mod tests {
         let invalid_sig_len = Bytes::from("");
 
         assert!(
-            SignedPacket::try_from_relay_response(&keypair.public_key(), invalid_sig_len).is_err()
+            SignedPacket::try_from_relay_response(keypair.public_key(), invalid_sig_len).is_err()
         );
     }
 
@@ -152,9 +171,9 @@ mod tests {
             }),
         ));
 
-        let args = SignedPacket::new(&keypair, &packet).unwrap();
-        let payload = Bytes::from(args.into_relay_payload());
+        let packet = SignedPacket::new(&keypair, &packet).unwrap();
+        let payload = Bytes::from(packet.into_relay_payload());
 
-        assert!(SignedPacket::try_from_relay_response(&args.k, payload).is_ok());
+        assert!(SignedPacket::try_from_relay_response(keypair.public_key(), payload).is_ok());
     }
 }

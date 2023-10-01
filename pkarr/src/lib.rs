@@ -1,8 +1,8 @@
 #![allow(unused)]
-pub use simple_dns::Packet;
-pub use simple_dns::ResourceRecord;
-pub use simple_dns::{rdata::*, Name, CLASS};
-pub use std::net::Ipv4Addr;
+use simple_dns::Packet;
+use simple_dns::ResourceRecord;
+use simple_dns::{rdata::*, Name, CLASS};
+use std::net::Ipv4Addr;
 
 use url::Url;
 
@@ -15,6 +15,10 @@ mod packet;
 pub use keys::{Keypair, PublicKey};
 pub use packet::{PacketBuilder, SignedPacket};
 use prelude::*;
+
+// TODO: test an unresponsive relay (timeouts or use tokio?)
+// TODO: Normalize names
+// TODO: Add get record api
 
 #[derive(Debug)]
 struct Pkarr {
@@ -74,7 +78,10 @@ impl Pkarr {
             }
         };
 
-        Ok(SignedPacket::try_from_relay_response(&public_key, bytes)?)
+        Ok(SignedPacket::try_from_relay_response(
+            public_key.clone(),
+            bytes,
+        )?)
     }
 
     pub fn resolve<'a>(&self, public_key: &'a PublicKey) -> Option<SignedPacket> {
@@ -90,7 +97,7 @@ impl Pkarr {
 
     fn put_to_relay(&self, url: &Url, signed_packet: &SignedPacket) -> Result<()> {
         let mut url = url.clone();
-        url.set_path(&signed_packet.k.to_z32());
+        url.set_path(&signed_packet.public_key.to_z32());
 
         let client = reqwest::blocking::Client::new();
 
@@ -164,7 +171,7 @@ mod tests {
 
         let public_key = keypair.public_key();
 
-        let z = bob.resolve(&public_key);
+        let z = bob.resolve(&public_key).unwrap();
         dbg!(&z);
     }
 }

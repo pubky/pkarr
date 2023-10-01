@@ -76,6 +76,12 @@ impl TryFrom<&str> for PublicKey {
     }
 }
 
+impl Clone for PublicKey {
+    fn clone(&self) -> Self {
+        PublicKey(self.0.clone())
+    }
+}
+
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", zbase32::encode_full_bytes(self.0.as_bytes()))

@@ -77,4 +77,3 @@ impl<'a> PacketBuilder<'_> {
         SignedPacket::new(&self.keypair, &self.packet)
     }
 }
-
