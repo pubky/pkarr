@@ -13,3 +13,4 @@ url = "2.4.1"
 zbase32 = "0.1.2"
 thiserror = "1"
 rand = "0.8.5"
+tokio = { version = "1.32.0", features = ["tokio-macros", "macros"] }

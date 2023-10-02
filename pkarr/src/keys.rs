@@ -1,11 +1,10 @@
+use crate::{Error, Result};
 use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::fmt::{self, Debug, Display, Formatter};
 
-use crate::prelude::*;
-
 /// public_key keys to sign dns [`simple_dns::Packet`]s.
-pub struct Keypair(pub SigningKey);
+pub struct Keypair(SigningKey);
 
 impl Keypair {
     pub fn random() -> Keypair {
@@ -44,8 +43,8 @@ impl Keypair {
 /// Public key to verify a signature over dns [`simple_dns::Packet`]s.
 ///
 /// It can formatted to and parsed from a `zbase32` string.
-#[derive(PartialEq, Eq)]
-pub struct PublicKey(pub VerifyingKey);
+#[derive(Clone, Eq, PartialEq)]
+pub struct PublicKey(VerifyingKey);
 
 impl PublicKey {
     /// Format the public key as zbase32 string.
@@ -56,6 +55,14 @@ impl PublicKey {
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
         self.0.verify(message, signature)?;
         Ok(())
+    }
+}
+
+impl TryFrom<[u8; 32]> for PublicKey {
+    type Error = ed25519_dalek::SignatureError;
+
+    fn try_from(public: [u8; 32]) -> Result<Self, Self::Error> {
+        Ok(Self(VerifyingKey::from_bytes(&public)?))
     }
 }
 
@@ -73,12 +80,6 @@ impl TryFrom<&str> for PublicKey {
         let verifying_key = VerifyingKey::try_from(bytes.as_slice())?;
 
         Ok(PublicKey(verifying_key))
-    }
-}
-
-impl Clone for PublicKey {
-    fn clone(&self) -> Self {
-        PublicKey(self.0.clone())
     }
 }
 
