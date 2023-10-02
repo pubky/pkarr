@@ -3,8 +3,15 @@ use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
 use ouroboros::*;
 use self_cell::self_cell;
-use simple_dns::Packet;
-use std::time::{Instant, SystemTime};
+use simple_dns::{
+    rdata::{RData, A},
+    Packet,
+};
+use std::{
+    fmt::{self, Debug, Display, Formatter},
+    net::Ipv4Addr,
+    time::{Instant, SystemTime},
+};
 
 self_cell!(
     struct DnsPacket {
@@ -21,7 +28,7 @@ self_cell!(
 pub struct SignedPacket {
     /// The public key of the signer of this packet.
     pub public_key: PublicKey,
-    /// Time of signing in milliseconds since the UNIX epoch
+    /// Time of signing in microseconds since the UNIX epoch
     timestamp: u64,
     /// Signature over the bencode encoded timestamp and packet_bytes as `seq` and `v` respectively
     /// according to [BEP0044](https://www.bittorrent.org/beps/bep_0044.html) message.
@@ -114,6 +121,41 @@ fn signable(seq: &u64, v: &[u8]) -> Vec<u8> {
     signable.extend(v);
 
     signable
+}
+
+impl Display for SignedPacket {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "SignedPacket ({}):\n    timestamp: {},\n    signature: {}\n    records:\n",
+            &self.public_key,
+            &self.timestamp,
+            &self.signature.to_string(),
+        );
+
+        &self
+            .packet
+            .borrow_dependent()
+            .answers
+            .iter()
+            .for_each(|rr| {
+                write!(
+                    f,
+                    "        {}  IN  {}  {}",
+                    &rr.name,
+                    &rr.ttl,
+                    match rr.rdata {
+                        RData::A(A { address }) =>
+                            format!("  A   {}", Ipv4Addr::from(address).to_string()),
+                        _ => format!("{:?}", rr.rdata),
+                    }
+                );
+            });
+
+        write!(f, "\n");
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

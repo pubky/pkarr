@@ -19,11 +19,12 @@ use prelude::*;
 // TODO: test an unresponsive relay (timeouts or use tokio?)
 // TODO: Normalize names
 // TODO: Add get record api
+// TODO: Add compare() method and compare result from relay to possibly cached result
+// TODO: Add cache at all
 
 #[derive(Debug)]
 struct Pkarr {
-    client: reqwest::Client,
-    // TODO: Use a single Client per [Pkarr] instance
+    pub client: reqwest::blocking::Client,
     // TODO: add timeout to Client and test with a relay that does not end response stream.
     relays: Vec<Url>,
 }
@@ -36,7 +37,7 @@ impl Pkarr {
             .collect();
 
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::blocking::Client::new(),
             relays: default_relay_clients,
         }
     }
@@ -57,7 +58,7 @@ impl Pkarr {
         let mut url = relay.clone();
         url.set_path(&public_key.to_z32());
 
-        let response = match reqwest::blocking::get(url) {
+        let response = match self.client.get(url.to_owned()).send() {
             Ok(response) => response,
             Err(err) => {
                 dbg!(err);
@@ -99,9 +100,8 @@ impl Pkarr {
         let mut url = url.clone();
         url.set_path(&signed_packet.public_key.to_z32());
 
-        let client = reqwest::blocking::Client::new();
-
-        let response = match client
+        let response = match self
+            .client
             .put(url.to_owned())
             .body(signed_packet.into_relay_payload())
             .send()
@@ -149,21 +149,23 @@ impl Pkarr {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use crate::PublicKey;
+
     use super::{Keypair, PacketBuilder, Pkarr};
 
     #[test]
     fn resolve() {
-        let keypair = Keypair::from_secret_key(&[0; 32]);
-        //
-        // let mut alice = Pkarr::new();
-        // alice.set_relays(vec!["http://localhost:6881"]);
-        //
-        // let packet = PacketBuilder::new(&keypair)
-        //     .add_ip("_derp_region.iroh", Ipv4Addr::new(1, 1, 1, 1).into())
-        //     .build()
-        //     .unwrap();
-        //
-        // let x = alice.publish(&packet);
+        let keypair = Keypair::random();
+
+        let mut alice = Pkarr::new();
+        alice.set_relays(vec!["http://localhost:6881"]);
+
+        let packet = PacketBuilder::new(&keypair)
+            .add_ip("_derp_region.iroh", Ipv4Addr::new(1, 1, 1, 1).into())
+            .build()
+            .unwrap();
+
+        let x = alice.publish(&packet);
 
         println!("\nResolving pk:{}...\n", keypair);
         let mut bob = Pkarr::new();
@@ -171,7 +173,7 @@ mod tests {
 
         let public_key = keypair.public_key();
 
-        let z = bob.resolve(&public_key).unwrap();
-        dbg!(&z);
+        let packet = bob.resolve(&public_key).unwrap();
+        println!("{}", &packet);
     }
 }

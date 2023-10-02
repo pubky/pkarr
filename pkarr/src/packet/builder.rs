@@ -15,7 +15,7 @@ pub struct PacketBuilder<'a> {
 
 const DEFAULT_TTL: u32 = 3600;
 
-impl<'a> PacketBuilder<'_> {
+impl<'a> PacketBuilder<'a> {
     pub fn new(keypair: &'a Keypair) -> PacketBuilder<'a> {
         PacketBuilder {
             packet: Packet::new_reply(0),
@@ -41,7 +41,7 @@ impl<'a> PacketBuilder<'_> {
     ///     .build()
     ///     .unwrap();
     /// ```
-    pub fn add_ip(&mut self, name: &str, addr: IpAddr) -> &mut Self {
+    pub fn add_ip(&mut self, name: &'a str, addr: IpAddr) -> &mut Self {
         self.add_ip_with_ttl(name, addr, DEFAULT_TTL)
     }
 
@@ -60,15 +60,17 @@ impl<'a> PacketBuilder<'_> {
     ///     .build()
     ///     .unwrap();
     /// ```
-    pub fn add_ip_with_ttl(&mut self, name: &str, addr: IpAddr, ttl: u32) -> &mut Self {
+    pub fn add_ip_with_ttl(&mut self, name: &'a str, addr: IpAddr, ttl: u32) -> &mut Self {
         let name = Name::new(name).unwrap();
 
-        let addr = match addr {
+        let record = match addr {
             IpAddr::V4(ip) => ResourceRecord::new(name, CLASS::IN, ttl, RData::A(A::from(ip))),
             IpAddr::V6(ip) => {
                 ResourceRecord::new(name, CLASS::IN, ttl, RData::AAAA(AAAA::from(ip)))
             }
         };
+
+        self.packet.answers.push(record);
 
         self
     }
