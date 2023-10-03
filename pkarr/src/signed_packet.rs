@@ -46,12 +46,12 @@ impl SignedPacket {
     }
 
     /// Return the DNS [Packet].
-    pub fn packet(&self) -> Packet {
+    pub fn packet(&self) -> Result<Packet> {
         // encoded_packet should not be possible to create with an invalid packet
         // as long as the only public function to create a SignedPacket from Packet is
         // `from_packet` and that one validates Packet before calling
         // SignedPacket::from_bytes_unchecked()
-        Packet::parse(&self.bytes[72..]).expect("is valid DNS packet")
+        Packet::parse(&self.bytes[72..]).map_err(|err| Error::DnsError(err))
     }
 
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
@@ -150,7 +150,7 @@ impl Display for SignedPacket {
             &self.signature(),
         )?;
 
-        for answer in &self.packet().answers {
+        for answer in &self.packet().unwrap().answers {
             write!(
                 f,
                 "        {}  IN  {}  {}\n",
