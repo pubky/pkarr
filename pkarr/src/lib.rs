@@ -56,13 +56,17 @@ impl PkarrClient {
 
         let response = self
             .http_client
-            .put(url)
+            .put(url.clone())
             .body(Bytes::from(signed_packet))
             .send()
             .await?;
 
         if response.status() != reqwest::StatusCode::OK {
-            return Err(Error::Generic(response.text().await?));
+            return Err(Error::RelayResponse(
+                url,
+                response.status(),
+                response.text().await?,
+            ));
         }
 
         Ok(())

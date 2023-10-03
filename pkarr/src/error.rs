@@ -21,6 +21,9 @@ pub enum Error {
     #[error(transparent)]
     ReqwestError(#[from] reqwest::Error),
 
+    #[error("Relay {0} responded with an error: {1} {2}")]
+    RelayResponse(url::Url, reqwest::StatusCode, String),
+
     #[error("Invalid SignedPacket bytes length, expected at least 72 bytes but got: {0}")]
     InvalidSingedPacketBytes(usize),
 
