@@ -18,7 +18,6 @@ pub use crate::signed_packet::SignedPacket;
 
 // TODO: Make sure it is a reply packet
 // TODO: Add compare() method to SignedPacket to compare to cached packets.
-// TODO: should we memoize signed_packet.packet() and deal with a self refrential struct?
 //
 // TODO: Add Cache of previously seen packets to compare new results to it.
 // TODO: Implement `get` and `put` methods to concurrently query multiple relays.

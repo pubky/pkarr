@@ -1,6 +1,7 @@
 use crate::{Error, Keypair, PublicKey, Result};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
+use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A},
     Name, Packet, ResourceRecord,
@@ -11,53 +12,45 @@ use std::{
     time::SystemTime,
 };
 
+self_cell!(
+    struct PacketBytes {
+        owner: Bytes,
+
+        #[covariant]
+        dependent: Packet,
+    }
+
+    impl{Debug}
+);
+
 #[derive(Debug)]
 pub struct SignedPacket {
     public_key: PublicKey,
-    /// `sig` `seq`, and `v` stored as defined by the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec
-    bytes: Bytes,
+    signature: Signature,
+    timestamp: u64,
+    packet_bytes: PacketBytes,
 }
 
 impl SignedPacket {
-    fn from_bytes_unchecked(keypair: &Keypair, encoded_packet: &[u8]) -> Self {
-        let mut bytes = Vec::with_capacity(encoded_packet.len() + 72);
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("time drift")
-            .as_micros() as u64;
-        let sig = keypair.sign(&signable(timestamp, encoded_packet));
-        bytes.extend_from_slice(&sig.to_bytes());
-        bytes.extend_from_slice(&timestamp.to_be_bytes());
-        bytes.extend_from_slice(encoded_packet);
-        Self {
-            public_key: keypair.public_key(),
-            bytes: bytes.into(),
-        }
-    }
-
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
 
     /// Returns the timestamp in microseconds since the UNIX epoch
-    pub fn timestamp(&self) -> u64 {
-        u64::from_be_bytes(self.bytes[64..72].try_into().expect("is 8 bytes"))
+    pub fn timestamp(&self) -> &u64 {
+        &self.timestamp
     }
 
     /// Return the DNS [Packet].
-    pub fn packet(&self) -> Result<Packet> {
-        // encoded_packet should not be possible to create with an invalid packet
-        // as long as the only public function to create a SignedPacket from Packet is
-        // `from_packet` and that one validates Packet before calling
-        // SignedPacket::from_bytes_unchecked()
-        Packet::parse(&self.bytes[72..]).map_err(|err| Error::DnsError(err))
+    pub fn packet(&self) -> &Packet {
+        self.packet_bytes.borrow_dependent()
     }
 
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
     /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
-    pub fn signature(&self) -> Signature {
-        Signature::from_bytes(&self.bytes[..64].try_into().expect("is 64 bytes"))
+    pub fn signature(&self) -> &Signature {
+        &self.signature
     }
 
     /// Creates a new [SignedPacket] from a [PublicKey] and the concatenated 64 bytes Signature, 8
@@ -70,16 +63,18 @@ impl SignedPacket {
             return Err(Error::PacketTooLarge(bytes.len()));
         }
 
-        // TODO: memoize it in SignedPacket
-        Packet::parse(&bytes[72..])?;
+        let signature =
+            Signature::from_bytes(bytes[..64].try_into().expect("signature is 64 bytes"));
+        let timestamp = u64::from_be_bytes(bytes[64..72].try_into().expect("seq is 8 bytes"));
 
-        let signed_packet = Self { public_key, bytes };
-        signed_packet.public_key.verify(
-            &signable(signed_packet.timestamp(), &signed_packet.bytes[72..]),
-            &signed_packet.signature(),
-        )?;
+        public_key.verify(&signable(timestamp, &bytes[72..]), &signature)?;
 
-        Ok(signed_packet)
+        Ok(SignedPacket {
+            public_key,
+            signature,
+            timestamp,
+            packet_bytes: PacketBytes::try_new(bytes, |bytes| Packet::parse(&bytes[72..]))?,
+        })
     }
 
     /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
@@ -87,6 +82,7 @@ impl SignedPacket {
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the zbase32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
     pub fn from_packet(keypair: &Keypair, packet: &Packet) -> Result<SignedPacket> {
+        // Normalize names to the origin TLD
         let mut inner = Packet::new_reply(0);
 
         let origin = keypair.public_key().to_z32();
@@ -112,13 +108,31 @@ impl SignedPacket {
                 ))
             });
 
-        let value = inner.build_bytes_vec_compressed()?;
+        // Encode the packet as `v` and verify its length
+        let encoded_packet = inner.build_bytes_vec_compressed()?;
 
-        if value.len() > 1000 {
-            return Err(Error::PacketTooLarge(value.len()));
+        if encoded_packet.len() > 1000 {
+            return Err(Error::PacketTooLarge(encoded_packet.len()));
         }
 
-        Ok(Self::from_bytes_unchecked(keypair, &value))
+        // Create the inner bytes from <public_key><signature>timestamp><v>
+        let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 72);
+
+        let timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("time drift")
+            .as_micros() as u64;
+
+        let sig = keypair.sign(&signable(timestamp, &encoded_packet));
+
+        bytes.extend_from_slice(&sig.to_bytes());
+        bytes.extend_from_slice(&timestamp.to_be_bytes());
+        bytes.extend_from_slice(&encoded_packet);
+
+        Ok(SignedPacket::from_bytes(
+            keypair.public_key(),
+            bytes.into(),
+        )?)
     }
 }
 
@@ -129,14 +143,14 @@ fn signable(seq: u64, v: &[u8]) -> Vec<u8> {
 }
 
 impl From<SignedPacket> for Bytes {
-    fn from(args: SignedPacket) -> Self {
-        args.bytes
+    fn from(s: SignedPacket) -> Self {
+        s.packet_bytes.borrow_owner().clone()
     }
 }
 
 impl AsRef<[u8]> for SignedPacket {
     fn as_ref(&self) -> &[u8] {
-        &self.bytes
+        &self.packet_bytes.borrow_owner()
     }
 }
 
@@ -150,7 +164,7 @@ impl Display for SignedPacket {
             &self.signature(),
         )?;
 
-        for answer in &self.packet().unwrap().answers {
+        for answer in &self.packet().answers {
             write!(
                 f,
                 "        {}  IN  {}  {}\n",
@@ -242,8 +256,11 @@ mod tests {
             }),
         ));
 
-        let args = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        assert!(SignedPacket::from_bytes(args.public_key().clone(), args.into()).is_ok());
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        assert!(
+            SignedPacket::from_bytes(signed_packet.public_key().clone(), signed_packet.into())
+                .is_ok()
+        );
     }
 
     #[test]
