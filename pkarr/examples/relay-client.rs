@@ -61,15 +61,11 @@ async fn main() -> Result<()> {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
 
         let client = PkarrClient::new();
-        let response = client
+        client
             .relay_put(&Url::parse(relay1).unwrap(), signed_packet)
             .await?;
 
-        if response.status() == 200 {
-            println!("Published pk:{}", keypair)
-        } else {
-            println!("Error publishing pk:{}\n{:?}", keypair, response)
-        }
+        println!("Published pk:{}", keypair);
     }
 
     // Resolver
