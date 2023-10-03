@@ -174,14 +174,14 @@ impl Display for SignedPacket {
                     RData::A(A { address }) =>
                         format!("A  {}", Ipv4Addr::from(*address).to_string()),
                     RData::CNAME(name) => format!("CNAME  {}", name.to_string()),
-                    RData::TXT(txt) => {
-                        format!(
-                            "TXT  \"{}\"",
-                            txt.clone()
-                                .try_into()
-                                .unwrap_or("__INVALID_TXT_VALUE_".to_string())
-                        )
-                    }
+                    // RData::TXT(txt) => {
+                    //     format!(
+                    //         "TXT  \"{}\"",
+                    //         txt.clone()
+                    //             .try_into()
+                    //             .unwrap_or("__INVALID_TXT_VALUE_".to_string())
+                    //     )
+                    // }
                     _ => format!("{:?}", answer.rdata),
                 }
             )?;
