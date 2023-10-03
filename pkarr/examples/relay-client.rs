@@ -20,7 +20,7 @@
 #[allow(unused)]
 use std::{net::Ipv4Addr, time::Instant};
 
-use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket, Url, DEFAULT_PKARR_RELAY};
+use pkarr::{dns, url::Url, Keypair, PkarrClient, Result, SignedPacket, DEFAULT_PKARR_RELAY};
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -24,6 +24,9 @@ self_cell!(
 );
 
 #[derive(Debug)]
+/// Signed DNS packet as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html).
+///
+/// `timestamp` is the number of microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).
 pub struct SignedPacket {
     public_key: PublicKey,
     signature: Signature,
