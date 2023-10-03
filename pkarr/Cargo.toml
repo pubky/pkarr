@@ -1,7 +1,10 @@
 [package]
 name = "pkarr"
 version = "0.1.0"
+authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
+description = "Public-Key Addressable Resource Records"
+license = "MIT"
 
 [dependencies]
 bytes = "1.5.0"
@@ -9,7 +12,7 @@ ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
 rand = "0.8.5"
 reqwest = { version = "0.11", features = ["blocking"] }
 self_cell = "1.0.1"
-simple-dns = "0.5.5"
+simple-dns = { git = "https://github.com/balliegojr/simple-dns/", version = "0.5.5" }
 thiserror = "1.0.49"
 tokio = { version = "1.32.0", features = ["tokio-macros", "macros"] }
 url = "2.4.1"
