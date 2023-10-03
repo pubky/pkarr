@@ -105,7 +105,7 @@ impl Debug for PublicKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{Keypair, PublicKey};
+    use super::Keypair;
 
     #[test]
     fn pkarr_key_generate() {
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn zbase32() {
         let key1 = Keypair::random();
-        let z32 = key1.public_key().to_string();
+        let _z32 = key1.public_key().to_string();
 
         let key2 = Keypair::from_secret_key(&key1.secret_key());
 
