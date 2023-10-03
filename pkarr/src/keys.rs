@@ -1,3 +1,5 @@
+//! Utility structs for Ed25519 keys.
+
 use crate::{Error, Result};
 use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;

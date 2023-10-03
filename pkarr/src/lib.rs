@@ -1,6 +1,7 @@
-use bytes::Bytes;
+//! Public-Key Addressable Resource Records
 
 // Rexports
+pub use bytes::Bytes;
 pub use simple_dns as dns;
 pub use url::Url;
 

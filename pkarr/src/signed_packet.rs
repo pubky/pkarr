@@ -70,6 +70,9 @@ impl SignedPacket {
             return Err(Error::PacketTooLarge(bytes.len()));
         }
 
+        // TODO: memoize it in SignedPacket
+        Packet::parse(&bytes[72..])?;
+
         let signed_packet = Self { public_key, bytes };
         signed_packet.public_key.verify(
             &signable(signed_packet.timestamp(), &signed_packet.bytes[72..]),
@@ -150,12 +153,13 @@ impl Display for SignedPacket {
         for answer in &self.packet().answers {
             write!(
                 f,
-                "        {}  IN  {}  {}",
+                "        {}  IN  {}  {}\n",
                 &answer.name,
                 &answer.ttl,
-                match answer.rdata {
+                match &answer.rdata {
                     RData::A(A { address }) =>
-                        format!("A  {}", Ipv4Addr::from(address).to_string()),
+                        format!("A  {}", Ipv4Addr::from(*address).to_string()),
+                    RData::CNAME(name) => format!("CNAME  {}", name.to_string()),
                     _ => format!("{:?}", answer.rdata),
                 }
             )?;
