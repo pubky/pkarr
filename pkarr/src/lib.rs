@@ -20,7 +20,7 @@ pub use crate::error::Error;
 pub use crate::keys::{Keypair, PublicKey};
 pub use crate::signed_packet::SignedPacket;
 
-// TODO: verify max size of SignedPacket
+// TODO: Make sure it is a reply packet
 // TODO: test an unresponsive relay ()
 // TODO: Add compare() method and compare result from relay to possibly cached result
 // TODO: Add cache at all

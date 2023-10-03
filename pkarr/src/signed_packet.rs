@@ -69,6 +69,9 @@ impl SignedPacket {
         if bytes.len() < 72 {
             return Err(Error::InvalidSingedPacketBytes(bytes.len()));
         }
+        if bytes.len() > 1072 {
+            return Err(Error::PacketTooLarge(bytes.len()));
+        }
 
         let signed_packet = Self { public_key, bytes };
         signed_packet.public_key.verify(
@@ -110,6 +113,10 @@ impl SignedPacket {
             });
 
         let value = inner.build_bytes_vec_compressed()?;
+
+        if (value.len() > 1000) {
+            return Err(Error::PacketTooLarge(value.len()));
+        }
 
         Ok(Self::from_bytes_unchecked(keypair, &value))
     }
@@ -229,5 +236,36 @@ mod tests {
 
         let args = SignedPacket::from_packet(&keypair, &packet).unwrap();
         assert!(SignedPacket::from_bytes(args.public_key().clone(), args.into()).is_ok());
+    }
+
+    #[test]
+    fn from_too_large_bytes() {
+        let keypair = Keypair::random();
+
+        let bytes = Bytes::from(vec![0; 1073]);
+        let error = SignedPacket::from_bytes(keypair.public_key().clone(), bytes);
+
+        assert!(error.is_err());
+    }
+
+    #[test]
+    fn from_too_large_packet() {
+        let keypair = Keypair::random();
+
+        let mut packet = Packet::new_reply(0);
+        for _ in 0..100 {
+            packet.answers.push(ResourceRecord::new(
+                Name::new("_derp_region.iroh.").unwrap(),
+                simple_dns::CLASS::IN,
+                30,
+                RData::A(A {
+                    address: Ipv4Addr::new(1, 1, 1, 1).into(),
+                }),
+            ));
+        }
+
+        let error = SignedPacket::from_packet(&keypair, &packet);
+
+        assert!(error.is_err());
     }
 }

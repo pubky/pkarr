@@ -20,10 +20,13 @@ pub enum Error {
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
 
-    #[error("Invalid relay payload expected 64 'sig' bytes got: {0}")]
-    RelayPayloadInvalidSignatureLength(usize),
-    #[error("Invalid relay payload expected 8 'seq' bytes, got: {0}")]
-    RelayPayloadInvalidSequenceLength(usize),
+    #[error("Invalid SignedPacket bytes length, expected at least 72 bytes but got: {0}")]
+    InvalidSingedPacketBytes(usize),
+
+    #[error(
+        "Encoded and compressed DNS Packet is too large, expected max 1000 bytes but got: {0}"
+    )]
+    PacketTooLarge(usize),
 
     #[error("All attempts to publish failed")]
     PublishFailed,
