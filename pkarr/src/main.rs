@@ -21,11 +21,9 @@ async fn main() -> Result<()> {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
 
         let client = PkarrClient::new();
-        let response = client
+        client
             .relay_put(&Url::parse("http://localhost:6881").unwrap(), signed_packet)
             .await?;
-
-        dbg!(response.status());
     }
 
     // Resolver

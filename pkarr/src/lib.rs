@@ -51,11 +51,7 @@ impl PkarrClient {
         Ok(SignedPacket::from_bytes(public_key, bytes)?)
     }
 
-    pub async fn relay_put(
-        &self,
-        url: &Url,
-        signed_packet: SignedPacket,
-    ) -> Result<reqwest::Response> {
+    pub async fn relay_put(&self, url: &Url, signed_packet: SignedPacket) -> Result<()> {
         let url = format_relay_url(url, signed_packet.public_key());
 
         let response = self
@@ -65,7 +61,11 @@ impl PkarrClient {
             .send()
             .await?;
 
-        Ok(response)
+        if response.status() != reqwest::StatusCode::OK {
+            return Err(Error::Generic(response.text().await?));
+        }
+
+        Ok(())
     }
 }
 
