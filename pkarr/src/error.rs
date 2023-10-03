@@ -1,7 +1,4 @@
 //! Main Crate Error
-use ed25519_dalek::SignatureError;
-use simple_dns::SimpleDnsError;
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     /// For starter, to remove as code matures.
@@ -18,7 +15,10 @@ pub enum Error {
     DnsError(#[from] simple_dns::SimpleDnsError),
 
     #[error(transparent)]
-    SignatureError(#[from] SignatureError),
+    SignatureError(#[from] ed25519_dalek::SignatureError),
+
+    #[error(transparent)]
+    ReqwestError(#[from] reqwest::Error),
 
     #[error("Invalid SignedPacket bytes length, expected at least 72 bytes but got: {0}")]
     InvalidSingedPacketBytes(usize),

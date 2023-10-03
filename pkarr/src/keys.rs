@@ -70,12 +70,8 @@ impl TryFrom<&str> for PublicKey {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<PublicKey> {
-        let bytes = match zbase32::decode_full_bytes_str(s) {
-            Ok(bytes) => bytes,
-            Err(err) => {
-                return Err(Error::Static("Invalid zbase32 encoding"));
-            }
-        };
+        let bytes = zbase32::decode_full_bytes_str(s)
+            .map_err(|_| Error::Static("Invalid zbase32 encoding"))?;
 
         let verifying_key = VerifyingKey::try_from(bytes.as_slice())?;
 

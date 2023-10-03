@@ -1,7 +1,6 @@
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::Bytes;
 use ed25519_dalek::Signature;
-use reqwest;
 use simple_dns::{
     rdata::{RData, A},
     Name, Packet, ResourceRecord,
@@ -9,7 +8,7 @@ use simple_dns::{
 use std::{
     fmt::{self, Display, Formatter},
     net::Ipv4Addr,
-    time::{Instant, SystemTime},
+    time::SystemTime,
 };
 
 #[derive(Debug)]
@@ -48,8 +47,6 @@ impl SignedPacket {
 
     /// Return the DNS [Packet].
     pub fn packet(&self) -> Packet {
-        // TODO: should we memoize this and deal with a self refrential struct?
-
         // encoded_packet should not be possible to create with an invalid packet
         // as long as the only public function to create a SignedPacket from Packet is
         // `from_packet` and that one validates Packet before calling
@@ -97,7 +94,7 @@ impl SignedPacket {
             .map(|answer| normalize_name(&origin, answer.name.to_string()))
             .collect();
 
-        &packet
+        packet
             .answers
             .iter()
             .enumerate()
@@ -114,7 +111,7 @@ impl SignedPacket {
 
         let value = inner.build_bytes_vec_compressed()?;
 
-        if (value.len() > 1000) {
+        if value.len() > 1000 {
             return Err(Error::PacketTooLarge(value.len()));
         }
 
@@ -142,30 +139,29 @@ impl AsRef<[u8]> for SignedPacket {
 
 impl Display for SignedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        dbg!("here\n\n\n");
         write!(
             f,
             "SignedPacket ({}):\n    timestamp: {},\n    signature: {}\n    records:\n",
             &self.public_key,
             &self.timestamp(),
             &self.signature(),
-        );
+        )?;
 
-        &self.packet().answers.iter().for_each(|rr| {
+        for answer in &self.packet().answers {
             write!(
                 f,
                 "        {}  IN  {}  {}",
-                &rr.name,
-                &rr.ttl,
-                match rr.rdata {
+                &answer.name,
+                &answer.ttl,
+                match answer.rdata {
                     RData::A(A { address }) =>
                         format!("A  {}", Ipv4Addr::from(address).to_string()),
-                    _ => format!("{:?}", rr.rdata),
+                    _ => format!("{:?}", answer.rdata),
                 }
-            );
-        });
+            )?;
+        }
 
-        write!(f, "\n");
+        write!(f, "\n")?;
 
         Ok(())
     }
