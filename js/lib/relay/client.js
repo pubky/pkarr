@@ -12,7 +12,7 @@ export class Pkarr {
 
   /**
    * @param {import('../tools.js').KeyPair} keyPair
-   * @param {any} records
+   * @param {import('dns-packet').Packet} records
    * @param {string[]} relays
    *
    * @returns {Promise<boolean>}
@@ -50,7 +50,7 @@ export class Pkarr {
    * @param {Uint8Array} key
    * @param {string[]} relays
    *
-   * @returns {Promise<{seq:number, records: any[]} | null>}
+   * @returns {Promise<{seq:number, packet: import('dns-packet').Packet} | null>}
    */
   static async resolve (key, relays) {
     return new Promise(resolve => {
@@ -80,7 +80,7 @@ export class Pkarr {
 
             resolve({
               seq: result.seq,
-              records: await codec.decode(result.v)
+              packet: await codec.decode(result.v)
             })
           })
           .catch(notOk)

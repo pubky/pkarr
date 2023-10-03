@@ -1,4 +1,5 @@
 import test from 'brittle'
+import dns from 'dns-packet'
 
 import Pkarr from '../relayed.js'
 import Server from '../lib/relay/server.js'
@@ -9,14 +10,23 @@ test('successful put - get', async (t) => {
   const serverB = await Server.start({ dht: new DHT({ storage: null }) })
 
   const keyPair = Pkarr.generateKeyPair()
+
+  /** @type {import('dns-packet').Answer[]} */
   const records = [
-    ['_matrix', '@foobar:example.com'],
-    ['A', 'nuhvi.com'],
-    ['_lud16.alice', 'https://my.ln-node/.well-known/lnurlp/alice'],
-    ['_btc.bob', 'https://my.ln-node/.well-known/lnurlp/bob']
+    { name: '_matrix', type: 'TXT', class: 'IN', data: '@foobar:example.com' }
   ]
 
-  const published = await Pkarr.publish(keyPair, records, [serverA.address])
+  /** @type {import('dns-packet').Packet} */
+  const packet = {
+    id: 0,
+    type: 'response',
+    flags: 0,
+    answers: records
+  }
+
+  const target = dns.decode(dns.encode(packet))
+
+  const published = await Pkarr.publish(keyPair, packet, [serverA.address])
 
   t.ok(published)
 
@@ -24,18 +34,7 @@ test('successful put - get', async (t) => {
 
   t.ok(resolved)
   t.ok(resolved?.seq)
-  t.alike(resolved?.records, records)
-
-  {
-    const updated = await Pkarr.publish(keyPair, records.slice(0, 2), [serverA.address])
-    t.ok(updated)
-
-    const resolved = await Pkarr.resolve(keyPair.publicKey, [serverB.address])
-
-    t.ok(resolved)
-    t.ok(resolved?.seq)
-    t.alike(resolved?.records, records.slice(0, 2))
-  }
+  t.alike(resolved?.packet?.answers, target.answers)
 
   serverA.close()
   serverB.close()

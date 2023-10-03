@@ -36,14 +36,14 @@ const resolveKey = async (key, fullLookup) => {
       return
     }
 
-    table(response.records).forEach((row) => {
-      console.log(chalk.green('   ❯ ') + row.join(' '))
+    table(response.packet.answers.map(a => Object.values(a))).forEach((answer) => {
+      console.log(chalk.green('   ❯ ') + answer.join(' '))
     })
 
     console.log('')
 
     const metadata = [
-      ['updated_at', new Date(response.seq * 1000).toLocaleString()],
+      ['updated_at', new Date(response.seq / 1000).toLocaleString()],
       ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
       ['from', response.nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
     ]

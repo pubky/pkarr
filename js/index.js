@@ -40,7 +40,7 @@ export class Pkarr {
 
       return {
         seq: result.seq,
-        records: await codec.decode(result.v),
+        packet: await codec.decode(result.v),
         nodes: result.nodes
       }
     } catch (error) {
