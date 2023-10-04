@@ -3,12 +3,12 @@ use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
 use self_cell::self_cell;
 use simple_dns::{
-    rdata::{RData, A},
+    rdata::{RData, A, AAAA},
     Name, Packet, ResourceRecord,
 };
 use std::{
     fmt::{self, Display, Formatter},
-    net::Ipv4Addr,
+    net::{Ipv4Addr, Ipv6Addr},
     time::SystemTime,
 };
 
@@ -176,15 +176,17 @@ impl Display for SignedPacket {
                 match &answer.rdata {
                     RData::A(A { address }) =>
                         format!("A  {}", Ipv4Addr::from(*address).to_string()),
+                    RData::AAAA(AAAA { address }) =>
+                        format!("AAAA  {}", Ipv6Addr::from(*address).to_string()),
                     RData::CNAME(name) => format!("CNAME  {}", name.to_string()),
-                    // RData::TXT(txt) => {
-                    //     format!(
-                    //         "TXT  \"{}\"",
-                    //         txt.clone()
-                    //             .try_into()
-                    //             .unwrap_or("__INVALID_TXT_VALUE_".to_string())
-                    //     )
-                    // }
+                    RData::TXT(txt) => {
+                        format!(
+                            "TXT  \"{}\"",
+                            txt.clone()
+                                .try_into()
+                                .unwrap_or("__INVALID_TXT_VALUE_".to_string())
+                        )
+                    }
                     _ => format!("{:?}", answer.rdata),
                 }
             )?;

@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
         println!("\nPublishing pk:{}...\n", keypair);
         let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_derp_region._iroh.").unwrap(),
+            dns::Name::new("_derp_region.iroh.").unwrap(),
             dns::CLASS::IN,
             30,
             dns::rdata::RData::A(dns::rdata::A {
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
             }),
         ));
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_derp_region._iroh.").unwrap(),
+            dns::Name::new("_derp_region.iroh.").unwrap(),
             dns::CLASS::IN,
             30,
             dns::rdata::RData::CNAME(
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
             ),
         ));
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_derp_region._iroh.").unwrap(),
+            dns::Name::new("_derp_region.iroh.").unwrap(),
             dns::CLASS::IN,
             30,
             dns::rdata::RData::TXT("url=eu.derp.iroh.network:33000".try_into()?),
