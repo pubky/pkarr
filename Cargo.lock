@@ -664,7 +664,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "ed25519-dalek",
@@ -765,9 +765,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.11.21"
+version = "0.11.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78fdbab6a7e1d7b13cc8ff10197f47986b41c639300cc3c8158cac7847c9bbef"
+checksum = "046cd98826c46c2ac8ddecae268eb5c2e58628688a5fc7a2643704a73faba95b"
 dependencies = [
  "base64",
  "bytes",
@@ -941,8 +941,9 @@ checksum = "5e1788eed21689f9cf370582dfc467ef36ed9c707f073528ddafa8d83e3b8500"
 
 [[package]]
 name = "simple-dns"
-version = "0.5.5"
-source = "git+https://github.com/balliegojr/simple-dns#7c0bcdcf8bfb59526a18be02ed54ff76bff0a8c1"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17534bea826abaf69dfe7a56f63950d5f8d20adfc2439e9f2af368e2fcd74098"
 dependencies = [
  "bitflags 2.4.0",
 ]

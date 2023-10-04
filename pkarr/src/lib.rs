@@ -1,9 +1,12 @@
-//! Public-Key Addressable Resource Records
+#![doc = include_str!("./README.md")]
+
+use bytes::Bytes;
+use url::Url;
 
 // Rexports
-pub use bytes::Bytes;
+pub use bytes;
 pub use simple_dns as dns;
-pub use url::Url;
+pub use url;
 
 // Modules
 
@@ -30,6 +33,7 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 pub const DEFAULT_PKARR_RELAY: &str = "https://relay.pkarr.org";
 
 #[derive(Debug, Clone)]
+/// Main client for publishing and resolving [SginedPacket](crate::SignedPacket)s.
 pub struct PkarrClient {
     http_client: reqwest::Client,
 }
@@ -41,6 +45,7 @@ impl PkarrClient {
         }
     }
 
+    /// Resolves a [SignedPacket](crate::SignedPacket) from a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub async fn relay_get(&self, url: &Url, public_key: PublicKey) -> Result<SignedPacket> {
         let url = format_relay_url(url, &public_key);
 
@@ -50,6 +55,7 @@ impl PkarrClient {
         Ok(SignedPacket::from_bytes(public_key, bytes)?)
     }
 
+    /// Publishes a [SignedPacket](crate::SignedPacket) through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub async fn relay_put(&self, url: &Url, signed_packet: SignedPacket) -> Result<()> {
         let url = format_relay_url(url, signed_packet.public_key());
 

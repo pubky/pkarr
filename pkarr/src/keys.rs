@@ -5,7 +5,7 @@ use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, Verifyin
 use rand::rngs::OsRng;
 use std::fmt::{self, Debug, Display, Formatter};
 
-/// public_key keys to sign dns [`simple_dns::Packet`]s.
+/// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
 pub struct Keypair(SigningKey);
 
 impl Keypair {
@@ -42,7 +42,7 @@ impl Keypair {
     }
 }
 
-/// Public key to verify a signature over dns [`simple_dns::Packet`]s.
+/// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
 ///
 /// It can formatted to and parsed from a `zbase32` string.
 #[derive(Clone, Eq, PartialEq)]
