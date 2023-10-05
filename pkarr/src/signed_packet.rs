@@ -47,6 +47,15 @@ impl SignedPacket {
         self.packet_bytes.borrow_dependent()
     }
 
+    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
+        let origin = self.public_key().to_z32();
+        let normalized_name = normalize_name(&origin, name.to_string());
+        self.packet()
+            .answers
+            .iter()
+            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
+    }
+
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
     /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
     pub fn signature(&self) -> &Signature {
