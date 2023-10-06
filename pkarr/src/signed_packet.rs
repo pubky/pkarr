@@ -50,6 +50,17 @@ impl SignedPacket {
         self.packet_bytes.borrow_dependent()
     }
 
+    /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
+    /// that matches the given name. The name will be normalized to the origin TLD of this packet.
+    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
+        let origin = self.public_key().to_z32();
+        let normalized_name = normalize_name(&origin, name.to_string());
+        self.packet()
+            .answers
+            .iter()
+            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
+    }
+
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
     /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
     pub fn signature(&self) -> &Signature {
@@ -297,5 +308,39 @@ mod tests {
         let error = SignedPacket::from_packet(&keypair, &packet);
 
         assert!(error.is_err());
+    }
+
+    #[test]
+    fn resource_records_iterator() {
+        let keypair = Keypair::random();
+
+        let target = ResourceRecord::new(
+            Name::new("_derp_region.iroh.").unwrap(),
+            simple_dns::CLASS::IN,
+            30,
+            RData::A(A {
+                address: Ipv4Addr::new(1, 1, 1, 1).into(),
+            }),
+        );
+
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(target.clone());
+        packet.answers.push(ResourceRecord::new(
+            Name::new("something else").unwrap(),
+            simple_dns::CLASS::IN,
+            30,
+            RData::A(A {
+                address: Ipv4Addr::new(1, 1, 1, 1).into(),
+            }),
+        ));
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        let iter = signed_packet.resource_records("_derp_region.iroh");
+        assert_eq!(iter.count(), 1);
+
+        for record in signed_packet.resource_records("_derp_region.iroh") {
+            assert_eq!(record.rdata, target.rdata);
+        }
     }
 }
