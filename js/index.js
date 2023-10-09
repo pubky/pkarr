@@ -8,14 +8,14 @@ export class Pkarr {
 
   /**
    * @param {import('./lib/tools.js').KeyPair} keyPair
-   * @param {any} records
+   * @param {import('dns-packet').Packet} packet
    *
    * @returns {Promise<boolean>}
    */
-  static async publish (keyPair, records) {
+  static async publish (keyPair, packet) {
     const dht = new DHT()
 
-    const request = await createPutRequest(keyPair, records)
+    const request = await createPutRequest(keyPair, packet)
 
     return dht.put(keyPair.publicKey, request)
       .then(() => true)

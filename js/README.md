@@ -65,19 +65,21 @@ In browsers and devices behind NAT, you can make HTTP requests to a any pkarr se
 ```js
 import Pkarr from 'pkarr/relayed.js'
 
-const records = [
-  ['_matrix', '@foobar:example.com'],
-  ['A', 'nuhvi.com'],
-  ["_lud16.alice", "https://my.ln-node/.well-known/lnurlp/alice"],
-  ["_btc.bob", "https://my.ln-node/.well-known/lnurlp/bob"]
-]
+const packet = {
+  id: 0,
+  type: 'response',
+  flags: 0,
+  answers: [
+    { name: '_matrix', type: 'TXT', class: 'IN', data: '@foobar:example.com' }
+  ]
+}
 
 // Genearate a keyPair from a 32 bytes seed
 const keyPair = Pkarr.generateKeyPair(seed)
 
-// Create a recrord, sign it and submit it to one or more servers
+// Create a dns packet, sign it and submit it to one or more servers
 await Pkarr.publish(keyPair, records, ["relay.pkarr.org"])
 
-// Get records of a public key from another server
-const {seq, records} = Pkarr.resolve(key, ["relay.pkarr.org"])
+// Get a dns packet corrisponding to a public key from another server
+const {seq, packet} = Pkarr.resolve(key, ["relay.pkarr.org"])
 ```
