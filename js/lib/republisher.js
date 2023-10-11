@@ -38,7 +38,7 @@ export class Republisher {
     const z32Key = 'pk:' + z32.encode(key)
 
     try {
-      const resolved = await this.dht.get(key)
+      const resolved = await this.dht.get(key, { fullLookup: true })
         .catch(noop)
 
       // Assume there are other republisher (according to BEP44 recommendations)
