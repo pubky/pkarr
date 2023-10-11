@@ -1,6 +1,5 @@
 import z32 from 'z32'
 import dns from 'dns-packet'
-import b4a from 'b4a'
 import sodium from 'sodium-universal'
 
 import { encodeSigData } from './tools.js'
@@ -46,7 +45,7 @@ export default class SignedPacket {
 
     const signable = encodeSigData({ seq: timestamp, v: encodedPacket })
 
-    const signature = b4a.alloc(sodium.crypto_sign_BYTES)
+    const signature = Buffer.alloc(sodium.crypto_sign_BYTES)
     sodium.crypto_sign_detached(signature, signable, keypair.secretKey)
 
     signedPacket.#timestamp = timestamp

@@ -1,11 +1,11 @@
 {
   "name": "pkarr",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "client, server and CLI for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
   "browser": {
-    "./lib/dht.js" : "./lib/dht.browser.js"
+    "./lib/dht.js": "./lib/dht.browser.js"
   },
   "types": "types/index.d.ts",
   "bin": {
@@ -31,16 +31,11 @@
   "author": "Nuh (@nuhvi)",
   "license": "MIT",
   "dependencies": {
-    "@fastify/cors": "^8.2.1",
-    "b4a": "^1.6.3",
     "bencode": "^3.0.3",
     "bittorrent-dht": "^11.0.4",
-    "brotli-compress": "^1.3.3",
     "chalk": "^5.2.0",
     "dns-packet": "^5.6.1",
     "graceful-goodbye": "^1.3.0",
-    "pino": "^8.11.0",
-    "pino-pretty": "^10.0.0",
     "sodium-universal": "^4.0.0",
     "z32": "^1.0.0"
   },

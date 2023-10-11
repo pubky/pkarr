@@ -1,4 +1,3 @@
-import b4a from 'b4a'
 import sodium from 'sodium-universal'
 import bencode from 'bencode'
 import z32 from 'z32'
@@ -42,8 +41,8 @@ export const decodeSigData = (sigData) => {
  * @returns {KeyPair}
  */
 export const generateKeyPair = (seed) => {
-  const publicKey = b4a.allocUnsafe(sodium.crypto_sign_PUBLICKEYBYTES)
-  const secretKey = b4a.allocUnsafe(sodium.crypto_sign_SECRETKEYBYTES)
+  const publicKey = Buffer.allocUnsafe(sodium.crypto_sign_PUBLICKEYBYTES)
+  const secretKey = Buffer.allocUnsafe(sodium.crypto_sign_SECRETKEYBYTES)
 
   if (seed) sodium.crypto_sign_seed_keypair(publicKey, secretKey, seed)
   else sodium.crypto_sign_keypair(publicKey, secretKey)

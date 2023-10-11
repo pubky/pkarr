@@ -1,7 +1,6 @@
 import { render } from 'solid-js/web';
 import { createSignal, createEffect, For, onMount } from 'solid-js';
-import Pkarr from 'pkarr/relayed.js'
-import b4a from 'b4a'
+import { Pkarr } from 'pkarr'
 
 import store from './store.js'
 
@@ -123,7 +122,7 @@ const App = () => {
             <div id="seed-buttons">
               <button id="paste-seed" onClick={pasteSeed}>paste seed</button>
               <button id="copy-seed" onClick={copySeed}>{copySeedText()}</button>
-              <button id="generate-seed" onClick={() => setSettingsSeed(b4a.toString(Pkarr.generateSeed(), 'hex'))}>generate</button>
+              <button id="generate-seed" onClick={() => setSettingsSeed(Buffer.from(Pkarr.generateSeed()).toString('hex'))}>generate</button>
             </div>
           </div>
           <div class="row">
@@ -194,17 +193,20 @@ function Records({ resolver, target }) {
     typingTimer = setTimeout(
       () => {
         const records = [...form.querySelectorAll('input')]
-          .reduce((acc, input, i) => {
-            if (i % 2 === 0) {
-              acc.push([input.value])
-            } else {
-              acc[acc.length - 1].push(input.value)
-            }
-            return acc
-          }, [])
+          .reduce(
+            (acc, input, i) => {
+              if (i % 2 === 0) {
+                acc.push({ name: input.value })
+              } else {
+                acc[acc.length - 1].data = input.value
+              }
+              return acc
+            },
+            []
+          )
         store.updateRecords(records)
       },
-      1000
+      10
     )
   }
 
@@ -216,13 +218,13 @@ function Records({ resolver, target }) {
     <div class='records'>
       <form ref={form} id="records-form" onKeyDown={onKeyDown} >
         <For each={resolver ? store.resolved : store.records}>
-          {(row, rowIndex) => {
+          {(record, rowIndex) => {
             return <div class="table-row">
               <input
                 type="text"
                 disabled={resolver}
                 placeholder={!resolver ? 'name' : 'No records yet...'}
-                value={row[0] || ""}
+                value={record.name || ""}
                 onInput={(e) => handleInput(e, rowIndex(), 0)}
                 autofocus
               />
@@ -230,7 +232,7 @@ function Records({ resolver, target }) {
                 type="text"
                 disabled={resolver}
                 placeholder={!resolver ? 'value' : ''}
-                value={row[1] || ""}
+                value={record.data || ""}
                 onInput={(e) => handleInput(e, rowIndex(), 1)}
               />
             </div>

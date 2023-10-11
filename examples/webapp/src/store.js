@@ -1,7 +1,5 @@
-import Pkarr from 'pkarr/relayed.js';
+import { Pkarr, z32, dns, SignedPacket } from 'pkarr';
 import { createMutable } from 'solid-js/store';
-import b4a from 'b4a'
-import z32 from 'z32'
 
 const DEFAULT_RELAYS = [
   'https://relay.pkarr.org'
@@ -24,28 +22,41 @@ const store = createMutable({
   publishing: false,
 
   addRecord() {
-    this.records = [...this.records, []]
+    this.records = [...this.records, {}]
   },
+  /**
+   * @param {import('dns-packet').Answer[]} records
+   */
   updateRecords(records) {
-    this.records = records
-    const stringified = JSON.stringify(records)
+    const packet = {
+      id: 0,
+      type: 'response',
+      answers: records.map(rr => ({ name: "", ttl: 30, class: "IN", type: "TXT", data: "", ...rr }))
+    }
+    const encodedPacket = dns.encode(packet)
 
-    Pkarr.codec.encode(stringified).then(bytes => {
-      this.recordsSize = bytes.byteLength || 0
-    })
+    this.recordsSize = encodedPacket.length || 0
 
-    localStorage.setItem('records', stringified)
+    localStorage.setItem('records', JSON.stringify(records))
   },
 
   publish() {
     const keyPair = { ...this.keyPair }
-    const records = store.records.map(r => [...r])
+    const records = store.records.map(r => ({ ...r }))
     const relays = [...this.relays]
 
     this.publishing = true
 
+    const packet = {
+      id: 0,
+      type: "response",
+      answers: records.map(rr => ({ name: "", ttl: 30, class: "IN", type: "TXT", data: "", ...rr }))
+    }
+
+    const signedPacket = SignedPacket.fromPacket(keyPair, packet)
+
     const start = Date.now()
-    Pkarr.publish(keyPair, records, relays)
+    Pkarr.relayPut(relays[0], signedPacket)
       .then(published => {
         if (published) {
           this.publishing = false;
@@ -61,7 +72,7 @@ const store = createMutable({
       })
   },
 
-  resolved: [[]],
+  resolved: [{}],
   resolving: false,
   resolvedSize: 0,
   resolvedLastPublished: 'Not resolved yet...',
@@ -80,16 +91,29 @@ const store = createMutable({
     const relays = [...this.relays]
 
     const start = Date.now()
-    Pkarr.resolve(key, relays)
-      .then(result => {
-        if (result) {
-          this.resolved = result.records
-          this.resolvedLastPublished = new Date(result.seq * 1000).toLocaleString()
+    Pkarr.relayGet(relays[0], key)
+      .then(signedPacket => {
+        if (signedPacket) {
+          this.resolved = signedPacket.packet().answers
+            .map(rr => {
+              let denormalizedName = rr.name.replace(z32.encode(key), '');
+
+              if (denormalizedName.length === 0) {
+                denormalizedName = '@'
+              }
+              if (denormalizedName.endsWith('.')) {
+                denormalizedName = denormalizedName.slice(0, -1)
+              }
+
+              return {
+                ...rr, name: denormalizedName
+              }
+            })
+
+          this.resolvedLastPublished = new Date(signedPacket.timestamp() * 1000).toLocaleString()
           this.resolving = false;
 
-          Pkarr.codec.encode(result.records).then(bytes => {
-            this.resolvedSize = bytes.byteLength || 0
-          })
+          this.resolvedSize = signedPacket.size()
 
           const time = Date.now() - start
           this.temporaryMessage = "Resolved ... took " + time + " ms"
@@ -98,15 +122,18 @@ const store = createMutable({
           alert('No records founds from any relay')
         }
       })
+      .catch(error => {
+        alert("Error: " + error.message)
+      })
   },
   updateSettings(seed, relays) {
     if (this.seed !== seed) {
-      this.records = [[]]
+      this.records = [{}]
       localStorage.setItem('records', JSON.stringify(this.records))
     }
 
     this.seed = seed
-    this.keyPair = Pkarr.generateKeyPair(b4a.from(seed, 'hex'))
+    this.keyPair = Pkarr.generateKeyPair(Buffer.from(seed, 'hex'))
     this.relays = relays
 
     localStorage.setItem('seed', seed)
@@ -120,9 +147,9 @@ const store = createMutable({
     {
       // Seeed
       const string = this.seed;
-      const seed = string ? b4a.from(string, 'hex') : Pkarr.generateSeed()
+      const seed = string ? Buffer.from(string, 'hex') : Pkarr.generateSeed()
 
-      this.seed = string || b4a.toString(seed, 'hex')
+      this.seed = string || Buffer.from(seed).toString('hex')
       localStorage.setItem('seed', this.seed)
 
       // keyPair
@@ -141,6 +168,7 @@ const store = createMutable({
       if (records) {
         try {
           this.records = JSON.parse(records)
+          this.updateRecords(this.records)
         } catch { }
       }
     }
