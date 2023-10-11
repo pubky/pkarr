@@ -93,6 +93,7 @@ const store = createMutable({
     const start = Date.now()
     Pkarr.relayGet(relays[0], key)
       .then(signedPacket => {
+        console.log({ signedPacket })
         if (signedPacket) {
           this.resolved = signedPacket.packet().answers
             .map(rr => {
@@ -110,7 +111,7 @@ const store = createMutable({
               }
             })
 
-          this.resolvedLastPublished = new Date(signedPacket.timestamp() * 1000).toLocaleString()
+          this.resolvedLastPublished = new Date(signedPacket.timestamp() / 1000).toLocaleString()
           this.resolving = false;
 
           this.resolvedSize = signedPacket.size()
