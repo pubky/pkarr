@@ -125,19 +125,20 @@ export class DHT {
   }
 
   /**
-   * @param  {Uint8Array} key
-   * @param  {object} request
-   * @param  {Uint8Array} request.v
-   * @param  {Uint8Array} request.sig
-   * @param  {number} request.seq
+   * @param  {object} args
+   * @param  {Uint8Array} args.k
+   * @param  {Uint8Array} args.v
+   * @param  {Uint8Array} args.sig
+   * @param  {number} args.seq
    *
    * @returns {Promise<{
    *  target: Uint8Array,
    *  nodes: Array<{ id: Uint8Array, host: string, port: number }>
    * }>}
    */
-  async put (key, request) {
-    validate(key, request)
+  async put (args) {
+    const key = args.k
+    validate(key, args)
     const target = hash(key)
 
     let closestNodes = this._dht._tables.get(target.toString('hex'))?.closest(target)
@@ -173,10 +174,10 @@ export class DHT {
       a: {
         id: this._dht._rpc.id,
         token: null, // queryAll sets this
-        v: request.v,
+        v: args.v,
         k: key,
-        seq: request.seq,
-        sig: request.sig
+        seq: args.seq,
+        sig: args.sig
       }
     }
 

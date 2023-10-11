@@ -16,8 +16,6 @@ export default class SignedPacket {
   #bytes
   /** @type {number} */
   #timestamp
-  /** @type {Uint8Array} */
-  #signature
 
   /**
    * Creates a new SignedPacket from a Keypair and a DNS Packet.
@@ -51,7 +49,6 @@ export default class SignedPacket {
     const signature = b4a.alloc(sodium.crypto_sign_BYTES)
     sodium.crypto_sign_detached(signature, signable, keypair.secretKey)
 
-    signedPacket.#signature = signature
     signedPacket.#timestamp = timestamp
     signedPacket.#publicKey = keypair.publicKey
 
@@ -82,11 +79,26 @@ export default class SignedPacket {
       throw new Error(`Encoded and compressed DNS Packet is too large, expected max 1000 bytes but got: ${buffer.length}`)
     }
 
-    const signature = buffer.subarray(0, 64)
-    const encodedPacket = buffer.subarray(72)
+    const seq = Number(buffer.readBigUInt64BE(64))
+    const v = buffer.subarray(72)
+    const sig = buffer.subarray(0, 64)
 
-    /** @type {Number} */
-    const timestamp = Number(buffer.readBigUInt64BE(64))
+    return SignedPacket.fromBep44Args({
+      k: publicKey,
+      seq,
+      v,
+      sig
+    })
+  }
+
+  /**
+   * @param {Bep44Args} args
+   */
+  static fromBep44Args (args) {
+    const publicKey = args.k
+    const signature = args.sig
+    const encodedPacket = Buffer.from(args.v)
+    const timestamp = args.seq
 
     const signable = encodeSigData({ seq: timestamp, v: encodedPacket })
 
@@ -101,16 +113,21 @@ export default class SignedPacket {
     const signedPacket = new SignedPacket()
 
     signedPacket.#publicKey = publicKey
-    signedPacket.#signature = signature
     signedPacket.#packet = packet
     signedPacket.#timestamp = timestamp
-    signedPacket.#bytes = bytes
+
+    const buffer = Buffer.alloc(args.v.length + 72)
+    buffer.set(signature)
+    buffer.writeBigUInt64BE(BigInt(timestamp), 64)
+    buffer.set(encodedPacket, 72)
+
+    signedPacket.#bytes = buffer
 
     return signedPacket
   }
 
   /**
-   * Return a list of resource records with the target `name`.
+   * Returns a list of resource records with the target `name`.
    * `name` can be not normalized, for example `@` or `subdomain.`.
    *
    * @param {string} name
@@ -125,7 +142,7 @@ export default class SignedPacket {
   }
 
   /**
-   * Return the publicKey singing this packet
+   * Returns the publicKey singing this packet
    *
    * @returns{Uint8Array}
    * */
@@ -134,7 +151,7 @@ export default class SignedPacket {
   }
 
   /**
-   * Return the DNS packet
+   * Returns the DNS packet
    *
    * @returns{Packet}
    * */
@@ -157,16 +174,37 @@ export default class SignedPacket {
    * @returns{Uint8Array}
    * */
   signature () {
-    return this.#signature
+    return this.#bytes.subarray(0, 64)
   }
 
   /**
-   * Return the encoded signature, timestamp and packet as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
+   * Returns the encoded signature, timestamp and packet as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
    *
    * @returns {Uint8Array}
    */
   bytes () {
     return this.#bytes
+  }
+
+  /**
+   * Returns BEP0044 arguments { seq, v, sig }
+   *
+   * @returns {Bep44Args}
+   */
+  bep44Args () {
+    return {
+      k: this.publicKey(),
+      seq: this.timestamp(),
+      sig: this.signature(),
+      v: this.#bytes.subarray(72)
+    }
+  }
+
+  /**
+   * Returns the size of the encoded packet
+   */
+  size () {
+    return this.#bytes.length - 72
   }
 }
 
@@ -199,4 +237,5 @@ function normalizeName (origin, name) {
 /**
  * @typedef {import('dns-packet').Packet} Packet
  * @typedef {{secretKey: Uint8Array, publicKey: Uint8Array}} Keypair
+ * @typedef {{k:Uint8Array, seq: number, v: Uint8Array, sig: Uint8Array}} Bep44Args
  */

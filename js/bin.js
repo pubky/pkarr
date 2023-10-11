@@ -9,8 +9,9 @@ import { fileURLToPath } from 'url'
 
 import DHT from './lib/dht.js'
 import Republisher from './lib/republisher.js'
-import Server from './lib/relay/server.js'
+import Server from './lib/relay.js'
 import Pkarr from './index.js'
+import SignedPacket from './lib/signed_packet.js'
 
 const ROOT_DIR = path.join(homedir(), '.pkarr')
 const KEEP_ALIVE_PATH = path.join(ROOT_DIR, 'keepalive.json')
@@ -36,16 +37,18 @@ const resolveKey = async (key, fullLookup) => {
       return
     }
 
-    table(response.packet.answers.map(a => Object.values(a))).forEach((answer) => {
+    const { signedPacket, nodes } = response
+
+    table(signedPacket.packet().answers.map(a => [a.name, a.ttl, a.class, a.type, a.data])).forEach((answer) => {
       console.log(chalk.green('   ❯ ') + answer.join(' '))
     })
 
     console.log('')
 
     const metadata = [
-      ['updated_at', new Date(response.seq / 1000).toLocaleString()],
-      ['size', (response.v?.byteLength || 0) + '/1000 bytes'],
-      ['from', response.nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
+      ['updated_at', new Date(signedPacket.timestamp() / 1000).toLocaleString()],
+      ['size', signedPacket.size() + '/1000 bytes'],
+      ['from', nodes.map(n => n.host + ':' + n.port + (n.client ? ' - ' + n.client : '')).join(', ')]
     ]
     table(metadata).forEach((row) => {
       console.log(chalk.dim('   › ' + row.join(': ')))
@@ -103,8 +106,9 @@ const publish = async () => {
   console.log(chalk.green('    ❯', pk))
 
   console.log(chalk.dim(' ◌ '), 'Enter records to publish:')
-  console.log(chalk.green('    ❯'), chalk.dim('Add record "<name> <value>" or press enter to submit'))
+  console.log(chalk.green('    ❯'), chalk.dim('Add record "<name> <ttl> <class> <value>" for example "@ 30 IN 1.1.1.1" or press enter to submit'))
 
+  /** @type {import('dns-packet').Answer[]} */
   const records = await new Promise(resolve => {
     const _records = []
     let current = ''
@@ -114,7 +118,8 @@ const publish = async () => {
 
       if (keyCode === 13) { // Enter key
         if (current.length > 0) {
-          _records.push(current.split(' '))
+          const [name, ttl, _class, type, data] = current.split(' ')
+          _records.push({ name, ttl, _class, type, data })
           current = ''
         } else {
           resolve(_records)
@@ -141,8 +146,18 @@ const publish = async () => {
   const dht = new DHT()
   const [success, fail] = loading('Publishing')
 
+  /** @type {import('dns-packet').Packet} */
+  const packet = {
+    id: 0,
+    type: 'response',
+    flags: 0,
+    answers: records
+  }
+
+  const signedPacket = SignedPacket.fromPacket(keyPair, packet)
+
   try {
-    await Pkarr.publish(keyPair, records)
+    await Pkarr.publish(signedPacket)
     success('Published')
   } catch (error) {
     fail('Failed to publish. got an error:')
@@ -214,7 +229,7 @@ const keepalive = (command, ...args) => {
 
       console.log(chalk.green('Starting republisher...'))
 
-      Republisher.start([...set].map(key => ({ key: z32.decode(key) })))
+      Republisher.start([...set].map(key => ({ k: z32.decode(key) })))
       break
 
     default:

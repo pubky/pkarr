@@ -4,6 +4,9 @@
   "description": "client, server and CLI for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
+  "browser": {
+    "./lib/dht.js" : "./lib/dht.browser.js"
+  },
   "types": "types/index.d.ts",
   "bin": {
     "pkarr": "bin.js"

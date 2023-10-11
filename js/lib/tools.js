@@ -2,29 +2,13 @@ import b4a from 'b4a'
 import sodium from 'sodium-universal'
 import bencode from 'bencode'
 import z32 from 'z32'
-import _codec from './codec.js'
 
 export const verify = sodium.crypto_sign_verify_detached
-
-export const codec = _codec
 
 export function randomBytes (n = 32) {
   const buf = Buffer.alloc(n)
   sodium.randombytes_buf(buf)
   return buf
-}
-
-/**
- * Endoced records, sign it and create a put request
- * @param {{publicKey: Uint8Array, secretKey: Uint8Array}} keyPair
- * @param {object} records
- */
-export const createPutRequest = async (keyPair, records) => {
-  const seq = Math.ceil(Date.now() / 1000)
-  const v = await codec.encode(records)
-  const sig = sign(encodeSigData({ seq, v }), keyPair.secretKey)
-
-  return { seq, v, sig }
 }
 
 // Copied from bittorrent-dht
@@ -49,17 +33,6 @@ export const decodeSigData = (sigData) => {
   dict[sigData.length + 1] = 101 // e
 
   return bencode.decode(dict)
-}
-
-/**
- * Sign a message with an secret key
- * @param {Uint8Array} message
- * @param {Uint8Array} secretKey
- */
-const sign = (message, secretKey) => {
-  const signature = b4a.alloc(sodium.crypto_sign_BYTES)
-  sodium.crypto_sign_detached(signature, message, secretKey)
-  return signature
 }
 
 /**

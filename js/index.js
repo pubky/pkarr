@@ -2,7 +2,7 @@ import DHT from './lib/dht.js'
 import _z32 from 'z32'
 import _dns from 'dns-packet'
 
-import { createPutRequest, generateKeyPair as _generateKeyPair, codec, randomBytes, decodeKey } from './lib/tools.js'
+import { generateKeyPair as _generateKeyPair, randomBytes, decodeKey } from './lib/tools.js'
 import _SignedPacket from './lib/signed_packet.js'
 
 export const SignedPacket = _SignedPacket
@@ -47,28 +47,32 @@ export class Pkarr {
   }
 
   /**
-   * @param {import('./lib/tools.js').KeyPair} keyPair
-   * @param {import('dns-packet').Packet} packet
+   * Publishes a signed packet to the DHT.
+   * Throws an error in browser environment.
+   *
+   * @param {SignedPacket} signedPacket
    *
    * @returns {Promise<boolean>}
    */
-  static async publish (keyPair, packet) {
+  static async publish (signedPacket) {
     const dht = new DHT()
 
-    const request = await createPutRequest(keyPair, packet)
-
-    return dht.put(keyPair.publicKey, request)
+    return dht.put(signedPacket.bep44Args())
       .then(() => true)
       .catch(() => false)
       .finally(() => dht.destroy())
   }
 
   /**
+   * Resolves a signed packet from the DHT.
+   * Throws an error in browser environment.
+   *
    * @param {Uint8Array | string} key
    * @param {object} [options]
-   * @param {boolean} [options.fullLookup]
+   * @param {boolean} [options.fullLookup=false] - perform a full lookup through the DHT, defaults to false, meaning it will return the first result it finds
    *
    * @throws {Error<'Invalid key'>}
+   * @returns {Promise<{signedPacket: SignedPacket, nodes: {host: string, port: number}[]} | null>}
    */
   static async resolve (key, options = {}) {
     const dht = new DHT()
@@ -79,8 +83,7 @@ export class Pkarr {
       if (!result) return null
 
       return {
-        seq: result.seq,
-        packet: await codec.decode(result.v),
+        signedPacket: SignedPacket.fromBep44Args(result),
         nodes: result.nodes
       }
     } catch (error) {

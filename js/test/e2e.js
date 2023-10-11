@@ -1,7 +1,7 @@
 import test from 'brittle'
 
 import { Pkarr, SignedPacket, generateKeyPair } from '../index.js'
-import Server from '../lib/relay/server.js'
+import Server from '../lib/relay.js'
 import DHT from '../lib/dht.js'
 
 test('successful put - get', async (t) => {

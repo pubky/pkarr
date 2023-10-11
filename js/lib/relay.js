@@ -1,8 +1,8 @@
 import http from 'http'
 import z32 from 'z32'
 
-import DHT from '../dht.js'
-import { verifyBody, writeBody } from './shared.js'
+import DHT from './dht.js'
+import SignedPacket from './signed_packet.js'
 
 const DEFAULT_PORT = 0
 
@@ -130,11 +130,17 @@ export default class Server {
       // For this example, we'll just log it.
       const body = Buffer.concat(requestBodyChunks)
 
-      const request = verifyBody(key, body)
-      if (request instanceof Error) return badRequest(req, res, request.message)
+      /** @type {SignedPacket} */
+      let signedPacket
 
       try {
-        await this._dht.put(key, request)
+        signedPacket = SignedPacket.fromBytes(key, body)
+      } catch (error) {
+        return badRequest(req, res, error.message)
+      }
+
+      try {
+        await this._dht.put(signedPacket.bep44Args())
 
         success(req, res)
       } catch (error) {
@@ -161,7 +167,8 @@ export default class Server {
       return
     }
 
-    const body = writeBody(response)
+    const signedPacket = SignedPacket.fromBep44Args(response)
+    const body = signedPacket.bytes()
 
     success(req, res, body)
   }

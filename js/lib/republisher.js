@@ -8,7 +8,7 @@ const MAX_CONCURRENCY = 360 // allow enough concurrency (20x the default)
 
 export class Republisher {
   /**
-   * @param {Array<Record>} records
+   * @param {Array<Bep44Args>} records
    */
   constructor (records) {
     this.dht = new DHT({ concurrency: MAX_CONCURRENCY })
@@ -24,7 +24,7 @@ export class Republisher {
   }
 
   /**
-   * @param {Array<Record>} records
+   * @param {Array<Bep44Args>} records
    */
   static start (records) {
     return new Republisher(records)
@@ -34,7 +34,7 @@ export class Republisher {
     const record = this.sample()
     if (!record) return
 
-    const key = record.key
+    const key = record.k
     const z32Key = 'pk:' + z32.encode(key)
 
     try {
@@ -54,7 +54,7 @@ export class Republisher {
           throw new Error("Couldn't resolve a record to republish!")
         }
 
-        await this.dht.put(key, record)
+        await this.dht.put(record)
       }
 
       this.requests += 1
@@ -70,15 +70,15 @@ export class Republisher {
   }
 
   /**
-   * @returns {Record | undefined}
+   * @returns {Bep44Args | undefined}
    */
   sample () {
-    const valid = this.records.filter(r => !this.sampled.has(r.key.toString('hex')))
+    const valid = this.records.filter(r => !this.sampled.has(r.k.toString('hex')))
 
     const randomIndex = Math.floor(Math.random() * valid.length)
     const record = valid[randomIndex]
 
-    if (record) { this.sampled.add(record.key.toString('hex')) }
+    if (record) { this.sampled.add(record.k.toString('hex')) }
 
     return record
   }
@@ -103,5 +103,5 @@ function noop () { }
 export default Republisher
 
 /**
- * @typedef {{key:Uint8Array, v?:Uint8Array, seq?:number, sig?: Uint8Array}} Record
+ * @typedef {import("./signed_packet.js").Bep44Args} Bep44Args
  */
