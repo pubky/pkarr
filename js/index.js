@@ -1,10 +1,50 @@
 import DHT from './lib/dht.js'
-import { createPutRequest, generateKeyPair, codec, randomBytes, decodeKey } from './lib/tools.js'
+import _z32 from 'z32'
+import _dns from 'dns-packet'
+
+import { createPutRequest, generateKeyPair as _generateKeyPair, codec, randomBytes, decodeKey } from './lib/tools.js'
+import _SignedPacket from './lib/signed_packet.js'
+
+export const SignedPacket = _SignedPacket
+export const z32 = _z32
+export const dns = _dns
+export const generateKeyPair = _generateKeyPair
 
 export class Pkarr {
-  static generateKeyPair = generateKeyPair
+  static generateKeyPair = _generateKeyPair
   static generateSeed = randomBytes
-  static codec = codec
+
+  /**
+   * Publishes a signed packet using relay. returns the Fetch response.
+   *
+   * @param {string} relay - Relay url
+   * @param {SignedPacket} signedPacket
+   */
+  static async relayPut (relay, signedPacket) {
+    const id = z32.encode(signedPacket.publicKey())
+    const url = relay.replace(/\/+$/, '') + '/' + id
+
+    return fetch(
+      url,
+      { method: 'PUT', body: signedPacket.bytes() }
+    )
+  }
+
+  /**
+   * Publishes a signed packet using relay. returns the Fetch response.
+   *
+   * @param {string} relay - Relay url
+   * @param {Uint8Array} publicKey
+   */
+  static async relayGet (relay, publicKey) {
+    const id = z32.encode(publicKey)
+    const url = relay.replace(/\/+$/, '') + '/' + id
+
+    const response = await fetch(url)
+    const bytes = Buffer.from(await response.arrayBuffer())
+
+    return SignedPacket.fromBytes(publicKey, bytes)
+  }
 
   /**
    * @param {import('./lib/tools.js').KeyPair} keyPair
@@ -52,3 +92,8 @@ export class Pkarr {
 }
 
 export default Pkarr
+
+/**
+ * @typedef {import('./lib/signed_packet.js').Packet} Packet
+ * @typedef {import('./lib/signed_packet.js').default} SignedPacket
+ */

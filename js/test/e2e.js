@@ -1,7 +1,6 @@
 import test from 'brittle'
-import dns from 'dns-packet'
 
-import Pkarr from '../relayed.js'
+import { Pkarr, SignedPacket, generateKeyPair } from '../index.js'
 import Server from '../lib/relay/server.js'
 import DHT from '../lib/dht.js'
 
@@ -9,32 +8,29 @@ test('successful put - get', async (t) => {
   const serverA = await Server.start({ dht: new DHT({ storage: null }) })
   const serverB = await Server.start({ dht: new DHT({ storage: null }) })
 
-  const keyPair = Pkarr.generateKeyPair()
-
-  /** @type {import('dns-packet').Answer[]} */
-  const records = [
-    { name: '_matrix', type: 'TXT', class: 'IN', data: '@foobar:example.com' }
-  ]
+  const keyPair = generateKeyPair()
 
   /** @type {import('dns-packet').Packet} */
   const packet = {
     id: 0,
     type: 'response',
     flags: 0,
-    answers: records
+    answers: [
+      { name: '_matrix', type: 'TXT', data: '@foobar:example.com' }
+    ]
   }
 
-  const target = dns.decode(dns.encode(packet))
+  const signedPacket = SignedPacket.fromPacket(keyPair, packet)
+  const response = await Pkarr.relayPut(serverA.address, signedPacket)
 
-  const published = await Pkarr.publish(keyPair, packet, [serverA.address])
+  t.ok(response)
 
-  t.ok(published)
+  const resolved = await Pkarr.relayGet(serverB.address, keyPair.publicKey)
 
-  const resolved = await Pkarr.resolve(keyPair.publicKey, [serverB.address])
-
-  t.ok(resolved)
-  t.ok(resolved?.seq)
-  t.alike(resolved?.packet?.answers, target.answers)
+  t.alike(resolved.publicKey(), keyPair.publicKey)
+  t.alike(resolved.signature(), signedPacket.signature())
+  t.alike(resolved.timestamp(), signedPacket.timestamp())
+  t.alike(resolved.packet, signedPacket.packet)
 
   serverA.close()
   serverB.close()
