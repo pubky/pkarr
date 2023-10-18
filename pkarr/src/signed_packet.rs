@@ -227,8 +227,6 @@ fn normalize_name(origin: &str, name: String) -> String {
         return origin.to_string();
     }
 
-    let mut new_name = name.to_string();
-    new_name.push_str(origin);
     format!("{}.{}", name, origin)
 }
 
