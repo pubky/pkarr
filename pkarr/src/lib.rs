@@ -50,6 +50,13 @@ impl PkarrClient {
         let url = format_relay_url(url, &public_key);
 
         let response = self.http_client.get(url).send().await?;
+        if !response.status().is_success() {
+            return Err(Error::RelayResponse(
+                response.url().clone(),
+                response.status(),
+                response.text().await?,
+            ));
+        }
         let bytes = response.bytes().await?;
 
         Ok(SignedPacket::from_bytes(public_key, bytes)?)
@@ -61,14 +68,14 @@ impl PkarrClient {
 
         let response = self
             .http_client
-            .put(url.clone())
+            .put(url)
             .body(Bytes::from(signed_packet))
             .send()
             .await?;
 
-        if response.status() != reqwest::StatusCode::OK {
+        if !response.status().is_success() {
             return Err(Error::RelayResponse(
-                url,
+                response.url().clone(),
                 response.status(),
                 response.text().await?,
             ));
