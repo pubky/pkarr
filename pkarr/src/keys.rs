@@ -45,12 +45,12 @@ impl Keypair {
 
 /// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
 ///
-/// It can formatted to and parsed from a `zbase32` string.
+/// It can formatted to and parsed from a [zbase32](z32) string.
 #[derive(Clone, Eq, PartialEq)]
 pub struct PublicKey(VerifyingKey);
 
 impl PublicKey {
-    /// Format the public key as zbase32 string.
+    /// Format the public key as [zbase32](z32) string.
     pub fn to_z32(&self) -> String {
         self.to_string()
     }

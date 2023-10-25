@@ -94,7 +94,7 @@ impl SignedPacket {
     /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
-    /// which would be the zbase32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
+    /// which would be the [zbase32](z32) encoded [PublicKey] of the [Keypair] used to sign the Packet.
     pub fn from_packet(keypair: &Keypair, packet: &Packet) -> Result<SignedPacket> {
         // Normalize names to the origin TLD
         let mut inner = Packet::new_reply(0);
