@@ -4,6 +4,7 @@ use crate::{Error, Result};
 use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::fmt::{self, Debug, Display, Formatter};
+use z32;
 
 /// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
 pub struct Keypair(SigningKey);
@@ -44,12 +45,12 @@ impl Keypair {
 
 /// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
 ///
-/// It can formatted to and parsed from a `zbase32` string.
+/// It can formatted to and parsed from a [zbase32](z32) string.
 #[derive(Clone, Eq, PartialEq)]
 pub struct PublicKey(VerifyingKey);
 
 impl PublicKey {
-    /// Format the public key as zbase32 string.
+    /// Format the public key as [zbase32](z32) string.
     pub fn to_z32(&self) -> String {
         self.to_string()
     }
@@ -72,8 +73,8 @@ impl TryFrom<&str> for PublicKey {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<PublicKey> {
-        let bytes = zbase32::decode_full_bytes_str(s)
-            .map_err(|_| Error::Static("Invalid zbase32 encoding"))?;
+        let bytes =
+            z32::decode(s.as_bytes()).map_err(|_| Error::Static("Invalid zbase32 encoding"))?;
 
         let verifying_key = VerifyingKey::try_from(bytes.as_slice())?;
 
@@ -83,7 +84,7 @@ impl TryFrom<&str> for PublicKey {
 
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", zbase32::encode_full_bytes(self.0.as_bytes()))
+        write!(f, "{}", z32::encode(self.0.as_bytes()))
     }
 }
 

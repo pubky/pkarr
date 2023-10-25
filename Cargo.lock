@@ -553,7 +553,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "ed25519-dalek",
@@ -564,7 +564,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
- "zbase32",
+ "z32",
 ]
 
 [[package]]
@@ -1283,10 +1283,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "zbase32"
-version = "0.1.2"
+name = "z32"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f9079049688da5871a7558ddacb7f04958862c703e68258594cb7a862b5e33f"
+checksum = "0c3090dd63b5982c716dd1f10c47221e525912233b5b879ab914c94d29162c67"
 
 [[package]]
 name = "zeroize"
