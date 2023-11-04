@@ -1,21 +1,22 @@
 {
   "compilerOptions": {
-    "outDir": "types",
-    "target": "esnext",
-    "module": "esnext",
+    "outDir": "dist",
+    "declarationDir": "types",
+    "target": "es5", // For wider compatibility
+    "module": "CommonJS", // This will be overridden for ESM build
     "strict": false,
     "allowJs": true,
     "checkJs": true,
     "noEmitOnError": true,
-    "emitDeclarationOnly": true,
+    "emitDeclarationOnly": false,
     "incremental": true,
     "composite": true,
     "isolatedModules": true,
+    "declaration": true,
     "declarationMap": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,
-    "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
   "include": ["index.js", "lib", "test", "relayed.js"]

@@ -1,6 +1,6 @@
 {
   "name": "pkarr",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "client, server and CLI for public-key addressable resource records",
   "type": "module",
   "main": "index.js",
@@ -15,7 +15,9 @@
     "lint": "standard --fix",
     "start": "node start.js",
     "test": "brittle test/* --cov",
-    "build": "rm -rf types && tsc",
+    "build:cjs": "tsc --outDir dist/cjs --module commonjs",
+    "build:esm": "tsc --outDir dist/esm --module esnext",
+    "build": "npm run build:cjs && npm run build:esm",
     "fullcheck": "npm run lint && npm run build && npm run test",
     "prepublishOnly": "npm run fullcheck"
   },
@@ -45,5 +47,16 @@
     "node-fetch": "^3.3.1",
     "standard": "^17.0.0",
     "typescript": "^5.2.2"
+  }, 
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },  
+  "standard": {
+    "ignore": [
+      "dist/"
+    ]
   }
 }
