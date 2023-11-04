@@ -7,7 +7,7 @@ The simplest possible streamlined integration between the Domain Name System and
 Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
-- To publish resource records for your key, sign a small payload (<= ~3000 bytes) and publish it on the DHT (throug a relay if necessary).
+- To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
 - To resolve some key's resources, applications query the DHT directly, or through a relay, and verify the signature themselves. 
 - Existing applications unaware of Pkarr make normal DNS Queries over HTTPS ([DoH](https://www.rfc-editor.org/rfc/rfc8484)) to Pkarr servers. 
 - Clients and Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. 
