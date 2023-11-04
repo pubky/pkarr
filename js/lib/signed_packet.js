@@ -7,16 +7,14 @@ import { encodeSigData } from './tools.js'
 const verify = sodium.crypto_sign_verify_detached
 
 export default class SignedPacket {
-  constructor () {
-    /** @type {Uint8Array} */
-    this._publicKey = null
-    /** @type {Packet} */
-    this._packet = null
-    /** @type {Uint8Array} */
-    this._bytes = null
-    /** @type {number} */
-    this._timestamp = null
-  }
+  /** @type {Uint8Array} */
+  #publicKey
+  /** @type {Packet} */
+  #packet
+  /** @type {Uint8Array} */
+  #bytes
+  /** @type {number} */
+  #timestamp
 
   /**
    * Creates a new SignedPacket from a Keypair and a DNS Packet.
@@ -40,7 +38,7 @@ export default class SignedPacket {
     })
 
     const signedPacket = new SignedPacket()
-    signedPacket._packet = packet
+    signedPacket.#packet = packet
 
     const timestamp = Math.ceil(options.timestamp || (Date.now() * 1000)) // Micro seconds
     const encodedPacket = dns.encode(packet)
@@ -50,15 +48,15 @@ export default class SignedPacket {
     const signature = Buffer.alloc(sodium.crypto_sign_BYTES)
     sodium.crypto_sign_detached(signature, signable, keypair.secretKey)
 
-    signedPacket._timestamp = timestamp
-    signedPacket._publicKey = keypair.publicKey
+    signedPacket.#timestamp = timestamp
+    signedPacket.#publicKey = keypair.publicKey
 
     const bytes = Buffer.alloc(encodedPacket.length + 72)
     bytes.set(signature)
     bytes.writeBigUInt64BE(BigInt(timestamp), 64)
     bytes.set(encodedPacket, 72)
 
-    signedPacket._bytes = bytes
+    signedPacket.#bytes = bytes
 
     return signedPacket
   }
@@ -113,16 +111,16 @@ export default class SignedPacket {
 
     const signedPacket = new SignedPacket()
 
-    signedPacket._publicKey = publicKey
-    signedPacket._packet = packet
-    signedPacket._timestamp = timestamp
+    signedPacket.#publicKey = publicKey
+    signedPacket.#packet = packet
+    signedPacket.#timestamp = timestamp
 
     const buffer = Buffer.alloc(args.v.length + 72)
     buffer.set(signature)
     buffer.writeBigUInt64BE(BigInt(timestamp), 64)
     buffer.set(encodedPacket, 72)
 
-    signedPacket._bytes = buffer
+    signedPacket.#bytes = buffer
 
     return signedPacket
   }
@@ -148,7 +146,7 @@ export default class SignedPacket {
    * @returns{Uint8Array}
    * */
   publicKey () {
-    return this._publicKey
+    return this.#publicKey
   }
 
   /**
@@ -157,7 +155,7 @@ export default class SignedPacket {
    * @returns{Packet}
    * */
   packet () {
-    return this._packet
+    return this.#packet
   }
 
   /**
@@ -166,7 +164,7 @@ export default class SignedPacket {
    * @returns {number}
    */
   timestamp () {
-    return this._timestamp
+    return this.#timestamp
   }
 
   /**
@@ -175,7 +173,7 @@ export default class SignedPacket {
    * @returns{Uint8Array}
    * */
   signature () {
-    return this._bytes.subarray(0, 64)
+    return this.#bytes.subarray(0, 64)
   }
 
   /**
@@ -184,7 +182,7 @@ export default class SignedPacket {
    * @returns {Uint8Array}
    */
   bytes () {
-    return this._bytes
+    return this.#bytes
   }
 
   /**
@@ -197,7 +195,7 @@ export default class SignedPacket {
       k: this.publicKey(),
       seq: this.timestamp(),
       sig: this.signature(),
-      v: this._bytes.subarray(72)
+      v: this.#bytes.subarray(72)
     }
   }
 
@@ -205,7 +203,7 @@ export default class SignedPacket {
    * Returns the size of the encoded packet
    */
   size () {
-    return this._bytes.length - 72
+    return this.#bytes.length - 72
   }
 }
 
