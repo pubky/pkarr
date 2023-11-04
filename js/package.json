@@ -15,8 +15,8 @@
     "lint": "standard --fix",
     "start": "node start.js",
     "test": "brittle test/* --cov",
-    "build:cjs": "tsc --outDir dist/cjs --module commonjs",
-    "build:esm": "tsc --outDir dist/esm --module esnext",
+    "build:cjs": "tsc --outDir dist/cjs --module commonjs && ./scripts/fix-cjs-build.sh",
+    "build:esm": "tsc --outDir dist/esm --module esnext && ./scripts/fix-esm-build.sh",
     "build": "npm run build:cjs && npm run build:esm",
     "fullcheck": "npm run lint && npm run build && npm run test",
     "prepublishOnly": "npm run fullcheck"
