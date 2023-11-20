@@ -1,13 +1,1 @@
-node_modules/
-package-lock.json
-.parcel*
-dist/
-types
-
-# Local Netlify folder
-.netlify
-
-coverage/
-
-# Rust
 target/
