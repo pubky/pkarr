@@ -59,7 +59,7 @@ impl PkarrClient {
         }
         let bytes = response.bytes().await?;
 
-        Ok(SignedPacket::from_bytes(public_key, bytes)?)
+        SignedPacket::from_bytes(public_key, bytes)
     }
 
     /// Publishes a [SignedPacket](crate::SignedPacket) through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
@@ -82,6 +82,12 @@ impl PkarrClient {
         }
 
         Ok(())
+    }
+}
+
+impl Default for PkarrClient {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

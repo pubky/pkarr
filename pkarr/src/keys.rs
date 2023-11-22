@@ -4,7 +4,6 @@ use crate::{Error, Result};
 use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::fmt::{self, Debug, Display, Formatter};
-use z32;
 
 /// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
 pub struct Keypair(SigningKey);
@@ -102,7 +101,7 @@ impl Debug for Keypair {
 
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PublicKey({})", self.to_string())
+        write!(f, "PublicKey({})", self)
     }
 }
 

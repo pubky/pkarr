@@ -7,10 +7,13 @@ use simple_dns::{
     Name, Packet, ResourceRecord,
 };
 use std::{
+    char,
     fmt::{self, Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
     time::SystemTime,
 };
+
+const DOT: char = '.';
 
 self_cell!(
     struct PacketBytes {
@@ -143,10 +146,7 @@ impl SignedPacket {
         bytes.extend_from_slice(&timestamp.to_be_bytes());
         bytes.extend_from_slice(&encoded_packet);
 
-        Ok(SignedPacket::from_bytes(
-            keypair.public_key(),
-            bytes.into(),
-        )?)
+        SignedPacket::from_bytes(keypair.public_key(), bytes.into())
     }
 }
 
@@ -164,7 +164,7 @@ impl From<SignedPacket> for Bytes {
 
 impl AsRef<[u8]> for SignedPacket {
     fn as_ref(&self) -> &[u8] {
-        &self.packet_bytes.borrow_owner()
+        self.packet_bytes.borrow_owner()
     }
 }
 
@@ -179,16 +179,15 @@ impl Display for SignedPacket {
         )?;
 
         for answer in &self.packet().answers {
-            write!(
+            writeln!(
                 f,
                 "        {}  IN  {}  {}\n",
                 &answer.name,
                 &answer.ttl,
                 match &answer.rdata {
-                    RData::A(A { address }) =>
-                        format!("A  {}", Ipv4Addr::from(*address).to_string()),
-                    RData::AAAA(AAAA { address }) =>
-                        format!("AAAA  {}", Ipv6Addr::from(*address).to_string()),
+                    RData::A(A { address }) => format!("A  {}", Ipv4Addr::from(*address)),
+                    RData::AAAA(AAAA { address }) => format!("AAAA  {}", Ipv6Addr::from(*address)),
+                    #[allow(clippy::to_string_in_format_args)]
                     RData::CNAME(name) => format!("CNAME  {}", name.to_string()),
                     RData::TXT(txt) => {
                         format!(
@@ -203,14 +202,14 @@ impl Display for SignedPacket {
             )?;
         }
 
-        write!(f, "\n")?;
+        writeln!(f)?;
 
         Ok(())
     }
 }
 
 fn normalize_name(origin: &str, name: String) -> String {
-    let name = if name.ends_with(".") {
+    let name = if name.ends_with(DOT) {
         name[..name.len() - 1].to_string()
     } else {
         name
