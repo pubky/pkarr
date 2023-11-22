@@ -442,7 +442,11 @@ mod tests {
 
         let expected = MutableItem::new(
             keypair.secret_key().into(),
-            signed_packet.packet().build_bytes_vec_compressed().unwrap(),
+            signed_packet
+                .packet()
+                .build_bytes_vec_compressed()
+                .unwrap()
+                .into(),
             seq,
             None,
         );

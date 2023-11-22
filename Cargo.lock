@@ -619,6 +619,8 @@ checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 [[package]]
 name = "mainline"
 version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b4829a1888c59242854a0a8da8d71deb2ce7d66ac92600d077bde4d1d0a70b9"
 dependencies = [
  "bytes",
  "crc",
