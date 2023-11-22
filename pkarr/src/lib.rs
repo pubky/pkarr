@@ -1,5 +1,6 @@
 #![doc = include_str!("./README.md")]
 
+use mainline::common::{MutableItem, StoreQueryMetdata};
 use mainline::Dht;
 use url::Url;
 
@@ -60,7 +61,6 @@ impl PkarrClient {
             ));
         }
         let bytes = response.bytes().await?;
-
         SignedPacket::from_relay_response(public_key, bytes)
     }
 
@@ -84,6 +84,12 @@ impl PkarrClient {
         }
 
         Ok(())
+    }
+
+    /// Publish a [SignedPacket](crate::SignedPacket) to the DHT.
+    pub fn publish(&self, signed_packet: &SignedPacket) -> Result<StoreQueryMetdata> {
+        let item: MutableItem = signed_packet.into();
+        self.dht.put_mutable(item).map_err(Error::MainlineError)
     }
 
     /// Resolve the first resolved [SignedPacket](crate::SignedPacket) from the DHT.

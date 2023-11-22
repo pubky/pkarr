@@ -215,17 +215,11 @@ impl From<&SignedPacket> for MutableItem {
     fn from(s: &SignedPacket) -> Self {
         let seq: i64 = *s.timestamp() as i64;
         let packet = s.inner.borrow_owner().slice(104..);
-        let value = signable(*s.timestamp(), &packet);
-        dbg!(value.len());
-
-        s.public_key()
-            .verify(&value, s.signature())
-            .expect("signature is invald");
 
         Self::new_signed_unchecked(
             s.public_key().0.to_bytes(),
             s.signature().to_bytes(),
-            value,
+            packet,
             seq,
             None,
         )
@@ -426,5 +420,33 @@ mod tests {
         for record in signed_packet.resource_records("_derp_region.iroh") {
             assert_eq!(record.rdata, target.rdata);
         }
+    }
+
+    #[test]
+    fn to_mutable() {
+        let keypair = Keypair::random();
+
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(ResourceRecord::new(
+            Name::new("_derp_region.iroh.").unwrap(),
+            simple_dns::CLASS::IN,
+            30,
+            RData::A(A {
+                address: Ipv4Addr::new(1, 1, 1, 1).into(),
+            }),
+        ));
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let item: MutableItem = (&signed_packet).into();
+        let seq: i64 = *signed_packet.timestamp() as i64;
+
+        let expected = MutableItem::new(
+            keypair.secret_key().into(),
+            signed_packet.packet().build_bytes_vec_compressed().unwrap(),
+            seq,
+            None,
+        );
+
+        assert_eq!(item, expected);
     }
 }

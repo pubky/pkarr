@@ -1,3 +1,8 @@
+//! This example shows how to resolve [ResourceRecord]s directly from the DHT.
+//!
+//! run this example from the project root:
+//!     $ cargo run --example resolve <zbase32 encoded key>
+
 use std::time::Instant;
 
 use pkarr::{PkarrClient, PublicKey};

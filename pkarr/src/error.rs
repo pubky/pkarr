@@ -43,4 +43,7 @@ pub enum Error {
     #[error("All attempts to publish failed")]
     /// Relay response is not 200 OK
     PublishFailed,
+
+    #[error(transparent)]
+    MainlineError(#[from] mainline::Error),
 }
