@@ -1,6 +1,5 @@
 #![doc = include_str!("./README.md")]
 
-use bytes::Bytes;
 use mainline::Dht;
 use url::Url;
 
@@ -62,7 +61,7 @@ impl PkarrClient {
         }
         let bytes = response.bytes().await?;
 
-        SignedPacket::from_bytes(public_key, bytes)
+        SignedPacket::from_relay_response(public_key, bytes)
     }
 
     /// Publishes a [SignedPacket](crate::SignedPacket) through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
@@ -72,7 +71,7 @@ impl PkarrClient {
         let response = self
             .http_client
             .put(url)
-            .body(Bytes::from(signed_packet))
+            .body(signed_packet.as_relay_request())
             .send()
             .await?;
 
