@@ -102,46 +102,16 @@ pub struct SignedPacket {
 }
 
 impl SignedPacket {
-    /// Returns the [PublicKey] of the signer of this [SignedPacket]
-    pub fn public_key(&self) -> &PublicKey {
-        &self.inner.borrow_dependent().public_key
-    }
-
-    /// Returns the timestamp in microseconds since the UNIX epoch
-    pub fn timestamp(&self) -> &u64 {
-        &self.inner.borrow_dependent().timestamp
-    }
-
-    /// Return the DNS [Packet].
-    pub fn packet(&self) -> &Packet {
-        &self.inner.borrow_dependent().packet
-    }
-
-    /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
-    /// that matches the given name. The name will be normalized to the origin TLD of this packet.
-    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
-        let origin = self.public_key().to_z32();
-        let normalized_name = normalize_name(&origin, name.to_string());
-        self.packet()
-            .answers
-            .iter()
-            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
-    }
-
-    /// Returns the [Signature] of the the bencoded sequence number concatenated with the
-    /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
-    pub fn signature(&self) -> &Signature {
-        &self.inner.borrow_dependent().signature
-    }
-
-    /// Creates a new [SignedPacket] from a [PublicKey] and the concatenated 64 bytes Signature, 8
-    /// bytes timestamp and encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
+    /// Creates a new [SignedPacket] from a [PublicKey] and the 64 bytes Signature
+    /// concatenated with 8 bytes timestamp and encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
     pub fn from_relay_response(public_key: PublicKey, response: Bytes) -> Result<SignedPacket> {
         let inner = Inner::try_from_response(public_key, response)?;
 
         Ok(SignedPacket { inner })
     }
 
+    /// Returns the 64 bytes Signature concatenated with 8 bytes timestamp and
+    /// encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
     pub fn as_relay_request(&self) -> Bytes {
         self.inner.borrow_owner().slice(32..)
     }
@@ -199,6 +169,40 @@ impl SignedPacket {
                 signature,
             )?,
         })
+    }
+
+    // === Getters ===
+
+    /// Returns the [PublicKey] of the signer of this [SignedPacket]
+    pub fn public_key(&self) -> &PublicKey {
+        &self.inner.borrow_dependent().public_key
+    }
+
+    /// Returns the timestamp in microseconds since the UNIX epoch
+    pub fn timestamp(&self) -> &u64 {
+        &self.inner.borrow_dependent().timestamp
+    }
+
+    /// Return the DNS [Packet].
+    pub fn packet(&self) -> &Packet {
+        &self.inner.borrow_dependent().packet
+    }
+
+    /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
+    /// that matches the given name. The name will be normalized to the origin TLD of this packet.
+    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
+        let origin = self.public_key().to_z32();
+        let normalized_name = normalize_name(&origin, name.to_string());
+        self.packet()
+            .answers
+            .iter()
+            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
+    }
+
+    /// Returns the [Signature] of the the bencoded sequence number concatenated with the
+    /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
+    pub fn signature(&self) -> &Signature {
+        &self.inner.borrow_dependent().signature
     }
 }
 
