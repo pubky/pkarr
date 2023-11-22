@@ -46,7 +46,7 @@ impl Keypair {
 ///
 /// It can formatted to and parsed from a [zbase32](z32) string.
 #[derive(Clone, Eq, PartialEq)]
-pub struct PublicKey(VerifyingKey);
+pub struct PublicKey(pub(crate) VerifyingKey);
 
 impl PublicKey {
     /// Format the public key as [zbase32](z32) string.

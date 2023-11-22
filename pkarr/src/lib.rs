@@ -1,6 +1,7 @@
 #![doc = include_str!("./README.md")]
 
 use bytes::Bytes;
+use mainline::Dht;
 use url::Url;
 
 // Rexports
@@ -36,12 +37,14 @@ pub const DEFAULT_PKARR_RELAY: &str = "https://relay.pkarr.org";
 /// Main client for publishing and resolving [SginedPacket](crate::SignedPacket)s.
 pub struct PkarrClient {
     http_client: reqwest::Client,
+    dht: Dht,
 }
 
 impl PkarrClient {
     pub fn new() -> Self {
         Self {
             http_client: reqwest::Client::new(),
+            dht: Dht::default(),
         }
     }
 
@@ -82,6 +85,20 @@ impl PkarrClient {
         }
 
         Ok(())
+    }
+
+    /// Resolve the first resolved [SignedPacket](crate::SignedPacket) from the DHT.
+    pub fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
+        let mut response = self.dht.get_mutable(public_key.0, None);
+
+        for res in &mut response {
+            let signed_packet: Result<SignedPacket> = res.item.try_into();
+            if let Ok(signed_packet) = signed_packet {
+                return Some(signed_packet);
+            };
+        }
+
+        None
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
+use mainline::common::MutableItem;
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
@@ -159,6 +160,47 @@ fn signable(seq: u64, v: &[u8]) -> Vec<u8> {
 impl From<SignedPacket> for Bytes {
     fn from(s: SignedPacket) -> Self {
         s.packet_bytes.borrow_owner().clone()
+    }
+}
+
+impl From<SignedPacket> for MutableItem {
+    fn from(s: SignedPacket) -> Self {
+        let seq: i64 = *s.timestamp() as i64;
+
+        Self::new_signed(
+            s.public_key.0.to_bytes(),
+            s.signature.to_bytes(),
+            s.packet_bytes.borrow_owner().to_vec(),
+            seq,
+            None,
+        )
+    }
+}
+
+impl TryFrom<MutableItem> for SignedPacket {
+    type Error = Error;
+
+    fn try_from(i: MutableItem) -> Result<Self> {
+        let encoded_packet = i.value();
+        let signature = i.signature();
+
+        // Create the inner bytes from <public_key><signature>timestamp><v>
+        let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 72);
+
+        let seq = i.seq().to_owned() as u64;
+
+        bytes.extend_from_slice(signature);
+        bytes.extend_from_slice(&seq.to_be_bytes());
+        bytes.extend_from_slice(&encoded_packet);
+
+        let packet_bytes = PacketBytes::try_new(bytes.into(), |bytes| Packet::parse(&bytes[72..]))?;
+
+        Ok(Self {
+            public_key: i.key().to_owned().try_into().unwrap(),
+            signature: signature.into(),
+            timestamp: seq,
+            packet_bytes,
+        })
     }
 }
 

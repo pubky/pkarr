@@ -17,8 +17,7 @@
 //! run this example from the project root:
 //!     $ cargo run --example relay-client
 
-#[allow(unused)]
-use std::{net::Ipv4Addr, time::Instant};
+use std::time::Instant;
 
 use pkarr::{dns, url::Url, Keypair, PkarrClient, Result, SignedPacket, DEFAULT_PKARR_RELAY};
 
@@ -79,7 +78,7 @@ async fn main() -> Result<()> {
             .relay_get(&Url::parse(relay2).unwrap(), keypair.public_key())
             .await?;
 
-        println!("Resolved {:?} \n{}", instant.elapsed(), signed_packet);
+        println!("Resolved in {:?} \n{}", instant.elapsed(), signed_packet);
     }
 
     Ok(())

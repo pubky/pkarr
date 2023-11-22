@@ -1,0 +1,29 @@
+use std::time::Instant;
+
+use pkarr::{PkarrClient, PublicKey};
+
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// z32 public_key
+    public_key: String,
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    let client = PkarrClient::new();
+
+    let str: &str = &cli.public_key;
+    let public_key: PublicKey = str.try_into().expect("Invalid zbase32 encoded key");
+
+    let instant = Instant::now();
+
+    if let Some(signed_packet) = client.resolve(public_key) {
+        println!("\nResolved in {:?} {}", instant.elapsed(), signed_packet);
+    } else {
+        println!("\nFailed to resolve {}", str);
+    }
+}

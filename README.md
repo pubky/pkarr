@@ -148,8 +148,8 @@ Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 ye
 4. [x] ClI - publish and resolve resource records.
 5. [x] Add optional caching and republishing of records on GET requests. 
 6. [x] Implement a standalone republisher and test keeping 100s of thousands of records alive.
-7. [ ] Reimplement everything in Rust once the JS implementation is tested with some scale. **<< we ar here**
-8. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr relays in OS and browser's configurations.
+7. [x] Reimplement everything in Rust once the JS implementation is tested with some scale.
+8. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr relays in OS and browser's configurations. **<< we ar here**
 
 ## FAQ
 
