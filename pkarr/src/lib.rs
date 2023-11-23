@@ -219,10 +219,10 @@ impl PkarrClient {
 
                     // In the rare ocasion of timestamp collission,
                     // we use the one with the largest value
-                    if signed_packet.timestamp() == most_recent.timestamp() {
-                        if signed_packet.encoded_packet() < most_recent.encoded_packet() {
-                            continue;
-                        }
+                    if signed_packet.timestamp() == most_recent.timestamp()
+                        && signed_packet.encoded_packet() < most_recent.encoded_packet()
+                    {
+                        continue;
                     }
                 }
 
