@@ -1,4 +1,3 @@
-
 //! This example shows how to publish and resolve [ResourceRecord]s to and from a Pkarr
 //! [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
 //!
@@ -61,7 +60,9 @@ async fn main() -> Result<()> {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
 
         let client = PkarrClient::new();
-        client.relay_put(&Url::parse(relay1).unwrap(), signed_packet).await?;
+        client
+            .relay_put(&Url::parse(relay1).unwrap(), signed_packet)
+            .await?;
 
         println!("Published pk:{}", keypair);
     }
@@ -73,7 +74,9 @@ async fn main() -> Result<()> {
 
         let instant = Instant::now();
 
-        let signed_packet = reader.relay_get(&Url::parse(relay2).unwrap(), keypair.public_key()).await?;
+        let signed_packet = reader
+            .relay_get(&Url::parse(relay2).unwrap(), keypair.public_key())
+            .await?;
 
         println!("Resolved in {:?} \n{}", instant.elapsed(), signed_packet);
     }
