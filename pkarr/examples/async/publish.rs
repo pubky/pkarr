@@ -10,7 +10,8 @@ use std::time::Instant;
 
 use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let client = PkarrClient::new();
 
     let keypair = Keypair::random();
@@ -29,12 +30,12 @@ fn main() -> Result<()> {
 
     println!("\nPublishing pk:{} ...", keypair);
 
-    match client.publish(&signed_packet) {
+    match client.publish(&signed_packet).await {
         Ok(metadata) => {
             println!(
                 "\nSuccessfully published in {:?} to {} nodes",
                 instant.elapsed(),
-                metadata.stored_at().len(),
+                metadata.stored_at().len()
             );
         }
         Err(err) => {

@@ -16,7 +16,8 @@ struct Cli {
     public_key: String,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     let client = PkarrClient::new();
@@ -28,7 +29,7 @@ fn main() {
 
     println!("\nResolving pk:{} ...", public_key);
 
-    if let Some(signed_packet) = client.resolve(public_key) {
+    if let Some(signed_packet) = client.resolve(public_key).await {
         println!("\nResolved in {:?} {}", instant.elapsed(), signed_packet);
     } else {
         println!("\nFailed to resolve {}", str);

@@ -28,7 +28,7 @@ fn main() {
 
     println!("\nResolving pk:{} ...", public_key);
 
-    if let Some(signed_packet) = client.resolve(public_key) {
+    if let Some(signed_packet) = client.resolve_most_recent(public_key) {
         println!("\nResolved in {:?} {}", instant.elapsed(), signed_packet);
     } else {
         println!("\nFailed to resolve {}", str);

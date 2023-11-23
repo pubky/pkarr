@@ -22,10 +22,12 @@ pub enum Error {
     /// Transparent [ed25519_dalek::SignatureError]
     SignatureError(#[from] ed25519_dalek::SignatureError),
 
+    #[cfg(feature = "relay")]
     #[error(transparent)]
     /// Transparent [reqwest::Error]
     ReqwestError(#[from] reqwest::Error),
 
+    #[cfg(feature = "relay")]
     #[error("Relay {0} responded with an error: {1} {2}")]
     /// Relay response is not 200 OK
     RelayResponse(url::Url, reqwest::StatusCode, String),

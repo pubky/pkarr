@@ -1,7 +1,8 @@
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
-use mainline::common::{encode_signable, MutableItem};
+#[cfg(feature = "dht")]
+use mainline::common::MutableItem;
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
@@ -204,13 +205,19 @@ impl SignedPacket {
     pub fn signature(&self) -> &Signature {
         &self.inner.borrow_dependent().signature
     }
+
+    pub fn encoded_packet(&self) -> Bytes {
+        self.inner.borrow_owner().slice(104..)
+    }
 }
 
 fn signable(timestamp: u64, v: &Bytes) -> Bytes {
-    let seq = timestamp as i64;
-    encode_signable(&seq, v, &None)
+    let mut signable = format!("3:seqi{}e1:v{}:", timestamp, v.len()).into_bytes();
+    signable.extend(v);
+    signable.into()
 }
 
+#[cfg(feature = "dht")]
 impl From<&SignedPacket> for MutableItem {
     fn from(s: &SignedPacket) -> Self {
         let seq: i64 = *s.timestamp() as i64;
@@ -226,6 +233,7 @@ impl From<&SignedPacket> for MutableItem {
     }
 }
 
+#[cfg(feature = "dht")]
 impl TryFrom<MutableItem> for SignedPacket {
     type Error = Error;
 

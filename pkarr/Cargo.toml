@@ -1,6 +1,6 @@
 [package]
 name = "pkarr"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
@@ -12,9 +12,9 @@ categories = ["networking", "p2p", "routing"]
 [dependencies]
 bytes = "1.5.0"
 ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
-mainline = "0.4.0"
+mainline = { version = "^0.4.2", optional = true } 
 rand = "0.8.5"
-reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "blocking"], optional = true}
 self_cell = "1.0.2"
 simple-dns = "0.5.6"
 thiserror = "1.0.49"
@@ -24,3 +24,36 @@ z32 = "1.0.0"
 [dev-dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
 tokio = { version = "1.32.0", features = ["tokio-macros", "macros", "rt-multi-thread"] }
+
+[features]
+async= []
+dht = ["mainline"]
+relay = ["reqwest"]
+
+full = ["dht", "relay", "async"]
+default = ["dht"]
+
+[[example]]
+name = "relay-client"
+path = "examples/relay-client.rs"
+required-features = ["relay"]
+
+[[example]]
+name = "async-relay-client"
+path = "examples/async/relay-client.rs"
+required-features = ["relay", "async"]
+
+[[example]]
+name = "async-publish"
+path = "examples/async/publish.rs"
+required-features = ["async"]
+
+[[example]]
+name = "async-resolve"
+path = "examples/async/resolve.rs"
+required-features = ["async"]
+
+[[example]]
+name = "async-resolve-most-recent"
+path = "examples/async/resolve-most-recent.rs"
+required-features = ["async"]
