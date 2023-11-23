@@ -146,7 +146,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Publish a [SignedPacket](crate::SignedPacket) to the DHT.
+    /// Publish a [SignedPacket] to the DHT.
     ///
     /// It performs a thorough lookup first to find the closest nodes,
     /// before storing the signed packet to them, so it may take few seconds.
@@ -163,7 +163,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Returns the first resolved [SignedPacket](crate::SignedPacket) from the DHT.
+    /// Returns the first resolved [SignedPacket] from the DHT.
     pub fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.0, None);
 
@@ -193,7 +193,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Returns the most recent [SignedPacket](crate::SignedPacket) from the DHT.
+    /// Returns the most recent [SignedPacket] from the DHT.
     /// In order to determine the most recent, it has to do a full lookup first, so
     /// this method may take few seconds.
     pub fn resolve_most_recent(&self, public_key: PublicKey) -> Option<SignedPacket> {
