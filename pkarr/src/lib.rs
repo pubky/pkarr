@@ -24,14 +24,6 @@ pub use crate::error::Error;
 pub use crate::keys::{Keypair, PublicKey};
 pub use crate::signed_packet::SignedPacket;
 
-// TODO: Make sure it is a reply packet
-// TODO: Add compare() method to SignedPacket to compare to cached packets.
-//
-// TODO: Add Cache of previously most_recent packets to compare new results to it.
-// TODO: Implement `get` and `put` methods to concurrently query multiple relays.
-// TODO: Add `thorough_get` that queries all relays (and DHT nodes) until it sees a _new_ packet or
-// exauhsts all sources.
-
 // Alias Result to be the crate Result.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
