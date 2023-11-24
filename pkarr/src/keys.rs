@@ -46,7 +46,7 @@ impl Keypair {
 ///
 /// It can formatted to and parsed from a [zbase32](z32) string.
 #[derive(Clone, Eq, PartialEq)]
-pub struct PublicKey(pub(crate) VerifyingKey);
+pub struct PublicKey(VerifyingKey);
 
 impl PublicKey {
     /// Format the public key as [zbase32](z32) string.
@@ -54,9 +54,25 @@ impl PublicKey {
         self.to_string()
     }
 
+    /// Verify a signature over a message.
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
         self.0.verify(message, signature)?;
         Ok(())
+    }
+
+    /// Return a reference to the underlying [VerifyingKey](ed25519_dalek::VerifyingKey)
+    pub fn verifying_key(&self) -> &VerifyingKey {
+        &self.0
+    }
+
+    /// Return a the underlying [u8; 32] bytes.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_bytes()
+    }
+
+    /// Return a reference to the underlying [u8; 32] bytes.
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        self.0.as_bytes()
     }
 }
 

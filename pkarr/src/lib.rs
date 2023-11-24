@@ -165,7 +165,7 @@ impl PkarrClient {
     #[cfg(all(feature = "dht", not(feature = "async")))]
     /// Returns the first resolved [SignedPacket] from the DHT.
     pub fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
-        let mut response = self.dht.get_mutable(public_key.0, None);
+        let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         for res in &mut response {
             let signed_packet: Result<SignedPacket> = res.item.try_into();
@@ -180,7 +180,7 @@ impl PkarrClient {
     #[cfg(all(feature = "dht", feature = "async"))]
     /// Returns the first resolved [SignedPacket](crate::SignedPacket) from the DHT.
     pub async fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
-        let mut response = self.dht.get_mutable(public_key.0, None);
+        let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         for res in &mut response {
             let signed_packet: Result<SignedPacket> = res.item.try_into();
@@ -197,7 +197,7 @@ impl PkarrClient {
     /// In order to determine the most recent, it has to do a full lookup first, so
     /// this method may take few seconds.
     pub fn resolve_most_recent(&self, public_key: PublicKey) -> Option<SignedPacket> {
-        let mut response = self.dht.get_mutable(public_key.0, None);
+        let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         let mut most_recent: Option<SignedPacket> = None;
 
@@ -228,7 +228,7 @@ impl PkarrClient {
     #[cfg(all(feature = "dht", feature = "async"))]
     /// Async version of [resolve_most_recent](PkarrClient::resolve_most_recent).
     pub async fn resolve_most_recent(&self, public_key: PublicKey) -> Option<SignedPacket> {
-        let mut response = self.dht.get_mutable(public_key.0, None);
+        let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         let mut most_recent: Option<SignedPacket> = None;
 

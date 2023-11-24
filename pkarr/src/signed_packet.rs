@@ -76,7 +76,7 @@ impl Inner {
         // Create the inner bytes from <public_key><signature>timestamp><v>
         let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 104);
 
-        bytes.extend_from_slice(&public_key.0.to_bytes());
+        bytes.extend_from_slice(&public_key.to_bytes());
         bytes.extend_from_slice(&signature.to_bytes());
         bytes.extend_from_slice(&timestamp.to_be_bytes());
         bytes.extend_from_slice(&encoded_packet);
@@ -224,7 +224,7 @@ impl From<&SignedPacket> for MutableItem {
         let packet = s.inner.borrow_owner().slice(104..);
 
         Self::new_signed_unchecked(
-            s.public_key().0.to_bytes(),
+            s.public_key().to_bytes(),
             s.signature().to_bytes(),
             packet,
             seq,
