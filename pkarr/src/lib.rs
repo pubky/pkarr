@@ -2,7 +2,7 @@
 
 #[cfg(feature = "dht")]
 use mainline::{
-    common::{MutableItem, StoreQueryMetdata},
+    common::{GetMutableResponse, MutableItem, Response, StoreQueryMetdata},
     Dht,
 };
 #[cfg(feature = "relay")]
@@ -36,7 +36,7 @@ pub struct PkarrClient {
     http_client: reqwest::blocking::Client,
     #[cfg(all(feature = "relay", feature = "async"))]
     http_client: reqwest::Client,
-    pub dht: Dht,
+    dht: Dht,
 }
 
 impl PkarrClient {
@@ -83,7 +83,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "relay", feature = "async"))]
-    /// Async version of [relay_get](PkarrClient::relay_get)
+    /// Resolves a [SignedPacket] from a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub async fn relay_get(&self, url: &Url, public_key: PublicKey) -> Result<SignedPacket> {
         let url = format_relay_url(url, &public_key);
 
@@ -101,7 +101,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "relay", not(feature = "async")))]
-    /// Publishes a [SignedPacket](crate::SignedPacket) through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
+    /// Publishes a [SignedPacket] through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub fn relay_put(&self, url: &Url, signed_packet: SignedPacket) -> Result<()> {
         let url = format_relay_url(url, signed_packet.public_key());
 
@@ -123,7 +123,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "relay", feature = "async"))]
-    /// Async version of [relay_put](PkarrClient::relay_put)
+    /// Publishes a [SignedPacket] through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub async fn relay_put(&self, url: &Url, signed_packet: SignedPacket) -> Result<()> {
         let url = format_relay_url(url, signed_packet.public_key());
 
@@ -156,15 +156,36 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", feature = "async"))]
-    /// Async version of [publish](PkarrClient::publish)
+    /// Publish a [SignedPacket] to the DHT.
+    ///
+    /// It performs a thorough lookup first to find the closest nodes,
+    /// before storing the signed packet to them, so it may take few seconds.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<StoreQueryMetdata> {
         let item: MutableItem = signed_packet.into();
         self.dht.put_mutable(item).map_err(Error::MainlineError)
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Returns the first resolved [SignedPacket] from the DHT.
-    pub fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
+    /// Return `mainline's` [Response] to have the most control over the response and access its metadata.
+    ///
+    /// Most likely you want to use [resolve_eager](PkarrClient::resolve_eager) or
+    /// [resolve_most_recent](PkarrClient::resolve_most_recent) instead.
+    pub fn resolve(&self, public_key: PublicKey) -> Response<GetMutableResponse> {
+        self.dht.get_mutable(public_key.as_bytes(), None)
+    }
+
+    #[cfg(all(feature = "dht", feature = "async"))]
+    /// Return `mainline's` [Response] to have the most control over the response and access its metadata.
+    ///
+    /// Most likely you want to use [resolve_eager](PkarrClient::resolve_eager) or
+    /// [resolve_most_recent](PkarrClient::resolve_most_recent) instead.
+    pub async fn resolve(&self, public_key: PublicKey) -> Response<GetMutableResponse> {
+        self.dht.get_mutable(public_key.as_bytes(), None)
+    }
+
+    #[cfg(all(feature = "dht", not(feature = "async")))]
+    /// Return the first resolved [SignedPacket] from the DHT.
+    pub fn resolve_eager(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         for res in &mut response {
@@ -178,8 +199,8 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", feature = "async"))]
-    /// Returns the first resolved [SignedPacket](crate::SignedPacket) from the DHT.
-    pub async fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
+    /// Return the first resolved [SignedPacket] from the DHT.
+    pub async fn resolve_eager(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         for res in &mut response {
@@ -193,7 +214,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Returns the most recent [SignedPacket] from the DHT.
+    /// Return the most recent [SignedPacket] from the DHT.
     /// In order to determine the most recent, it has to do a full lookup first, so
     /// this method may take few seconds.
     pub fn resolve_most_recent(&self, public_key: PublicKey) -> Option<SignedPacket> {
@@ -205,15 +226,7 @@ impl PkarrClient {
             let signed_packet: Result<SignedPacket> = res.item.try_into();
             if let Ok(signed_packet) = signed_packet {
                 if let Some(most_recent) = &most_recent {
-                    if signed_packet.timestamp() < most_recent.timestamp() {
-                        continue;
-                    }
-
-                    // In the rare ocasion of timestamp collission,
-                    // we use the one with the largest value
-                    if signed_packet.timestamp() == most_recent.timestamp()
-                        && signed_packet.encoded_packet() < most_recent.encoded_packet()
-                    {
+                    if signed_packet.more_recent_than(most_recent) {
                         continue;
                     }
                 }
@@ -226,7 +239,9 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", feature = "async"))]
-    /// Async version of [resolve_most_recent](PkarrClient::resolve_most_recent).
+    /// Return the most recent [SignedPacket] from the DHT.
+    /// In order to determine the most recent, it has to do a full lookup first, so
+    /// this method may take few seconds.
     pub async fn resolve_most_recent(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
@@ -236,16 +251,8 @@ impl PkarrClient {
             let signed_packet: Result<SignedPacket> = res.item.try_into();
             if let Ok(signed_packet) = signed_packet {
                 if let Some(most_recent) = &most_recent {
-                    if signed_packet.timestamp() < most_recent.timestamp() {
+                    if signed_packet.more_recent_than(most_recent) {
                         continue;
-                    }
-
-                    // In the rare ocasion of timestamp collission,
-                    // we use the one with the largest value
-                    if signed_packet.timestamp() == most_recent.timestamp() {
-                        if signed_packet.encoded_packet() < most_recent.encoded_packet() {
-                            continue;
-                        }
                     }
                 }
 

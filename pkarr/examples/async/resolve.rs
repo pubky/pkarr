@@ -29,7 +29,7 @@ async fn main() {
 
     println!("\nResolving pk:{} ...", public_key);
 
-    if let Some(signed_packet) = client.resolve(public_key).await {
+    if let Some(signed_packet) = client.resolve_eager(public_key).await {
         println!("\nResolved in {:?} {}", instant.elapsed(), signed_packet);
     } else {
         println!("\nFailed to resolve {}", str);

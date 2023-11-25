@@ -29,7 +29,7 @@ fn main() -> Result<()> {
 
     // Publisher
     {
-        println!("\nPublishing pk:{}...\n", keypair);
+        println!("\nPublishing pk:{} ...\n", keypair);
         let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
             dns::Name::new("_derp_region.iroh.").unwrap(),

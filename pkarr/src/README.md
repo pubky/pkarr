@@ -4,8 +4,8 @@ Rust implementation of [Pkarr](pkarr.org).
 
 Publish and resolve DNS packets over Mainline DHT.
 
-## Example
+**[API Docs](https://docs.rs/pkarr/latest/pkarr/)**
 
-```bash
-cargo run --example relay-client
-```
+## Get started
+
+Check the [Examples](./examples).

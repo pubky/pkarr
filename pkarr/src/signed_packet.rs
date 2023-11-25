@@ -209,6 +209,27 @@ impl SignedPacket {
     pub fn encoded_packet(&self) -> Bytes {
         self.inner.borrow_owner().slice(104..)
     }
+
+    // === Public Methods ===
+
+    /// Return whether this {SignedPacket] is more recent than the given one.
+    /// If the timestamps are erqual, the one with the largest value is considered more recent.
+    /// Usefel for determining which packet contains the latest information from the Dht.
+    /// Assumes that both packets have the same [PublicKey], you shouldn't compare packets from
+    /// different keys.
+    pub fn more_recent_than(&self, other: &SignedPacket) -> bool {
+        if self.timestamp() < other.timestamp() {
+            return false;
+        }
+
+        // In the rare ocasion of timestamp collission,
+        // we use the one with the largest value
+        if self.timestamp() == other.timestamp() && self.encoded_packet() < other.encoded_packet() {
+            return false;
+        }
+
+        true
+    }
 }
 
 fn signable(timestamp: u64, v: &Bytes) -> Bytes {
