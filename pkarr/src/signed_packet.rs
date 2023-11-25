@@ -12,7 +12,7 @@ use std::{
     char,
     fmt::{self, Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 const DOT: char = '.';
@@ -155,10 +155,7 @@ impl SignedPacket {
             return Err(Error::PacketTooLarge(encoded_packet.len()));
         }
 
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("time drift")
-            .as_micros() as u64;
+        let timestamp = system_time().as_micros() as u64;
 
         let signature = keypair.sign(&signable(timestamp, &encoded_packet));
 
@@ -187,17 +184,6 @@ impl SignedPacket {
     /// Return the DNS [Packet].
     pub fn packet(&self) -> &Packet {
         &self.inner.borrow_dependent().packet
-    }
-
-    /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
-    /// that matches the given name. The name will be normalized to the origin TLD of this packet.
-    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
-        let origin = self.public_key().to_z32();
-        let normalized_name = normalize_name(&origin, name.to_string());
-        self.packet()
-            .answers
-            .iter()
-            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
     }
 
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
@@ -230,12 +216,48 @@ impl SignedPacket {
 
         true
     }
+
+    /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
+    /// that matches the given name. The name will be normalized to the origin TLD of this packet.
+    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
+        let origin = self.public_key().to_z32();
+        let normalized_name = normalize_name(&origin, name.to_string());
+        self.packet()
+            .answers
+            .iter()
+            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
+    }
+
+    /// Return the duration of time elapsed since the timestamp of this [SignedPacket].
+    pub fn elapsed(&self) -> Duration {
+        system_time() - Duration::from_micros(*self.timestamp())
+    }
+
+    /// Similar to [resource_records](SignedPacket::resource_records), but filters out
+    /// expired records.
+    pub fn fresh_resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
+        let origin = self.public_key().to_z32();
+        let normalized_name = normalize_name(&origin, name.to_string());
+
+        let elapsed = self.elapsed().as_secs() as u32;
+
+        self.packet()
+            .answers
+            .iter()
+            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > elapsed)
+    }
 }
 
 fn signable(timestamp: u64, v: &Bytes) -> Bytes {
     let mut signable = format!("3:seqi{}e1:v{}:", timestamp, v.len()).into_bytes();
     signable.extend(v);
     signable.into()
+}
+
+fn system_time() -> Duration {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("time drift")
 }
 
 #[cfg(feature = "dht")]

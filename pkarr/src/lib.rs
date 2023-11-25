@@ -166,26 +166,8 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Return `mainline's` [Response] to have the most control over the response and access its metadata.
-    ///
-    /// Most likely you want to use [resolve_eager](PkarrClient::resolve_eager) or
-    /// [resolve_most_recent](PkarrClient::resolve_most_recent) instead.
-    pub fn resolve(&self, public_key: PublicKey) -> Response<GetMutableResponse> {
-        self.dht.get_mutable(public_key.as_bytes(), None)
-    }
-
-    #[cfg(all(feature = "dht", feature = "async"))]
-    /// Return `mainline's` [Response] to have the most control over the response and access its metadata.
-    ///
-    /// Most likely you want to use [resolve_eager](PkarrClient::resolve_eager) or
-    /// [resolve_most_recent](PkarrClient::resolve_most_recent) instead.
-    pub async fn resolve(&self, public_key: PublicKey) -> Response<GetMutableResponse> {
-        self.dht.get_mutable(public_key.as_bytes(), None)
-    }
-
-    #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Return the first resolved [SignedPacket] from the DHT.
-    pub fn resolve_eager(&self, public_key: PublicKey) -> Option<SignedPacket> {
+    /// Eagerly return the first resolved [SignedPacket] from the DHT.
+    pub fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         for res in &mut response {
@@ -199,8 +181,8 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", feature = "async"))]
-    /// Return the first resolved [SignedPacket] from the DHT.
-    pub async fn resolve_eager(&self, public_key: PublicKey) -> Option<SignedPacket> {
+    /// Eagerly return the first resolved [SignedPacket] from the DHT.
+    pub async fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
         for res in &mut response {
@@ -214,9 +196,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
-    /// Return the most recent [SignedPacket] from the DHT.
-    /// In order to determine the most recent, it has to do a full lookup first, so
-    /// this method may take few seconds.
+    /// Fully traverse the DHT and the return the most recent resolved [SignedPacket].
     pub fn resolve_most_recent(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
@@ -239,9 +219,7 @@ impl PkarrClient {
     }
 
     #[cfg(all(feature = "dht", feature = "async"))]
-    /// Return the most recent [SignedPacket] from the DHT.
-    /// In order to determine the most recent, it has to do a full lookup first, so
-    /// this method may take few seconds.
+    /// Fully traverse the DHT and the return the most recent resolved [SignedPacket].
     pub async fn resolve_most_recent(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
@@ -261,6 +239,36 @@ impl PkarrClient {
         }
 
         most_recent
+    }
+
+    #[cfg(all(feature = "dht", not(feature = "async")))]
+    /// Return `mainline's` [Response] to have the most control over the response and access its metadata.
+    ///
+    /// Mostly useful to terminate as soon as you find a [SignedPacket] that satisfies a specific
+    /// condition, for example:
+    /// - it is [more_recent_than](SignedPacket::more_recent_than) a cached one.
+    /// - or it has a [timestamp](SignedPacket::timestamp) higher than a specific value.
+    /// - or it contains specific [fresh_resource_records](SignedPacket::fresh_resource_records).
+    ///
+    /// Most likely you want to use [resolve](PkarrClient::resolve) or
+    /// [resolve_most_recent](PkarrClient::resolve_most_recent) instead.
+    pub fn resolve_raw(&self, public_key: PublicKey) -> Response<GetMutableResponse> {
+        self.dht.get_mutable(public_key.as_bytes(), None)
+    }
+
+    #[cfg(all(feature = "dht", feature = "async"))]
+    /// Return `mainline's` [Response] to have the most control over the response and access its metadata.
+    ///
+    /// Mostly useful to terminate as soon as you find a [SignedPacket] that satisfies a specific
+    /// condition, for example:
+    /// - it is [more_recent_than](SignedPacket::more_recent_than) a cached one.
+    /// - or it has a [timestamp](SignedPacket::timestamp) higher than a specific value.
+    /// - or it contains specific [fresh_resource_records](SignedPacket::fresh_resource_records).
+    ///
+    /// Most likely you want to use [resolve](PkarrClient::resolve) or
+    /// [resolve_most_recent](PkarrClient::resolve_most_recent) instead.
+    pub async fn resolve_raw(&self, public_key: PublicKey) -> Response<GetMutableResponse> {
+        self.dht.get_mutable(public_key.as_bytes(), None)
     }
 }
 
