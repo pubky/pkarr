@@ -27,7 +27,7 @@ async fn main() {
 
     let instant = Instant::now();
 
-    println!("\nResolving pk:{} ...", public_key);
+    println!("\nResolving {} ...", public_key.to_uri_string());
 
     if let Some(signed_packet) = client.resolve(public_key).await {
         println!("\nResolved in {:?} {}", instant.elapsed(), signed_packet);

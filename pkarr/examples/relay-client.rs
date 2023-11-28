@@ -29,7 +29,7 @@ fn main() -> Result<()> {
 
     // Publisher
     {
-        println!("\nPublishing pk:{} ...\n", keypair);
+        println!("\nPublishing {} ...\n", keypair.to_uri_string());
         let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
             dns::Name::new("_derp_region.iroh.").unwrap(),
@@ -61,12 +61,12 @@ fn main() -> Result<()> {
         let client = PkarrClient::new();
         client.relay_put(&Url::parse(relay1).unwrap(), signed_packet)?;
 
-        println!("Published pk:{}", keypair);
+        println!("Published {}", keypair.to_uri_string());
     }
 
     // Resolver
     {
-        println!("\nResolving pk:{}...\n", keypair);
+        println!("\nResolving {}...\n", keypair.to_uri_string());
         let reader = PkarrClient::new();
 
         let instant = Instant::now();

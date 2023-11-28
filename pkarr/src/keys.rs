@@ -40,6 +40,10 @@ impl Keypair {
     pub fn to_z32(&self) -> String {
         self.public_key().to_string()
     }
+
+    pub fn to_uri_string(&self) -> String {
+        self.public_key().to_uri_string()
+    }
 }
 
 /// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
@@ -52,6 +56,11 @@ impl PublicKey {
     /// Format the public key as [zbase32](z32) string.
     pub fn to_z32(&self) -> String {
         self.to_string()
+    }
+
+    /// Format the public key as `pk:` URI string.
+    pub fn to_uri_string(&self) -> String {
+        format!("pk:{}", self.to_string())
     }
 
     /// Verify a signature over a message.
@@ -88,6 +97,8 @@ impl TryFrom<&str> for PublicKey {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<PublicKey> {
+        let s = if s.starts_with("pk:") { &s[3..] } else { s };
+
         let bytes =
             z32::decode(s.as_bytes()).map_err(|_| Error::Static("Invalid zbase32 encoding"))?;
 
@@ -123,7 +134,7 @@ impl Debug for PublicKey {
 
 #[cfg(test)]
 mod tests {
-    use super::Keypair;
+    use super::*;
 
     #[test]
     fn pkarr_key_generate() {
@@ -154,5 +165,42 @@ mod tests {
 
         let public_key = keypair.public_key();
         assert!(public_key.verify(message, &signature).is_ok());
+    }
+
+    #[test]
+    fn from_string() {
+        let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn to_uri() {
+        let bytes = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+        let expected = "pk:yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+
+        let public_key: PublicKey = bytes.try_into().unwrap();
+
+        assert_eq!(public_key.to_uri_string(), expected);
+    }
+
+    #[test]
+    fn from_uri() {
+        let str = "pk:yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
     }
 }

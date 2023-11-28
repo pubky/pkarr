@@ -27,7 +27,7 @@ fn main() -> Result<()> {
 
     let instant = Instant::now();
 
-    println!("\nPublishing pk:{} ...", keypair);
+    println!("\nPublishing {} ...", keypair.to_uri_string());
 
     match client.publish(&signed_packet) {
         Ok(metadata) => {
