@@ -17,7 +17,7 @@ Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89u
 
 Try the [web app demo](https://app.pkarr.org).
 
-Or if you prefer a [CLI](./js/README.md#cli) 
+Or if you prefer Rust [Examples](./pkarr/examples) 
 
 ## TOC
 - [Architecture](#Architecture)
@@ -139,17 +139,6 @@ Finally, by solving censorship and deplatforming ina sovereign way, the need for
 **with least work**
 
 Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table with millions of nodes, and good old web servers.
-
-## Roadmap
-
-1. [x] Implement a web DHT relay.
-2. [x] Implement client-side tools for making queries and validating responses.
-3. [x] Implement a web app to represent the UX and DX of client side.
-4. [x] ClI - publish and resolve resource records.
-5. [x] Add optional caching and republishing of records on GET requests. 
-6. [x] Implement a standalone republisher and test keeping 100s of thousands of records alive.
-7. [x] Reimplement everything in Rust once the JS implementation is tested with some scale.
-8. [ ] Add the DNS over HTTPS features and documentations for adding Pkarr relays in OS and browser's configurations. **<< we ar here**
 
 ## FAQ
 
