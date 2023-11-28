@@ -21,7 +21,8 @@ use std::time::Instant;
 
 use pkarr::{dns, url::Url, Keypair, PkarrClient, Result, SignedPacket, DEFAULT_PKARR_RELAY};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let keypair = Keypair::random();
 
     let relay1 = DEFAULT_PKARR_RELAY;
@@ -59,7 +60,9 @@ fn main() -> Result<()> {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
 
         let client = PkarrClient::new();
-        client.relay_put(&Url::parse(relay1).unwrap(), signed_packet)?;
+        client
+            .relay_put(&Url::parse(relay1).unwrap(), signed_packet)
+            .await?;
 
         println!("Published {}", keypair.to_uri_string());
     }
@@ -71,7 +74,9 @@ fn main() -> Result<()> {
 
         let instant = Instant::now();
 
-        let signed_packet = reader.relay_get(&Url::parse(relay2).unwrap(), keypair.public_key())?;
+        let signed_packet = reader
+            .relay_get(&Url::parse(relay2).unwrap(), keypair.public_key())
+            .await?;
 
         println!("Resolved in {:?} \n{}", instant.elapsed(), signed_packet);
     }
