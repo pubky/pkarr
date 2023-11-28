@@ -23,7 +23,6 @@ Or if you prefer Rust [Examples](./pkarr/examples)
 - [Architecture](#Architecture)
 - [Expectations](#Expectations)
 - [Why](#Why)
-- [Roadmap](#Roadmap)
 - [FAQ](#FAQ)
  
 ## Architecture
