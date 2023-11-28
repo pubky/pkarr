@@ -60,7 +60,7 @@ impl PublicKey {
 
     /// Format the public key as `pk:` URI string.
     pub fn to_uri_string(&self) -> String {
-        format!("pk:{}", self.to_string())
+        format!("pk:{}", self)
     }
 
     /// Verify a signature over a message.
@@ -97,7 +97,7 @@ impl TryFrom<&str> for PublicKey {
     type Error = Error;
 
     fn try_from(s: &str) -> Result<PublicKey> {
-        let s = if s.starts_with("pk:") { &s[3..] } else { s };
+        let s = s.strip_prefix("pk:").unwrap_or(s);
 
         let bytes =
             z32::decode(s.as_bytes()).map_err(|_| Error::Static("Invalid zbase32 encoding"))?;

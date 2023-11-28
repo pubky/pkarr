@@ -620,9 +620,9 @@ checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 
 [[package]]
 name = "mainline"
-version = "0.6.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6861bda99d28cfbc32a70cdd0a509eaa946a685c0d07ed891b6d4542e705daba"
+checksum = "f2c7580f473d39e96a18d5fee049d9d20d65b5b62c7d107f9ccf82ef0cc46d1b"
 dependencies = [
  "bytes",
  "crc",
@@ -722,7 +722,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "0.4.0"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "clap",
