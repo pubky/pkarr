@@ -66,43 +66,53 @@ impl PkarrClient {
 
     #[cfg(all(feature = "relay", not(feature = "async")))]
     /// Resolves a [SignedPacket](crate::SignedPacket) from a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
-    pub fn relay_get(&self, url: &Url, public_key: PublicKey) -> Result<SignedPacket> {
+    pub fn relay_get(&self, url: &Url, public_key: PublicKey) -> Result<Option<SignedPacket>> {
         let url = format_relay_url(url, &public_key);
 
         let response = self.http_client.get(url).send()?;
-        if !response.status().is_success() {
+
+        if response.status().is_success() {
+            let bytes = response.bytes()?;
+            return Ok(Some(SignedPacket::from_relay_response(public_key, bytes)?));
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        } else {
             return Err(Error::RelayResponse(
                 response.url().clone(),
                 response.status(),
                 response.text()?,
             ));
         }
-        let bytes = response.bytes()?;
-
-        SignedPacket::from_relay_response(public_key, bytes)
     }
 
     #[cfg(all(feature = "relay", feature = "async"))]
     /// Resolves a [SignedPacket] from a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
-    pub async fn relay_get(&self, url: &Url, public_key: PublicKey) -> Result<SignedPacket> {
+    pub async fn relay_get(
+        &self,
+        url: &Url,
+        public_key: PublicKey,
+    ) -> Result<Option<SignedPacket>> {
         let url = format_relay_url(url, &public_key);
 
         let response = self.http_client.get(url).send().await?;
-        if !response.status().is_success() {
+
+        if response.status().is_success() {
+            let bytes = response.bytes().await?;
+            return Ok(Some(SignedPacket::from_relay_response(public_key, bytes)?));
+        } else if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        } else {
             return Err(Error::RelayResponse(
                 response.url().clone(),
                 response.status(),
                 response.text().await?,
             ));
         }
-        let bytes = response.bytes().await?;
-
-        SignedPacket::from_relay_response(public_key, bytes)
     }
 
     #[cfg(all(feature = "relay", not(feature = "async")))]
     /// Publishes a [SignedPacket] through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
-    pub fn relay_put(&self, url: &Url, signed_packet: SignedPacket) -> Result<()> {
+    pub fn relay_put(&self, url: &Url, signed_packet: &SignedPacket) -> Result<()> {
         let url = format_relay_url(url, signed_packet.public_key());
 
         let response = self
@@ -124,7 +134,7 @@ impl PkarrClient {
 
     #[cfg(all(feature = "relay", feature = "async"))]
     /// Publishes a [SignedPacket] through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
-    pub async fn relay_put(&self, url: &Url, signed_packet: SignedPacket) -> Result<()> {
+    pub async fn relay_put(&self, url: &Url, signed_packet: &SignedPacket) -> Result<()> {
         let url = format_relay_url(url, signed_packet.public_key());
 
         let response = self
