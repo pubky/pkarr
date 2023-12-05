@@ -59,7 +59,7 @@ fn main() -> Result<()> {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
 
         let client = PkarrClient::new();
-        client.relay_put(&Url::parse(relay1).unwrap(), signed_packet)?;
+        client.relay_put(&Url::parse(relay1).unwrap(), &signed_packet)?;
 
         println!("Published {}", keypair.to_uri_string());
     }
@@ -71,9 +71,13 @@ fn main() -> Result<()> {
 
         let instant = Instant::now();
 
-        let signed_packet = reader.relay_get(&Url::parse(relay2).unwrap(), keypair.public_key())?;
-
-        println!("Resolved in {:?} \n{}", instant.elapsed(), signed_packet);
+        if let Some(signed_packet) =
+            reader.relay_get(&Url::parse(relay2).unwrap(), keypair.public_key())?
+        {
+            println!("Resolved in {:?} \n{}", instant.elapsed(), signed_packet);
+        } else {
+            println!("No record found for {}", keypair.to_uri_string());
+        }
     }
 
     Ok(())

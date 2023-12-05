@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
 
         let client = PkarrClient::new();
         client
-            .relay_put(&Url::parse(relay1).unwrap(), signed_packet)
+            .relay_put(&Url::parse(relay1).unwrap(), &signed_packet)
             .await?;
 
         println!("Published {}", keypair.to_uri_string());
@@ -74,11 +74,14 @@ async fn main() -> Result<()> {
 
         let instant = Instant::now();
 
-        let signed_packet = reader
+        if let Some(signed_packet) = reader
             .relay_get(&Url::parse(relay2).unwrap(), keypair.public_key())
-            .await?;
-
-        println!("Resolved in {:?} \n{}", instant.elapsed(), signed_packet);
+            .await?
+        {
+            println!("Resolved in {:?} \n{}", instant.elapsed(), signed_packet);
+        } else {
+            println!("No record found for {}", keypair.to_uri_string());
+        }
     }
 
     Ok(())
