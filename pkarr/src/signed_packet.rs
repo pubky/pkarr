@@ -362,6 +362,7 @@ fn normalize_name(origin: &str, name: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dns;
 
     #[test]
     fn normalize_names() {
@@ -503,5 +504,41 @@ mod tests {
         );
 
         assert_eq!(item, expected);
+    }
+
+    #[test]
+    fn compressed_names() {
+        let keypair = Keypair::random();
+
+        let name = "foobar";
+        let dup = name;
+
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("@").unwrap(),
+            dns::CLASS::IN,
+            30,
+            dns::rdata::RData::CNAME(dns::Name::new(name).unwrap().into()),
+        ));
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("@").unwrap(),
+            dns::CLASS::IN,
+            30,
+            dns::rdata::RData::CNAME(dns::Name::new(dup).unwrap().into()),
+        ));
+
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        assert_eq!(
+            signed
+                .resource_records("@")
+                .map(|r| r.rdata.clone())
+                .collect::<Vec<_>>(),
+            packet
+                .answers
+                .iter()
+                .map(|r| r.rdata.clone())
+                .collect::<Vec<_>>()
+        )
     }
 }
