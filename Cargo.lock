@@ -722,7 +722,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "bytes",
  "clap",
@@ -1502,9 +1502,9 @@ dependencies = [
 
 [[package]]
 name = "z32"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4e62ec361f7259399a83b7983270dd0249067d94600c50475e65dca64e24083"
+checksum = "a5c2c4e1757d25c3bfa9e137b15e458bc028bf569c2c22e59ecf9f62545d45fd"
 
 [[package]]
 name = "zeroize"
