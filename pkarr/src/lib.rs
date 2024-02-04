@@ -212,16 +212,16 @@ impl PkarrClient {
 
         let mut most_recent: Option<SignedPacket> = None;
 
-        for res in &mut response {
-            let signed_packet: Result<SignedPacket> = res.item.try_into();
-            if let Ok(signed_packet) = signed_packet {
+        for next in &mut response {
+            let next_packet: Result<SignedPacket> = next.item.try_into();
+            if let Ok(next_packet) = next_packet {
                 if let Some(most_recent) = &most_recent {
-                    if signed_packet.more_recent_than(most_recent) {
+                    if most_recent.more_recent_than(&next_packet) {
                         continue;
                     }
                 }
 
-                most_recent = Some(signed_packet)
+                most_recent = Some(next_packet)
             };
         }
 
@@ -235,16 +235,16 @@ impl PkarrClient {
 
         let mut most_recent: Option<SignedPacket> = None;
 
-        for res in &mut response {
-            let signed_packet: Result<SignedPacket> = res.item.try_into();
-            if let Ok(signed_packet) = signed_packet {
+        for next in &mut response {
+            let next_packet: Result<SignedPacket> = next.item.try_into();
+            if let Ok(next_packet) = next_packet {
                 if let Some(most_recent) = &most_recent {
-                    if signed_packet.more_recent_than(most_recent) {
+                    if most_recent.more_recent_than(&next_packet) {
                         continue;
                     }
                 }
 
-                most_recent = Some(signed_packet)
+                most_recent = Some(next_packet)
             };
         }
 
