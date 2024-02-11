@@ -1,6 +1,6 @@
 [package]
 name = "pkarr"
-version = "1.0.4"
+version = "1.0.5"
 authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
