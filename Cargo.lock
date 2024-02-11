@@ -722,7 +722,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "1.0.4"
+version = "1.0.5"
 dependencies = [
  "bytes",
  "clap",
@@ -1032,9 +1032,9 @@ dependencies = [
 
 [[package]]
 name = "simple-dns"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d0d0b272355cdfd1308ddd5c9f18cd7a62efe866de502767ff61a8e3ec2343"
+checksum = "fadeff7784cac170aa987627327470c682eff6daa8ba9cc31d10313a5fb4b0ea"
 dependencies = [
  "bitflags 2.4.1",
 ]
