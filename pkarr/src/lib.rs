@@ -1,10 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 #[cfg(feature = "dht")]
-use mainline::{
-    common::{GetMutableResponse, MutableItem, Response, StoreQueryMetdata},
-    Dht,
-};
+use mainline::{Dht, DhtSettings, GetMutableResponse, MutableItem, Response, StoreQueryMetdata};
 #[cfg(feature = "relay")]
 use url::Url;
 
@@ -29,6 +26,39 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 pub const DEFAULT_PKARR_RELAY: &str = "https://relay.pkarr.org";
 
+pub struct PkarrClientBuilder {
+    settings: DhtSettings,
+}
+
+impl PkarrClientBuilder {
+    pub fn new() -> Self {
+        Self {
+            settings: DhtSettings::default(),
+        }
+    }
+
+    pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
+        self.settings.bootstrap = Some(bootstrap.to_owned());
+        self
+    }
+
+    pub fn build(self) -> PkarrClient {
+        PkarrClient {
+            #[cfg(all(feature = "relay", not(feature = "async")))]
+            http_client: reqwest::blocking::Client::new(),
+            #[cfg(all(feature = "relay", feature = "async"))]
+            http_client: reqwest::Client::new(),
+            dht: Dht::new(self.settings),
+        }
+    }
+}
+
+impl Default for PkarrClientBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone)]
 /// Main client for publishing and resolving [SginedPacket](crate::SignedPacket)s.
 pub struct PkarrClient {
@@ -48,6 +78,10 @@ impl PkarrClient {
             http_client: reqwest::Client::new(),
             dht: Dht::default(),
         }
+    }
+
+    pub fn builder() -> PkarrClientBuilder {
+        PkarrClientBuilder::default()
     }
 
     #[cfg(all(feature = "relay", not(feature = "async")))]
@@ -284,7 +318,7 @@ impl PkarrClient {
 
 impl Default for PkarrClient {
     fn default() -> Self {
-        Self::new()
+        Self::builder().build()
     }
 }
 
