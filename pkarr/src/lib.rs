@@ -27,16 +27,19 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 pub const DEFAULT_PKARR_RELAY: &str = "https://relay.pkarr.org";
 
 pub struct PkarrClientBuilder {
+    #[cfg(feature = "dht")]
     settings: DhtSettings,
 }
 
 impl PkarrClientBuilder {
     pub fn new() -> Self {
         Self {
+            #[cfg(feature = "dht")]
             settings: DhtSettings::default(),
         }
     }
 
+    #[cfg(feature = "dht")]
     pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
         self.settings.bootstrap = Some(bootstrap.to_owned());
         self
@@ -48,6 +51,7 @@ impl PkarrClientBuilder {
             http_client: reqwest::blocking::Client::new(),
             #[cfg(all(feature = "relay", feature = "async"))]
             http_client: reqwest::Client::new(),
+            #[cfg(feature = "dht")]
             dht: Dht::new(self.settings),
         }
     }
@@ -66,6 +70,7 @@ pub struct PkarrClient {
     http_client: reqwest::blocking::Client,
     #[cfg(all(feature = "relay", feature = "async"))]
     http_client: reqwest::Client,
+    #[cfg(feature = "dht")]
     dht: Dht,
 }
 
@@ -76,6 +81,7 @@ impl PkarrClient {
             http_client: reqwest::blocking::Client::new(),
             #[cfg(all(feature = "relay", feature = "async"))]
             http_client: reqwest::Client::new(),
+            #[cfg(feature = "dht")]
             dht: Dht::default(),
         }
     }
