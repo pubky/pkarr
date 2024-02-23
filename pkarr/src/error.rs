@@ -46,6 +46,7 @@ pub enum Error {
     /// Relay response is not 200 OK
     PublishFailed,
 
+    #[cfg(feature = "dht")]
     #[error(transparent)]
     MainlineError(#[from] mainline::Error),
 }
