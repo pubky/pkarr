@@ -107,7 +107,7 @@ impl PkarrClient {
     #[cfg(all(feature = "relay", not(feature = "async")))]
     /// Resolves a [SignedPacket](crate::SignedPacket) from a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub fn relay_get(&self, url: &Url, public_key: PublicKey) -> Result<Option<SignedPacket>> {
-        let url = format_relay_url(url, &public_key);
+        let url = format_relay_url(url, &public_key)?;
 
         let response = self.http_client.get(url).send()?;
 
@@ -132,7 +132,7 @@ impl PkarrClient {
         url: &Url,
         public_key: PublicKey,
     ) -> Result<Option<SignedPacket>> {
-        let url = format_relay_url(url, &public_key);
+        let url = format_relay_url(url, &public_key)?;
 
         let response = self.http_client.get(url).send().await?;
 
@@ -153,7 +153,7 @@ impl PkarrClient {
     #[cfg(all(feature = "relay", not(feature = "async")))]
     /// Publishes a [SignedPacket] through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub fn relay_put(&self, url: &Url, signed_packet: &SignedPacket) -> Result<()> {
-        let url = format_relay_url(url, signed_packet.public_key());
+        let url = format_relay_url(url, signed_packet.public_key())?;
 
         let response = self
             .http_client
@@ -175,7 +175,7 @@ impl PkarrClient {
     #[cfg(all(feature = "relay", feature = "async"))]
     /// Publishes a [SignedPacket] through a [relay](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub async fn relay_put(&self, url: &Url, signed_packet: &SignedPacket) -> Result<()> {
-        let url = format_relay_url(url, signed_packet.public_key());
+        let url = format_relay_url(url, signed_packet.public_key())?;
 
         let response = self
             .http_client
@@ -329,9 +329,10 @@ impl Default for PkarrClient {
 }
 
 #[cfg(feature = "relay")]
-fn format_relay_url(url: &Url, public_key: &PublicKey) -> Url {
+fn format_relay_url(url: &Url, public_key: &PublicKey) -> Result<Url> {
     let mut url = url.to_owned();
-    url.set_path(&public_key.to_z32());
-
-    url
+    url.path_segments_mut()
+        .map_err(|_| Error::Static("invalid url"))?
+        .push(&public_key.to_z32());
+    Ok(url)
 }
