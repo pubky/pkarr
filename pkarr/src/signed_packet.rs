@@ -55,7 +55,7 @@ impl Inner {
         if verify_signature {
             public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
         }
-        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
+        Self::try_from_bytes_and_parts(bytes, public_key, timestamp, signature)
     }
 
     fn try_from_response(public_key: PublicKey, response: Bytes) -> Result<Self> {
