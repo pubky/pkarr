@@ -37,34 +37,47 @@ struct InnerParsed<'a> {
 }
 
 impl Inner {
-    fn try_from_response(public_key: PublicKey, response: Bytes) -> Result<Self> {
-        Self::try_new(response, |response| {
-            if response.len() < 72 {
-                return Err(Error::InvalidSingedPacketBytes(response.len()));
-            }
-            if response.len() > 1072 {
-                return Err(Error::PacketTooLarge(response.len()));
-            }
+    fn try_from_bytes(bytes: Bytes, verify_signature: bool) -> Result<Self> {
+        if bytes.len() < 104 {
+            return Err(Error::InvalidSingedPacketBytes(bytes.len()));
+        }
+        if bytes.len() > 1104 {
+            return Err(Error::PacketTooLarge(bytes.len()));
+        }
+        let public_key_bytes: [u8; 32] = bytes[..32].try_into().expect("just checked");
+        let public_key = PublicKey::try_from(public_key_bytes)?;
+        let signature =
+            Signature::from_bytes(bytes[32..96].try_into().expect("signature is 64 bytes"));
+        let timestamp = u64::from_be_bytes(bytes[96..104].try_into().expect("seq is 8 bytes"));
 
-            let signature =
-                Signature::from_bytes(response[..64].try_into().expect("signature is 64 bytes"));
-            let timestamp =
-                u64::from_be_bytes(response[64..72].try_into().expect("seq is 8 bytes"));
+        let encoded_packet = &bytes.slice(72..);
 
-            let encoded_packet = &response.slice(72..);
-
+        if verify_signature {
             public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
+        }
+        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
+    }
 
-            match Packet::parse(&response[72..]) {
-                Ok(packet) => Ok(InnerParsed {
-                    public_key,
-                    timestamp,
-                    signature,
-                    packet,
-                }),
-                Err(e) => Err(e.into()),
-            }
-        })
+    fn try_from_response(public_key: PublicKey, response: Bytes) -> Result<Self> {
+        if response.len() < 72 {
+            return Err(Error::InvalidSingedPacketBytes(response.len()));
+        }
+        if response.len() > 1072 {
+            return Err(Error::PacketTooLarge(response.len()));
+        }
+
+        let signature =
+            Signature::from_bytes(response[..64].try_into().expect("signature is 64 bytes"));
+        let timestamp = u64::from_be_bytes(response[64..72].try_into().expect("seq is 8 bytes"));
+
+        let encoded_packet = &response.slice(72..);
+
+        public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
+
+        let mut bytes = BytesMut::with_capacity(response.len() + 32);
+        bytes.extend_from_slice(&public_key.to_bytes());
+        bytes.extend_from_slice(&response);
+        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
     }
 
     fn try_from_parts(
@@ -80,8 +93,16 @@ impl Inner {
         bytes.extend_from_slice(&signature.to_bytes());
         bytes.extend_from_slice(&timestamp.to_be_bytes());
         bytes.extend_from_slice(&encoded_packet);
+        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
+    }
 
-        Self::try_new(bytes.into(), |bytes| match Packet::parse(&bytes[104..]) {
+    fn try_from_bytes_and_parts(
+        bytes: Bytes,
+        public_key: PublicKey,
+        timestamp: u64,
+        signature: Signature,
+    ) -> Result<Self> {
+        Self::try_new(bytes, |bytes| match Packet::parse(&bytes[104..]) {
             Ok(packet) => Ok(InnerParsed {
                 public_key,
                 timestamp,
@@ -109,6 +130,20 @@ impl SignedPacket {
         let inner = Inner::try_from_response(public_key, response)?;
 
         Ok(SignedPacket { inner })
+    }
+
+    /// Creates a new [SignedPacket] from a 32 bytes PublicKey concatened with the 64 bytes Signature
+    /// concatenated with 8 bytes timestamp and encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
+    pub fn from_bytes(bytes: Bytes, verify_signature: bool) -> Result<SignedPacket> {
+        let inner = Inner::try_from_bytes(bytes, verify_signature)?;
+
+        Ok(SignedPacket { inner })
+    }
+
+    /// Returns the 32 bytes PublicKey concatened with the 64 bytes Signature
+    /// concatenated with 8 bytes timestamp and encoded [Packet].
+    pub fn as_bytes(&self) -> Bytes {
+        self.inner.borrow_owner().clone()
     }
 
     /// Returns the 64 bytes Signature concatenated with 8 bytes timestamp and
