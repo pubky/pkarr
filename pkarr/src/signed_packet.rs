@@ -50,7 +50,7 @@ impl Inner {
             Signature::from_bytes(bytes[32..96].try_into().expect("signature is 64 bytes"));
         let timestamp = u64::from_be_bytes(bytes[96..104].try_into().expect("seq is 8 bytes"));
 
-        let encoded_packet = &bytes.slice(72..);
+        let encoded_packet = &bytes.slice(104..);
 
         if verify_signature {
             public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
@@ -577,5 +577,28 @@ mod tests {
                 .map(|r| r.rdata.clone())
                 .collect::<Vec<_>>()
         )
+    }
+
+    #[test]
+    fn to_bytes_from_bytes() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let bytes = signed.as_bytes();
+        let from_bytes = SignedPacket::from_bytes(bytes.clone(), true).unwrap();
+        assert_eq!(signed.as_bytes(), from_bytes.as_bytes());
+        let from_bytes2 = SignedPacket::from_bytes(bytes, false).unwrap();
+        assert_eq!(signed.as_bytes(), from_bytes2.as_bytes());
+
+        let public_key = keypair.public_key();
+        let response = signed.as_relay_request();
+        let from_relay_response = SignedPacket::from_relay_response(public_key, response).unwrap();
+        assert_eq!(signed.as_bytes(), from_relay_response.as_bytes());
     }
 }
