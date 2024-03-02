@@ -132,24 +132,13 @@ impl SignedPacket {
         Ok(SignedPacket { inner })
     }
 
-    /// Creates a new [SignedPacket] from a 32 bytes PublicKey concatened with the 64 bytes Signature
-    /// concatenated with 8 bytes timestamp and encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
+    /// Creates a new [SignedPacket] from a 32 bytes PublicKey concatenated with
+    /// the 64 bytes Signature, 8 bytes timestamp and encoded [Packet]
+    /// as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
     pub fn from_bytes(bytes: Bytes, verify_signature: bool) -> Result<SignedPacket> {
         let inner = Inner::try_from_bytes(bytes, verify_signature)?;
 
         Ok(SignedPacket { inner })
-    }
-
-    /// Returns the 32 bytes PublicKey concatened with the 64 bytes Signature
-    /// concatenated with 8 bytes timestamp and encoded [Packet].
-    pub fn as_bytes(&self) -> Bytes {
-        self.inner.borrow_owner().clone()
-    }
-
-    /// Returns the 64 bytes Signature concatenated with 8 bytes timestamp and
-    /// encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
-    pub fn as_relay_request(&self) -> Bytes {
-        self.inner.borrow_owner().slice(32..)
     }
 
     /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
@@ -202,6 +191,18 @@ impl SignedPacket {
                 signature,
             )?,
         })
+    }
+
+    /// Returns 32 bytes PublicKey concatenated with the 64 bytes Signature,
+    /// 8 bytes timestamp and encoded [Packet]
+    pub fn to_bytes(&self) -> Bytes {
+        self.inner.borrow_owner().clone()
+    }
+
+    /// Returns the 64 bytes Signature concatenated with 8 bytes timestamp and
+    /// encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
+    pub fn to_relay_request(&self) -> Bytes {
+        self.inner.borrow_owner().slice(32..)
     }
 
     // === Getters ===
@@ -388,7 +389,9 @@ fn normalize_name(origin: &str, name: String) -> String {
     if last == origin {
         // Already normalized.
         return name.to_string();
-    } else if last == "@" || last.is_empty() {
+    }
+
+    if last == "@" || last.is_empty() {
         // Shorthand of origin
         return origin.to_string();
     }
@@ -441,7 +444,7 @@ mod tests {
 
         assert!(SignedPacket::from_relay_response(
             signed_packet.public_key().clone(),
-            signed_packet.as_relay_request()
+            signed_packet.to_relay_request()
         )
         .is_ok());
     }
@@ -590,15 +593,15 @@ mod tests {
             RData::TXT("hello".try_into().unwrap()),
         ));
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        let bytes = signed.as_bytes();
+        let bytes = signed.to_bytes();
         let from_bytes = SignedPacket::from_bytes(bytes.clone(), true).unwrap();
-        assert_eq!(signed.as_bytes(), from_bytes.as_bytes());
+        assert_eq!(signed.to_bytes(), from_bytes.to_bytes());
         let from_bytes2 = SignedPacket::from_bytes(bytes, false).unwrap();
-        assert_eq!(signed.as_bytes(), from_bytes2.as_bytes());
+        assert_eq!(signed.to_bytes(), from_bytes2.to_bytes());
 
         let public_key = keypair.public_key();
-        let response = signed.as_relay_request();
+        let response = signed.to_relay_request();
         let from_relay_response = SignedPacket::from_relay_response(public_key, response).unwrap();
-        assert_eq!(signed.as_bytes(), from_relay_response.as_bytes());
+        assert_eq!(signed.to_bytes(), from_relay_response.to_bytes());
     }
 }
