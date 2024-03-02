@@ -124,19 +124,18 @@ pub struct SignedPacket {
 }
 
 impl SignedPacket {
-    /// Creates a new [SignedPacket] from a [PublicKey] and the 64 bytes Signature
-    /// concatenated with 8 bytes timestamp and encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
-    pub fn from_relay_response(public_key: PublicKey, response: Bytes) -> Result<SignedPacket> {
-        let inner = Inner::try_from_response(public_key, response)?;
+    /// Creates a [SignedPacket] from a 32 bytes PublicKey concatenated with
+    /// the 64 bytes Signature, 8 bytes big-endian timestamp, and serialized DNS packet.
+    pub fn from_bytes(bytes: Bytes, verify_signature: bool) -> Result<SignedPacket> {
+        let inner = Inner::try_from_bytes(bytes, verify_signature)?;
 
         Ok(SignedPacket { inner })
     }
 
-    /// Creates a new [SignedPacket] from a 32 bytes PublicKey concatenated with
-    /// the 64 bytes Signature, 8 bytes timestamp and encoded [Packet]
-    /// as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
-    pub fn from_bytes(bytes: Bytes, verify_signature: bool) -> Result<SignedPacket> {
-        let inner = Inner::try_from_bytes(bytes, verify_signature)?;
+    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md)
+    /// request/response body format.
+    pub fn from_relay_body(public_key: PublicKey, response: Bytes) -> Result<SignedPacket> {
+        let inner = Inner::try_from_response(public_key, response)?;
 
         Ok(SignedPacket { inner })
     }
@@ -194,14 +193,14 @@ impl SignedPacket {
     }
 
     /// Returns 32 bytes PublicKey concatenated with the 64 bytes Signature,
-    /// 8 bytes timestamp and encoded [Packet]
+    /// 8 bytes big-endian timestamp, and serialized DNS Packet.
     pub fn to_bytes(&self) -> Bytes {
         self.inner.borrow_owner().clone()
     }
 
-    /// Returns the 64 bytes Signature concatenated with 8 bytes timestamp and
-    /// encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
-    pub fn to_relay_request(&self) -> Bytes {
+    /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
+    /// to be sent as a request/response body to or from [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
+    pub fn to_relay_body(&self) -> Bytes {
         self.inner.borrow_owner().slice(32..)
     }
 
@@ -442,9 +441,9 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert!(SignedPacket::from_relay_response(
+        assert!(SignedPacket::from_relay_body(
             signed_packet.public_key().clone(),
-            signed_packet.to_relay_request()
+            signed_packet.to_relay_body()
         )
         .is_ok());
     }
@@ -454,7 +453,7 @@ mod tests {
         let keypair = Keypair::random();
 
         let bytes = Bytes::from(vec![0; 1073]);
-        let error = SignedPacket::from_relay_response(keypair.public_key().clone(), bytes);
+        let error = SignedPacket::from_relay_body(keypair.public_key().clone(), bytes);
 
         assert!(error.is_err());
     }
@@ -600,8 +599,8 @@ mod tests {
         assert_eq!(signed.to_bytes(), from_bytes2.to_bytes());
 
         let public_key = keypair.public_key();
-        let response = signed.to_relay_request();
-        let from_relay_response = SignedPacket::from_relay_response(public_key, response).unwrap();
-        assert_eq!(signed.to_bytes(), from_relay_response.to_bytes());
+        let body = signed.to_relay_body();
+        let from_relay_body = SignedPacket::from_relay_body(public_key, body).unwrap();
+        assert_eq!(signed.to_bytes(), from_relay_body.to_bytes());
     }
 }
