@@ -335,6 +335,12 @@ impl AsRef<[u8]> for SignedPacket {
     }
 }
 
+impl Clone for SignedPacket {
+    fn clone(&self) -> Self {
+        Self::from_bytes(self.to_bytes(), false).unwrap()
+    }
+}
+
 impl Display for SignedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
@@ -602,5 +608,22 @@ mod tests {
         let body = signed.to_relay_body();
         let from_relay_body = SignedPacket::from_relay_body(public_key, body).unwrap();
         assert_eq!(signed.to_bytes(), from_relay_body.to_bytes());
+    }
+
+    #[test]
+    fn clone() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let cloned = signed.clone();
+
+        assert_eq!(cloned.to_bytes(), signed.to_bytes());
     }
 }
