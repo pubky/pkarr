@@ -233,7 +233,7 @@ impl SignedPacket {
 
     // === Public Methods ===
 
-    /// Return whether this {SignedPacket] is more recent than the given one.
+    /// Return whether this [SignedPacket] is more recent than the given one.
     /// If the timestamps are erqual, the one with the largest value is considered more recent.
     /// Usefel for determining which packet contains the latest information from the Dht.
     /// Assumes that both packets have the same [PublicKey], you shouldn't compare packets from

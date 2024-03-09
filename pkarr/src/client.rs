@@ -9,12 +9,12 @@ use mainline::{
     common::MutableItem, Dht, DhtSettings, GetMutableResponse, Response, StoreQueryMetdata,
 };
 
-pub const DEFAULT_PKARR_RELAY: &str = "https://relay.pkarr.org";
+pub const DEFAULT_PKARR_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
 #[derive(Default)]
 pub struct PkarrClientBuilder {
-    relays: Vec<String>,
+    relays: Option<Vec<String>>,
     dht_settings: DhtSettings,
     cache_size: usize,
 }
@@ -25,6 +25,11 @@ impl PkarrClientBuilder {
         self
     }
 
+    pub fn relays(mut self, relays: Vec<String>) -> Self {
+        self.relays = Some(relays);
+        self
+    }
+
     pub fn cache_size(mut self, cache_size: usize) -> Self {
         self.cache_size = cache_size;
         self
@@ -32,6 +37,13 @@ impl PkarrClientBuilder {
 
     pub fn build(self) -> PkarrClient {
         PkarrClient {
+            relays: self.relays.unwrap_or(
+                DEFAULT_PKARR_RELAYS
+                    .to_vec()
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>(),
+            ),
             cache: LruCache::new(NonZeroUsize::new(self.cache_size.max(1)).unwrap()),
             dht: Dht::new(self.dht_settings),
         }
@@ -41,11 +53,16 @@ impl PkarrClientBuilder {
 #[derive(Clone, Debug)]
 /// Main client for publishing and resolving [SignedPacket]s.
 pub struct PkarrClient {
+    relays: Vec<String>,
     cache: LruCache<PublicKey, SignedPacket>,
     dht: Dht,
 }
 
 impl PkarrClient {
+    pub fn new() -> PkarrClient {
+        PkarrClient::default()
+    }
+
     pub fn builder() -> PkarrClientBuilder {
         PkarrClientBuilder::default()
     }
@@ -55,24 +72,20 @@ impl PkarrClient {
     }
 
     /// Publish a [SignedPacket].
-    pub fn publish(&self, signed_packet: &SignedPacket) -> Result<StoreQueryMetdata> {
+    pub fn publish(&mut self, signed_packet: &SignedPacket) -> Result<StoreQueryMetdata> {
         let item: MutableItem = signed_packet.into();
 
+        self.update_cache(signed_packet);
+
+        // TODO: How to react if there are relays?
         self.dht.put_mutable(item).map_err(Error::MainlineError)
     }
 
-    /// The recommended way to resolve [SignedPacket]s.
-    ///
-    /// Returns the first value from [resolve_stream](PkarrClient::resolve_stream).
-    pub fn resolve(&mut self, public_key: PublicKey) -> Option<SignedPacket> {
-        self.resolve_stream(public_key).recv().ok()
-    }
-
-    /// Returns a stream of [SignedPacket]s as they are resolved local cache, relays, or DHT nodes.
-    pub fn resolve_stream(&mut self, public_key: PublicKey) -> flume::Receiver<SignedPacket> {
+    /// Returns a stream of [SignedPacket]s as they are resolved from local cache, relays, or DHT nodes.
+    pub fn resolve(&mut self, public_key: &PublicKey) -> flume::Receiver<SignedPacket> {
         let (sender, receiver) = flume::unbounded::<SignedPacket>();
 
-        if let Some(cached) = self.cache.get(&public_key) {
+        if let Some(cached) = self.cache.get(public_key) {
             let _ = sender.send(cached.to_owned());
         };
 
@@ -83,13 +96,36 @@ impl PkarrClient {
             let signed_packet: Result<SignedPacket> = res.item.try_into();
 
             if let Ok(signed_packet) = signed_packet {
-                self.cache.put(public_key.clone(), signed_packet.clone());
+                self.update_cache(&signed_packet);
 
                 let _ = sender.send(signed_packet);
             };
         }
 
         receiver
+    }
+
+    /// Update the cache with the [SignedPacket] if it is [more recent than](SignedPacket::more_recent_than) the cached version.
+    ///
+    /// Returns `true` if the cache was updated, or `false` if not.
+    pub fn update_cache(&mut self, signed_packet: &SignedPacket) -> bool {
+        let public_key = signed_packet.public_key();
+
+        if let Some(most_recent) = self.cache.get(public_key) {
+            if most_recent.more_recent_than(&signed_packet) {
+                return false;
+            }
+        };
+
+        self.cache
+            .put(signed_packet.public_key().to_owned(), signed_packet.clone());
+
+        true
+    }
+
+    /// Returns the cached [SignedPacket] for a `public_key` if it exists.
+    pub fn get_cached(&mut self, public_key: &PublicKey) -> Option<&SignedPacket> {
+        self.cache.get(public_key)
     }
 }
 
@@ -104,19 +140,22 @@ mod tests {
     use mainline::Testnet;
 
     use super::*;
-    use crate::{dns, Keypair};
+    use crate::{dns, pkarr_relay, Keypair};
 
     #[test]
-    fn testnet() {
+    fn resolve_stream_dht_only() {
         let testnet = Testnet::new(10);
 
-        let a = PkarrClient::builder().bootstrap(&testnet.bootstrap).build();
+        let mut a = PkarrClient::builder()
+            .relays(vec![])
+            .bootstrap(&testnet.bootstrap)
+            .build();
 
         let keypair = Keypair::random();
 
         let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
+            dns::Name::new("foo").unwrap(),
             dns::CLASS::IN,
             30,
             dns::rdata::RData::TXT("bar".try_into().unwrap()),
@@ -124,10 +163,10 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let x = a.publish(&signed_packet);
+        let _ = a.publish(&signed_packet);
 
         let mut b = PkarrClient::builder().bootstrap(&testnet.bootstrap).build();
-        let resolved = b.resolve(keypair.public_key()).unwrap();
+        let resolved = b.resolve(&keypair.public_key()).recv().unwrap();
 
         assert_eq!(resolved.to_bytes(), signed_packet.to_bytes());
 
