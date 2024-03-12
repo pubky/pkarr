@@ -28,7 +28,9 @@ impl Keypair {
     }
 
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
-        self.0.verify(message, signature)?;
+        self.0
+            .verify(message, signature)
+            .map_err(|_| Error::InvalidEd25519Signature)?;
         Ok(())
     }
 
@@ -68,7 +70,9 @@ impl PublicKey {
 
     /// Verify a signature over a message.
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
-        self.0.verify(message, signature)?;
+        self.0
+            .verify(message, signature)
+            .map_err(|_| Error::InvalidEd25519Signature)?;
         Ok(())
     }
 
@@ -89,10 +93,12 @@ impl PublicKey {
 }
 
 impl TryFrom<[u8; 32]> for PublicKey {
-    type Error = ed25519_dalek::SignatureError;
+    type Error = Error;
 
     fn try_from(public: [u8; 32]) -> Result<Self, Self::Error> {
-        Ok(Self(VerifyingKey::from_bytes(&public)?))
+        Ok(Self(
+            VerifyingKey::from_bytes(&public).map_err(|_| Error::InvalidEd25519PublicKey)?,
+        ))
     }
 }
 
@@ -102,10 +108,10 @@ impl TryFrom<&str> for PublicKey {
     fn try_from(s: &str) -> Result<PublicKey> {
         let s = s.strip_prefix("pk:").unwrap_or(s);
 
-        let bytes =
-            z32::decode(s.as_bytes()).map_err(|_| Error::Static("Invalid zbase32 encoding"))?;
+        let bytes = z32::decode(s.as_bytes())?;
 
-        let verifying_key = VerifyingKey::try_from(bytes.as_slice())?;
+        let verifying_key = VerifyingKey::try_from(bytes.as_slice())
+            .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
 
         Ok(PublicKey(verifying_key))
     }

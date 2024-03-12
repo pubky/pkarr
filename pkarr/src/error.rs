@@ -3,40 +3,47 @@
 #[derive(thiserror::Error, Debug)]
 /// Pkarr crate error enum.
 pub enum Error {
-    /// For starter, to remove as code matures.
-    #[error("Generic error: {0}")]
-    Generic(String),
-    /// For starter, to remove as code matures.
-    #[error("Static error: {0}")]
-    Static(&'static str),
-
     #[error(transparent)]
     /// Transparent [std::io::Error]
     IO(#[from] std::io::Error),
 
+    #[cfg(feature = "dht")]
+    #[error(transparent)]
+    MainlineError(#[from] mainline::Error),
+
+    // === Keys errors ===
+    #[error("Invalid PublicKey length, expected 32 bytes but got: {0}")]
+    InvalidPublicKeyLength(usize),
+
+    #[error("Invalid Ed25519 publickey; Cannot decompress Edwards point")]
+    InvalidEd25519PublicKey,
+
+    #[error("Invalid Ed25519 signature")]
+    InvalidEd25519Signature,
+
+    #[error(transparent)]
+    InvalidPublicKeyEncoding(#[from] z32::Z32Error),
+
+    // === Packets errors ===
     #[error(transparent)]
     /// Transparent [simple_dns::SimpleDnsError]
     DnsError(#[from] simple_dns::SimpleDnsError),
 
-    #[error(transparent)]
-    /// Transparent [ed25519_dalek::SignatureError]
-    SignatureError(#[from] ed25519_dalek::SignatureError),
+    #[error("Invalid SignedPacket bytes length, expected at least 104 bytes but got: {0}")]
+    /// Serialized signed packets are `<32 bytes publickey><64 bytes signature><8 bytes
+    /// timestamp><less than or equal to 1000 bytes encoded dns packet>`.
+    InvalidSignedPacketBytesLength(usize),
 
-    #[error("Invalid SignedPacket bytes length, expected at least 72 bytes but got: {0}")]
-    /// DNS packet failed to decode or encode
-    InvalidSingedPacketBytes(usize),
+    #[error("Invalid relay payload size, expected at least 72 bytes but got: {0}")]
+    /// Relay api http-body should be `<64 bytes signature><8 bytes timestamp>
+    /// <less than or equal to 1000 bytes encoded dns packet>`.
+    InvalidRelayPayloadSize(usize),
 
-    #[error(
-        "Encoded and compressed DNS Packet is too large, expected max 1000 bytes but got: {0}"
-    )]
+    #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
     // DNS packet endocded and compressed is larger than 1000 bytes
     PacketTooLarge(usize),
 
     #[error("All attempts to publish failed")]
     /// Relay response is not 200 OK
     PublishFailed,
-
-    #[cfg(feature = "dht")]
-    #[error(transparent)]
-    MainlineError(#[from] mainline::Error),
 }

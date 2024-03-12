@@ -39,7 +39,7 @@ struct InnerParsed<'a> {
 impl Inner {
     fn try_from_bytes(bytes: Bytes, verify_signature: bool) -> Result<Self> {
         if bytes.len() < 104 {
-            return Err(Error::InvalidSingedPacketBytes(bytes.len()));
+            return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
         }
         if bytes.len() > 1104 {
             return Err(Error::PacketTooLarge(bytes.len()));
@@ -60,7 +60,7 @@ impl Inner {
 
     fn try_from_response(public_key: PublicKey, response: Bytes) -> Result<Self> {
         if response.len() < 72 {
-            return Err(Error::InvalidSingedPacketBytes(response.len()));
+            return Err(Error::InvalidRelayPayloadSize(response.len()));
         }
         if response.len() > 1072 {
             return Err(Error::PacketTooLarge(response.len()));
@@ -132,9 +132,8 @@ impl SignedPacket {
         Ok(SignedPacket { inner })
     }
 
-    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md)
-    /// request/response body format.
-    pub fn from_relay_body(public_key: PublicKey, response: Bytes) -> Result<SignedPacket> {
+    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
+    pub fn from_relay_payload(public_key: PublicKey, response: Bytes) -> Result<SignedPacket> {
         let inner = Inner::try_from_response(public_key, response)?;
 
         Ok(SignedPacket { inner })
@@ -447,7 +446,7 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert!(SignedPacket::from_relay_body(
+        assert!(SignedPacket::from_relay_payload(
             signed_packet.public_key().clone(),
             signed_packet.to_relay_body()
         )
@@ -459,7 +458,7 @@ mod tests {
         let keypair = Keypair::random();
 
         let bytes = Bytes::from(vec![0; 1073]);
-        let error = SignedPacket::from_relay_body(keypair.public_key().clone(), bytes);
+        let error = SignedPacket::from_relay_payload(keypair.public_key().clone(), bytes);
 
         assert!(error.is_err());
     }
@@ -606,8 +605,8 @@ mod tests {
 
         let public_key = keypair.public_key();
         let body = signed.to_relay_body();
-        let from_relay_body = SignedPacket::from_relay_body(public_key, body).unwrap();
-        assert_eq!(signed.to_bytes(), from_relay_body.to_bytes());
+        let from_relay_payload = SignedPacket::from_relay_payload(public_key, body).unwrap();
+        assert_eq!(signed.to_bytes(), from_relay_payload.to_bytes());
     }
 
     #[test]
