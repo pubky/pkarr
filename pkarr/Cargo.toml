@@ -9,7 +9,6 @@ repository = "https://github.com/nuhvi/pkarr"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 
 [dependencies]
-axum = { version = "0.7.4", optional = true, default-features = false, features = ["tokio", "http2"] }
 bytes = "1.5.0"
 ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
 flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
@@ -19,7 +18,6 @@ rand = "0.8.5"
 self_cell = "1.0.2"
 simple-dns = "0.6.1"
 thiserror = "1.0.49"
-url = "2.4.1"
 z32 = "1.1.1"
 
 [dev-dependencies]
@@ -28,8 +26,6 @@ tokio = { version = "1.32.0", features = ["tokio-macros", "macros", "rt-multi-th
 
 [features]
 async= ["flume/async"]
-dht = ["mainline"]
+dht=["mainline"]
 
-full = ["dht", "async", "relay"]
-relay = ["axum"]
-default = ["full"]
+default = ["dht"]

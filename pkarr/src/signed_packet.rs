@@ -199,7 +199,7 @@ impl SignedPacket {
 
     /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
     /// to be sent as a request/response body to or from [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
-    pub fn to_relay_body(&self) -> Bytes {
+    pub fn to_relay_payload(&self) -> Bytes {
         self.inner.borrow_owner().slice(32..)
     }
 
@@ -447,8 +447,8 @@ mod tests {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         assert!(SignedPacket::from_relay_payload(
-            signed_packet.public_key().clone(),
-            signed_packet.to_relay_body()
+            signed_packet.public_key().to_owned(),
+            signed_packet.to_relay_payload()
         )
         .is_ok());
     }
@@ -604,8 +604,8 @@ mod tests {
         assert_eq!(signed.to_bytes(), from_bytes2.to_bytes());
 
         let public_key = keypair.public_key();
-        let body = signed.to_relay_body();
-        let from_relay_payload = SignedPacket::from_relay_payload(public_key, body).unwrap();
+        let payload = signed.to_relay_payload();
+        let from_relay_payload = SignedPacket::from_relay_payload(public_key, payload).unwrap();
         assert_eq!(signed.to_bytes(), from_relay_payload.to_bytes());
     }
 
