@@ -212,7 +212,12 @@ impl PkarrClient {
     /// before storing the signed packet to them, so it may take few seconds.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<StoreQueryMetdata> {
         let item: MutableItem = signed_packet.into();
-        self.dht.put_mutable(item).map_err(Error::MainlineError)
+        self.dht
+            .clone()
+            .as_async()
+            .put_mutable(item)
+            .await
+            .map_err(Error::MainlineError)
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
