@@ -212,7 +212,12 @@ impl PkarrClient {
     /// before storing the signed packet to them, so it may take few seconds.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<StoreQueryMetdata> {
         let item: MutableItem = signed_packet.into();
-        self.dht.put_mutable(item).map_err(Error::MainlineError)
+        self.dht
+            .clone()
+            .as_async()
+            .put_mutable(item)
+            .await
+            .map_err(Error::MainlineError)
     }
 
     #[cfg(all(feature = "dht", not(feature = "async")))]
@@ -235,7 +240,7 @@ impl PkarrClient {
     pub async fn resolve(&self, public_key: PublicKey) -> Option<SignedPacket> {
         let mut response = self.dht.get_mutable(public_key.as_bytes(), None);
 
-        for res in &mut response {
+        while let Some(res) = response.next_async().await {
             let signed_packet: Result<SignedPacket> = res.item.try_into();
             if let Ok(signed_packet) = signed_packet {
                 return Some(signed_packet);
@@ -275,7 +280,7 @@ impl PkarrClient {
 
         let mut most_recent: Option<SignedPacket> = None;
 
-        for next in &mut response {
+        while let Some(next) = response.next_async().await {
             let next_packet: Result<SignedPacket> = next.item.try_into();
             if let Ok(next_packet) = next_packet {
                 if let Some(most_recent) = &most_recent {
