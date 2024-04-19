@@ -1,8 +1,7 @@
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
-#[cfg(feature = "dht")]
-use mainline::common::MutableItem;
+use mainline::MutableItem;
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
@@ -311,10 +310,11 @@ impl From<&SignedPacket> for MutableItem {
 }
 
 #[cfg(feature = "dht")]
-impl TryFrom<MutableItem> for SignedPacket {
+// TODO: make a From that doesn't check anything
+impl TryFrom<&MutableItem> for SignedPacket {
     type Error = Error;
 
-    fn try_from(i: MutableItem) -> Result<Self> {
+    fn try_from(i: &MutableItem) -> Result<Self> {
         let public_key: PublicKey = i.key().to_owned().try_into().unwrap();
         let encoded_packet: Bytes = i.value().to_vec().into();
         let seq = i.seq().to_owned() as u64;

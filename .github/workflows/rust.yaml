@@ -25,10 +25,14 @@ jobs:
       run: cargo fmt -- --check
 
     - name: Lint with Clippy
-      run: cargo clippy -- -D warnings
+      run: cargo clippy --workspace --all-features --bins --tests
 
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --release --workspace --all-features --verbose
+        
 
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --all-features --workspace --verbose
+
+    - name: Run docs
+      run: cargo doc --workspace --all-features --no-deps --document-private-items --verbose

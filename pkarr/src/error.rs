@@ -1,5 +1,7 @@
 //! Main Crate Error
 
+use crate::client::ActorMessage;
+
 #[derive(thiserror::Error, Debug)]
 /// Pkarr crate error enum.
 pub enum Error {
@@ -43,7 +45,12 @@ pub enum Error {
     // DNS packet endocded and compressed is larger than 1000 bytes
     PacketTooLarge(usize),
 
-    #[error("All attempts to publish failed")]
-    /// Relay response is not 200 OK
-    PublishFailed,
+    // === Flume errors ===
+    #[error(transparent)]
+    /// Transparent [flume::RecvError]
+    Receive(#[from] flume::RecvError),
+
+    #[error(transparent)]
+    /// The dht was shutdown.
+    DhtIsShutdown(#[from] flume::SendError<ActorMessage>),
 }

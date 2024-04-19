@@ -15,7 +15,6 @@ mod keys;
 mod signed_packet;
 
 // Exports
-#[cfg(feature = "dht")]
 pub use crate::client::PkarrClient;
 pub use crate::error::Error;
 pub use crate::keys::{Keypair, PublicKey};

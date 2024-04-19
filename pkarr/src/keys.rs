@@ -117,6 +117,14 @@ impl TryFrom<&str> for PublicKey {
     }
 }
 
+impl TryFrom<String> for PublicKey {
+    type Error = Error;
+
+    fn try_from(s: String) -> Result<PublicKey> {
+        s.as_str().try_into()
+    }
+}
+
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", z32::encode(self.0.as_bytes()))
