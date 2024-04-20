@@ -207,7 +207,7 @@ fn run(mut state: State, receiver: Receiver<ActorMessage>) {
                             return;
                         }
 
-                        let timestamp = *cached.signed_packet.timestamp();
+                        let timestamp = cached.signed_packet.timestamp();
 
                         dht_request(&mut state, target, Some(timestamp));
                     } else {
@@ -260,7 +260,7 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
 
                 let is_most_recent = state
                     .cache
-                    .get(public_key)
+                    .get(&public_key)
                     .filter(|cached| cached.is_fresh())
                     .map_or(true, |cached| {
                         signed_packet.more_recent_than(&cached.signed_packet)

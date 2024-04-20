@@ -76,7 +76,7 @@ impl PublicKey {
         Ok(())
     }
 
-    /// Return a reference to the underlying [VerifyingKey](ed25519_dalek::VerifyingKey)
+    /// Return a reference to the underlying [VerifyingKey]
     pub fn verifying_key(&self) -> &VerifyingKey {
         &self.0
     }
@@ -92,12 +92,26 @@ impl PublicKey {
     }
 }
 
-impl TryFrom<[u8; 32]> for PublicKey {
+impl TryFrom<&[u8]> for PublicKey {
     type Error = Error;
 
-    fn try_from(public: [u8; 32]) -> Result<Self, Self::Error> {
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        let bytes_32: &[u8; 32] = bytes
+            .try_into()
+            .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
+
         Ok(Self(
-            VerifyingKey::from_bytes(&public).map_err(|_| Error::InvalidEd25519PublicKey)?,
+            VerifyingKey::from_bytes(bytes_32).map_err(|_| Error::InvalidEd25519PublicKey)?,
+        ))
+    }
+}
+
+impl TryFrom<&[u8; 32]> for PublicKey {
+    type Error = Error;
+
+    fn try_from(public: &[u8; 32]) -> Result<Self, Self::Error> {
+        Ok(Self(
+            VerifyingKey::from_bytes(public).map_err(|_| Error::InvalidEd25519PublicKey)?,
         ))
     }
 }
@@ -204,7 +218,7 @@ mod tests {
         ];
         let expected = "pk:yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
 
-        let public_key: PublicKey = bytes.try_into().unwrap();
+        let public_key: PublicKey = (&bytes).try_into().unwrap();
 
         assert_eq!(public_key.to_uri_string(), expected);
     }
