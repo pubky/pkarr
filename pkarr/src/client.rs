@@ -21,6 +21,7 @@ const DEFAULT_CACHE_SIZE: usize = 1000;
 /// Default minimum TTL 30 seconds
 const DEFAULT_MINIMUM_TTL: u64 = 30;
 
+#[derive(Debug, Clone)]
 pub struct Settings {
     dht: DhtSettings,
     cache_size: usize,
@@ -36,6 +37,7 @@ impl Default for Settings {
     }
 }
 
+#[derive(Debug, Clone, Default)]
 pub struct PkarrClientBuilder {
     settings: Settings,
 }
@@ -58,14 +60,6 @@ impl PkarrClientBuilder {
 
     pub fn build(self) -> Result<PkarrClient> {
         PkarrClient::new(self.settings)
-    }
-}
-
-impl Default for PkarrClientBuilder {
-    fn default() -> Self {
-        Self {
-            settings: Settings::default(),
-        }
     }
 }
 
@@ -266,7 +260,7 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
 
                 let is_most_recent = state
                     .cache
-                    .get(&public_key)
+                    .get(public_key)
                     .filter(|cached| cached.is_fresh())
                     .map_or(true, |cached| {
                         signed_packet.more_recent_than(&cached.signed_packet)
@@ -284,7 +278,7 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
                             sender.send(signed_packet.to_owned());
                         }
 
-                        state.resolve_senders.remove(&target);
+                        state.resolve_senders.remove(target);
                     }
                 }
             }
@@ -293,7 +287,7 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
             from,
             message: ReceivedMessage::Request((transaction_id, request)),
         }) => {
-            // TODO: why is it the case that not handling a request causes a hang in tests?
+            // TODO: investigate why; not handling a request causes a hang in tests?
             server.handle_request(&mut state.rpc, *from, *transaction_id, request);
         }
         _ => {}
@@ -343,6 +337,6 @@ mod tests {
             .unwrap();
         let resolved = b.resolve(&keypair.public_key()).unwrap();
 
-        assert_eq!(resolved.to_bytes(), signed_packet.to_bytes());
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
     }
 }

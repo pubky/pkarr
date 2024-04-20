@@ -36,7 +36,7 @@ struct InnerParsed<'a> {
 }
 
 impl Inner {
-    fn try_from_bytes(bytes: Bytes, verify_signature: bool) -> Result<Self> {
+    fn try_from_bytes(bytes: &Bytes, verify_signature: bool) -> Result<Self> {
         if bytes.len() < 104 {
             return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
         }
@@ -54,10 +54,10 @@ impl Inner {
         if verify_signature {
             public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
         }
-        Self::try_from_bytes_and_parts(bytes, public_key, timestamp, signature)
+        Self::try_from_bytes_and_parts(bytes.to_owned(), public_key, timestamp, signature)
     }
 
-    fn try_from_response(public_key: PublicKey, response: Bytes) -> Result<Self> {
+    fn try_from_response(public_key: &PublicKey, response: &Bytes) -> Result<Self> {
         if response.len() < 72 {
             return Err(Error::InvalidRelayPayloadSize(response.len()));
         }
@@ -74,25 +74,27 @@ impl Inner {
         public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
 
         let mut bytes = BytesMut::with_capacity(response.len() + 32);
-        bytes.extend_from_slice(&public_key.to_bytes());
-        bytes.extend_from_slice(&response);
-        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
+        bytes.extend_from_slice(public_key.as_bytes());
+        bytes.extend_from_slice(response);
+
+        Self::try_from_bytes_and_parts(bytes.into(), public_key.to_owned(), timestamp, signature)
     }
 
     fn try_from_parts(
-        public_key: PublicKey,
-        encoded_packet: Bytes,
-        timestamp: u64,
-        signature: Signature,
+        public_key: &PublicKey,
+        encoded_packet: &Bytes,
+        timestamp: &u64,
+        signature: &Signature,
     ) -> Result<Self> {
         // Create the inner bytes from <public_key><signature>timestamp><v>
         let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 104);
 
-        bytes.extend_from_slice(&public_key.to_bytes());
+        bytes.extend_from_slice(public_key.as_bytes());
         bytes.extend_from_slice(&signature.to_bytes());
         bytes.extend_from_slice(&timestamp.to_be_bytes());
-        bytes.extend_from_slice(&encoded_packet);
-        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
+        bytes.extend_from_slice(encoded_packet);
+
+        Self::try_from_bytes_and_parts(bytes.into(), public_key.to_owned(), *timestamp, *signature)
     }
 
     fn try_from_bytes_and_parts(
@@ -125,14 +127,14 @@ pub struct SignedPacket {
 impl SignedPacket {
     /// Creates a [SignedPacket] from a 32 bytes PublicKey concatenated with
     /// the 64 bytes Signature, 8 bytes big-endian timestamp, and serialized DNS packet.
-    pub fn from_bytes(bytes: Bytes, verify_signature: bool) -> Result<SignedPacket> {
+    pub fn from_bytes(bytes: &Bytes, verify_signature: bool) -> Result<SignedPacket> {
         let inner = Inner::try_from_bytes(bytes, verify_signature)?;
 
         Ok(SignedPacket { inner })
     }
 
     /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
-    pub fn from_relay_payload(public_key: PublicKey, response: Bytes) -> Result<SignedPacket> {
+    pub fn from_relay_payload(public_key: &PublicKey, response: &Bytes) -> Result<SignedPacket> {
         let inner = Inner::try_from_response(public_key, response)?;
 
         Ok(SignedPacket { inner })
@@ -182,18 +184,18 @@ impl SignedPacket {
 
         Ok(SignedPacket {
             inner: Inner::try_from_parts(
-                keypair.public_key(),
-                encoded_packet,
-                timestamp,
-                signature,
+                &keypair.public_key(),
+                &encoded_packet,
+                &timestamp,
+                &signature,
             )?,
         })
     }
 
     /// Returns 32 bytes PublicKey concatenated with the 64 bytes Signature,
     /// 8 bytes big-endian timestamp, and serialized DNS Packet.
-    pub fn to_bytes(&self) -> Bytes {
-        self.inner.borrow_owner().clone()
+    pub fn as_bytes(&self) -> &Bytes {
+        self.inner.borrow_owner()
     }
 
     /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
@@ -321,7 +323,7 @@ impl TryFrom<&MutableItem> for SignedPacket {
         let signature: Signature = i.signature().into();
 
         Ok(Self {
-            inner: Inner::try_from_parts(public_key, encoded_packet, seq, signature)?,
+            inner: Inner::try_from_parts(&public_key, &encoded_packet, &seq, &signature)?,
         })
     }
 }
@@ -336,7 +338,7 @@ impl AsRef<[u8]> for SignedPacket {
 
 impl Clone for SignedPacket {
     fn clone(&self) -> Self {
-        Self::from_bytes(self.to_bytes(), false).unwrap()
+        Self::from_bytes(self.as_bytes(), false).unwrap()
     }
 }
 
@@ -447,8 +449,8 @@ mod tests {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         assert!(SignedPacket::from_relay_payload(
-            signed_packet.public_key().to_owned(),
-            signed_packet.to_relay_payload()
+            signed_packet.public_key(),
+            &signed_packet.to_relay_payload()
         )
         .is_ok());
     }
@@ -458,7 +460,7 @@ mod tests {
         let keypair = Keypair::random();
 
         let bytes = Bytes::from(vec![0; 1073]);
-        let error = SignedPacket::from_relay_payload(keypair.public_key().clone(), bytes);
+        let error = SignedPacket::from_relay_payload(&keypair.public_key(), &bytes);
 
         assert!(error.is_err());
     }
@@ -597,16 +599,16 @@ mod tests {
             RData::TXT("hello".try_into().unwrap()),
         ));
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        let bytes = signed.to_bytes();
-        let from_bytes = SignedPacket::from_bytes(bytes.clone(), true).unwrap();
-        assert_eq!(signed.to_bytes(), from_bytes.to_bytes());
+        let bytes = signed.as_bytes();
+        let from_bytes = SignedPacket::from_bytes(bytes, true).unwrap();
+        assert_eq!(signed.as_bytes(), from_bytes.as_bytes());
         let from_bytes2 = SignedPacket::from_bytes(bytes, false).unwrap();
-        assert_eq!(signed.to_bytes(), from_bytes2.to_bytes());
+        assert_eq!(signed.as_bytes(), from_bytes2.as_bytes());
 
         let public_key = keypair.public_key();
         let payload = signed.to_relay_payload();
-        let from_relay_payload = SignedPacket::from_relay_payload(public_key, payload).unwrap();
-        assert_eq!(signed.to_bytes(), from_relay_payload.to_bytes());
+        let from_relay_payload = SignedPacket::from_relay_payload(&public_key, &payload).unwrap();
+        assert_eq!(signed.as_bytes(), from_relay_payload.as_bytes());
     }
 
     #[test]
@@ -623,6 +625,6 @@ mod tests {
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
         let cloned = signed.clone();
 
-        assert_eq!(cloned.to_bytes(), signed.to_bytes());
+        assert_eq!(cloned.as_bytes(), signed.as_bytes());
     }
 }
