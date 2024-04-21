@@ -112,7 +112,7 @@ impl PkarrClient {
 
         let mut rpc = Rpc::new()?.with_read_only(settings.dht.read_only);
 
-        if let Some(bootstrap) = settings.dht.bootstrap {
+        if let Some(bootstrap) = settings.dht.bootstrap.to_owned() {
             rpc = rpc.with_bootstrap(bootstrap);
         }
 
