@@ -1,6 +1,7 @@
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
+#[cfg(feature = "dht")]
 use mainline::{Id, MutableItem};
 use self_cell::self_cell;
 use simple_dns::{
@@ -101,10 +102,10 @@ impl SignedPacket {
 
     /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
     /// like ones stored on disk or in a database.
-    pub fn from_bytes_unchecked(bytes: &Bytes) -> SignedPacket {
+    pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: Instant) -> SignedPacket {
         SignedPacket {
             inner: Inner::try_from_bytes(bytes).unwrap(),
-            last_seen: Instant::now(),
+            last_seen,
         }
     }
 
@@ -219,11 +220,6 @@ impl SignedPacket {
     /// Return the DNS [Packet].
     pub fn packet(&self) -> &Packet {
         self.inner.borrow_dependent()
-    }
-
-    /// Returns the sha1 hash of the [SignedPacket::public_key] used as the lookup target in [mainline::MutableItem].
-    pub fn target(&self) -> Id {
-        MutableItem::target_from_key(&self.as_bytes()[0..32].try_into().unwrap(), &None)
     }
 
     pub fn last_seen(&self) -> &Instant {
@@ -367,7 +363,7 @@ impl AsRef<[u8]> for SignedPacket {
 
 impl Clone for SignedPacket {
     fn clone(&self) -> Self {
-        Self::from_bytes_unchecked(self.as_bytes())
+        Self::from_bytes_unchecked(self.as_bytes(), self.last_seen)
     }
 }
 
@@ -375,8 +371,9 @@ impl Display for SignedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "SignedPacket ({}):\n    timestamp: {},\n    signature: {}\n    records:\n",
+            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {},\n    signature: {}\n    records:\n",
             &self.public_key(),
+            &self.last_seen().elapsed().as_secs(),
             &self.timestamp(),
             &self.signature(),
         )?;
@@ -631,7 +628,7 @@ mod tests {
         let bytes = signed.as_bytes();
         let from_bytes = SignedPacket::from_bytes(bytes).unwrap();
         assert_eq!(signed.as_bytes(), from_bytes.as_bytes());
-        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes);
+        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, signed.last_seen);
         assert_eq!(signed.as_bytes(), from_bytes2.as_bytes());
 
         let public_key = keypair.public_key();
