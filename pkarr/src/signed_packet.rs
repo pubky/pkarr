@@ -17,8 +17,8 @@ use std::{
 const DOT: char = '.';
 /// Default minimum TTL 30 seconds
 pub const DEFAULT_MINIMUM_TTL: u32 = 30;
-/// Default maximum TTL 30 seconds
-pub const DEFAULT_MAXIMUM_TTL: u32 = 1800;
+/// Default maximum TTL 24 hours
+pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 
 self_cell!(
     struct Inner {
@@ -282,18 +282,34 @@ impl SignedPacket {
     /// The `minimum ttl` is calculated from the resource records' `ttl` values, and optionally
     /// clamped by a `minimum_ttl` and `maximum_ttl` values.
     pub fn is_fresh(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> bool {
-        let mut ttl = DEFAULT_MINIMUM_TTL;
+        (self.last_seen.elapsed().as_secs() as u32) < self.ttl(minimum_ttl, maximum_ttl)
+    }
 
-        for answer in self.packet().answers.iter() {
-            ttl = answer
-                .ttl
-                .max(minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL))
-                .min(maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL));
+    // === Private Methods ===
+
+    /// Calculates the overall `ttl` of this packet.
+    ///
+    /// - If there are no resource records, returns the `minimum_ttl` or [DEFAULT_MINIMUM_TTL]
+    /// - If there are resource records, returns the smallest `ttl`, clamped by `minimum_ttl` or [DEFAULT_MINIMUM_TTL] and `maximum_ttl` or [DEFAULT_MAXIMUM_TTL]
+    fn ttl(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> u32 {
+        let records = &self.packet().answers;
+
+        let mut ttl = if records.is_empty() {
+            minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL)
+        } else {
+            maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL)
+        };
+
+        for record in records {
+            ttl = ttl.min(
+                record
+                    .ttl
+                    .max(minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL))
+                    .min(maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL)),
+            );
         }
 
-        let elapsed = self.last_seen.elapsed().as_secs() as u32;
-
-        elapsed <= ttl
+        ttl
     }
 }
 
@@ -638,8 +654,146 @@ mod tests {
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
         let cloned = signed.clone();
 
-        dbg!(&signed, &cloned);
-
         assert_eq!(cloned.as_bytes(), signed.as_bytes());
+    }
+
+    #[test]
+    fn is_fresh_minimum_ttl() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            10,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        signed.last_seen = Instant::now() - Duration::from_secs(20);
+
+        assert!(
+            signed.is_fresh(None, None),
+            "input minimum_ttl is the default 30 so ttl = 30"
+        );
+
+        assert!(
+            !signed.is_fresh(Some(0), None),
+            "input minimum_ttl is 0 so ttl = 10 (smallest in resource records)"
+        );
+    }
+
+    #[test]
+    fn is_fresh_maximum_ttl() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            3 * DEFAULT_MAXIMUM_TTL,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        signed.last_seen = Instant::now() - Duration::from_secs(2 * DEFAULT_MAXIMUM_TTL as u64);
+
+        assert!(
+            !signed.is_fresh(None, None),
+            "input maximum_ttl is the dfeault 86400 so maximum ttl = 86400"
+        );
+
+        assert!(
+            signed.is_fresh(None, Some(7 * DEFAULT_MAXIMUM_TTL)),
+            "input maximum_ttl is 7 * 86400 so ttl = 3 * 86400 (smallest in resource records)"
+        );
+    }
+
+    #[test]
+    fn fresh_resource_records() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            60,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        signed.last_seen = Instant::now() - Duration::from_secs(30);
+
+        assert_eq!(signed.fresh_resource_records("_foo").count(), 1);
+    }
+
+    #[test]
+    fn ttl_empty() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        assert_eq!(signed.ttl(None, None), 30);
+    }
+
+    #[test]
+    fn ttl_with_records_less_than_minimum() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MINIMUM_TTL / 2,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MINIMUM_TTL / 4,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        assert_eq!(signed.ttl(None, None), DEFAULT_MINIMUM_TTL);
+
+        assert_eq!(signed.ttl(Some(0), None), DEFAULT_MINIMUM_TTL / 4);
+    }
+
+    #[test]
+    fn ttl_with_records_more_than_maximum() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MAXIMUM_TTL * 2,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MAXIMUM_TTL * 4,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        assert_eq!(signed.ttl(None, None), DEFAULT_MAXIMUM_TTL);
+
+        assert_eq!(
+            signed.ttl(Some(0), Some(DEFAULT_MAXIMUM_TTL * 8)),
+            DEFAULT_MAXIMUM_TTL * 2
+        );
     }
 }
