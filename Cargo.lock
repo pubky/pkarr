@@ -410,7 +410,7 @@ checksum = "d3262e75e648fce39813cb56ac41f3c3e3f65217ebf3844d818d1f9398cfb0dc"
 [[package]]
 name = "mainline"
 version = "1.5.0"
-source = "git+https://github.com/Nuhvi/mainline.git?branch=v2#88e280356f17ed72bf568a512951db095a689c17"
+source = "git+https://github.com/Nuhvi/mainline.git?branch=v2#ed9bfed36872301c08306f8c3777229c6e92609f"
 dependencies = [
  "bytes",
  "crc",

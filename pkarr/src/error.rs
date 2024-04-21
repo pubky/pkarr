@@ -1,6 +1,7 @@
 //! Main Crate Error
 
 use crate::client::ActorMessage;
+use crate::keys::PublicKey;
 
 #[derive(thiserror::Error, Debug)]
 /// Pkarr crate error enum.
@@ -53,4 +54,8 @@ pub enum Error {
     #[error(transparent)]
     /// The dht was shutdown.
     DhtIsShutdown(#[from] flume::SendError<ActorMessage>),
+
+    #[error("Failed to resolve SignedPacket for publickey: {0}")]
+    /// The dht was shutdown.
+    NotFound(String),
 }

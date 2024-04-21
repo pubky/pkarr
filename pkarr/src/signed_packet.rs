@@ -63,7 +63,7 @@ impl Inner {
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
-    last_seen: Instant,
+    pub(crate) last_seen: Instant,
 }
 
 impl SignedPacket {

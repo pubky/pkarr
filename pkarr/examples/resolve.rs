@@ -1,7 +1,10 @@
 use tracing::Level;
 use tracing_subscriber;
 
-use std::time::Instant;
+use std::{
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 use pkarr::{PkarrClient, PublicKey};
 
@@ -34,20 +37,28 @@ fn main() {
     println!("\n=== COLD LOOKUP ===");
     resolve(&client, &public_key);
 
-    println!("=== SUBSEQUENT LOOKUP ===");
-    resolve(&client, &public_key);
+    loop {
+        sleep(Duration::from_secs(1));
+        println!("=== SUBSEQUENT LOOKUP ===");
+        resolve(&client, &public_key)
+    }
 }
 
 fn resolve(client: &PkarrClient, public_key: &PublicKey) {
     let start = Instant::now();
 
-    if let Ok(signed_packet) = client.resolve(public_key) {
-        println!(
-            "\nResolved in {:?} milliseconds {}",
-            start.elapsed().as_millis(),
-            signed_packet
-        );
-    } else {
-        println!("\nFailed to resolve {}", public_key);
+    match client.resolve(public_key) {
+        Ok(signed_packet) => {
+            println!(
+                "\nResolved in {:?} milliseconds {}",
+                start.elapsed().as_millis(),
+                signed_packet
+            );
+        }
+        Err(error) => {
+            dbg!(error);
+
+            println!("\nFailed to resolve {}", public_key);
+        }
     }
 }

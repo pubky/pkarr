@@ -9,6 +9,7 @@ pub use simple_dns as dns;
 
 // Modules
 
+mod cache;
 mod client;
 mod error;
 mod keys;

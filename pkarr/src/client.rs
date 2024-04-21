@@ -3,8 +3,9 @@ use lru::LruCache;
 use mainline::{
     dht::DhtSettings,
     rpc::{
-        messages, QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response,
-        Rpc, RpcTickReport,
+        messages::{self, ErrorSpecific},
+        QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response, Rpc,
+        RpcTickReport,
     },
     Id, MutableItem,
 };
@@ -14,16 +15,18 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use tracing::debug;
 
-use crate::{PublicKey, Result, SignedPacket};
+use crate::{cache::PkarrCache, Error, PublicKey, Result, SignedPacket};
 
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
+
+// TODO: HTTP relay should return some caching headers.
 
 #[derive(Debug, Clone)]
 struct Settings {
     dht: DhtSettings,
     cache_size: usize,
-    // TODO: add cusotmization of minimum ttl and maximum ttl
     minimum_ttl: Option<u32>,
     maximum_ttl: Option<u32>,
 }
@@ -100,6 +103,9 @@ impl PkarrClientBuilder {
 /// Main client for publishing and resolving [SignedPacket]s.
 pub struct PkarrClient {
     sender: Sender<ActorMessage>,
+    cache: PkarrCache,
+    minimum_ttl: Option<u32>,
+    maximum_ttl: Option<u32>,
 }
 
 impl PkarrClient {
@@ -116,16 +122,17 @@ impl PkarrClient {
             rpc = rpc.with_port(port)?;
         }
 
-        let state = State {
-            rpc,
-            resolve_senders: HashMap::new(),
-            cache: LruCache::new(NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap()),
-            settings,
-        };
+        let cache = PkarrCache::new(NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap());
 
-        thread::spawn(move || run(state, receiver));
+        let cloned = cache.clone();
+        thread::spawn(move || run(rpc, settings.dht, cloned, receiver));
 
-        Ok(PkarrClient { sender })
+        Ok(PkarrClient {
+            sender,
+            cache,
+            minimum_ttl: settings.minimum_ttl,
+            maximum_ttl: settings.maximum_ttl,
+        })
     }
 
     /// Returns a builder to edit settings before creating PkarrClient.
@@ -134,7 +141,7 @@ impl PkarrClient {
     }
 
     pub fn publish(&self, signed_packet: &SignedPacket) -> mainline::Result<Id> {
-        let (sender, receiver) = flume::unbounded::<mainline::Result<Id>>();
+        let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
 
         let _ = self
             .sender
@@ -143,17 +150,56 @@ impl PkarrClient {
         receiver.recv()?
     }
 
-    /// Returns the first valid [SignedPacket] available from cache, or relays, or the Dht.
+    /// Returns the first valid [SignedPacket] available from cache, or the Dht.
+    ///
+    /// # Errors
+    /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
+    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    ///
+    /// - Returns a [Error::NotFound] if no packet was resolved.
     pub fn resolve(&self, public_key: &PublicKey) -> Result<SignedPacket> {
-        let (sender, receiver) = flume::unbounded::<SignedPacket>();
-
         let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
 
-        let _ = self.sender.send(ActorMessage::Resolve(target, sender));
+        if let Some(mut cached) = self.cache.get(&target) {
+            if !cached.is_fresh(self.minimum_ttl, self.maximum_ttl) {
+                let (sender, receiver) = flume::bounded::<SignedPacket>(1);
 
-        let first = receiver.recv()?;
+                let most_recent_known_timestamp = Some(cached.timestamp());
 
-        Ok(first)
+                self.sender
+                    // Sending the timestamp of the last known cache, help save some bandwith,
+                    // since remote nodes will not send the encoded packet if they don't know
+                    // any more recent versions.
+                    //
+                    // But the rpc should receive the NoMoreRecentValues correctly.
+                    .send(ActorMessage::Resolve(
+                        target,
+                        sender,
+                        most_recent_known_timestamp,
+                    ))?;
+
+                // Fire and forget. Immediatly return the known value.
+
+                // TODO: Add a mode in the settings to control this behavior (return expired
+                // packets?)
+            }
+
+            return Ok(cached.to_owned());
+        };
+
+        let (sender, receiver) = flume::bounded::<SignedPacket>(1);
+
+        self.sender
+            // Sending the timestamp of the last known cache, help save some bandwith,
+            // since remote nodes will not send the encoded packet if they don't know
+            // any more recent versions.
+            //
+            // But the rpc should receive the NoMoreRecentValues correctly.
+            .send(ActorMessage::Resolve(target, sender, None))?;
+
+        receiver
+            .recv()
+            .map_err(|_| Error::NotFound(public_key.to_string()))
     }
 
     /// Shutdown the actor thread loop.
@@ -169,12 +215,19 @@ impl PkarrClient {
 struct State {
     rpc: Rpc,
     resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>>,
-    cache: LruCache<Id, SignedPacket>,
-    settings: Settings,
+    cache: PkarrCache,
+    settings: DhtSettings,
 }
 
-fn run(mut state: State, receiver: Receiver<ActorMessage>) {
+fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receiver<ActorMessage>) {
     let mut server = mainline::server::Server::default();
+
+    let mut state = State {
+        rpc,
+        resolve_senders: HashMap::new(),
+        cache,
+        settings,
+    };
 
     loop {
         dht_tick(&mut state, &mut server);
@@ -192,7 +245,7 @@ fn run(mut state: State, receiver: Receiver<ActorMessage>) {
                     let mutable_item: MutableItem = (&signed_packet).into();
                     let target = mutable_item.target();
 
-                    state.cache.put(signed_packet.target(), signed_packet);
+                    state.cache.put(*target, signed_packet);
 
                     let request = messages::PutRequestSpecific::PutMutable(
                         messages::PutMutableRequestArguments {
@@ -209,26 +262,14 @@ fn run(mut state: State, receiver: Receiver<ActorMessage>) {
 
                     state.rpc.put(*target, request, Some(sender))
                 }
-                ActorMessage::Resolve(target, sender) => {
-                    if let Some(cached) = state.cache.get(&target) {
-                        if cached.is_fresh(state.settings.minimum_ttl, state.settings.maximum_ttl) {
-                            sender.send(cached.to_owned());
-
-                            return;
-                        }
-
-                        let timestamp = cached.timestamp();
-
-                        dht_request(&mut state, target, Some(timestamp));
+                ActorMessage::Resolve(target, sender, most_recent_known_timestamp) => {
+                    if let Some(set) = state.resolve_senders.get_mut(&target) {
+                        set.push(sender);
                     } else {
-                        if let Some(set) = state.resolve_senders.get_mut(&target) {
-                            set.push(sender);
-                        } else {
-                            state.resolve_senders.insert(target, vec![sender]);
-                        };
-
-                        dht_request(&mut state, target, None);
+                        state.resolve_senders.insert(target, vec![sender]);
                     };
+
+                    dht_request(&mut state, target, most_recent_known_timestamp);
                 }
             }
         }
@@ -240,6 +281,7 @@ fn dht_request(state: &mut State, target: Id, most_recent_known_timestamp: Optio
     let request = messages::RequestTypeSpecific::GetValue(messages::GetValueRequestArguments {
         target,
         seq: most_recent_known_timestamp.map(|t| t as i64),
+        // seq: None,
         salt: None,
     });
 
@@ -270,13 +312,15 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
                     .get(target)
                     // Do not filter expired cached packets, because we care more that
                     // they are more recent.
-                    .map_or(true, |cached| signed_packet.more_recent_than(cached));
+                    .map_or(true, |cached| signed_packet.more_recent_than(&cached));
 
                 if is_most_recent {
+                    // Save at cache, and then send empty notification.
+
                     state.cache.put(*target, signed_packet.to_owned());
 
                     if let Some(set) = state.resolve_senders.get_mut(target) {
-                        while let Some(sender) = set.pop() {
+                        for sender in set {
                             sender.send(signed_packet.to_owned());
                         }
 
@@ -284,6 +328,35 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
                     }
                 }
             }
+        }
+        Some(ReceivedFrom {
+            message:
+                ReceivedMessage::QueryResponse(QueryResponse {
+                    target,
+                    response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
+                }),
+            ..
+        }) => {
+            // If there is no cached value, then using the  timestamp wasn't a good idea.
+            if let Some(mut cached) = state.cache.get(target) {
+                if *seq >= (cached.timestamp() as i64) {
+                    debug!(?target, "Got NoMoreRecentValue, updating last_seen");
+
+                    // We have a confirmation from the network that it has this
+                    // value, so we update its last_seen
+                    cached.last_seen = Instant::now();
+                    state.cache.put(*target, cached.to_owned());
+
+                    // TODO: if resolve blocks on new fresh records, uncomment this
+
+                    // if let Some(set) = state.resolve_senders.get(target) {
+                    //     for sender in set {
+                    //         sender.send(cached.to_owned());
+                    //     }
+                    // }
+                    // state.resolve_senders.remove(target);
+                }
+            };
         }
         Some(ReceivedFrom {
             from,
@@ -298,12 +371,14 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
 
 pub enum ActorMessage {
     Publish(SignedPacket, Sender<mainline::Result<Id>>),
-    Resolve(Id, Sender<SignedPacket>),
+    Resolve(Id, Sender<SignedPacket>, Option<u64>),
     Shutdown(Sender<()>),
 }
 
 #[cfg(test)]
 mod tests {
+    use std::thread::sleep;
+
     use mainline::Testnet;
 
     use super::*;
@@ -333,12 +408,17 @@ mod tests {
 
         let x = a.publish(&signed_packet);
 
-        let mut b = PkarrClient::builder()
+        let b = PkarrClient::builder()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
-        let resolved = b.resolve(&keypair.public_key()).unwrap();
 
+        let resolved = b.resolve(&keypair.public_key()).unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(b.cache.len(), 1);
+
+        let from_cache = b.resolve(&keypair.public_key()).unwrap();
+        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(from_cache.last_seen(), resolved.last_seen());
     }
 }
