@@ -1,7 +1,7 @@
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
-use mainline::MutableItem;
+use mainline::{Id, MutableItem};
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
@@ -11,10 +11,14 @@ use std::{
     char,
     fmt::{self, Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
-    time::{Duration, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 const DOT: char = '.';
+/// Default minimum TTL 30 seconds
+pub const DEFAULT_MINIMUM_TTL: u32 = 30;
+/// Default maximum TTL 30 seconds
+pub const DEFAULT_MAXIMUM_TTL: u32 = 1800;
 
 self_cell!(
     struct Inner {
@@ -58,6 +62,7 @@ impl Inner {
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
+    last_seen: Instant,
 }
 
 impl SignedPacket {
@@ -90,6 +95,7 @@ impl SignedPacket {
 
         Ok(SignedPacket {
             inner: Inner::try_from_bytes(bytes)?,
+            last_seen: Instant::now(),
         })
     }
 
@@ -98,6 +104,7 @@ impl SignedPacket {
     pub fn from_bytes_unchecked(bytes: &Bytes) -> SignedPacket {
         SignedPacket {
             inner: Inner::try_from_bytes(bytes).unwrap(),
+            last_seen: Instant::now(),
         }
     }
 
@@ -160,6 +167,7 @@ impl SignedPacket {
                 timestamp,
                 &encoded_packet,
             )?,
+            last_seen: Instant::now(),
         })
     }
 
@@ -184,18 +192,23 @@ impl SignedPacket {
         PublicKey::try_from(&self.inner.borrow_owner()[0..32]).unwrap()
     }
 
+    /// Returns the [Signature] of the the bencoded sequence number concatenated with the
+    /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
+    pub fn signature(&self) -> Signature {
+        Signature::try_from(&self.inner.borrow_owner()[32..96]).unwrap()
+    }
+
     /// Returns the timestamp in microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).
+    ///
+    /// This timestamp is authored by the controller of the keypair,
+    /// and it is trusted as a way to order which packets where authored after which,
+    /// but it shouldn't be used for caching for example, instead, use [SignedPacket::last_seen]
+    /// which is set when you create a new packet.
     pub fn timestamp(&self) -> u64 {
         let bytes = self.inner.borrow_owner();
         let slice: [u8; 8] = bytes[96..104].try_into().unwrap();
 
         u64::from_be_bytes(slice)
-    }
-
-    /// Returns the [Signature] of the the bencoded sequence number concatenated with the
-    /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
-    pub fn signature(&self) -> Signature {
-        Signature::try_from(&self.inner.borrow_owner()[32..96]).unwrap()
     }
 
     /// Returns the DNS [Packet] compressed and encoded.
@@ -206,6 +219,15 @@ impl SignedPacket {
     /// Return the DNS [Packet].
     pub fn packet(&self) -> &Packet {
         self.inner.borrow_dependent()
+    }
+
+    /// Returns the sha1 hash of the [SignedPacket::public_key] used as the lookup target in [mainline::MutableItem].
+    pub fn target(&self) -> Id {
+        MutableItem::target_from_key(&self.as_bytes()[0..32].try_into().unwrap(), &None)
+    }
+
+    pub fn last_seen(&self) -> &Instant {
+        &self.last_seen
     }
 
     // === Public Methods ===
@@ -240,23 +262,38 @@ impl SignedPacket {
             .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
     }
 
-    /// Return the duration of time elapsed since the timestamp of this [SignedPacket].
-    pub fn elapsed(&self) -> Duration {
-        system_time() - Duration::from_micros(self.timestamp())
-    }
-
     /// Similar to [resource_records](SignedPacket::resource_records), but filters out
-    /// expired records.
+    /// expired records, according the the [SignedPacket::last_seen] value and each record's `ttl`.
     pub fn fresh_resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
 
-        let elapsed = self.elapsed().as_secs() as u32;
+        let elapsed = self.last_seen().elapsed().as_secs() as u32;
 
         self.packet()
             .answers
             .iter()
             .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > elapsed)
+    }
+
+    /// Returns whether or not this packet is fresh enough, by comparing the `minimum ttl` to this
+    /// packet's [SignedPacket::last_seen].
+    ///
+    /// The `minimum ttl` is calculated from the resource records' `ttl` values, and optionally
+    /// clamped by a `minimum_ttl` and `maximum_ttl` values.
+    pub fn is_fresh(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> bool {
+        let mut ttl = DEFAULT_MINIMUM_TTL;
+
+        for answer in self.packet().answers.iter() {
+            ttl = answer
+                .ttl
+                .max(minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL))
+                .min(maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL));
+        }
+
+        let elapsed = self.last_seen.elapsed().as_secs() as u32;
+
+        elapsed <= ttl
     }
 }
 
@@ -289,7 +326,6 @@ impl From<&SignedPacket> for MutableItem {
 }
 
 #[cfg(feature = "dht")]
-// TODO: make a From that doesn't check anything
 impl TryFrom<&MutableItem> for SignedPacket {
     type Error = Error;
 
@@ -300,6 +336,7 @@ impl TryFrom<&MutableItem> for SignedPacket {
 
         Ok(Self {
             inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
+            last_seen: Instant::now(),
         })
     }
 }

@@ -18,18 +18,14 @@ use std::{
 use crate::{PublicKey, Result, SignedPacket};
 
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
-/// Default minimum TTL 30 seconds
-pub const DEFAULT_MINIMUM_TTL: u32 = 30;
-/// Default maximum TTL 30 seconds
-pub const DEFAULT_MAXIMUM_TTL: u32 = 1800;
 
 #[derive(Debug, Clone)]
 struct Settings {
     dht: DhtSettings,
     cache_size: usize,
     // TODO: add cusotmization of minimum ttl and maximum ttl
-    minimum_ttl: u32,
-    maximum_ttl: u32,
+    minimum_ttl: Option<u32>,
+    maximum_ttl: Option<u32>,
 }
 
 impl Default for Settings {
@@ -37,8 +33,8 @@ impl Default for Settings {
         Self {
             dht: DhtSettings::default(),
             cache_size: DEFAULT_CACHE_SIZE,
-            minimum_ttl: DEFAULT_MINIMUM_TTL,
-            maximum_ttl: DEFAULT_MAXIMUM_TTL,
+            minimum_ttl: None,
+            maximum_ttl: None,
         }
     }
 }
@@ -76,22 +72,22 @@ impl PkarrClientBuilder {
     }
 
     /// Set the minimum ttl for a cached [SignedPacket].
-    /// Defaults to [DEFAULT_MINIMUM_TTL].
+    /// Defaults to [crate::signed_packet::DEFAULT_MINIMUM_TTL].
     ///
     /// Internally the cache will expire after the smallest ttl in
     /// the resource records, unless it is smaller than this minimum.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.minimum_ttl = ttl;
+        self.settings.minimum_ttl = Some(ttl);
         self
     }
 
     /// Set the maximum ttl for a cached [SignedPacket].
-    /// Defaults to [DEFAULT_MAXIMUM_TTL].
+    /// Defaults to [crate::signed_packet::DEFAULT_MAXIMUM_TTL].
     ///
     /// Internally the cache will expire after the smallest ttl in
     /// the resource records, unless it is bigger than this maximum.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.maximum_ttl = ttl;
+        self.settings.maximum_ttl = Some(ttl);
         self
     }
 
@@ -151,9 +147,9 @@ impl PkarrClient {
     pub fn resolve(&self, public_key: &PublicKey) -> Result<SignedPacket> {
         let (sender, receiver) = flume::unbounded::<SignedPacket>();
 
-        let _ = self
-            .sender
-            .send(ActorMessage::Resolve(public_key.clone(), sender));
+        let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
+
+        let _ = self.sender.send(ActorMessage::Resolve(target, sender));
 
         let first = receiver.recv()?;
 
@@ -170,36 +166,10 @@ impl PkarrClient {
     }
 }
 
-struct CachedPacket {
-    expires_at: Instant,
-    signed_packet: SignedPacket,
-}
-
-impl CachedPacket {
-    fn new(signed_packet: &SignedPacket, minimum_ttl: u32, maximum_ttl: u32) -> Self {
-        let mut ttl = minimum_ttl;
-
-        for answer in signed_packet.packet().answers.iter() {
-            ttl = answer.ttl.max(minimum_ttl).min(maximum_ttl);
-        }
-
-        Self {
-            // TODO: set the ttl from signed_packet records' ttls
-            expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-            signed_packet: signed_packet.to_owned(),
-        }
-    }
-
-    fn is_fresh(&self) -> bool {
-        let now = Instant::now();
-        now < self.expires_at
-    }
-}
-
 struct State {
     rpc: Rpc,
     resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>>,
-    cache: LruCache<PublicKey, CachedPacket>,
+    cache: LruCache<Id, SignedPacket>,
     settings: Settings,
 }
 
@@ -222,14 +192,7 @@ fn run(mut state: State, receiver: Receiver<ActorMessage>) {
                     let mutable_item: MutableItem = (&signed_packet).into();
                     let target = mutable_item.target();
 
-                    state.cache.put(
-                        signed_packet.public_key().to_owned(),
-                        CachedPacket::new(
-                            &signed_packet,
-                            state.settings.minimum_ttl,
-                            state.settings.maximum_ttl,
-                        ),
-                    );
+                    state.cache.put(signed_packet.target(), signed_packet);
 
                     let request = messages::PutRequestSpecific::PutMutable(
                         messages::PutMutableRequestArguments {
@@ -246,17 +209,15 @@ fn run(mut state: State, receiver: Receiver<ActorMessage>) {
 
                     state.rpc.put(*target, request, Some(sender))
                 }
-                ActorMessage::Resolve(public_key, sender) => {
-                    let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
-
-                    if let Some(cached) = state.cache.get(&public_key) {
-                        if cached.is_fresh() {
-                            sender.send(cached.signed_packet.clone());
+                ActorMessage::Resolve(target, sender) => {
+                    if let Some(cached) = state.cache.get(&target) {
+                        if cached.is_fresh(state.settings.minimum_ttl, state.settings.maximum_ttl) {
+                            sender.send(cached.to_owned());
 
                             return;
                         }
 
-                        let timestamp = cached.signed_packet.timestamp();
+                        let timestamp = cached.timestamp();
 
                         dht_request(&mut state, target, Some(timestamp));
                     } else {
@@ -303,29 +264,16 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
                 }),
             ..
         }) => {
-            if let Ok(signed_packet) = SignedPacket::try_from(mutable_item) {
-                let timestamp = signed_packet.timestamp();
-                let public_key = signed_packet.public_key();
-
+            if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
                 let is_most_recent = state
                     .cache
-                    .get(&public_key)
+                    .get(target)
                     // Do not filter expired cached packets, because we care more that
                     // they are more recent.
-                    .map_or(true, |cached| {
-                        signed_packet.more_recent_than(&cached.signed_packet)
-                    });
+                    .map_or(true, |cached| signed_packet.more_recent_than(cached));
 
                 if is_most_recent {
-                    state.cache.put(
-                        public_key.clone(),
-                        // TODO: compare the packet TTLs and the DEFAULT_MINIMUM_TTL
-                        CachedPacket::new(
-                            &signed_packet,
-                            state.settings.minimum_ttl,
-                            state.settings.maximum_ttl,
-                        ),
-                    );
+                    state.cache.put(*target, signed_packet.to_owned());
 
                     if let Some(set) = state.resolve_senders.get_mut(target) {
                         while let Some(sender) = set.pop() {
@@ -350,7 +298,7 @@ fn dht_tick(state: &mut State, server: &mut mainline::server::Server) {
 
 pub enum ActorMessage {
     Publish(SignedPacket, Sender<mainline::Result<Id>>),
-    Resolve(PublicKey, Sender<SignedPacket>),
+    Resolve(Id, Sender<SignedPacket>),
     Shutdown(Sender<()>),
 }
 
