@@ -14,7 +14,6 @@ use crate::{cache::PkarrCache, Error, PublicKey, Result, SignedPacket};
 
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
-// TODO: Figure out how or should we use Cas
 // TODO: Resolver
 // TODO: test shutdown
 // TODO: examine errors (failed to publish, failed to bind socket, unused errors...)
@@ -149,7 +148,7 @@ impl PkarrClient {
     pub fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let mutable_item: MutableItem = (signed_packet).into();
 
-        self.cache.put(mutable_item.target(), signed_packet);
+        self.cache.put(signed_packet);
 
         let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
 
@@ -184,9 +183,7 @@ impl PkarrClient {
     /// - Returns a [Error::NotFound] if no packet was resolved.
     #[instrument(skip(self))]
     pub fn resolve(&self, public_key: &PublicKey) -> Result<SignedPacket> {
-        let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
-
-        let mut cached_packet = self.cache.get(&target);
+        let mut cached_packet = self.cache.get(public_key);
 
         if let Some(ref cached) = cached_packet {
             let ttl = cached.ttl(self.minimum_ttl, self.maximum_ttl);
@@ -210,7 +207,7 @@ impl PkarrClient {
 
         self.sender
             .send(ActorMessage::Resolve(
-                target,
+                MutableItem::target_from_key(public_key.as_bytes(), &None),
                 sender,
                 // Sending the `timestamp` of the known cache, help save some bandwith,
                 // since remote nodes will not send the encoded packet if they don't know
@@ -230,7 +227,7 @@ impl PkarrClient {
 
                     debug!("resolved more recent signed_packet.");
 
-                    self.cache.put(&target, &signed_packet);
+                    self.cache.put(&signed_packet);
 
                     return Ok(signed_packet);
                 }
@@ -242,7 +239,7 @@ impl PkarrClient {
                             debug!("Remote node has no more recent value, refreshing cached signed_packet.");
 
                             cached.refresh();
-                            self.cache.put(&target, cached);
+                            self.cache.put(cached);
 
                             return Ok(cached.clone());
                         }

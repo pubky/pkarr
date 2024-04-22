@@ -15,11 +15,9 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
+
 const DOT: char = '.';
-/// Default minimum TTL 30 seconds
-pub const DEFAULT_MINIMUM_TTL: u32 = 30;
-/// Default maximum TTL 24 hours
-pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 
 self_cell!(
     struct Inner {
@@ -293,18 +291,18 @@ impl SignedPacket {
 
     /// Update the [Self::last_seen] property to [Instant::now]
     pub fn refresh(&mut self) {
-        self.set_last_seen(Instant::now())
+        self.set_last_seen(&Instant::now())
     }
 
     /// Set the [Self::last_seen] property
-    pub fn set_last_seen(&mut self, last_seen: Instant) {
-        self.last_seen = last_seen;
+    pub fn set_last_seen(&mut self, last_seen: &Instant) {
+        self.last_seen = *last_seen;
     }
 
     /// Calculates the overall minimum `ttl` of this packet.
     ///
-    /// - If there are no resource records, returns the `minimum_ttl` or [DEFAULT_MINIMUM_TTL]
-    /// - If there are resource records, returns the smallest `ttl`, clamped by `minimum_ttl` or [DEFAULT_MINIMUM_TTL] and `maximum_ttl` or [DEFAULT_MAXIMUM_TTL]
+    /// - If there are no resource records, returns the `minimum_ttl` or [crate::DEFAULT_MINIMUM_TTL]
+    /// - If there are resource records, returns the smallest `ttl`, clamped by `minimum_ttl` or [crate::DEFAULT_MINIMUM_TTL] and `maximum_ttl` or [crate::DEFAULT_MAXIMUM_TTL]
     pub fn minimum_ttl(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> u32 {
         let records = &self.packet().answers;
 

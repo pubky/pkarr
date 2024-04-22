@@ -2,15 +2,13 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
-use mainline::Id;
-
-use crate::SignedPacket;
+use crate::{PublicKey, SignedPacket};
 
 /// A wrapper around `LruCache`. This struct is thread safe, doesn't return any references to any
 /// elements inside.
 #[derive(Debug, Clone)]
 pub struct PkarrCache {
-    inner: Arc<Mutex<LruCache<Id, SignedPacket>>>,
+    inner: Arc<Mutex<LruCache<PublicKey, SignedPacket>>>,
 }
 
 impl PkarrCache {
@@ -21,29 +19,32 @@ impl PkarrCache {
         }
     }
 
-    /// Puts a key-value pair into cache. If the key already exists in the cache,
-    /// then it updates the key's value.
-    pub fn put(&self, key: &Id, value: &SignedPacket) {
+    /// Puts [SignedPacket], if a version of the  packet already exists,
+    /// and it has the same [SignedPacket::as_bytes], then only [SignedPacket::last_seen] will be
+    /// updated, otherwise the input will be cloned.
+    pub fn put(&self, signed_packet: &SignedPacket) {
         let mut lock = self.inner.lock().unwrap();
 
-        match lock.get_mut(key) {
+        let public_key = signed_packet.public_key();
+
+        match lock.get_mut(&public_key) {
             Some(existing) => {
-                if existing.as_bytes() == value.as_bytes() {
+                if existing.as_bytes() == signed_packet.as_bytes() {
                     // just refresh the last_seen
-                    existing.set_last_seen(*value.last_seen())
+                    existing.set_last_seen(signed_packet.last_seen())
                 } else {
-                    lock.put(*key, value.clone());
+                    lock.put(public_key, signed_packet.clone());
                 }
             }
             None => {
-                lock.put(*key, value.clone());
+                lock.put(public_key, signed_packet.clone());
             }
         }
     }
 
-    /// Returns the value of the key in the cache or None if it is not present in the cache.
+    /// Returns the [SignedPacket] for the public_key in the cache or None if it is not present in the cache.
     /// Moves the key to the head of the LRU list if it exists.
-    pub fn get(&self, key: &Id) -> Option<SignedPacket> {
-        self.inner.lock().unwrap().get(key).cloned()
+    pub fn get(&self, public_key: &PublicKey) -> Option<SignedPacket> {
+        self.inner.lock().unwrap().get(public_key).cloned()
     }
 }
