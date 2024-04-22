@@ -20,7 +20,8 @@ struct Cli {
 fn main() {
     tracing_subscriber::fmt()
         // Switch to DEBUG to see incoming values and the IP of the responding nodes
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::DEBUG)
+        .with_env_filter("pkarr")
         .init();
 
     let cli = Cli::parse();

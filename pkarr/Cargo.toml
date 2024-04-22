@@ -24,7 +24,7 @@ z32 = "1.1.1"
 [dev-dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
 tokio = { version = "1.32.0", features = ["tokio-macros", "macros", "rt-multi-thread", "net"] }
-tracing-subscriber = "0.3.18"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [features]
 async= ["flume/async"]
