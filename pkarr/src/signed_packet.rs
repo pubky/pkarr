@@ -63,7 +63,7 @@ impl Inner {
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
-    pub(crate) last_seen: Instant,
+    last_seen: Instant,
 }
 
 impl SignedPacket {
@@ -272,22 +272,35 @@ impl SignedPacket {
             .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > elapsed)
     }
 
-    /// Returns whether or not this packet is fresh enough, by comparing the `minimum ttl` to this
-    /// packet's [SignedPacket::last_seen].
-    ///
-    /// The `minimum ttl` is calculated from the resource records' `ttl` values, and optionally
-    /// clamped by a `minimum_ttl` and `maximum_ttl` values.
+    /// Check that the [Self::ttl] is greater than zero.
     pub fn is_fresh(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> bool {
-        (self.last_seen.elapsed().as_secs() as u32) < self.ttl(minimum_ttl, maximum_ttl)
+        self.ttl(minimum_ttl, maximum_ttl) > 0
     }
 
-    // === Private Methods ===
+    /// calculates the remaining `ttl` by comparing the [Self::minimum_ttl] to this
+    /// packet's [SignedPacket::last_seen].
+    ///
+    /// `minimum_ttl` and `maximum_ttl` are passed to [Self::minimum_ttl] to optionally clamp its value.
+    pub fn ttl(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> u32 {
+        match self
+            .minimum_ttl(minimum_ttl, maximum_ttl)
+            .overflowing_sub(self.last_seen.elapsed().as_secs() as u32)
+        {
+            (_, true) => 0,
+            (ttl, false) => ttl,
+        }
+    }
 
-    /// Calculates the overall `ttl` of this packet.
+    /// Update the [Self::last_seen] property
+    pub fn refresh(&mut self) {
+        self.last_seen = Instant::now();
+    }
+
+    /// Calculates the overall minimum `ttl` of this packet.
     ///
     /// - If there are no resource records, returns the `minimum_ttl` or [DEFAULT_MINIMUM_TTL]
     /// - If there are resource records, returns the smallest `ttl`, clamped by `minimum_ttl` or [DEFAULT_MINIMUM_TTL] and `maximum_ttl` or [DEFAULT_MAXIMUM_TTL]
-    fn ttl(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> u32 {
+    pub fn minimum_ttl(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> u32 {
         let records = &self.packet().answers;
 
         let mut ttl = if records.is_empty() {
@@ -297,12 +310,10 @@ impl SignedPacket {
         };
 
         for record in records {
-            ttl = ttl.min(
-                record
-                    .ttl
-                    .max(minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL))
-                    .min(maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL)),
-            );
+            ttl = ttl.min(record.ttl.clamp(
+                minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL),
+                maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL),
+            ));
         }
 
         ttl
@@ -731,7 +742,7 @@ mod tests {
     }
 
     #[test]
-    fn ttl_empty() {
+    fn minimum_ttl_empty() {
         let keypair = Keypair::random();
         let mut packet = Packet::new_reply(0);
 
@@ -741,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn ttl_with_records_less_than_minimum() {
+    fn minimum_ttl_with_records_less_than_minimum() {
         let keypair = Keypair::random();
         let mut packet = Packet::new_reply(0);
 
@@ -760,13 +771,13 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert_eq!(signed.ttl(None, None), DEFAULT_MINIMUM_TTL);
+        assert_eq!(signed.minimum_ttl(None, None), DEFAULT_MINIMUM_TTL);
 
-        assert_eq!(signed.ttl(Some(0), None), DEFAULT_MINIMUM_TTL / 4);
+        assert_eq!(signed.minimum_ttl(Some(0), None), DEFAULT_MINIMUM_TTL / 4);
     }
 
     #[test]
-    fn ttl_with_records_more_than_maximum() {
+    fn minimum_ttl_with_records_more_than_maximum() {
         let keypair = Keypair::random();
         let mut packet = Packet::new_reply(0);
 
@@ -786,10 +797,10 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert_eq!(signed.ttl(None, None), DEFAULT_MAXIMUM_TTL);
+        assert_eq!(signed.minimum_ttl(None, None), DEFAULT_MAXIMUM_TTL);
 
         assert_eq!(
-            signed.ttl(Some(0), Some(DEFAULT_MAXIMUM_TTL * 8)),
+            signed.minimum_ttl(Some(0), Some(DEFAULT_MAXIMUM_TTL * 8)),
             DEFAULT_MAXIMUM_TTL * 2
         );
     }
