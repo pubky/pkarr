@@ -30,7 +30,7 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 // TODO: HTTP relay should return some caching headers.
 
 #[derive(Debug, Clone)]
-struct Settings {
+pub struct Settings {
     dht: DhtSettings,
     cache_size: usize,
     minimum_ttl: Option<u32>,
@@ -62,7 +62,7 @@ impl PkarrClientBuilder {
 
     /// Set the Dht bootstrapping nodes
     pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
-        self.settings.dht.bootstrap = Some(bootstrap.to_owned());
+        self.settings.dht.bootstrap = Some(bootstrap.to_vec());
         self
     }
 
@@ -115,12 +115,12 @@ pub struct PkarrClient {
 }
 
 impl PkarrClient {
-    fn new(settings: Settings) -> Result<PkarrClient> {
+    pub fn new(settings: Settings) -> Result<PkarrClient> {
         let (sender, receiver) = flume::bounded(32);
 
         let mut rpc = Rpc::new()?.with_read_only(settings.dht.read_only);
 
-        if let Some(bootstrap) = settings.dht.bootstrap.to_owned() {
+        if let Some(bootstrap) = settings.dht.bootstrap.clone() {
             rpc = rpc.with_bootstrap(bootstrap);
         }
 
@@ -146,94 +146,105 @@ impl PkarrClient {
         PkarrClientBuilder::default()
     }
 
-    pub fn publish(&self, signed_packet: &SignedPacket) -> Result<Id> {
-        let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
-
-        self.sender
-            .send(ActorMessage::Publish(signed_packet.to_owned(), sender))
-            .map_err(|_| Error::DhtIsShutdown)?;
-
-        Ok(receiver.recv()??)
-    }
-
-    /// Returns the first valid [SignedPacket] available from cache, or the Dht.
+    /// Publishes a [SignedPacket] to the Dht.
     ///
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
     /// the loop in the actor thread is stopped for any reason (like thread panic).
+    /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
+    /// - Returns a [Error::FailedToPublish] if all the closest nodes in the Dht responded with
+    /// errors.
+    /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
+    pub fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+        let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
+
+        self.sender
+            .send(ActorMessage::Publish(signed_packet.clone(), sender))
+            .map_err(|_| Error::DhtIsShutdown)?;
+
+        match receiver.recv() {
+            Ok(Ok(id)) => Ok(()),
+            Ok(Err(error)) => match error {
+                mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
+                // Should not be reachable unless all nodes responded with a QueryError,
+                // which is either a bug in mainline crate, or just malicious responses.
+                mainline::Error::QueryError(error) => Err(Error::FailedToPublish(error)),
+                // Should not be reachable unless we did something wrong!
+                _ => Err(Error::MainlineError(error)),
+            },
+            // Since we pass this sender to `Rpc::put`, the only reason the sender,
+            // would be dropped, is if `Rpc` is dropped, which should only happeng on shutdown.
+            Err(error) => Err(Error::DhtIsShutdown),
+        }
+    }
+
+    /// Returns the first valid [SignedPacket] available from cache, or the Dht.
     ///
+    /// If the Dht was called, in the background, it continues receiving responses
+    /// and updating the cache.
+    ///
+    /// # Errors
+    /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
+    /// the loop in the actor thread is stopped for any reason (like thread panic).
     /// - Returns a [Error::NotFound] if no packet was resolved.
     #[instrument(skip(self))]
     pub fn resolve(&self, public_key: &PublicKey) -> Result<SignedPacket> {
         let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
 
-        if let Some(mut cached) = self.cache.get(&target) {
+        let mut cached_packet = self.cache.get(&target);
+
+        if let Some(ref cached) = cached_packet {
             let ttl = cached.ttl(self.minimum_ttl, self.maximum_ttl);
+
             if ttl > 0 {
-                // Cache hit
-
                 debug!(ttl, "Have fresh signed_packet in cache.");
-                Ok(cached.to_owned())
-            } else {
-                // Cache miss with expired cache
-
-                debug!("Cached packet is not fresh. Asking the network for more recent values.");
-                let (sender, receiver) = flume::bounded::<ResolveResponse>(1);
-
-                let most_recent_known_timestamp = cached.timestamp();
-
-                self.sender
-                    .send(ActorMessage::Resolve(
-                        target,
-                        sender,
-                        // Sending the timestamp of the known cache, help save some bandwith,
-                        // since remote nodes will not send the encoded packet if they don't know
-                        // any more recent versions.
-                        most_recent_known_timestamp,
-                    ))
-                    .map_err(|_| Error::DhtIsShutdown)?;
-
-                while let Ok(response) = receiver.recv() {
-                    match response {
-                        ResolveResponse::SignedPacket(signed_packet) => {
-                            debug!("Resolve: resolved more recent signed_packet.");
-                            return Ok(signed_packet);
-                        }
-                        ResolveResponse::NoMoreRecentValue(network_timestamp) => {
-                            if network_timestamp == most_recent_known_timestamp {
-                                debug!("Remote node has no more recent value, refreshing cached signed_packet.");
-
-                                cached.refresh();
-                                self.cache.put(target, cached.to_owned());
-
-                                return Ok(cached);
-                            }
-                        }
-                    };
-                }
-
-                Err(Error::NotFound(public_key.to_string()))
-            }
-        } else {
-            // Cache miss with no cached values at all.
-
-            let (sender, receiver) = flume::bounded::<ResolveResponse>(1);
-
-            self.sender
-                .send(ActorMessage::Resolve(target, sender, 0))
-                .map_err(|_| Error::DhtIsShutdown);
-
-            while let Ok(response) = receiver.recv() {
-                match response {
-                    ResolveResponse::SignedPacket(signed_packet) => return Ok(signed_packet),
-                    ResolveResponse::NoMoreRecentValue(_) => {
-                        // return NotFound, because we have no cached value.
-                    }
-                };
+                return Ok(cached.clone());
             }
 
-            Err(Error::NotFound(public_key.to_string()))
+            debug!("Cached packet is not fresh. Asking the network for more recent values.");
         }
+
+        // Cache miss
+
+        let (sender, receiver) = flume::bounded::<ResolveResponse>(1);
+
+        let most_recent_known_seq = cached_packet
+            .as_ref()
+            .map(|cached| cached.timestamp() as i64);
+
+        self.sender
+            .send(ActorMessage::Resolve(
+                target,
+                sender,
+                // Sending the `seq` of the known cache, help save some bandwith,
+                // since remote nodes will not send the encoded packet if they don't know
+                // any more recent versions.
+                most_recent_known_seq,
+            ))
+            .map_err(|_| Error::DhtIsShutdown)?;
+
+        while let Ok(response) = receiver.recv() {
+            match response {
+                ResolveResponse::SignedPacket(signed_packet) => {
+                    debug!("Resolve: resolved more recent signed_packet.");
+                    return Ok(signed_packet);
+                }
+                ResolveResponse::NoMoreRecentValue(network_seq) => {
+                    if let Some(ref mut cached) = cached_packet {
+                        if network_seq == most_recent_known_seq.unwrap() {
+                            debug!("Remote node has no more recent value, refreshing cached signed_packet.");
+
+                            cached.refresh();
+                            self.cache.put(target, cached.clone());
+
+                            return Ok(cached.clone());
+                        }
+                    }
+                }
+            };
+        }
+
+        Err(Error::NotFound(public_key.to_string()))
     }
 
     /// Shutdown the actor thread loop.
@@ -268,7 +279,7 @@ fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receive
 
                     let request = messages::PutRequestSpecific::PutMutable(
                         messages::PutMutableRequestArguments {
-                            target: target.to_owned(),
+                            target: *target,
                             v: mutable_item.value().to_vec(),
                             k: mutable_item.key().to_vec(),
                             seq: *mutable_item.seq(),
@@ -280,7 +291,7 @@ fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receive
 
                     rpc.put(*target, request, Some(sender))
                 }
-                ActorMessage::Resolve(target, sender, most_recent_known_timestamp) => {
+                ActorMessage::Resolve(target, sender, most_recent_known_seq) => {
                     if let Some(set) = senders.get_mut(&target) {
                         set.push(sender);
                     } else {
@@ -290,7 +301,7 @@ fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receive
                     let request = messages::RequestTypeSpecific::GetValue(
                         messages::GetValueRequestArguments {
                             target,
-                            seq: Some(most_recent_known_timestamp as i64),
+                            seq: most_recent_known_seq,
                             // seq: None,
                             salt: None,
                         },
@@ -330,12 +341,12 @@ fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receive
                     if is_most_recent {
                         // Save at cache, and then send empty notification.
 
-                        cache.put(*target, signed_packet.to_owned());
+                        cache.put(*target, signed_packet.clone());
 
                         if let Some(set) = senders.get_mut(target) {
                             for sender in set {
                                 let _ = sender
-                                    .send(ResolveResponse::SignedPacket(signed_packet.to_owned()));
+                                    .send(ResolveResponse::SignedPacket(signed_packet.clone()));
                             }
 
                             // Removing all senders, because they don't need to wait anymore.
@@ -356,7 +367,7 @@ fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receive
                 // with it.
                 if let Some(set) = senders.get(target) {
                     for sender in set {
-                        sender.send(ResolveResponse::NoMoreRecentValue(*seq as u64));
+                        sender.send(ResolveResponse::NoMoreRecentValue(*seq));
                     }
                 }
 
@@ -379,15 +390,15 @@ fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receive
 
 enum ActorMessage {
     Publish(SignedPacket, Sender<mainline::Result<Id>>),
-    Resolve(Id, Sender<ResolveResponse>, u64),
+    Resolve(Id, Sender<ResolveResponse>, Option<i64>),
     Shutdown,
 }
 
 enum ResolveResponse {
     SignedPacket(SignedPacket),
     /// A node doesn't have anything more recent than what we have,
-    /// returning the timestamp of what it has
-    NoMoreRecentValue(u64),
+    /// returning the `seq` of what it has
+    NoMoreRecentValue(i64),
 }
 
 #[cfg(test)]
