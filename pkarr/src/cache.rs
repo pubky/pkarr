@@ -23,8 +23,22 @@ impl PkarrCache {
 
     /// Puts a key-value pair into cache. If the key already exists in the cache,
     /// then it updates the key's value.
-    pub fn put(&self, key: Id, value: SignedPacket) {
-        self.inner.lock().unwrap().put(key, value);
+    pub fn put(&self, key: &Id, value: &SignedPacket) {
+        let mut lock = self.inner.lock().unwrap();
+
+        match lock.get_mut(key) {
+            Some(existing) => {
+                if existing.as_bytes() == value.as_bytes() {
+                    // just refresh the last_seen
+                    existing.set_last_seen(*value.last_seen())
+                } else {
+                    lock.put(*key, value.clone());
+                }
+            }
+            None => {
+                lock.put(*key, value.clone());
+            }
+        }
     }
 
     /// Returns the value of the key in the cache or None if it is not present in the cache.

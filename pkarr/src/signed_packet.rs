@@ -291,9 +291,14 @@ impl SignedPacket {
         }
     }
 
-    /// Update the [Self::last_seen] property
+    /// Update the [Self::last_seen] property to [Instant::now]
     pub fn refresh(&mut self) {
-        self.last_seen = Instant::now();
+        self.set_last_seen(Instant::now())
+    }
+
+    /// Set the [Self::last_seen] property
+    pub fn set_last_seen(&mut self, last_seen: Instant) {
+        self.last_seen = last_seen;
     }
 
     /// Calculates the overall minimum `ttl` of this packet.
