@@ -1,7 +1,5 @@
 //! Main Crate Error
 
-use crate::keys::PublicKey;
-
 #[derive(thiserror::Error, Debug)]
 /// Pkarr crate error enum.
 pub enum Error {

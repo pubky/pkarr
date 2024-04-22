@@ -2,7 +2,7 @@ use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
 #[cfg(feature = "dht")]
-use mainline::{Id, MutableItem};
+use mainline::MutableItem;
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
@@ -744,9 +744,9 @@ mod tests {
     #[test]
     fn minimum_ttl_empty() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
+        let packet = Packet::new_reply(0);
 
-        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         assert_eq!(signed.ttl(None, None), 30);
     }
@@ -769,7 +769,7 @@ mod tests {
             RData::TXT("world".try_into().unwrap()),
         ));
 
-        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         assert_eq!(signed.minimum_ttl(None, None), DEFAULT_MINIMUM_TTL);
 
@@ -795,7 +795,7 @@ mod tests {
             RData::TXT("world".try_into().unwrap()),
         ));
 
-        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         assert_eq!(signed.minimum_ttl(None, None), DEFAULT_MAXIMUM_TTL);
 

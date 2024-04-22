@@ -21,16 +21,6 @@ impl PkarrCache {
         }
     }
 
-    /// Returns the number of key-value pairs that are currently in the cache.
-    pub fn len(&self) -> usize {
-        self.inner.lock().unwrap().len()
-    }
-
-    /// Returns true if the cache is empty and false otherwise.
-    pub fn is_empty(&self) -> bool {
-        self.inner.lock().unwrap().is_empty()
-    }
-
     /// Puts a key-value pair into cache. If the key already exists in the cache,
     /// then it updates the key's value.
     pub fn put(&self, key: Id, value: SignedPacket) {
@@ -41,10 +31,5 @@ impl PkarrCache {
     /// Moves the key to the head of the LRU list if it exists.
     pub fn get(&self, key: &Id) -> Option<SignedPacket> {
         self.inner.lock().unwrap().get(key).cloned()
-    }
-
-    /// Returns the lock over underlying LRU cache.
-    pub fn lock(&self) -> std::sync::MutexGuard<LruCache<Id, SignedPacket>> {
-        self.inner.lock().unwrap()
     }
 }

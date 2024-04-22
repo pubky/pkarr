@@ -1,20 +1,13 @@
 use flume::{Receiver, Sender};
-use lru::LruCache;
 use mainline::{
     dht::DhtSettings,
     rpc::{
-        messages::{self, ErrorSpecific},
+        messages::{self},
         QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response, Rpc,
-        RpcTickReport,
     },
     Id, MutableItem,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    num::NonZeroUsize,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, num::NonZeroUsize, thread};
 use tracing::{debug, instrument};
 
 use crate::{cache::PkarrCache, Error, PublicKey, Result, SignedPacket};
@@ -28,6 +21,7 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 // TODO: examine errors (failed to publish, failed to bind socket, unused errors...)
 // TODO: logs (info for binding, debug for steps)
 // TODO: HTTP relay should return some caching headers.
+// TODO: add server settings to mainline DhtSettings
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -163,7 +157,7 @@ impl PkarrClient {
             .map_err(|_| Error::DhtIsShutdown)?;
 
         match receiver.recv() {
-            Ok(Ok(id)) => Ok(()),
+            Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
                 mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
                 // Should not be reachable unless all nodes responded with a QueryError,
@@ -174,7 +168,7 @@ impl PkarrClient {
             },
             // Since we pass this sender to `Rpc::put`, the only reason the sender,
             // would be dropped, is if `Rpc` is dropped, which should only happeng on shutdown.
-            Err(error) => Err(Error::DhtIsShutdown),
+            Err(_) => Err(Error::DhtIsShutdown),
         }
     }
 
@@ -249,8 +243,6 @@ impl PkarrClient {
 
     /// Shutdown the actor thread loop.
     pub fn shutdown(&self) -> Result<()> {
-        let (sender, receiver) = flume::bounded::<()>(1);
-
         self.sender
             .send(ActorMessage::Shutdown)
             .map_err(|_| Error::DhtIsShutdown)?;
@@ -259,7 +251,7 @@ impl PkarrClient {
     }
 }
 
-fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receiver<ActorMessage>) {
+fn run(mut rpc: Rpc, _settings: DhtSettings, cache: PkarrCache, receiver: Receiver<ActorMessage>) {
     let mut server = mainline::server::Server::default();
     let mut senders: HashMap<Id, Vec<Sender<ResolveResponse>>> = HashMap::new();
 
@@ -367,7 +359,7 @@ fn run(mut rpc: Rpc, settings: DhtSettings, cache: PkarrCache, receiver: Receive
                 // with it.
                 if let Some(set) = senders.get(target) {
                     for sender in set {
-                        sender.send(ResolveResponse::NoMoreRecentValue(*seq));
+                        let _ = sender.send(ResolveResponse::NoMoreRecentValue(*seq));
                     }
                 }
 
@@ -403,8 +395,6 @@ enum ResolveResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::thread::sleep;
-
     use mainline::Testnet;
 
     use super::*;
@@ -414,7 +404,7 @@ mod tests {
     fn publish_resolve() {
         let testnet = Testnet::new(10);
 
-        let mut a = PkarrClient::builder()
+        let a = PkarrClient::builder()
             .bootstrap(&testnet.bootstrap)
             .server()
             .build()
@@ -432,7 +422,7 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let x = a.publish(&signed_packet);
+        let _ = a.publish(&signed_packet);
 
         let b = PkarrClient::builder()
             .bootstrap(&testnet.bootstrap)
@@ -441,7 +431,6 @@ mod tests {
 
         let resolved = b.resolve(&keypair.public_key()).unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(b.cache.len(), 1);
 
         let from_cache = b.resolve(&keypair.public_key()).unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());

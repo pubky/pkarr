@@ -1,5 +1,4 @@
 #![doc = include_str!("../README.md")]
-#![allow(unused)]
 
 // TODO add support for wasm using relays.
 
