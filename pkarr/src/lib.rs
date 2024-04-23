@@ -20,8 +20,8 @@ pub use crate::error::Error;
 pub use crate::keys::{Keypair, PublicKey};
 pub use crate::signed_packet::SignedPacket;
 
-/// Default minimum TTL: 30 seconds
-pub const DEFAULT_MINIMUM_TTL: u32 = 30;
+/// Default minimum TTL: 5 minutes
+pub const DEFAULT_MINIMUM_TTL: u32 = 300;
 /// Default maximum TTL: 24 hours
 pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 

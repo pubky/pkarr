@@ -15,8 +15,6 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
-
 const DOT: char = '.';
 
 self_cell!(
@@ -65,7 +63,7 @@ pub struct SignedPacket {
 }
 
 impl SignedPacket {
-    /// Creates a [SignedPacket] from the serialized representation:
+    /// Creates a [Self] from the serialized representation:
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
     ///
     /// Performs the following validations:
@@ -74,9 +72,9 @@ impl SignedPacket {
     /// - Verifies the Signature
     /// - Validates the DNS packet encoding
     ///
-    /// You can skip all these validations by using [SignedPacket::from_bytes_unchecked] instead.
+    /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
     ///
-    /// You can use [SignedPacket::from_relay_payload] instead if you are receiving a response from an HTTP relay.
+    /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
     pub fn from_bytes(bytes: &Bytes) -> Result<SignedPacket> {
         if bytes.len() < 104 {
             return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
@@ -184,8 +182,6 @@ impl SignedPacket {
         self.inner.borrow_owner().slice(32..)
     }
 
-    // === Getters ===
-
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
     pub fn public_key(&self) -> PublicKey {
         PublicKey::try_from(&self.inner.borrow_owner()[0..32]).unwrap()
@@ -201,7 +197,7 @@ impl SignedPacket {
     ///
     /// This timestamp is authored by the controller of the keypair,
     /// and it is trusted as a way to order which packets where authored after which,
-    /// but it shouldn't be used for caching for example, instead, use [SignedPacket::last_seen]
+    /// but it shouldn't be used for caching for example, instead, use [Self::last_seen]
     /// which is set when you create a new packet.
     pub fn timestamp(&self) -> u64 {
         let bytes = self.inner.borrow_owner();
@@ -222,6 +218,13 @@ impl SignedPacket {
 
     pub fn last_seen(&self) -> &Instant {
         &self.last_seen
+    }
+
+    // === Setters ===
+
+    /// Set the [Self::last_seen] property
+    pub fn set_last_seen(&mut self, last_seen: &Instant) {
+        self.last_seen = *last_seen;
     }
 
     // === Public Methods ===
@@ -257,7 +260,7 @@ impl SignedPacket {
     }
 
     /// Similar to [resource_records](SignedPacket::resource_records), but filters out
-    /// expired records, according the the [SignedPacket::last_seen] value and each record's `ttl`.
+    /// expired records, according the the [Self::last_seen] value and each record's `ttl`.
     pub fn fresh_resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
@@ -270,18 +273,11 @@ impl SignedPacket {
             .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > elapsed)
     }
 
-    /// Check that the [Self::ttl] is greater than zero.
-    pub fn is_fresh(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> bool {
-        self.ttl(minimum_ttl, maximum_ttl) > 0
-    }
-
-    /// calculates the remaining `ttl` by comparing the [Self::minimum_ttl] to this
-    /// packet's [SignedPacket::last_seen].
-    ///
-    /// `minimum_ttl` and `maximum_ttl` are passed to [Self::minimum_ttl] to optionally clamp its value.
-    pub fn ttl(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> u32 {
+    /// calculates the remaining seconds by comparing the [Self::min_ttl] (clamped by `min` and `max`)
+    /// to the [Self::last_seen].
+    pub fn expires_in(&self, min: u32, max: u32) -> u32 {
         match self
-            .minimum_ttl(minimum_ttl, maximum_ttl)
+            .ttl(min, max)
             .overflowing_sub(self.last_seen.elapsed().as_secs() as u32)
         {
             (_, true) => 0,
@@ -289,37 +285,15 @@ impl SignedPacket {
         }
     }
 
-    /// Update the [Self::last_seen] property to [Instant::now]
-    pub fn refresh(&mut self) {
-        self.set_last_seen(&Instant::now())
-    }
-
-    /// Set the [Self::last_seen] property
-    pub fn set_last_seen(&mut self, last_seen: &Instant) {
-        self.last_seen = *last_seen;
-    }
-
-    /// Calculates the overall minimum `ttl` of this packet.
-    ///
-    /// - If there are no resource records, returns the `minimum_ttl` or [crate::DEFAULT_MINIMUM_TTL]
-    /// - If there are resource records, returns the smallest `ttl`, clamped by `minimum_ttl` or [crate::DEFAULT_MINIMUM_TTL] and `maximum_ttl` or [crate::DEFAULT_MAXIMUM_TTL]
-    pub fn minimum_ttl(&self, minimum_ttl: Option<u32>, maximum_ttl: Option<u32>) -> u32 {
-        let records = &self.packet().answers;
-
-        let mut ttl = if records.is_empty() {
-            minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL)
-        } else {
-            maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL)
-        };
-
-        for record in records {
-            ttl = ttl.min(record.ttl.clamp(
-                minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL),
-                maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL),
-            ));
-        }
-
-        ttl
+    /// Returns the smallest `ttl` in the [Self::packet] resource records,
+    /// calmped with `min` and `max`.
+    pub fn ttl(&self, min: u32, max: u32) -> u32 {
+        self.packet()
+            .answers
+            .iter()
+            .map(|rr| rr.ttl)
+            .min()
+            .map_or(min, |v| v.clamp(min, max))
     }
 }
 
@@ -449,6 +423,8 @@ fn normalize_name(origin: &str, name: String) -> String {
 mod tests {
     use super::*;
     use crate::dns;
+
+    use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
     #[test]
     fn normalize_names() {
@@ -669,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn is_fresh_minimum_ttl() {
+    fn expires_in_minimum_ttl() {
         let keypair = Keypair::random();
         let mut packet = Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
@@ -684,18 +660,18 @@ mod tests {
         signed.last_seen = Instant::now() - Duration::from_secs(20);
 
         assert!(
-            signed.is_fresh(None, None),
-            "input minimum_ttl is the default 30 so ttl = 30"
+            signed.expires_in(30, u32::MAX) > 0,
+            "input minimum_ttl is 30 so ttl = 30"
         );
 
         assert!(
-            !signed.is_fresh(Some(0), None),
+            signed.expires_in(0, u32::MAX) == 0,
             "input minimum_ttl is 0 so ttl = 10 (smallest in resource records)"
         );
     }
 
     #[test]
-    fn is_fresh_maximum_ttl() {
+    fn expires_in_maximum_ttl() {
         let keypair = Keypair::random();
         let mut packet = Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
@@ -710,12 +686,12 @@ mod tests {
         signed.last_seen = Instant::now() - Duration::from_secs(2 * DEFAULT_MAXIMUM_TTL as u64);
 
         assert!(
-            !signed.is_fresh(None, None),
+            signed.expires_in(0, DEFAULT_MAXIMUM_TTL) == 0,
             "input maximum_ttl is the dfeault 86400 so maximum ttl = 86400"
         );
 
         assert!(
-            signed.is_fresh(None, Some(7 * DEFAULT_MAXIMUM_TTL)),
+            signed.expires_in(0, 7 * DEFAULT_MAXIMUM_TTL) > 0,
             "input maximum_ttl is 7 * 86400 so ttl = 3 * 86400 (smallest in resource records)"
         );
     }
@@ -745,17 +721,17 @@ mod tests {
     }
 
     #[test]
-    fn minimum_ttl_empty() {
+    fn ttl_empty() {
         let keypair = Keypair::random();
         let packet = Packet::new_reply(0);
 
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert_eq!(signed.ttl(None, None), 30);
+        assert_eq!(signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL), 300);
     }
 
     #[test]
-    fn minimum_ttl_with_records_less_than_minimum() {
+    fn ttl_with_records_less_than_minimum() {
         let keypair = Keypair::random();
         let mut packet = Packet::new_reply(0);
 
@@ -774,13 +750,16 @@ mod tests {
 
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert_eq!(signed.minimum_ttl(None, None), DEFAULT_MINIMUM_TTL);
+        assert_eq!(
+            signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
+            DEFAULT_MINIMUM_TTL
+        );
 
-        assert_eq!(signed.minimum_ttl(Some(0), None), DEFAULT_MINIMUM_TTL / 4);
+        assert_eq!(signed.ttl(0, DEFAULT_MAXIMUM_TTL), DEFAULT_MINIMUM_TTL / 4);
     }
 
     #[test]
-    fn minimum_ttl_with_records_more_than_maximum() {
+    fn ttl_with_records_more_than_maximum() {
         let keypair = Keypair::random();
         let mut packet = Packet::new_reply(0);
 
@@ -800,10 +779,13 @@ mod tests {
 
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert_eq!(signed.minimum_ttl(None, None), DEFAULT_MAXIMUM_TTL);
+        assert_eq!(
+            signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
+            DEFAULT_MAXIMUM_TTL
+        );
 
         assert_eq!(
-            signed.minimum_ttl(Some(0), Some(DEFAULT_MAXIMUM_TTL * 8)),
+            signed.ttl(0, DEFAULT_MAXIMUM_TTL * 8),
             DEFAULT_MAXIMUM_TTL * 2
         );
     }

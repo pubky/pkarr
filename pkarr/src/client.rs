@@ -7,18 +7,20 @@ use mainline::{
     },
     Id, MutableItem,
 };
-use std::{collections::HashMap, num::NonZeroUsize, thread};
+use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, thread, time::Instant};
 use tracing::{debug, instrument};
 
-use crate::{cache::PkarrCache, Error, PublicKey, Result, SignedPacket};
+use crate::{
+    cache::PkarrCache, Error, PublicKey, Result, SignedPacket, DEFAULT_MAXIMUM_TTL,
+    DEFAULT_MINIMUM_TTL,
+};
 
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
 // TODO: Resolver
-// TODO: test shutdown
 // TODO: examine errors (failed to publish, failed to bind socket, unused errors...)
 // TODO: logs (info for binding, debug for steps)
-// TODO: test reducing the Dht tick interval (socket read_timeout)
+// TODO: Async API.
 // TODO: HTTP relay should return some caching headers.
 // TODO: add server settings to mainline DhtSettings
 
@@ -26,8 +28,8 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 pub struct Settings {
     dht: DhtSettings,
     cache_size: usize,
-    minimum_ttl: Option<u32>,
-    maximum_ttl: Option<u32>,
+    minimum_ttl: u32,
+    maximum_ttl: u32,
 }
 
 impl Default for Settings {
@@ -35,8 +37,8 @@ impl Default for Settings {
         Self {
             dht: DhtSettings::default(),
             cache_size: DEFAULT_CACHE_SIZE,
-            minimum_ttl: None,
-            maximum_ttl: None,
+            minimum_ttl: DEFAULT_MINIMUM_TTL,
+            maximum_ttl: DEFAULT_MAXIMUM_TTL,
         }
     }
 }
@@ -79,7 +81,7 @@ impl PkarrClientBuilder {
     /// Internally the cache will expire after the smallest ttl in
     /// the resource records, unless it is smaller than this minimum.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.minimum_ttl = Some(ttl);
+        self.settings.minimum_ttl = ttl;
         self
     }
 
@@ -89,7 +91,7 @@ impl PkarrClientBuilder {
     /// Internally the cache will expire after the smallest ttl in
     /// the resource records, unless it is bigger than this maximum.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.maximum_ttl = Some(ttl);
+        self.settings.maximum_ttl = ttl;
         self
     }
 
@@ -101,10 +103,11 @@ impl PkarrClientBuilder {
 #[derive(Clone, Debug)]
 /// Main client for publishing and resolving [SignedPacket]s.
 pub struct PkarrClient {
+    address: Option<SocketAddr>,
     sender: Sender<ActorMessage>,
     cache: PkarrCache,
-    minimum_ttl: Option<u32>,
-    maximum_ttl: Option<u32>,
+    minimum_ttl: u32,
+    maximum_ttl: u32,
 }
 
 impl PkarrClient {
@@ -121,9 +124,12 @@ impl PkarrClient {
             rpc = rpc.with_port(port)?;
         }
 
+        let loca_addr = rpc.local_addr();
+
         thread::spawn(move || run(rpc, settings.dht, receiver));
 
         Ok(PkarrClient {
+            address: Some(loca_addr),
             sender,
             cache: PkarrCache::new(NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap()),
             minimum_ttl: settings.minimum_ttl,
@@ -134,6 +140,13 @@ impl PkarrClient {
     /// Returns a builder to edit settings before creating PkarrClient.
     pub fn builder() -> PkarrClientBuilder {
         PkarrClientBuilder::default()
+    }
+
+    /// Returns the local address of the udp socket this node is listening on.
+    ///
+    /// Returns `None` if the node is shutdown
+    pub fn loca_addr(&self) -> Option<SocketAddr> {
+        self.address
     }
 
     /// Publishes a [SignedPacket] to the Dht.
@@ -163,7 +176,6 @@ impl PkarrClient {
                 // Should not be reachable unless all nodes responded with a QueryError,
                 // which is either a bug in mainline crate, or just malicious responses.
                 mainline::Error::QueryError(error) => Err(Error::FailedToPublish(error)),
-                // Should not be reachable unless we did something wrong!
                 _ => Err(Error::MainlineError(error)),
             },
             // Since we pass this sender to `Rpc::put`, the only reason the sender,
@@ -186,10 +198,10 @@ impl PkarrClient {
         let mut cached_packet = self.cache.get(public_key);
 
         if let Some(ref cached) = cached_packet {
-            let ttl = cached.ttl(self.minimum_ttl, self.maximum_ttl);
+            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
 
-            if ttl > 0 {
-                debug!(ttl, "Have fresh signed_packet in cache.");
+            if expires_in > 0 {
+                debug!(expires_in, "Have fresh signed_packet in cache.");
                 return Ok(cached.clone());
             }
         }
@@ -238,7 +250,7 @@ impl PkarrClient {
                         if network_timestamp == most_recent_known_timestamp {
                             debug!("Remote node has no more recent value, refreshing cached signed_packet.");
 
-                            cached.refresh();
+                            cached.set_last_seen(&Instant::now());
                             self.cache.put(cached);
 
                             return Ok(cached.clone());
@@ -252,10 +264,16 @@ impl PkarrClient {
     }
 
     /// Shutdown the actor thread loop.
-    pub fn shutdown(&self) -> Result<()> {
+    pub fn shutdown(&mut self) -> Result<()> {
+        let (sender, receiver) = flume::bounded(1);
+
         self.sender
-            .send(ActorMessage::Shutdown)
+            .send(ActorMessage::Shutdown(sender))
             .map_err(|_| Error::DhtIsShutdown)?;
+
+        receiver.recv()?;
+
+        self.address = None;
 
         Ok(())
     }
@@ -269,8 +287,9 @@ fn run(mut rpc: Rpc, _settings: DhtSettings, receiver: Receiver<ActorMessage>) {
         // === Receive actor messages ===
         if let Ok(actor_message) = receiver.try_recv() {
             match actor_message {
-                ActorMessage::Shutdown => {
+                ActorMessage::Shutdown(sender) => {
                     drop(receiver);
+                    let _ = sender.send(());
                     break;
                 }
                 ActorMessage::Publish(mutable_item, sender) => {
@@ -372,7 +391,7 @@ fn run(mut rpc: Rpc, _settings: DhtSettings, receiver: Receiver<ActorMessage>) {
 enum ActorMessage {
     Publish(MutableItem, Sender<mainline::Result<Id>>),
     Resolve(Id, Sender<ResolveResponse>, Option<u64>),
-    Shutdown,
+    Shutdown(Sender<()>),
 }
 
 enum ResolveResponse {
@@ -388,6 +407,22 @@ mod tests {
 
     use super::*;
     use crate::{dns, Keypair, SignedPacket};
+
+    #[test]
+    fn shutdown() {
+        let testnet = Testnet::new(3);
+
+        let mut a = PkarrClient::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
+
+        assert_ne!(a.loca_addr(), None);
+
+        a.shutdown().unwrap();
+
+        assert_eq!(a.loca_addr(), None);
+    }
 
     #[test]
     fn publish_resolve() {

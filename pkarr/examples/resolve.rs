@@ -37,7 +37,11 @@ fn main() {
         .try_into()
         .expect("Invalid zbase32 encoded key");
 
-    let client = PkarrClient::builder().build().unwrap();
+    let client = PkarrClient::builder()
+        // .minimum_ttl(0)
+        // .maximum_ttl(5)
+        .build()
+        .unwrap();
 
     println!("Resolving Pkarr: {} ...", cli.public_key);
     println!("\n=== COLD LOOKUP ===");
