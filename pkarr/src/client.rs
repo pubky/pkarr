@@ -25,11 +25,13 @@ use crate::{
 
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
+pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:7101"];
+
 #[derive(Debug, Clone)]
 pub struct Settings {
     dht: DhtSettings,
     resolver: bool,
-    resolvers: Option<Vec<String>>,
+    resolvers: Vec<String>,
     cache_size: NonZeroUsize,
     minimum_ttl: u32,
     maximum_ttl: u32,
@@ -41,7 +43,7 @@ impl Default for Settings {
             dht: DhtSettings::default(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
             resolver: false,
-            resolvers: None,
+            resolvers: DEFAULT_RESOLVERS.map(|s| s.to_string()).to_vec(),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
         }
@@ -63,7 +65,7 @@ impl PkarrClientBuilder {
 
     // Set custom set of resolvers nodes.
     pub fn resolvers(mut self, resolvers: Vec<String>) -> Self {
-        self.settings.resolvers = Some(resolvers);
+        self.settings.resolvers = resolvers;
         self
     }
 
@@ -132,19 +134,18 @@ impl PkarrClient {
     pub fn new(settings: Settings) -> Result<PkarrClient> {
         let (sender, receiver) = flume::bounded(32);
 
-        let resolvers = settings.resolvers.map(|resolvers| {
-            resolvers
-                .iter()
-                .flat_map(|resolver| {
-                    resolver.to_socket_addrs().map(|addresses| {
-                        let addrs = addresses.collect::<Vec<_>>();
-                        debug!(?resolver, ?addrs, "Resolver address");
-                        addrs
-                    })
+        let resolvers = settings
+            .resolvers
+            .iter()
+            .flat_map(|resolver| {
+                resolver.to_socket_addrs().map(|addresses| {
+                    let addrs = addresses.collect::<Vec<_>>();
+                    debug!(?resolver, ?addrs, "Resolver address");
+                    addrs
                 })
-                .flatten()
-                .collect::<Vec<_>>()
-        });
+            })
+            .flatten()
+            .collect::<Vec<_>>();
 
         let mut rpc = Rpc::new()?.with_read_only(settings.dht.read_only);
 
@@ -295,7 +296,7 @@ fn run(
     mut rpc: Rpc,
     cache: PkarrCache,
     _settings: DhtSettings,
-    resolvers: Option<Vec<SocketAddr>>,
+    resolvers: Vec<SocketAddr>,
     receiver: Receiver<ActorMessage>,
 ) {
     let mut server = mainline::server::Server::default();
@@ -343,7 +344,7 @@ fn run(
                         },
                     );
 
-                    rpc.get(target, request, None, resolvers.clone())
+                    rpc.get(target, request, None, Some(resolvers.clone()))
                 }
             }
         }

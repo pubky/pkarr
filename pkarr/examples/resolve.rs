@@ -38,9 +38,9 @@ fn main() {
 
     let client = PkarrClient::builder()
         // .bootstrap(&vec![])
-        .resolvers(vec!["167.86.102.121:42152".to_string()])
+        // .resolvers(vec!["resolver.example.com:42152".to_string()])
         // .minimum_ttl(0)
-        .maximum_ttl(10)
+        // .maximum_ttl(10)
         .build()
         .unwrap();
 

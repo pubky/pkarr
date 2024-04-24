@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 
-// TODO: Deploy relay / resolver and add it as a default resolver
 // TODO: examine errors (failed to publish, failed to bind socket, unused errors...)
 // TODO: logs (info for binding, debug for steps)
 // TODO: HTTP relay should return some caching headers.
