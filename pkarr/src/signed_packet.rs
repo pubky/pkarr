@@ -235,17 +235,19 @@ impl SignedPacket {
     /// Assumes that both packets have the same [PublicKey], you shouldn't compare packets from
     /// different keys.
     pub fn more_recent_than(&self, other: &SignedPacket) -> bool {
-        if self.timestamp() < other.timestamp() {
-            return false;
-        }
-
         // In the rare ocasion of timestamp collission,
         // we use the one with the largest value
-        if self.timestamp() == other.timestamp() && self.encoded_packet() < other.encoded_packet() {
-            return false;
+        if self.timestamp() == other.timestamp() {
+            self.encoded_packet() > other.encoded_packet()
+        } else {
+            self.timestamp() > other.timestamp()
         }
+    }
 
-        true
+    /// Returns true if both packets have the same timestamp and packet,
+    /// and only differ in [Self::last_seen]
+    pub fn is_same_as(&self, other: &SignedPacket) -> bool {
+        self.as_bytes() == other.as_bytes()
     }
 
     /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
@@ -273,8 +275,12 @@ impl SignedPacket {
             .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > elapsed)
     }
 
-    /// calculates the remaining seconds by comparing the [Self::min_ttl] (clamped by `min` and `max`)
+    /// calculates the remaining seconds by comparing the [Self::ttl] (clamped by `min` and `max`)
     /// to the [Self::last_seen].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min` < `max`
     pub fn expires_in(&self, min: u32, max: u32) -> u32 {
         match self
             .ttl(min, max)
@@ -287,6 +293,10 @@ impl SignedPacket {
 
     /// Returns the smallest `ttl` in the [Self::packet] resource records,
     /// calmped with `min` and `max`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min` < `max`
     pub fn ttl(&self, min: u32, max: u32) -> u32 {
         self.packet()
             .answers

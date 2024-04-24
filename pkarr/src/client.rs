@@ -88,22 +88,28 @@ impl PkarrClientBuilder {
     }
 
     /// Set the minimum ttl for a cached [SignedPacket].
-    /// Defaults to [crate::signed_packet::DEFAULT_MINIMUM_TTL].
+    /// Defaults to [crate::DEFAULT_MINIMUM_TTL].
     ///
     /// Internally the cache will expire after the smallest ttl in
     /// the resource records, unless it is smaller than this minimum.
+    ///
+    /// If the `ttl` is bigger than the [Self::maximum_ttl], it will clamp it.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
         self.settings.minimum_ttl = ttl;
+        self.settings.maximum_ttl = self.settings.maximum_ttl.clamp(ttl, u32::MAX);
         self
     }
 
     /// Set the maximum ttl for a cached [SignedPacket].
-    /// Defaults to [crate::signed_packet::DEFAULT_MAXIMUM_TTL].
+    /// Defaults to [crate::DEFAULT_MAXIMUM_TTL].
     ///
     /// Internally the cache will expire after the smallest ttl in
     /// the resource records, unless it is bigger than this maximum.
+    ///
+    /// If the `ttl` is smaller than the [Self::minimum_ttl], it will clamp it.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
         self.settings.maximum_ttl = ttl;
+        self.settings.minimum_ttl = self.settings.minimum_ttl.clamp(0, ttl);
         self
     }
 
