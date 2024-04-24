@@ -121,11 +121,11 @@ impl PkarrClientBuilder {
 #[derive(Clone, Debug)]
 /// Main client for publishing and resolving [SignedPacket]s.
 pub struct PkarrClient {
-    address: Option<SocketAddr>,
-    sender: Sender<ActorMessage>,
-    cache: PkarrCache,
-    minimum_ttl: u32,
-    maximum_ttl: u32,
+    pub(crate) address: Option<SocketAddr>,
+    pub(crate) sender: Sender<ActorMessage>,
+    pub(crate) cache: PkarrCache,
+    pub(crate) minimum_ttl: u32,
+    pub(crate) maximum_ttl: u32,
 }
 
 impl PkarrClient {
@@ -470,7 +470,7 @@ fn run(
     }
 }
 
-enum ActorMessage {
+pub enum ActorMessage {
     Publish(MutableItem, Sender<mainline::Result<Id>>),
     Resolve(Id, Sender<SignedPacket>, Option<u64>),
     Shutdown(Sender<()>),

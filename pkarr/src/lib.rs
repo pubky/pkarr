@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 
-// TODO: Async API.
 // TODO: Deploy relay / resolver and add it as a default resolver
 // TODO: examine errors (failed to publish, failed to bind socket, unused errors...)
 // TODO: logs (info for binding, debug for steps)
@@ -16,6 +15,8 @@ pub use simple_dns as dns;
 
 // Modules
 
+#[cfg(feature = "async")]
+pub mod async_client;
 #[cfg(feature = "dht")]
 mod cache;
 #[cfg(feature = "dht")]
@@ -25,8 +26,6 @@ mod keys;
 mod signed_packet;
 
 // Exports
-#[cfg(feature = "dht")]
-pub use crate::cache::PkarrCache;
 #[cfg(feature = "dht")]
 pub use crate::client::PkarrClient;
 pub use crate::error::Error;
