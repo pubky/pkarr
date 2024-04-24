@@ -1,10 +1,8 @@
 #![doc = include_str!("../README.md")]
 
-// TODO: examine errors (failed to publish, failed to bind socket, unused errors...)
-// TODO: logs (info for binding, debug for steps)
-// TODO: HTTP relay should return some caching headers.
 // TODO: add server settings to mainline DhtSettings
 // TODO: better documentation especially resolvers.
+// TODO: HTTP relay should return some caching headers.
 // TODO: add support for wasm using relays.
 // TODO: allow custom Cache with traits.
 
@@ -17,12 +15,12 @@ pub use simple_dns as dns;
 #[cfg(feature = "async")]
 pub mod async_client;
 #[cfg(feature = "dht")]
-mod cache;
+pub mod cache;
 #[cfg(feature = "dht")]
-mod client;
-mod error;
-mod keys;
-mod signed_packet;
+pub mod client;
+pub mod error;
+pub mod keys;
+pub mod signed_packet;
 
 // Exports
 #[cfg(feature = "dht")]

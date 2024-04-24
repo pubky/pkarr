@@ -21,7 +21,7 @@ fn main() -> Result<()> {
 
     println!(
         "\nRunning a resolver at {} ...\n",
-        client.loca_addr().unwrap()
+        client.local_addr().unwrap()
     );
 
     loop {}

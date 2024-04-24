@@ -25,7 +25,7 @@ impl AsyncPkarrClient {
     /// Returns the local address of the udp socket this node is listening on.
     ///
     /// Returns `None` if the node is shutdown
-    pub fn loca_addr(&self) -> Option<SocketAddr> {
+    pub fn local_addr(&self) -> Option<SocketAddr> {
         self.0.address
     }
 
@@ -154,11 +154,11 @@ mod tests {
                 .build()
                 .unwrap();
 
-            assert_ne!(a.loca_addr(), None);
+            assert_ne!(a.local_addr(), None);
 
             a.shutdown().unwrap();
 
-            assert_eq!(a.loca_addr(), None);
+            assert_eq!(a.local_addr(), None);
         }
 
         futures::executor::block_on(test());
