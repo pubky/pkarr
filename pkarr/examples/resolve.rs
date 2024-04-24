@@ -24,7 +24,6 @@ struct Cli {
 
 fn main() {
     tracing_subscriber::fmt()
-        // Switch to DEBUG to see incoming values and the IP of the responding nodes
         .with_max_level(Level::DEBUG)
         .with_env_filter("pkarr")
         .init();
@@ -37,11 +36,7 @@ fn main() {
         .try_into()
         .expect("Invalid zbase32 encoded key");
 
-    let client = PkarrClient::builder()
-        // .minimum_ttl(0)
-        // .maximum_ttl(5)
-        .build()
-        .unwrap();
+    let client = PkarrClient::builder().build().unwrap();
 
     println!("Resolving Pkarr: {} ...", cli.public_key);
     println!("\n=== COLD LOOKUP ===");

@@ -15,7 +15,6 @@ use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        // Switch to DEBUG to see incoming values and the IP of the responding nodes
         .with_max_level(Level::DEBUG)
         .init();
 

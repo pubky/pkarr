@@ -1,6 +1,14 @@
 #![doc = include_str!("../README.md")]
 
-// TODO add support for wasm using relays.
+// TODO: Async API.
+// TODO: Deploy relay / resolver and add it as a default resolver
+// TODO: examine errors (failed to publish, failed to bind socket, unused errors...)
+// TODO: logs (info for binding, debug for steps)
+// TODO: HTTP relay should return some caching headers.
+// TODO: add server settings to mainline DhtSettings
+// TODO: better documentation especially resolvers.
+// TODO: add support for wasm using relays.
+// TODO: allow custom Cache with traits.
 
 // Rexports
 pub use bytes;
@@ -15,6 +23,7 @@ mod keys;
 mod signed_packet;
 
 // Exports
+pub use crate::cache::PkarrCache;
 pub use crate::client::PkarrClient;
 pub use crate::error::Error;
 pub use crate::keys::{Keypair, PublicKey};
