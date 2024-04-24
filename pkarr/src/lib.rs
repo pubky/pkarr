@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 
-// TODO: add server settings to mainline DhtSettings
 // TODO: better documentation especially resolvers.
 // TODO: HTTP relay should return some caching headers.
 // TODO: add support for wasm using relays.

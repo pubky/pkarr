@@ -85,7 +85,7 @@ impl PkarrClientBuilder {
     /// Run this client as a [resolver](https://pkarr.org/resolvers)
     pub fn resolver(mut self) -> Self {
         self.settings.resolver = true;
-        self.settings.dht.read_only = false;
+        self.settings.dht.server = true;
         self
     }
 
@@ -173,24 +173,16 @@ impl PkarrClient {
             .flatten()
             .collect::<Vec<_>>();
 
-        let mut rpc = Rpc::new()?.with_read_only(settings.dht.read_only);
+        debug!(?settings, "Starting PkarrClient..");
 
-        if let Some(bootstrap) = settings.dht.bootstrap.clone() {
-            rpc = rpc.with_bootstrap(bootstrap);
-        }
-
-        if let Some(port) = settings.dht.port {
-            rpc = rpc.with_port(port)?;
-        }
+        let rpc = Rpc::new(settings.dht.to_owned())?;
 
         let local_addr = rpc.local_addr();
 
-        info!(?local_addr, ?settings, "Running PkarrClient");
+        info!(?local_addr, "Running PkarrClient");
 
         let cache = PkarrCache::new(settings.cache_size);
-
         let moved_cache = cache.clone();
-        thread::spawn(move || run(rpc, moved_cache, settings.recursive, resolvers, receiver));
 
         let client = PkarrClient {
             address: Some(local_addr),
@@ -199,6 +191,9 @@ impl PkarrClient {
             minimum_ttl: settings.minimum_ttl,
             maximum_ttl: settings.maximum_ttl,
         };
+
+        thread::spawn(move || run(rpc, moved_cache, settings, resolvers, receiver));
+
         Ok(client)
     }
 
@@ -325,11 +320,11 @@ impl PkarrClient {
 fn run(
     mut rpc: Rpc,
     cache: PkarrCache,
-    recursive: bool,
+    settings: Settings,
     resolvers: Vec<SocketAddr>,
     receiver: Receiver<ActorMessage>,
 ) {
-    let mut server = mainline::server::Server::default();
+    let mut server = mainline::server::Server::new(&settings.dht.server_settings);
     let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
 
     loop {
@@ -493,7 +488,7 @@ fn run(
                                 salt: None,
                             }),
                             None,
-                            if recursive {
+                            if settings.recursive {
                                 Some(resolvers.clone())
                             } else {
                                 None
