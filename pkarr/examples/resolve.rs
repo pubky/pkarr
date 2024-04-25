@@ -36,23 +36,17 @@ fn main() {
         .try_into()
         .expect("Invalid zbase32 encoded key");
 
-    let client = PkarrClient::builder()
-        // .bootstrap(&vec![])
-        // .resolvers(vec!["resolver.example.com:42152".to_string()])
-        // .minimum_ttl(0)
-        // .maximum_ttl(10)
-        .build()
-        .unwrap();
+    let client = PkarrClient::builder().build().unwrap();
 
     println!("Resolving Pkarr: {} ...", cli.public_key);
     println!("\n=== COLD LOOKUP ===");
     resolve(&client, &public_key);
 
-    loop {
-        sleep(Duration::from_secs(1));
-        println!("=== SUBSEQUENT LOOKUP ===");
-        resolve(&client, &public_key)
-    }
+    // loop {
+    sleep(Duration::from_secs(1));
+    println!("=== SUBSEQUENT LOOKUP ===");
+    resolve(&client, &public_key)
+    // }
 }
 
 fn resolve(client: &PkarrClient, public_key: &PublicKey) {

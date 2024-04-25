@@ -47,7 +47,7 @@ pub struct Settings {
     /// Dht is missing values not't republished often enough.
     ///
     /// Defaults to [DEFAULT_RESOLVERS]
-    pub resolvers: Vec<String>,
+    pub resolvers: Vec<SocketAddr>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: NonZeroUsize,
     /// Used in the `min` parametere in [SignedPacket::ttl].
@@ -67,7 +67,11 @@ impl Default for Settings {
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
             resolver: false,
             recursive: false,
-            resolvers: DEFAULT_RESOLVERS.map(|s| s.to_string()).to_vec(),
+            resolvers: DEFAULT_RESOLVERS
+                .iter()
+                .flat_map(|resolver| resolver.to_socket_addrs())
+                .flatten()
+                .collect::<Vec<_>>(),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
         }
@@ -99,7 +103,11 @@ impl PkarrClientBuilder {
 
     /// Set custom set of [resolvers](Settings::resolvers).
     pub fn resolvers(mut self, resolvers: Vec<String>) -> Self {
-        self.settings.resolvers = resolvers;
+        self.settings.resolvers = resolvers
+            .iter()
+            .flat_map(|resolver| resolver.to_socket_addrs())
+            .flatten()
+            .collect::<Vec<_>>();
         self
     }
 
@@ -160,19 +168,6 @@ impl PkarrClient {
     pub fn new(settings: Settings) -> Result<PkarrClient> {
         let (sender, receiver) = flume::bounded(32);
 
-        let resolvers = settings
-            .resolvers
-            .iter()
-            .flat_map(|resolver| {
-                resolver.to_socket_addrs().map(|addresses| {
-                    let addrs = addresses.collect::<Vec<_>>();
-                    debug!(?resolver, ?addrs, "Resolver address");
-                    addrs
-                })
-            })
-            .flatten()
-            .collect::<Vec<_>>();
-
         debug!(?settings, "Starting PkarrClient..");
 
         let rpc = Rpc::new(settings.dht.to_owned())?;
@@ -192,7 +187,7 @@ impl PkarrClient {
             maximum_ttl: settings.maximum_ttl,
         };
 
-        thread::spawn(move || run(rpc, moved_cache, settings, resolvers, receiver));
+        thread::spawn(move || run(rpc, moved_cache, settings, receiver));
 
         Ok(client)
     }
@@ -317,13 +312,7 @@ impl PkarrClient {
     }
 }
 
-fn run(
-    mut rpc: Rpc,
-    cache: PkarrCache,
-    settings: Settings,
-    resolvers: Vec<SocketAddr>,
-    receiver: Receiver<ActorMessage>,
-) {
+fn run(mut rpc: Rpc, cache: PkarrCache, settings: Settings, receiver: Receiver<ActorMessage>) {
     let mut server = mainline::server::Server::new(&settings.dht.server_settings);
     let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
 
@@ -369,7 +358,7 @@ fn run(
                         },
                     );
 
-                    rpc.get(target, request, None, Some(resolvers.clone()))
+                    rpc.get(target, request, None, Some(settings.resolvers.clone()))
                 }
             }
         }
@@ -489,7 +478,7 @@ fn run(
                             }),
                             None,
                             if settings.recursive {
-                                Some(resolvers.clone())
+                                Some(settings.resolvers.clone())
                             } else {
                                 None
                             },

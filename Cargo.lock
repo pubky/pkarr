@@ -445,7 +445,7 @@ checksum = "d3262e75e648fce39813cb56ac41f3c3e3f65217ebf3844d818d1f9398cfb0dc"
 [[package]]
 name = "mainline"
 version = "1.5.0"
-source = "git+https://github.com/Nuhvi/mainline.git?branch=v2#5f51f1e02f4953170d04712771ad8b7b3e7714fa"
+source = "git+https://github.com/Nuhvi/mainline.git?branch=v2#97d21073816223d60278dc7b967c8dc4eabd5c70"
 dependencies = [
  "bytes",
  "crc",
@@ -1104,6 +1104,6 @@ checksum = "edb37266251c28b03d08162174a91c3a092e3bd4f476f8205ee1c507b78b7bdc"
 
 [[package]]
 name = "zeroize"
-version = "1.7.0"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "525b4ec142c6b68a2d10f01f7bbf6755599ca3f81ea53b8431b7dd348f5fdb2d"
+checksum = "63381fa6624bf92130a6b87c0d07380116f80b565c42cf0d754136f0238359ef"

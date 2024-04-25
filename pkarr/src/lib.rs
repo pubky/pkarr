@@ -1,6 +1,5 @@
 #![doc = include_str!("../README.md")]
 
-// TODO: better documentation especially resolvers.
 // TODO: HTTP relay should return some caching headers.
 // TODO: add support for wasm using relays.
 // TODO: allow custom Cache with traits.
