@@ -40,9 +40,14 @@ GET /:z-base32-encoded-key HTTP/2
 
 ```
 HTTP/2 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, PUT, OPTIONS
+Cache-Control: public, max-age=300
 
 <sig><seq>[<v>]
 ```
+
+`Cache-Control` header would help browsers reduce their reliance on the relay, the `max-age` should be set to be the minimum `ttl` in the resource records in the packet or some minimum ttl chosen by the relay.
 
 Body should consist of:
 
