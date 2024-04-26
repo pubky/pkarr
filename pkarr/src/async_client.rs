@@ -42,11 +42,16 @@ impl AsyncPkarrClient {
     /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
     /// the loop in the actor thread is stopped for any reason (like thread panic).
     /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
-    /// - Returns a [Error::FailedToPublish] if all the closest nodes in the Dht responded with
-    /// errors.
+    /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let mutable_item: MutableItem = (signed_packet).into();
+
+        if let Some(current) = self.0.cache.get(mutable_item.target()) {
+            if current.timestamp() > signed_packet.timestamp() {
+                return Err(Error::NotMostRecent);
+            }
+        };
 
         self.0.cache.put(mutable_item.target(), signed_packet);
 
@@ -61,9 +66,6 @@ impl AsyncPkarrClient {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
                 mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
-                // Should not be reachable unless all nodes responded with a QueryError,
-                // which is either a bug in mainline crate, or just malicious responses.
-                mainline::Error::QueryError(error) => Err(Error::FailedToPublish(error)),
                 _ => Err(Error::MainlineError(error)),
             },
             // Since we pass this sender to `Rpc::put`, the only reason the sender,

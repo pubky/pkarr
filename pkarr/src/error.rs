@@ -56,11 +56,11 @@ pub enum Error {
     /// The dht was shutdown.
     NotFound(String),
 
-    #[error("Publish query is already inflight to the same public_key")]
+    #[error("Publish query is already inflight for the same public_key")]
     /// [crate::PkarrClient::publish] is already inflight to the same public_key
     PublishInflight,
 
-    #[error("Failed to publish to any of the closest Dht nodes")]
-    /// Failed to publish to any of the closest Dht nodes
-    FailedToPublish(mainline::rpc::messages::ErrorSpecific),
+    #[error("SignedPacket's timestamp is not the most recent")]
+    /// Failed to publish because there is a more recent packet.
+    NotMostRecent,
 }

@@ -75,6 +75,13 @@ impl SignedPacket {
     /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
     ///
     /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
+    ///
+    /// # Errors
+    /// - Returns [crate::Error::InvalidSignedPacketBytesLength] if `bytes.len()` is smaller than 104 bytes
+    /// - Returns [crate::Error::PacketTooLarge] if `bytes.len()` is bigger than 1104 bytes
+    /// - Returns [crate::Error::InvalidEd25519PublicKey] if the first 32 bytes are invalid `ed25519` public key
+    /// - Returns [crate::Error::InvalidEd25519Signature] if the following 64 bytes are invalid `ed25519` signature
+    /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet after the first 104 bytes
     pub fn from_bytes(bytes: &Bytes) -> Result<SignedPacket> {
         if bytes.len() < 104 {
             return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
@@ -106,6 +113,12 @@ impl SignedPacket {
     }
 
     /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
+    ///
+    /// # Errors
+    /// - Returns [crate::Error::InvalidSignedPacketBytesLength] if `payload` is too small
+    /// - Returns [crate::Error::PacketTooLarge] if the payload is too large.
+    /// - Returns [crate::Error::InvalidEd25519Signature] if the signature in the payload is invalid
+    /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet
     pub fn from_relay_payload(public_key: &PublicKey, payload: &Bytes) -> Result<SignedPacket> {
         let mut bytes = BytesMut::with_capacity(payload.len() + 32);
 
@@ -119,6 +132,9 @@ impl SignedPacket {
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the [zbase32](z32) encoded [PublicKey] of the [Keypair] used to sign the Packet.
+    ///
+    /// # Errors
+    /// - Returns [crate::Error::DnsError] if the packet is invalid or it failed to compress or encode it.
     pub fn from_packet(keypair: &Keypair, packet: &Packet) -> Result<SignedPacket> {
         // Normalize names to the origin TLD
         let mut inner = Packet::new_reply(0);
