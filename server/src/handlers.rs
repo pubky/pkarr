@@ -1,4 +1,3 @@
-use anyhow::Result;
 use axum::extract::Path;
 use axum::http::HeaderMap;
 use axum::{extract::State, response::IntoResponse};
@@ -9,24 +8,24 @@ use tracing::{error, info};
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
-use crate::error::AppError;
+use crate::error::{Error, Result};
 
-use super::AppState;
+use super::server::AppState;
 
 pub async fn put(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
     body: Bytes,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse> {
     let public_key = PublicKey::try_from(public_key.as_str())
-        .map_err(|error| AppError::new(StatusCode::BAD_REQUEST, Some(error)))?;
+        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body).map_err(
         |error| match error {
             pkarr::Error::PacketTooLarge(_) => {
-                AppError::new(StatusCode::PAYLOAD_TOO_LARGE, Some(error))
+                Error::new(StatusCode::PAYLOAD_TOO_LARGE, Some(error))
             }
-            _ => AppError::new(StatusCode::BAD_REQUEST, Some(error)),
+            _ => Error::new(StatusCode::BAD_REQUEST, Some(error)),
         },
     )?;
 
@@ -35,17 +34,15 @@ pub async fn put(
         .publish(&signed_packet)
         .await
         .map_err(|error| match error {
-            pkarr::Error::PublishInflight => {
-                AppError::new(StatusCode::TOO_MANY_REQUESTS, Some(error))
-            }
-            pkarr::Error::NotMostRecent => AppError::new(StatusCode::CONFLICT, Some(error)),
+            pkarr::Error::PublishInflight => Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error)),
+            pkarr::Error::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
             pkarr::Error::DhtIsShutdown => {
                 error!("Dht is shutdown");
-                AppError::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
             }
             error => {
                 error!(?error, "Unexpected error in pkarr relay PUT");
-                AppError::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
             }
         })?;
 
@@ -57,9 +54,9 @@ pub async fn put(
 pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse> {
     let public_key = PublicKey::try_from(public_key.as_str())
-        .map_err(|error| AppError::new(StatusCode::BAD_REQUEST, Some(error)))?;
+        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
     info!(?public_key, "GET");
 
@@ -68,15 +65,15 @@ pub async fn get(
         .resolve(&public_key)
         .await
         .map_err(|error| match error {
-            pkarr::Error::NotFound(_) => AppError::with_status(StatusCode::NOT_FOUND),
+            pkarr::Error::NotFound(_) => Error::with_status(StatusCode::NOT_FOUND),
             pkarr::Error::DhtIsShutdown => {
                 error!("Dht is shutdown");
-                AppError::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
             }
             error => {
                 // TODO: do we need this explicit "in x", if we add better tracing tower stuff?
                 error!(?error, "Unexpected error in pkarr relay GET");
-                AppError::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
             }
         })?;
 

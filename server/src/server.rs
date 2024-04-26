@@ -1,30 +1,13 @@
-mod handlers;
+use std::net::SocketAddr;
 
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    time::Instant,
-};
-
-use anyhow::{bail, Context, Result};
-use axum::{
-    extract::{ConnectInfo, Request},
-    handler::Handler,
-    http::Method,
-    middleware::{self, Next},
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
+use anyhow::Result;
+use axum::{handler::Handler, http::Method, routing::get, Router};
 use tokio::{net::TcpListener, task::JoinSet};
-use tower_http::{
-    cors::{self, CorsLayer},
-    trace::TraceLayer,
-};
-use tracing::{info, span, warn, Level};
+use tower_http::cors::{self, CorsLayer};
+use tracing::{info, warn};
 
-use pkarr::{async_client::AsyncPkarrClient, PkarrClient};
+use pkarr::async_client::AsyncPkarrClient;
 
-/// The HTTP(S) server part of iroh-dns-server
 pub struct HttpServer {
     tasks: JoinSet<std::io::Result<()>>,
 }
@@ -84,43 +67,16 @@ impl HttpServer {
 }
 
 pub(crate) fn create_app(state: AppState) -> Router {
-    // configure cors middleware
     let cors = CorsLayer::new()
-        // allow `GET` and `POST` when accessing the resource
-        .allow_methods([Method::GET, Method::POST, Method::PUT])
-        // allow requests from any origin
+        .allow_methods([Method::GET, Method::PUT])
         .allow_origin(cors::Any);
 
-    // configure tracing middleware
-    // let trace = TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
-    //     let conn_info = request
-    //         .extensions()
-    //         .get::<ConnectInfo<SocketAddr>>()
-    //         .expect("connectinfo extension to be present");
-    //     let span = span!(
-    //     Level::DEBUG,
-    //         "http_request",
-    //         method = ?request.method(),
-    //         uri = ?request.uri(),
-    //         src = %conn_info.0,
-    //         );
-    //     span
-    // });
+    let rate_limit = crate::rate_limiting::create();
 
-    // configure rate limiting middleware
-    // let rate_limit = rate_limiting::create();
-
-    // configure routes
-    //
-    // only the pkarr::put route gets a rate limit
     let router = Router::new()
-        // .route("/dns-query", get(doh::get).post(doh::post))
         .route(
             "/:key",
-            get(handlers::get).put(
-                handlers::put, // Add rate limiting
-                               // .layer(rate_limit)
-            ),
+            get(crate::handlers::get).put(crate::handlers::put.layer(rate_limit)),
         )
         .route("/ping", get(|| async { "Pong" }))
         .route(
@@ -129,8 +85,8 @@ pub(crate) fn create_app(state: AppState) -> Router {
         )
         .with_state(state);
 
-    // configure app
     router.layer(cors)
+    // TODO: add tracing layer
     // .layer(trace)
 }
 

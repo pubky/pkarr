@@ -5,18 +5,17 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use serde::{Deserialize, Serialize};
 
-pub type AppResult<T> = Result<T, AppError>;
+pub type Result<T, E = Error> = core::result::Result<T, E>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppError {
-    #[serde(with = "serde_status_code")]
+#[derive(Debug, Clone)]
+pub struct Error {
+    // #[serde(with = "serde_status_code")]
     status: StatusCode,
     detail: Option<String>,
 }
 
-impl Default for AppError {
+impl Default for Error {
     fn default() -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -25,8 +24,8 @@ impl Default for AppError {
     }
 }
 
-impl AppError {
-    pub fn with_status(status: StatusCode) -> AppError {
+impl Error {
+    pub fn with_status(status: StatusCode) -> Error {
         Self {
             status,
             detail: None,
@@ -34,7 +33,7 @@ impl AppError {
     }
 
     /// Create a new [`AppError`].
-    pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> AppError {
+    pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> Error {
         Self {
             status: status_code,
             // title: Self::canonical_reason_to_string(&status_code),
@@ -43,7 +42,7 @@ impl AppError {
     }
 }
 
-impl IntoResponse for AppError {
+impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         match self.detail {
             Some(detail) => (self.status, detail).into_response(),
@@ -52,53 +51,20 @@ impl IntoResponse for AppError {
     }
 }
 
-impl From<anyhow::Error> for AppError {
-    fn from(value: anyhow::Error) -> Self {
-        Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            detail: Some(value.to_string()),
-        }
-    }
-}
-
-impl From<QueryRejection> for AppError {
+impl From<QueryRejection> for Error {
     fn from(value: QueryRejection) -> Self {
         Self::new(StatusCode::BAD_REQUEST, Some(value))
     }
 }
 
-impl From<ExtensionRejection> for AppError {
+impl From<ExtensionRejection> for Error {
     fn from(value: ExtensionRejection) -> Self {
         Self::new(StatusCode::BAD_REQUEST, Some(value))
     }
 }
 
-/// Serialize/Deserializer for status codes.
-///
-/// This is needed because status code according to JSON API spec must
-/// be the status code as a STRING.
-///
-/// We could have used http_serde, but it encodes the status code as a NUMBER.
-pub mod serde_status_code {
-    use http::StatusCode;
-    use serde::{de::Unexpected, Deserialize, Deserializer, Serialize, Serializer};
-
-    /// Serialize [StatusCode]s.
-    pub fn serialize<S: Serializer>(status: &StatusCode, ser: S) -> Result<S::Ok, S::Error> {
-        String::serialize(&status.as_u16().to_string(), ser)
-    }
-
-    /// Deserialize [StatusCode]s.
-    pub fn deserialize<'de, D>(de: D) -> Result<StatusCode, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let str = String::deserialize(de)?;
-        StatusCode::from_bytes(str.as_bytes()).map_err(|_| {
-            serde::de::Error::invalid_value(
-                Unexpected::Str(str.as_str()),
-                &"A valid http status code",
-            )
-        })
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
     }
 }

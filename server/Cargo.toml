@@ -17,4 +17,5 @@ axum-server = { version = "0.6.0", features = ["tls-rustls"] }
 http = "1.1.0"
 thiserror = "1.0.49"
 bytes = "1.6.0"
-serde = { version = "1.0.198", features = ["derive"] }
+tower_governor = "0.3.2"
+governor = "0.6.3"
