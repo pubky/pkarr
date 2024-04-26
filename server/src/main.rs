@@ -18,6 +18,8 @@ async fn main() -> Result<()> {
 
     let client = PkarrClient::builder()
         .cache_size(NonZeroUsize::new(1_000_000).unwrap())
+        // TODO: config
+        .port(6881)
         .build()
         .unwrap()
         .as_async();
