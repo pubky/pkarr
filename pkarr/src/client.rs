@@ -260,9 +260,8 @@ impl PkarrClient {
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
     /// the loop in the actor thread is stopped for any reason (like thread panic).
-    /// - Returns a [Error::NotFound] if no packet was resolved.
     #[instrument(skip(self))]
-    pub fn resolve(&self, public_key: &PublicKey) -> Result<SignedPacket> {
+    pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
 
         let cached_packet = self.cache.get(&target);
@@ -272,7 +271,7 @@ impl PkarrClient {
 
             if expires_in > 0 {
                 debug!(expires_in, "Have fresh signed_packet in cache.");
-                return Ok(cached.clone());
+                return Ok(Some(cached.clone()));
             }
         }
 
@@ -293,9 +292,7 @@ impl PkarrClient {
             ))
             .map_err(|_| Error::DhtIsShutdown)?;
 
-        receiver
-            .recv()
-            .map_err(|_| Error::NotFound(public_key.to_string()))
+        Ok(receiver.recv().ok())
     }
 
     /// Shutdown the actor thread loop.
@@ -552,10 +549,10 @@ mod tests {
             .build()
             .unwrap();
 
-        let resolved = b.resolve(&keypair.public_key()).unwrap();
+        let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-        let from_cache = b.resolve(&keypair.public_key()).unwrap();
+        let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     }

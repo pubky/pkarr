@@ -60,37 +60,40 @@ pub async fn get(
 
     info!(?public_key, "GET");
 
-    let signed_packet = state
-        .client
-        .resolve(&public_key)
-        .await
-        .map_err(|error| match error {
-            pkarr::Error::NotFound(_) => Error::with_status(StatusCode::NOT_FOUND),
-            pkarr::Error::DhtIsShutdown => {
-                error!("Dht is shutdown");
-                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            error => {
-                // TODO: do we need this explicit "in x", if we add better tracing tower stuff?
-                error!(?error, "Unexpected error in pkarr relay GET");
-                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-        })?;
+    if let Some(signed_packet) =
+        state
+            .client
+            .resolve(&public_key)
+            .await
+            .map_err(|error| match error {
+                pkarr::Error::DhtIsShutdown => {
+                    error!("Dht is shutdown");
+                    Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                }
+                error => {
+                    // TODO: do we need this explicit "in x", if we add better tracing tower stuff?
+                    error!(?error, "Unexpected error in pkarr relay GET");
+                    Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                }
+            })?
+    {
+        let body = signed_packet.to_relay_payload();
 
-    let body = signed_packet.to_relay_payload();
+        let ttl = signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL);
 
-    let ttl = signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL);
+        let mut header_map = HeaderMap::new();
 
-    let mut header_map = HeaderMap::new();
+        header_map.insert(
+            header::CONTENT_TYPE,
+            "application/pkarr.org/relays#payload".try_into().unwrap(),
+        );
+        header_map.insert(
+            header::CACHE_CONTROL,
+            format!("public, max-age={}", ttl).try_into().unwrap(),
+        );
 
-    header_map.insert(
-        header::CONTENT_TYPE,
-        "application/pkarr.org/relays#payload".try_into().unwrap(),
-    );
-    header_map.insert(
-        header::CACHE_CONTROL,
-        format!("public, max-age={}", ttl).try_into().unwrap(),
-    );
-
-    Ok((header_map, body))
+        Ok((header_map, body))
+    } else {
+        Err(Error::with_status(StatusCode::NOT_FOUND))
+    }
 }

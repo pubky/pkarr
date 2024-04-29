@@ -53,17 +53,18 @@ fn resolve(client: &PkarrClient, public_key: &PublicKey) {
     let start = Instant::now();
 
     match client.resolve(public_key) {
-        Ok(signed_packet) => {
+        Ok(Some(signed_packet)) => {
             println!(
                 "\nResolved in {:?} milliseconds {}",
                 start.elapsed().as_millis(),
                 signed_packet
             );
         }
+        Ok(None) => {
+            println!("\nFailed to resolve {}", public_key);
+        }
         Err(error) => {
             dbg!(error);
-
-            println!("\nFailed to resolve {}", public_key);
         }
     }
 }

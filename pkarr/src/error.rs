@@ -52,10 +52,6 @@ pub enum Error {
     /// The dht was shutdown.
     DhtIsShutdown,
 
-    #[error("Failed to resolve SignedPacket for publickey: {0}")]
-    /// The dht was shutdown.
-    NotFound(String),
-
     #[error("Publish query is already inflight for the same public_key")]
     /// [crate::PkarrClient::publish] is already inflight to the same public_key
     PublishInflight,
