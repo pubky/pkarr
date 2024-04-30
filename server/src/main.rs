@@ -1,4 +1,5 @@
 mod cache;
+mod config;
 mod error;
 mod handlers;
 mod rate_limiting;
@@ -6,13 +7,21 @@ mod server;
 
 use anyhow::Result;
 use cache::HeedPkarrCache;
-use std::env;
+use clap::Parser;
+use config::Config;
 use std::fs;
-use std::path::Path;
-use tracing::{info, Level};
+use std::path::PathBuf;
+use tracing::{debug, info, Level};
 
 use pkarr::PkarrClient;
 use server::HttpServer;
+
+#[derive(Parser, Debug)]
+struct Cli {
+    /// Path to config file
+    #[clap(short, long)]
+    config: Option<PathBuf>,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,15 +30,20 @@ async fn main() -> Result<()> {
         .with_env_filter("pkarr=debug")
         .init();
 
-    // TODO: config
-    let exe_path = env::current_exe().expect("Failed to get current executable path");
-    let dir_path = exe_path
-        .parent()
-        .expect("Failed to get directory of the current executable");
-    let env_path = Path::new(dir_path).join("../storage/pkarr-server/pkarr-cache");
-    fs::create_dir_all(&env_path)?;
+    // Config::load();
+    let args = Cli::parse();
 
-    let cache = Box::new(HeedPkarrCache::new(&env_path, 1).unwrap());
+    let config = if let Some(path) = args.config {
+        Config::load(path).await?
+    } else {
+        Config::default()
+    };
+
+    debug!(?config);
+
+    let env_path = &config.pkarr_cache_path()?;
+    fs::create_dir_all(env_path)?;
+    let cache = Box::new(HeedPkarrCache::new(&env_path, 1_000_000).unwrap());
 
     let client = PkarrClient::builder()
         .port(6881)

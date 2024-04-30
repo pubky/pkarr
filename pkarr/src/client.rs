@@ -26,7 +26,7 @@ use crate::{
 
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
-pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:7101"];
+pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
 
 #[derive(Debug, Clone)]
 pub struct Settings {
@@ -35,13 +35,6 @@ pub struct Settings {
     ///
     /// Defaults to `false`
     pub resolver: bool,
-    /// Controls the Resolver behavior when querying the Dht on cache miss.
-    /// if set to `true`, it will query [Settings::resolvers] alongside the closest nodes.
-    ///
-    /// If [Settings::resolver] is `false` (default), this will have no effect.
-    ///
-    /// Defaults to `false`
-    pub recursive: bool,
     /// A set of [resolver](https://pkarr.org/resolvers)s
     /// to be queried alongside the Dht routing table, to
     /// lower the latency on cold starts, and help if the
@@ -52,6 +45,11 @@ pub struct Settings {
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: NonZeroUsize,
     /// Used in the `min` parametere in [SignedPacket::ttl].
+    ///
+    /// It is highly advisable to keep this number high enough,
+    /// especially when you run as a resolver that itself query resolvers
+    /// to query, because otherwise, you run the risk of two resolvers
+    /// get into an infinite recursion.
     ///
     /// Defaults to [DEFAULT_MINIMUM_TTL]
     pub minimum_ttl: u32,
@@ -69,7 +67,6 @@ impl Default for Settings {
             dht: DhtSettings::default(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
             resolver: false,
-            recursive: false,
             resolvers: DEFAULT_RESOLVERS
                 .iter()
                 .flat_map(|resolver| resolver.to_socket_addrs())
@@ -94,14 +91,6 @@ impl PkarrClientBuilder {
     pub fn resolver(mut self) -> Self {
         self.settings.resolver = true;
         self.settings.dht.server = true;
-        self
-    }
-
-    /// Set [Settings::recursive] to true.
-    ///
-    /// Set to true to help your resolver leverage even bigger resolvers.
-    pub fn recursive(mut self) -> Self {
-        self.settings.recursive = true;
         self
     }
 
@@ -496,11 +485,7 @@ fn run(
                                 salt: None,
                             }),
                             None,
-                            if settings.recursive {
-                                Some(settings.resolvers.clone())
-                            } else {
-                                None
-                            },
+                            Some(settings.resolvers.to_owned()),
                         );
                     }
                 };

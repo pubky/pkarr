@@ -86,7 +86,7 @@ pub(crate) fn create_app(state: AppState) -> Router {
         .with_state(state);
 
     router.layer(cors)
-    // TODO: add tracing layer
+    // TODO: enable
     // .layer(trace)
 }
 
