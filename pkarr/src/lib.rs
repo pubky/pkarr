@@ -1,7 +1,6 @@
 #![doc = include_str!("../README.md")]
 
 // TODO: add support for wasm using relays.
-// TODO: allow custom Cache with traits.
 
 // Rexports
 pub use bytes;

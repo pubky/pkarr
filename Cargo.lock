@@ -209,15 +209,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "bitflags"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -705,7 +696,6 @@ dependencies = [
  "lmdb-master-sys",
  "once_cell",
  "page_size",
- "serde",
  "synchronoise",
  "url",
 ]
@@ -722,11 +712,8 @@ version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3cb0d6ba3700c9a57e83c013693e3eddb68a6d9b6781cacafc62a0d992e8ddb3"
 dependencies = [
- "bincode",
  "byteorder",
  "heed-traits",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -899,8 +886,9 @@ checksum = "d3262e75e648fce39813cb56ac41f3c3e3f65217ebf3844d818d1f9398cfb0dc"
 
 [[package]]
 name = "mainline"
-version = "1.5.0"
-source = "git+https://github.com/Nuhvi/mainline.git?branch=v2#97d21073816223d60278dc7b967c8dc4eabd5c70"
+version = "2.0.0-rc1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "243e63833b8d5a333f0a2d384eb6eff4f5795ad9a68b1b2b731573d969011014"
 dependencies = [
  "bytes",
  "crc",
@@ -1172,6 +1160,7 @@ dependencies = [
  "anyhow",
  "axum",
  "axum-server",
+ "byteorder",
  "bytes",
  "governor",
  "heed",

@@ -14,7 +14,7 @@ use std::{
     char,
     fmt::{self, Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
-    time::{Duration, Instant, SystemTime},
+    time::SystemTime,
 };
 
 const DOT: char = '.';
@@ -61,7 +61,7 @@ impl Inner {
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
-    last_seen: Instant,
+    last_seen: u64,
 }
 
 impl SignedPacket {
@@ -101,13 +101,13 @@ impl SignedPacket {
 
         Ok(SignedPacket {
             inner: Inner::try_from_bytes(bytes)?,
-            last_seen: Instant::now(),
+            last_seen: system_time(),
         })
     }
 
     /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
     /// like ones stored on disk or in a database.
-    pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: Instant) -> SignedPacket {
+    pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: u64) -> SignedPacket {
         SignedPacket {
             inner: Inner::try_from_bytes(bytes).unwrap(),
             last_seen,
@@ -171,7 +171,7 @@ impl SignedPacket {
             return Err(Error::PacketTooLarge(encoded_packet.len()));
         }
 
-        let timestamp = system_time().as_micros() as u64;
+        let timestamp = system_time();
 
         let signature = keypair.sign(&signable(timestamp, &encoded_packet));
 
@@ -182,7 +182,7 @@ impl SignedPacket {
                 timestamp,
                 &encoded_packet,
             )?,
-            last_seen: Instant::now(),
+            last_seen: system_time(),
         })
     }
 
@@ -234,18 +234,24 @@ impl SignedPacket {
         self.inner.borrow_dependent()
     }
 
-    pub fn last_seen(&self) -> &Instant {
+    /// Unix last_seen time in microseconds
+    pub fn last_seen(&self) -> &u64 {
         &self.last_seen
     }
 
     // === Setters ===
 
     /// Set the [Self::last_seen] property
-    pub fn set_last_seen(&mut self, last_seen: &Instant) {
+    pub fn set_last_seen(&mut self, last_seen: &u64) {
         self.last_seen = *last_seen;
     }
 
     // === Public Methods ===
+
+    /// Set the [Self::last_seen] to the current system time
+    pub fn refresh(&mut self) {
+        self.last_seen = system_time();
+    }
 
     /// Return whether this [SignedPacket] is more recent than the given one.
     /// If the timestamps are erqual, the one with the largest value is considered more recent.
@@ -285,12 +291,9 @@ impl SignedPacket {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
 
-        let elapsed = self.last_seen().elapsed().as_secs() as u32;
-
-        self.packet()
-            .answers
-            .iter()
-            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > elapsed)
+        self.packet().answers.iter().filter(move |rr| {
+            rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > self.elapsed()
+        })
     }
 
     /// calculates the remaining seconds by comparing the [Self::ttl] (clamped by `min` and `max`)
@@ -300,10 +303,7 @@ impl SignedPacket {
     ///
     /// Panics if `min` < `max`
     pub fn expires_in(&self, min: u32, max: u32) -> u32 {
-        match self
-            .ttl(min, max)
-            .overflowing_sub(self.last_seen.elapsed().as_secs() as u32)
-        {
+        match self.ttl(min, max).overflowing_sub(self.elapsed()) {
             (_, true) => 0,
             (ttl, false) => ttl,
         }
@@ -323,6 +323,13 @@ impl SignedPacket {
             .min()
             .map_or(min, |v| v.clamp(min, max))
     }
+
+    // === Private Methods ===
+
+    /// Time since the [Self::last_seen] in seconds
+    fn elapsed(&self) -> u32 {
+        ((system_time() - self.last_seen) / 1_000_000) as u32
+    }
 }
 
 fn signable(timestamp: u64, v: &Bytes) -> Bytes {
@@ -331,10 +338,12 @@ fn signable(timestamp: u64, v: &Bytes) -> Bytes {
     signable.into()
 }
 
-fn system_time() -> Duration {
+/// Return the number of microseconds since [SystemTime::UNIX_EPOCH]
+pub fn system_time() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("time drift")
+        .as_micros() as u64
 }
 
 #[cfg(feature = "dht")]
@@ -364,7 +373,7 @@ impl TryFrom<&MutableItem> for SignedPacket {
 
         Ok(Self {
             inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
-            last_seen: Instant::now(),
+            last_seen: system_time(),
         })
     }
 }
@@ -389,7 +398,7 @@ impl Display for SignedPacket {
             f,
             "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {},\n    signature: {}\n    records:\n",
             &self.public_key(),
-            &self.last_seen().elapsed().as_secs(),
+            &self.elapsed(),
             &self.timestamp(),
             &self.signature(),
         )?;

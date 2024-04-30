@@ -17,8 +17,6 @@ use server::HttpServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // TODO logs with tower
-
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .with_env_filter("pkarr=debug")
@@ -32,7 +30,7 @@ async fn main() -> Result<()> {
     let env_path = Path::new(dir_path).join("../storage/pkarr-server/pkarr-cache");
     fs::create_dir_all(&env_path)?;
 
-    let cache = Box::new(HeedPkarrCache::new(&env_path, 10).unwrap());
+    let cache = Box::new(HeedPkarrCache::new(&env_path, 1).unwrap());
 
     let client = PkarrClient::builder()
         .port(6881)

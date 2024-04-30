@@ -1,17 +1,12 @@
-use std::{
-    borrow::Cow,
-    path::Path,
-    time::{Duration, Instant, SystemTime},
-};
+use std::{borrow::Cow, path::Path};
 
-use governor::clock::Reference;
 use pkarr::{
     cache::{PkarrCache, PkarrCacheKey},
-    SignedPacket,
+    signed_packet::{system_time, SignedPacket},
 };
 
-use heed::{BoxedError, BytesDecode, BytesEncode, Env};
-use heed::{Database, EnvOpenOptions};
+use byteorder::LittleEndian;
+use heed::{types::U64, BoxedError, BytesDecode, BytesEncode, Database, Env, EnvOpenOptions};
 
 use anyhow::Result;
 use tracing::debug;
@@ -21,8 +16,8 @@ const PKARR_CACHE_TABLE_NAME_KEY_TO_TIME: &str = "pkarrcache:key_to_time";
 const PKARR_CACHE_TABLE_NAME_TIME_TO_KEY: &str = "pkarrcache:time_to_key";
 
 type PkarrCacheSignedPacketsTable = Database<PkarrCacheKeyCodec, SignedPacketCodec>;
-type PkarrCacheKeyToTimeTable = Database<PkarrCacheKeyCodec, InstantCodec>;
-type PkarrCacheTimeToKeyTable = Database<InstantCodec, PkarrCacheKeyCodec>;
+type PkarrCacheKeyToTimeTable = Database<PkarrCacheKeyCodec, U64<LittleEndian>>;
+type PkarrCacheTimeToKeyTable = Database<U64<LittleEndian>, PkarrCacheKeyCodec>;
 
 pub struct PkarrCacheKeyCodec;
 
@@ -34,44 +29,11 @@ impl<'a> BytesEncode<'a> for PkarrCacheKeyCodec {
     }
 }
 
-pub struct InstantCodec;
-
-impl<'a> BytesEncode<'a> for InstantCodec {
-    type EItem = Instant;
-
-    fn bytes_encode(instant: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
-        let system_now = SystemTime::now();
-        let instant_now = Instant::now();
-        let approx = system_now - (instant_now - *instant);
-
-        let vec = (approx
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("time drift")
-            // Casting as u64 is safe for ~500_000 years.
-            .as_micros() as u64)
-            .to_be_bytes()
-            .to_vec();
-
-        Ok(Cow::Owned(vec))
-    }
-}
-
-impl<'a> BytesDecode<'a> for InstantCodec {
-    type DItem = Instant;
+impl<'a> BytesDecode<'a> for PkarrCacheKeyCodec {
+    type DItem = PkarrCacheKey;
 
     fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
-        let mut first_8_bytes: [u8; 8] = [0; 8];
-        first_8_bytes.copy_from_slice(&bytes[0..8]);
-        let micros = u64::from_be_bytes(first_8_bytes);
-
-        let duration_since_unix = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("time drift");
-        let encoded_duration = Duration::from_micros(micros);
-
-        let instant = Instant::now() - duration_since_unix + encoded_duration;
-
-        Ok(instant)
+        Ok(PkarrCacheKey::from_bytes(bytes)?)
     }
 }
 
@@ -81,12 +43,11 @@ impl<'a> BytesEncode<'a> for SignedPacketCodec {
     type EItem = SignedPacket;
 
     fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
-        let instant = signed_packet.last_seen();
         let bytes = signed_packet.as_bytes();
 
         let mut vec = Vec::with_capacity(bytes.len() + 8);
 
-        vec.extend(InstantCodec::bytes_encode(instant)?.as_ref());
+        vec.extend(<U64<LittleEndian>>::bytes_encode(signed_packet.last_seen())?.as_ref());
         vec.extend(bytes);
 
         Ok(Cow::Owned(vec))
@@ -97,7 +58,7 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
     type DItem = SignedPacket;
 
     fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
-        let last_seen = InstantCodec::bytes_decode(&bytes)?;
+        let last_seen = <U64<LittleEndian>>::bytes_decode(&bytes)?;
 
         Ok(SignedPacket::from_bytes_unchecked(
             &bytes[8..].to_vec().into(),
@@ -124,9 +85,9 @@ impl HeedPkarrCache {
         let mut wtxn = env.write_txn()?;
         let _: PkarrCacheSignedPacketsTable =
             env.create_database(&mut wtxn, Some(PKARR_CACHE_TABLE_NAME_SIGNED_PACKET))?;
-        let _: Database<PkarrCacheKeyCodec, InstantCodec> =
+        let _: PkarrCacheKeyToTimeTable =
             env.create_database(&mut wtxn, Some(PKARR_CACHE_TABLE_NAME_KEY_TO_TIME))?;
-        let _: Database<InstantCodec, PkarrCacheKeyCodec> =
+        let _: PkarrCacheTimeToKeyTable =
             env.create_database(&mut wtxn, Some(PKARR_CACHE_TABLE_NAME_TIME_TO_KEY))?;
 
         wtxn.commit()?;
@@ -145,7 +106,10 @@ impl HeedPkarrCache {
         Ok(db.len(&rtxn)? as usize)
     }
     pub fn internal_put(&self, key: &PkarrCacheKey, signed_packet: &SignedPacket) -> Result<()> {
-        // TODO: delete with capactiy
+        if self.capacity == 0 {
+            return Ok(());
+        }
+
         let mut wtxn = self.env.write_txn()?;
 
         let packets: PkarrCacheSignedPacketsTable = self
@@ -163,11 +127,27 @@ impl HeedPkarrCache {
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_TIME_TO_KEY))?
             .unwrap();
 
+        let len = packets.len(&wtxn)? as usize;
+
+        if len >= self.capacity {
+            debug!(?len, ?self.capacity, "Reached cache capacity, deleting extra item.");
+
+            let mut iter = time_to_key.rev_iter(&mut wtxn)?;
+
+            if let Some((time, key)) = iter.next().transpose()? {
+                drop(iter);
+
+                time_to_key.delete(&mut wtxn, &time)?;
+                key_to_time.delete(&mut wtxn, &key)?;
+                packets.delete(&mut wtxn, &key)?;
+            };
+        }
+
         if let Some(old_time) = key_to_time.get(&wtxn, &key)? {
             time_to_key.delete(&mut wtxn, &old_time)?;
         }
 
-        let new_time = Instant::now();
+        let new_time = system_time();
 
         time_to_key.put(&mut wtxn, &new_time, &key)?;
         key_to_time.put(&mut wtxn, &key, &new_time)?;
@@ -180,6 +160,9 @@ impl HeedPkarrCache {
     }
 
     pub fn internal_get(&self, key: &PkarrCacheKey) -> Result<Option<SignedPacket>> {
+        // TODO: Optimize to use read transaction most of the time, and batch
+        // updating access times every few seconds.
+
         let mut wtxn = self.env.write_txn()?;
 
         let packets: PkarrCacheSignedPacketsTable = self
@@ -201,7 +184,7 @@ impl HeedPkarrCache {
                 time_to_key.delete(&mut wtxn, &time)?;
             };
 
-            let new_time = Instant::now();
+            let new_time = system_time();
 
             time_to_key.put(&mut wtxn, &new_time, key)?;
             key_to_time.put(&mut wtxn, &key, &new_time)?;

@@ -16,7 +16,6 @@ use std::{
     net::{SocketAddr, ToSocketAddrs},
     num::NonZeroUsize,
     thread,
-    time::Instant,
 };
 use tracing::{debug, info, instrument, trace};
 
@@ -438,7 +437,7 @@ fn run(
                     if (*seq as u64) == cached.timestamp() {
                         trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
 
-                        cached.set_last_seen(&Instant::now());
+                        cached.refresh();
                         cache.put(target, &cached);
 
                         // Send the found sequence as a timestamp to the caller to decide what to do
