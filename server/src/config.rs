@@ -39,6 +39,14 @@ impl Config {
         Ok(config)
     }
 
+    pub fn relay_port(&self) -> u16 {
+        self.relay_port
+    }
+
+    pub fn dht_port(&self) -> u16 {
+        self.dht_port
+    }
+
     /// Get the path to the cache database file.
     pub fn pkarr_cache_path(&self) -> Result<PathBuf> {
         let dir = if let Some(cache_path) = &self.cache_path {

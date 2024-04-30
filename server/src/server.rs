@@ -14,7 +14,7 @@ pub struct HttpServer {
 
 impl HttpServer {
     /// Spawn the server
-    pub async fn spawn(client: AsyncPkarrClient) -> Result<HttpServer> {
+    pub async fn spawn(client: AsyncPkarrClient, port: u16) -> Result<HttpServer> {
         let app = create_app(AppState { client });
 
         let mut tasks = JoinSet::new();
@@ -22,7 +22,9 @@ impl HttpServer {
         // launch http
         let app = app.clone();
 
-        let listener = TcpListener::bind("0.0.0.0:6881").await?.into_std()?;
+        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port)))
+            .await?
+            .into_std()?;
         let bound_addr = listener.local_addr()?;
 
         let fut = axum_server::from_tcp(listener)

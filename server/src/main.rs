@@ -46,13 +46,14 @@ async fn main() -> Result<()> {
     let cache = Box::new(HeedPkarrCache::new(&env_path, 1_000_000).unwrap());
 
     let client = PkarrClient::builder()
-        .port(6881)
+        .port(config.dht_port())
+        .resolver()
         .cache(cache)
         .build()
         .unwrap()
         .as_async();
 
-    let http_server = HttpServer::spawn(client).await?;
+    let http_server = HttpServer::spawn(client, config.relay_port()).await?;
 
     tokio::signal::ctrl_c().await?;
 
