@@ -1,5 +1,4 @@
 mod cache;
-#[allow(dead_code)]
 mod error;
 mod handlers;
 mod rate_limiting;

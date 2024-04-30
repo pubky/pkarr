@@ -14,6 +14,9 @@ pub type PkarrCacheKey = Id;
 
 pub trait PkarrCache: Debug + Send + Sync + DynClone {
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn put(&self, key: &PkarrCacheKey, signed_packet: &SignedPacket);
     fn get(&self, key: &PkarrCacheKey) -> Option<SignedPacket>;
 }

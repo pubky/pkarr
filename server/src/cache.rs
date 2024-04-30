@@ -58,7 +58,7 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
     type DItem = SignedPacket;
 
     fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
-        let last_seen = <U64<LittleEndian>>::bytes_decode(&bytes)?;
+        let last_seen = <U64<LittleEndian>>::bytes_decode(bytes)?;
 
         Ok(SignedPacket::from_bytes_unchecked(
             &bytes[8..].to_vec().into(),
@@ -132,7 +132,7 @@ impl HeedPkarrCache {
         if len >= self.capacity {
             debug!(?len, ?self.capacity, "Reached cache capacity, deleting extra item.");
 
-            let mut iter = time_to_key.rev_iter(&mut wtxn)?;
+            let mut iter = time_to_key.rev_iter(&wtxn)?;
 
             if let Some((time, key)) = iter.next().transpose()? {
                 drop(iter);
@@ -143,16 +143,16 @@ impl HeedPkarrCache {
             };
         }
 
-        if let Some(old_time) = key_to_time.get(&wtxn, &key)? {
+        if let Some(old_time) = key_to_time.get(&wtxn, key)? {
             time_to_key.delete(&mut wtxn, &old_time)?;
         }
 
         let new_time = system_time();
 
-        time_to_key.put(&mut wtxn, &new_time, &key)?;
-        key_to_time.put(&mut wtxn, &key, &new_time)?;
+        time_to_key.put(&mut wtxn, &new_time, key)?;
+        key_to_time.put(&mut wtxn, key, &new_time)?;
 
-        packets.put(&mut wtxn, &key, &signed_packet)?;
+        packets.put(&mut wtxn, key, signed_packet)?;
 
         wtxn.commit()?;
 
@@ -179,7 +179,7 @@ impl HeedPkarrCache {
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_TIME_TO_KEY))?
             .unwrap();
 
-        if let Some(signed_packet) = packets.get(&wtxn, &key)? {
+        if let Some(signed_packet) = packets.get(&wtxn, key)? {
             if let Some(time) = key_to_time.get(&wtxn, key)? {
                 time_to_key.delete(&mut wtxn, &time)?;
             };
@@ -187,7 +187,7 @@ impl HeedPkarrCache {
             let new_time = system_time();
 
             time_to_key.put(&mut wtxn, &new_time, key)?;
-            key_to_time.put(&mut wtxn, &key, &new_time)?;
+            key_to_time.put(&mut wtxn, key, &new_time)?;
 
             wtxn.commit()?;
 
@@ -226,23 +226,5 @@ impl PkarrCache for HeedPkarrCache {
                 None
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use super::InstantCodec;
-    use heed::BytesDecode;
-    use std::time::Instant;
-
-    #[test]
-    fn instant_encoding() {
-        let instant = Instant::now();
-        let encoded = InstantCodec::bytes_encode(&instant).unwrap();
-        let decoded = InstantCodec::bytes_decode(&encoded).unwrap();
-
-        assert_eq!(decoded - instant, Duration::from_secs(0))
     }
 }

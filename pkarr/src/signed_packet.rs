@@ -694,7 +694,7 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        signed.last_seen = Instant::now() - Duration::from_secs(20);
+        signed.last_seen = system_time() - (20 * 1_000_000);
 
         assert!(
             signed.expires_in(30, u32::MAX) > 0,
@@ -720,7 +720,7 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        signed.last_seen = Instant::now() - Duration::from_secs(2 * DEFAULT_MAXIMUM_TTL as u64);
+        signed.last_seen = system_time() - (2 * (DEFAULT_MAXIMUM_TTL as u64) * 1_000_000);
 
         assert!(
             signed.expires_in(0, DEFAULT_MAXIMUM_TTL) == 0,
@@ -752,7 +752,7 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        signed.last_seen = Instant::now() - Duration::from_secs(30);
+        signed.last_seen = system_time() - (30 * 1_000_000);
 
         assert_eq!(signed.fresh_resource_records("_foo").count(), 1);
     }
