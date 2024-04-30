@@ -64,7 +64,7 @@ fn resolve(client: &PkarrClient, public_key: &PublicKey) {
             println!("\nFailed to resolve {}", public_key);
         }
         Err(error) => {
-            dbg!(error);
+            println!("Got error: {:?}", error)
         }
     }
 }

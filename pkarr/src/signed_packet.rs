@@ -1,3 +1,5 @@
+//! Signed DNS packet
+
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;

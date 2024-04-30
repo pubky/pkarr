@@ -1,3 +1,5 @@
+//! Native Pkarr client for publishing and resolving [SignedPacket]s.
+
 use flume::{Receiver, Sender};
 use mainline::{
     dht::DhtSettings,
@@ -16,11 +18,11 @@ use std::{
     thread,
     time::Instant,
 };
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, trace};
 
 use crate::{
-    cache::PkarrCache, Error, PublicKey, Result, SignedPacket, DEFAULT_MAXIMUM_TTL,
-    DEFAULT_MINIMUM_TTL,
+    cache::{InMemoryPkarrCache, PkarrCache},
+    Error, PublicKey, Result, SignedPacket, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
 };
 
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
@@ -58,6 +60,8 @@ pub struct Settings {
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
+    /// Custom [PkarrCache] implementation, defaults to [InMemoryPkarrCache]
+    pub cache: Option<Box<dyn PkarrCache>>,
 }
 
 impl Default for Settings {
@@ -74,6 +78,7 @@ impl Default for Settings {
                 .collect::<Vec<_>>(),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
+            cache: None,
         }
     }
 }
@@ -149,6 +154,12 @@ impl PkarrClientBuilder {
         self
     }
 
+    /// Set a custom implementation of [PkarrCache].
+    pub fn cache(mut self, cache: Box<dyn PkarrCache>) -> Self {
+        self.settings.cache = Some(cache);
+        self
+    }
+
     pub fn build(self) -> Result<PkarrClient> {
         PkarrClient::new(self.settings)
     }
@@ -159,7 +170,7 @@ impl PkarrClientBuilder {
 pub struct PkarrClient {
     pub(crate) address: Option<SocketAddr>,
     pub(crate) sender: Sender<ActorMessage>,
-    pub(crate) cache: PkarrCache,
+    pub(crate) cache: Box<dyn PkarrCache>,
     pub(crate) minimum_ttl: u32,
     pub(crate) maximum_ttl: u32,
 }
@@ -176,8 +187,11 @@ impl PkarrClient {
 
         info!(?local_addr, "Running PkarrClient");
 
-        let cache = PkarrCache::new(settings.cache_size);
-        let moved_cache = cache.clone();
+        let cache = settings
+            .cache
+            .clone()
+            .unwrap_or(Box::new(InMemoryPkarrCache::new(settings.cache_size)));
+        let cache_clone = cache.clone();
 
         let client = PkarrClient {
             address: Some(local_addr),
@@ -187,7 +201,7 @@ impl PkarrClient {
             maximum_ttl: settings.maximum_ttl,
         };
 
-        thread::spawn(move || run(rpc, moved_cache, settings, receiver));
+        thread::spawn(move || run(rpc, cache_clone, settings, receiver));
 
         Ok(client)
     }
@@ -207,8 +221,8 @@ impl PkarrClient {
     }
 
     /// Returns a reference to the internal cache.
-    pub fn cache(&self) -> &PkarrCache {
-        &self.cache
+    pub fn cache(&self) -> &dyn PkarrCache {
+        self.cache.as_ref()
     }
 
     // === Public Methods ===
@@ -273,13 +287,15 @@ impl PkarrClient {
                 debug!(expires_in, "Have fresh signed_packet in cache.");
                 return Ok(Some(cached.clone()));
             }
+
+            debug!(expires_in, "Have expired signed_packet in cache.");
+        } else {
+            debug!("Cache mess");
         }
 
         // Cache miss
 
         let (sender, receiver) = flume::bounded::<SignedPacket>(1);
-
-        debug!("Cache miss, asking the network for a fresh signed_packet");
 
         self.sender
             .send(ActorMessage::Resolve(
@@ -311,7 +327,12 @@ impl PkarrClient {
     }
 }
 
-fn run(mut rpc: Rpc, cache: PkarrCache, settings: Settings, receiver: Receiver<ActorMessage>) {
+fn run(
+    mut rpc: Rpc,
+    cache: Box<dyn PkarrCache>,
+    settings: Settings,
+    receiver: Receiver<ActorMessage>,
+) {
     let mut server = mainline::server::Server::new(&settings.dht.server_settings);
     let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
 
@@ -415,7 +436,7 @@ fn run(mut rpc: Rpc, cache: PkarrCache, settings: Settings, receiver: Receiver<A
             }) => {
                 if let Some(mut cached) = cache.get(target) {
                     if (*seq as u64) == cached.timestamp() {
-                        debug!("Remote node has the a packet with same timestamp, refreshing cached packet.");
+                        trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
 
                         cached.set_last_seen(&Instant::now());
                         cache.put(target, &cached);
@@ -555,5 +576,45 @@ mod tests {
         let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
+    }
+
+    #[test]
+    fn thread_safe() {
+        let testnet = Testnet::new(10);
+
+        let a = PkarrClient::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let mut packet = dns::Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            dns::rdata::RData::TXT("bar".try_into().unwrap()),
+        ));
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        let _ = a.publish(&signed_packet);
+
+        let b = PkarrClient::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
+
+        thread::spawn(move || {
+            let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
+            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+
+            let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
+            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+            assert_eq!(from_cache.last_seen(), resolved.last_seen());
+        })
+        .join()
+        .unwrap();
     }
 }

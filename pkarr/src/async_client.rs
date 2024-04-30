@@ -1,3 +1,5 @@
+//! Async version of [PkarrClient]
+
 use mainline::{Id, MutableItem};
 use std::net::SocketAddr;
 use tracing::{debug, instrument};
@@ -30,8 +32,8 @@ impl AsyncPkarrClient {
     }
 
     /// Returns a reference to the internal cache.
-    pub fn cache(&self) -> &PkarrCache {
-        &self.0.cache
+    pub fn cache(&self) -> &dyn PkarrCache {
+        self.0.cache.as_ref()
     }
 
     // === Public Methods ===
@@ -95,6 +97,10 @@ impl AsyncPkarrClient {
                 debug!(expires_in, "Have fresh signed_packet in cache.");
                 return Ok(Some(cached.clone()));
             }
+
+            debug!(expires_in, "Have expired signed_packet in cache.");
+        } else {
+            debug!("Cache mess");
         }
 
         // Cache miss
