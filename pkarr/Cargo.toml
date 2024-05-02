@@ -14,7 +14,7 @@ dyn-clone = "1.0.17"
 ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
 flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
 lru = { version = "0.12.3", default-features = false }
-mainline = { version = "2.0.0-rc1", optional = true }
+mainline = { version = "2.0.0-rc1", optional = true, git = "https://github.com/Nuhvi/mainline.git", branch = "feat/custom-server" }
 rand = "0.8.5"
 self_cell = "1.0.2"
 simple-dns = "0.6.1"
@@ -32,6 +32,7 @@ async= ["flume/async"]
 dht=["mainline"]
 
 default = ["dht"]
+mainline = ["dep:mainline"]
 
 [package.metadata.docs.rs]
 all-features = true

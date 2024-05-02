@@ -32,7 +32,7 @@ impl Error {
         }
     }
 
-    /// Create a new [`AppError`].
+    /// Create a new [`Error`].
     pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> Error {
         Self {
             status: status_code,

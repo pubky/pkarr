@@ -4,13 +4,13 @@ use axum::{extract::State, response::IntoResponse};
 
 use bytes::Bytes;
 use http::{header, StatusCode};
-use tracing::{error, info};
+use tracing::error;
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
 use crate::error::{Error, Result};
 
-use super::server::AppState;
+use super::http_server::AppState;
 
 pub async fn put(
     State(state): State<AppState>,
@@ -46,8 +46,6 @@ pub async fn put(
             }
         })?;
 
-    info!(?public_key, "PUT");
-
     Ok(StatusCode::OK)
 }
 
@@ -57,8 +55,6 @@ pub async fn get(
 ) -> Result<impl IntoResponse> {
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
-
-    info!(?public_key, "GET");
 
     if let Some(signed_packet) =
         state

@@ -4,10 +4,8 @@ use flume::{Receiver, Sender};
 use mainline::{
     dht::DhtSettings,
     rpc::{
-        messages::{
-            self, GetValueRequestArguments, RequestSpecific, RequestTypeSpecific, ResponseSpecific,
-        },
-        QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response, Rpc,
+        messages, QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response,
+        Rpc,
     },
     Id, MutableItem,
 };
@@ -17,31 +15,28 @@ use std::{
     num::NonZeroUsize,
     thread,
 };
-use tracing::{debug, info, instrument, trace};
+use tracing::{debug, instrument, trace};
 
 use crate::{
     cache::{InMemoryPkarrCache, PkarrCache},
     Error, PublicKey, Result, SignedPacket, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
 };
 
-pub const DEFAULT_CACHE_SIZE: usize = 1000;
+pub use mainline;
 
+pub const DEFAULT_CACHE_SIZE: usize = 1000;
 pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Settings {
     pub dht: DhtSettings,
-    /// If set to `true`, run as a [resolver](https://pkarr.org/resolvers)s.
-    ///
-    /// Defaults to `false`
-    pub resolver: bool,
     /// A set of [resolver](https://pkarr.org/resolvers)s
     /// to be queried alongside the Dht routing table, to
     /// lower the latency on cold starts, and help if the
     /// Dht is missing values not't republished often enough.
     ///
     /// Defaults to [DEFAULT_RESOLVERS]
-    pub resolvers: Vec<SocketAddr>,
+    pub resolvers: Option<Vec<SocketAddr>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: NonZeroUsize,
     /// Used in the `min` parametere in [SignedPacket::ttl].
@@ -66,12 +61,13 @@ impl Default for Settings {
         Self {
             dht: DhtSettings::default(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
-            resolver: false,
-            resolvers: DEFAULT_RESOLVERS
-                .iter()
-                .flat_map(|resolver| resolver.to_socket_addrs())
-                .flatten()
-                .collect::<Vec<_>>(),
+            resolvers: Some(
+                DEFAULT_RESOLVERS
+                    .iter()
+                    .flat_map(|resolver| resolver.to_socket_addrs())
+                    .flatten()
+                    .collect::<Vec<_>>(),
+            ),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
@@ -79,40 +75,21 @@ impl Default for Settings {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct PkarrClientBuilder {
     settings: Settings,
 }
 
 impl PkarrClientBuilder {
-    /// Set [Settings::resolver] to true.
-    ///
-    /// Run this client as a [resolver](https://pkarr.org/resolvers)
-    pub fn resolver(mut self) -> Self {
-        self.settings.resolver = true;
-        self.settings.dht.server = true;
-        self
-    }
-
     /// Set custom set of [resolvers](Settings::resolvers).
-    pub fn resolvers(mut self, resolvers: Vec<String>) -> Self {
-        self.settings.resolvers = resolvers
-            .iter()
-            .flat_map(|resolver| resolver.to_socket_addrs())
-            .flatten()
-            .collect::<Vec<_>>();
-        self
-    }
-
-    /// Set the Dht bootstrapping nodes.
-    pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
-        self.settings.dht.bootstrap = Some(bootstrap.to_vec());
-        self
-    }
-
-    /// Set the port to listen on.
-    pub fn port(mut self, port: u16) -> Self {
-        self.settings.dht.port = Some(port);
+    pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
+        self.settings.resolvers = resolvers.map(|resolvers| {
+            resolvers
+                .iter()
+                .flat_map(|resolver| resolver.to_socket_addrs())
+                .flatten()
+                .collect::<Vec<_>>()
+        });
         self
     }
 
@@ -148,6 +125,12 @@ impl PkarrClientBuilder {
         self
     }
 
+    /// Set [DhtSettings]
+    pub fn dht_settings(mut self, settings: DhtSettings) -> Self {
+        self.settings.dht = settings;
+        self
+    }
+
     pub fn build(self) -> Result<PkarrClient> {
         PkarrClient::new(self.settings)
     }
@@ -167,13 +150,9 @@ impl PkarrClient {
     pub fn new(settings: Settings) -> Result<PkarrClient> {
         let (sender, receiver) = flume::bounded(32);
 
-        debug!(?settings, "Starting PkarrClient..");
-
-        let rpc = Rpc::new(settings.dht.to_owned())?;
+        let rpc = Rpc::new(&settings.dht)?;
 
         let local_addr = rpc.local_addr();
-
-        info!(?local_addr, "Running PkarrClient");
 
         let cache = settings
             .cache
@@ -189,7 +168,9 @@ impl PkarrClient {
             maximum_ttl: settings.maximum_ttl,
         };
 
-        thread::spawn(move || run(rpc, cache_clone, settings, receiver));
+        thread::Builder::new()
+            .name("PkarrClient loop".to_string())
+            .spawn(move || run(rpc, cache_clone, settings, receiver))?;
 
         Ok(client)
     }
@@ -321,7 +302,9 @@ fn run(
     settings: Settings,
     receiver: Receiver<ActorMessage>,
 ) {
-    let mut server = mainline::server::Server::new(&settings.dht.server_settings);
+    debug!(?settings, "Starting PkarrClient main loop..");
+
+    let mut server = settings.dht.server;
     let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
 
     loop {
@@ -366,7 +349,7 @@ fn run(
                         },
                     );
 
-                    rpc.get(target, request, None, Some(settings.resolvers.clone()))
+                    rpc.get(target, request, None, settings.resolvers.clone())
                 }
             }
         }
@@ -381,120 +364,82 @@ fn run(
         }
 
         // === Receive and handle incoming messages ===
-        match &report.received_from {
-            Some(ReceivedFrom {
-                message:
-                    ReceivedMessage::QueryResponse(QueryResponse {
-                        target,
-                        response: QueryResponseSpecific::Value(Response::Mutable(mutable_item)),
-                    }),
-                ..
-            }) => {
-                if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
-                    let new_packet = if let Some(ref cached) = cache.get(target) {
-                        if signed_packet.more_recent_than(cached) {
-                            debug!(?target, "Received more recent packet than in cache");
-                            Some(signed_packet)
-                        } else {
-                            None
-                        }
-                    } else {
-                        debug!(?target, "Received new packet after cache miss");
-                        Some(signed_packet)
-                    };
+        if let Some(ReceivedFrom { from, message }) = &report.received_from {
+            // match &report.received_from {
+            // Some(ReceivedFrom { from, message }) => match message {
+            match message {
+                // === Responses ===
+                ReceivedMessage::QueryResponse(response) => {
+                    match response {
+                        // === Got Mutable Value ===
+                        QueryResponse {
+                            target,
+                            response: QueryResponseSpecific::Value(Response::Mutable(mutable_item)),
+                        } => {
+                            if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
+                                let new_packet = if let Some(ref cached) = cache.get(target) {
+                                    if signed_packet.more_recent_than(cached) {
+                                        debug!(
+                                            ?target,
+                                            "Received more recent packet than in cache"
+                                        );
+                                        Some(signed_packet)
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    debug!(?target, "Received new packet after cache miss");
+                                    Some(signed_packet)
+                                };
 
-                    if let Some(packet) = new_packet {
-                        cache.put(target, packet);
+                                if let Some(packet) = new_packet {
+                                    cache.put(target, packet);
 
-                        if let Some(set) = senders.get(target) {
-                            for sender in set {
-                                let _ = sender.send(packet.clone());
+                                    if let Some(set) = senders.get(target) {
+                                        for sender in set {
+                                            let _ = sender.send(packet.clone());
+                                        }
+                                    }
+                                }
                             }
                         }
+                        // === Got NoMoreRecentValue ===
+                        QueryResponse {
+                            target,
+                            response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
+                        } => {
+                            if let Some(mut cached) = cache.get(target) {
+                                if (*seq as u64) == cached.timestamp() {
+                                    trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
+
+                                    cached.refresh();
+                                    cache.put(target, &cached);
+
+                                    // Send the found sequence as a timestamp to the caller to decide what to do
+                                    // with it.
+                                    if let Some(set) = senders.get(target) {
+                                        for sender in set {
+                                            let _ = sender.send(cached.clone());
+                                        }
+                                    }
+                                }
+                            };
+                        }
+                        // Ignoring errors, as they are logged in `mainline` crate already.
+                        _ => {}
+                    };
+                }
+                // === Requests ===
+                ReceivedMessage::Request((transaction_id, request)) => {
+                    if let Some(server) = server.as_mut() {
+                        server.handle_request(&mut rpc, *from, *transaction_id, request);
                     }
                 }
-            }
-            Some(ReceivedFrom {
-                message:
-                    ReceivedMessage::QueryResponse(QueryResponse {
-                        target,
-                        response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
-                    }),
-                ..
-            }) => {
-                if let Some(mut cached) = cache.get(target) {
-                    if (*seq as u64) == cached.timestamp() {
-                        trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
-
-                        cached.refresh();
-                        cache.put(target, &cached);
-
-                        // Send the found sequence as a timestamp to the caller to decide what to do
-                        // with it.
-                        if let Some(set) = senders.get(target) {
-                            for sender in set {
-                                let _ = sender.send(cached.clone());
-                            }
-                        }
-                    }
-                };
-            }
-            Some(ReceivedFrom {
-                from,
-                message: ReceivedMessage::Request((transaction_id, request)),
-            }) => {
-                // === Resolver Logic ===
-
-                // We shouldn't reach this if [Settings.resolver] is not set to true,
-                // because that sets [DhtSettings::server].
-                if let RequestSpecific {
-                    request_type:
-                        RequestTypeSpecific::GetValue(GetValueRequestArguments { target, .. }),
-                    ..
-                } = request
-                {
-                    if let Some(cached) = cache.get(target) {
-                        // We don't care about expiry, if the client doesn't want it, they
-                        // can discard it. But it is useful to return whatever we have.
-                        let mutable_item = MutableItem::from(&cached);
-                        debug!(?target, "Resolver: cache hit responding with packet!");
-
-                        rpc.response(
-                            *from,
-                            *transaction_id,
-                            ResponseSpecific::GetMutable(messages::GetMutableResponseArguments {
-                                responder_id: *rpc.id(),
-                                // Token doesn't matter much, as we are most likely _not_ the
-                                // closest nodes, so we shouldn't expect an PUT requests based on
-                                // this response.
-                                token: vec![0, 0, 0, 0],
-                                nodes: None,
-                                v: mutable_item.value().to_vec(),
-                                k: mutable_item.key().to_vec(),
-                                seq: *mutable_item.seq(),
-                                sig: mutable_item.signature().to_vec(),
-                            }),
-                        )
-                    } else {
-                        debug!(?target, "Resolver: cache miss, requesting from network.");
-                        rpc.get(
-                            *target,
-                            RequestTypeSpecific::GetValue(GetValueRequestArguments {
-                                target: *target,
-                                seq: None,
-                                salt: None,
-                            }),
-                            None,
-                            Some(settings.resolvers.to_owned()),
-                        );
-                    }
-                };
-
-                server.handle_request(&mut rpc, *from, *transaction_id, request);
-            }
-            _ => {}
+            };
         }
     }
+
+    debug!("PkarrClient main terminated");
 }
 
 pub enum ActorMessage {
@@ -515,7 +460,12 @@ mod tests {
         let testnet = Testnet::new(3);
 
         let mut a = PkarrClient::builder()
-            .bootstrap(&testnet.bootstrap)
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
             .build()
             .unwrap();
 
@@ -531,7 +481,12 @@ mod tests {
         let testnet = Testnet::new(10);
 
         let a = PkarrClient::builder()
-            .bootstrap(&testnet.bootstrap)
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap.clone()),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
             .build()
             .unwrap();
 
@@ -550,7 +505,12 @@ mod tests {
         let _ = a.publish(&signed_packet);
 
         let b = PkarrClient::builder()
-            .bootstrap(&testnet.bootstrap)
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
             .build()
             .unwrap();
 
@@ -567,7 +527,12 @@ mod tests {
         let testnet = Testnet::new(10);
 
         let a = PkarrClient::builder()
-            .bootstrap(&testnet.bootstrap)
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap.clone()),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
             .build()
             .unwrap();
 
@@ -586,7 +551,12 @@ mod tests {
         let _ = a.publish(&signed_packet);
 
         let b = PkarrClient::builder()
-            .bootstrap(&testnet.bootstrap)
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
             .build()
             .unwrap();
 

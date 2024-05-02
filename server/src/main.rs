@@ -1,9 +1,10 @@
 mod cache;
 mod config;
+mod dht_server;
 mod error;
 mod handlers;
+mod http_server;
 mod rate_limiting;
-mod server;
 
 use anyhow::Result;
 use cache::HeedPkarrCache;
@@ -11,10 +12,10 @@ use clap::Parser;
 use config::Config;
 use std::fs;
 use std::path::PathBuf;
-use tracing::{debug, info, Level};
+use tracing::{debug, info};
 
-use pkarr::PkarrClient;
-use server::HttpServer;
+use http_server::HttpServer;
+use pkarr::{client::mainline::dht::DhtSettings, PkarrClient};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -26,8 +27,10 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .with_env_filter("pkarr=debug")
+        // .with_file(true)
+        // .with_line_number(true)
+        .with_thread_names(true)
+        .with_env_filter("pkarr=info")
         .init();
 
     // Config::load();
@@ -39,19 +42,30 @@ async fn main() -> Result<()> {
         Config::default()
     };
 
-    debug!(?config);
+    debug!(?config, "Pkarr server config");
 
-    let env_path = &config.pkarr_cache_path()?;
+    let env_path = &config.cache_path()?;
     fs::create_dir_all(env_path)?;
-    let cache = Box::new(HeedPkarrCache::new(&env_path, 1_000_000).unwrap());
+    let cache = Box::new(HeedPkarrCache::new(env_path, config.cache_size()).unwrap());
 
     let client = PkarrClient::builder()
-        .port(config.dht_port())
-        .resolver()
+        .dht_settings(DhtSettings {
+            port: Some(config.dht_port()),
+            server: Some(Box::new(dht_server::DhtServer::new(
+                cache.clone(),
+                config.resolvers(),
+                config.minimum_ttl(),
+                config.maximum_ttl(),
+            ))),
+            ..DhtSettings::default()
+        })
         .cache(cache)
-        .build()
-        .unwrap()
+        .build()?
         .as_async();
+
+    let udp_address = client.local_addr().unwrap();
+
+    info!("Running as a resolver on UDP socket {udp_address}");
 
     let http_server = HttpServer::spawn(client, config.relay_port()).await?;
 

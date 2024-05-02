@@ -1,7 +1,10 @@
 //! Configuration for the server
 
 use anyhow::{anyhow, Context, Result};
+use pkarr::client::DEFAULT_CACHE_SIZE;
+use pkarr::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use serde::{Deserialize, Serialize};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::{
     fmt::Debug,
     path::{Path, PathBuf},
@@ -10,23 +13,32 @@ use std::{
 /// Server configuration
 ///
 /// The config is usually loaded from a file with [`Self::load`].
-///
-/// The struct also implements [`Default`] which creates a config suitable for local development
-/// and testing.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct Config {
     /// TCP port to run the HTTP server on
     ///
     /// Defaults to `6881`
-    relay_port: u16,
+    relay_port: Option<u16>,
     /// UDP port to run the DHT on
     ///
     /// Defaults to `6881`
-    dht_port: u16,
+    dht_port: Option<u16>,
     /// Path to cache database
     ///
     /// Defaults to a directory in the OS data directory
     cache_path: Option<String>,
+    /// See [pkarr::client::Settings::cache_size]
+    cache_size: Option<usize>,
+    /// Resolvers
+    ///
+    /// Other servers to query in parallel with the Dht queries
+    ///
+    /// See [pkarr::client::Settings::resolvers]
+    resolvers: Option<Vec<String>>,
+    /// See [pkarr::client::Settings::minimum_ttl]
+    minimum_ttl: Option<u32>,
+    /// See [pkarr::client::Settings::maximum_ttl]
+    maximum_ttl: Option<u32>,
 }
 
 impl Config {
@@ -40,15 +52,37 @@ impl Config {
     }
 
     pub fn relay_port(&self) -> u16 {
-        self.relay_port
+        self.relay_port.unwrap_or(6881)
     }
 
     pub fn dht_port(&self) -> u16 {
-        self.dht_port
+        self.dht_port.unwrap_or(6881)
+    }
+
+    pub fn resolvers(&self) -> Option<Vec<SocketAddr>> {
+        self.resolvers.clone().map(|resolvers| {
+            resolvers
+                .iter()
+                .flat_map(|resolver| resolver.to_socket_addrs())
+                .flatten()
+                .collect::<Vec<_>>()
+        })
+    }
+
+    pub fn minimum_ttl(&self) -> u32 {
+        self.minimum_ttl.unwrap_or(DEFAULT_MINIMUM_TTL)
+    }
+
+    pub fn maximum_ttl(&self) -> u32 {
+        self.maximum_ttl.unwrap_or(DEFAULT_MAXIMUM_TTL)
+    }
+
+    pub fn cache_size(&self) -> usize {
+        self.cache_size.unwrap_or(DEFAULT_CACHE_SIZE)
     }
 
     /// Get the path to the cache database file.
-    pub fn pkarr_cache_path(&self) -> Result<PathBuf> {
+    pub fn cache_path(&self) -> Result<PathBuf> {
         let dir = if let Some(cache_path) = &self.cache_path {
             PathBuf::from(cache_path)
         } else {
@@ -62,22 +96,16 @@ impl Config {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            relay_port: 6881,
-            dht_port: 6881,
-            cache_path: None,
-        }
-    }
-}
-
 impl Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
-            .entry(&"relay_port", &self.relay_port)
-            .entry(&"dht_port", &self.dht_port)
-            .entry(&"cache_path", &self.pkarr_cache_path())
+            .entry(&"relay_port", &self.relay_port())
+            .entry(&"dht_port", &self.dht_port())
+            .entry(&"cache_path", &self.cache_path())
+            .entry(&"cache_size", &self.cache_size())
+            .entry(&"resolvers", &self.resolvers.clone().unwrap_or_default())
+            .entry(&"minimum_ttl", &self.minimum_ttl())
+            .entry(&"maximum_ttl", &self.maximum_ttl())
             .finish()
     }
 }

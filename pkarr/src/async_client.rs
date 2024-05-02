@@ -143,7 +143,7 @@ impl AsyncPkarrClient {
 
 #[cfg(test)]
 mod tests {
-    use mainline::Testnet;
+    use mainline::{dht::DhtSettings, Testnet};
 
     use super::*;
     use crate::{dns, Keypair, SignedPacket};
@@ -154,7 +154,12 @@ mod tests {
             let testnet = Testnet::new(3);
 
             let mut a = PkarrClient::builder()
-                .bootstrap(&testnet.bootstrap)
+                .dht_settings(DhtSettings {
+                    bootstrap: Some(testnet.bootstrap),
+                    request_timeout: None,
+                    server: None,
+                    port: None,
+                })
                 .build()
                 .unwrap();
 
@@ -174,7 +179,12 @@ mod tests {
             let testnet = Testnet::new(10);
 
             let a = PkarrClient::builder()
-                .bootstrap(&testnet.bootstrap)
+                .dht_settings(DhtSettings {
+                    bootstrap: Some(testnet.bootstrap.clone()),
+                    request_timeout: None,
+                    server: None,
+                    port: None,
+                })
                 .build()
                 .unwrap();
 
@@ -193,7 +203,12 @@ mod tests {
             let _ = a.publish(&signed_packet);
 
             let b = PkarrClient::builder()
-                .bootstrap(&testnet.bootstrap)
+                .dht_settings(DhtSettings {
+                    bootstrap: Some(testnet.bootstrap),
+                    request_timeout: None,
+                    server: None,
+                    port: None,
+                })
                 .build()
                 .unwrap();
 
