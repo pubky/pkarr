@@ -918,8 +918,7 @@ checksum = "d3262e75e648fce39813cb56ac41f3c3e3f65217ebf3844d818d1f9398cfb0dc"
 [[package]]
 name = "mainline"
 version = "2.0.0-rc1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "243e63833b8d5a333f0a2d384eb6eff4f5795ad9a68b1b2b731573d969011014"
+source = "git+https://github.com/Nuhvi/mainline.git?branch=feat/custom-server#3af5c843baceaad04b7eeb01551a2b8d27060325"
 dependencies = [
  "bytes",
  "crc",
@@ -1898,9 +1897,9 @@ checksum = "b6bc1c9ce2b5135ac7f93c72918fc37feb872bdc6a5533a8b85eb4b86bfdae52"
 
 [[package]]
 name = "tower_governor"
-version = "0.3.2"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3790eac6ad3fb8d9d96c2b040ae06e2517aa24b067545d1078b96ae72f7bb9a7"
+checksum = "313fa625fea5790ed56360a30ea980e41229cf482b4835801a67ef1922bf63b9"
 dependencies = [
  "axum",
  "forwarded-header-value",
