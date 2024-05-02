@@ -27,10 +27,8 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        // .with_file(true)
-        // .with_line_number(true)
-        .with_thread_names(true)
-        .with_env_filter("pkarr=info")
+        // .with_max_level(Level::DEBUG)
+        .with_env_filter("pkarr=info,tower_http=debug")
         .init();
 
     // Config::load();

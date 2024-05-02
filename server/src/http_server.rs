@@ -1,9 +1,9 @@
-use std::net::SocketAddr;
-
 use anyhow::Result;
 use axum::{handler::Handler, http::Method, routing::get, Router};
+use std::net::SocketAddr;
 use tokio::{net::TcpListener, task::JoinSet};
 use tower_http::cors::{self, CorsLayer};
+use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use pkarr::async_client::AsyncPkarrClient;
@@ -87,9 +87,7 @@ pub(crate) fn create_app(state: AppState) -> Router {
         )
         .with_state(state);
 
-    router.layer(cors)
-    // TODO: enable
-    // .layer(trace)
+    router.layer(cors).layer(TraceLayer::new_for_http())
 }
 
 #[derive(Debug, Clone)]
