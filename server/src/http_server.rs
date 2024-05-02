@@ -1,5 +1,6 @@
 use anyhow::Result;
-use axum::{handler::Handler, http::Method, routing::get, Router};
+use axum::extract::DefaultBodyLimit;
+use axum::{http::Method, routing::get, Router};
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, task::JoinSet};
 use tower_http::cors::{self, CorsLayer};
@@ -8,14 +9,20 @@ use tracing::{info, warn};
 
 use pkarr::async_client::AsyncPkarrClient;
 
+use crate::rate_limiting::RateLimiterLayer;
+
 pub struct HttpServer {
     tasks: JoinSet<std::io::Result<()>>,
 }
 
 impl HttpServer {
     /// Spawn the server
-    pub async fn spawn(client: AsyncPkarrClient, port: u16) -> Result<HttpServer> {
-        let app = create_app(AppState { client });
+    pub async fn spawn(
+        client: AsyncPkarrClient,
+        port: u16,
+        rate_limiter_layer: RateLimiterLayer,
+    ) -> Result<HttpServer> {
+        let app = create_app(AppState { client }, rate_limiter_layer);
 
         let mut tasks = JoinSet::new();
 
@@ -68,26 +75,22 @@ impl HttpServer {
     }
 }
 
-pub(crate) fn create_app(state: AppState) -> Router {
+pub(crate) fn create_app(state: AppState, rate_limiter_layer: RateLimiterLayer) -> Router {
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::PUT])
         .allow_origin(cors::Any);
 
-    let rate_limit = crate::rate_limiting::create();
-
-    let router = Router::new()
-        .route(
-            "/:key",
-            get(crate::handlers::get).put(crate::handlers::put.layer(rate_limit)),
-        )
-        .route("/ping", get(|| async { "Pong" }))
+    Router::new()
+        .route("/:key", get(crate::handlers::get).put(crate::handlers::put))
         .route(
             "/",
             get(|| async { "This is a Pkarr relay: pkarr.org/relays.\n" }),
         )
-        .with_state(state);
-
-    router.layer(cors).layer(TraceLayer::new_for_http())
+        .with_state(state)
+        .layer(rate_limiter_layer)
+        .layer(DefaultBodyLimit::max(1104))
+        .layer(cors)
+        .layer(TraceLayer::new_for_http())
 }
 
 #[derive(Debug, Clone)]

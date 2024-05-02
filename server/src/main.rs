@@ -27,7 +27,6 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        // .with_max_level(Level::DEBUG)
         .with_env_filter("pkarr=info,tower_http=debug")
         .init();
 
@@ -46,6 +45,8 @@ async fn main() -> Result<()> {
     fs::create_dir_all(env_path)?;
     let cache = Box::new(HeedPkarrCache::new(env_path, config.cache_size()).unwrap());
 
+    let rate_limiter_layer = rate_limiting::create(config.rate_limiter());
+
     let client = PkarrClient::builder()
         .dht_settings(DhtSettings {
             port: Some(config.dht_port()),
@@ -54,6 +55,7 @@ async fn main() -> Result<()> {
                 config.resolvers(),
                 config.minimum_ttl(),
                 config.maximum_ttl(),
+                rate_limiter_layer.clone(),
             ))),
             ..DhtSettings::default()
         })
@@ -65,7 +67,7 @@ async fn main() -> Result<()> {
 
     info!("Running as a resolver on UDP socket {udp_address}");
 
-    let http_server = HttpServer::spawn(client, config.relay_port()).await?;
+    let http_server = HttpServer::spawn(client, config.relay_port(), rate_limiter_layer).await?;
 
     tokio::signal::ctrl_c().await?;
 

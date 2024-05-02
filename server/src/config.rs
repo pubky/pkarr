@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::rate_limiting::RateLimiterConfig;
+
 /// Server configuration
 ///
 /// The config is usually loaded from a file with [`Self::load`].
@@ -39,6 +41,7 @@ pub struct Config {
     minimum_ttl: Option<u32>,
     /// See [pkarr::client::Settings::maximum_ttl]
     maximum_ttl: Option<u32>,
+    rate_limiter: RateLimiterConfig,
 }
 
 impl Config {
@@ -81,6 +84,10 @@ impl Config {
         self.cache_size.unwrap_or(DEFAULT_CACHE_SIZE)
     }
 
+    pub fn rate_limiter(&self) -> &RateLimiterConfig {
+        &self.rate_limiter
+    }
+
     /// Get the path to the cache database file.
     pub fn cache_path(&self) -> Result<PathBuf> {
         let dir = if let Some(cache_path) = &self.cache_path {
@@ -106,6 +113,7 @@ impl Debug for Config {
             .entry(&"resolvers", &self.resolvers.clone().unwrap_or_default())
             .entry(&"minimum_ttl", &self.minimum_ttl())
             .entry(&"maximum_ttl", &self.maximum_ttl())
+            .entry(&"rate_limter", &self.rate_limiter())
             .finish()
     }
 }

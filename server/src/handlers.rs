@@ -20,14 +20,8 @@ pub async fn put(
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body).map_err(
-        |error| match error {
-            pkarr::Error::PacketTooLarge(_) => {
-                Error::new(StatusCode::PAYLOAD_TOO_LARGE, Some(error))
-            }
-            _ => Error::new(StatusCode::BAD_REQUEST, Some(error)),
-        },
-    )?;
+    let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
+        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
     state
         .client

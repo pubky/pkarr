@@ -1,7 +1,9 @@
 relay_port = 6881
 dht_port = 6881
-# cache_path = "./path/to/storage"
-# cache_size = 1_000_000
-# resolvers =  [ "example.com:6881" ]
-# minimum_ttl =  300
-# maximum_ttl =  86400
+cache_size = 1_000_000
+resolvers =  []
+minimum_ttl =  300
+maximum_ttl =  86400
+[rate_limiter]
+per_second = 2
+burst_size = 10

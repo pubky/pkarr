@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{fmt::Debug, net::SocketAddr};
 
 use pkarr::{
     cache::PkarrCache,
@@ -18,9 +18,8 @@ use pkarr::{
 
 use tracing::{debug, instrument};
 
-use crate::cache::HeedPkarrCache;
+use crate::{cache::HeedPkarrCache, rate_limiting::RateLimiterLayer};
 
-#[derive(Debug)]
 /// DhtServer with Rate limiting
 pub struct DhtServer {
     inner: mainline::server::DhtServer,
@@ -28,6 +27,13 @@ pub struct DhtServer {
     cache: Box<crate::cache::HeedPkarrCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
+    rate_limiter_layer: RateLimiterLayer,
+}
+
+impl Debug for DhtServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Resolver")
+    }
 }
 
 impl DhtServer {
@@ -36,6 +42,7 @@ impl DhtServer {
         resolvers: Option<Vec<SocketAddr>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
+        rate_limiter_layer: RateLimiterLayer,
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
@@ -44,6 +51,7 @@ impl DhtServer {
             resolvers,
             minimum_ttl,
             maximum_ttl,
+            rate_limiter_layer,
         }
     }
 }
@@ -98,8 +106,6 @@ impl Server for DhtServer {
 
                 expired
             } else {
-                // TODO: rate limit nodes that are making too many request forcing us to making too
-                // many queries, either by querying the same non-existent key, or many unique keys.
                 debug!(
                     ?target,
                     "cache miss, querying the DHT to hydrate our cache for later."
@@ -107,17 +113,30 @@ impl Server for DhtServer {
                 true
             };
 
+            //  Either cache miss or expired cached packet
             if should_query {
-                rpc.get(
-                    *target,
-                    RequestTypeSpecific::GetValue(GetValueRequestArguments {
-                        target: *target,
-                        seq: None,
-                        salt: None,
-                    }),
-                    None,
-                    self.resolvers.to_owned(),
-                );
+                // Rate limit nodes that are making too many request forcing us to making too
+                // many queries, either by querying the same non-existent key, or many unique keys.
+                if self
+                    .rate_limiter_layer
+                    .config
+                    .limiter()
+                    .check_key(&from.ip())
+                    .is_ok()
+                {
+                    rpc.get(
+                        *target,
+                        RequestTypeSpecific::GetValue(GetValueRequestArguments {
+                            target: *target,
+                            seq: None,
+                            salt: None,
+                        }),
+                        None,
+                        self.resolvers.to_owned(),
+                    );
+                } else {
+                    debug!(?from, "Resolver rate limiting");
+                };
             }
         };
 

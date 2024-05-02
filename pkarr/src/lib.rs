@@ -8,7 +8,7 @@ pub use simple_dns as dns;
 
 // Modules
 
-#[cfg(feature = "async")]
+#[cfg(all(feature = "async", feature = "dht"))]
 pub mod async_client;
 #[cfg(feature = "dht")]
 pub mod cache;
