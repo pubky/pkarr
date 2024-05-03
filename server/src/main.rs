@@ -15,23 +15,30 @@ use std::path::PathBuf;
 use tracing::{debug, info};
 
 use http_server::HttpServer;
-use pkarr::{client::mainline::dht::DhtSettings, PkarrClient};
+use pkarr::{dht::mainline::dht::DhtSettings, PkarrClient};
 
 #[derive(Parser, Debug)]
 struct Cli {
     /// Path to config file
     #[clap(short, long)]
     config: Option<PathBuf>,
+    /// [tracing_subscriber::EnvFilter]
+    #[clap(short, long)]
+    tracing_env_filter: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("pkarr=info,tower_http=debug")
-        .init();
-
     // Config::load();
     let args = Cli::parse();
+
+    dbg!(&args);
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            args.tracing_env_filter
+                .unwrap_or("pkarr=info,tower_http=debug".to_string()),
+        )
+        .init();
 
     let config = if let Some(path) = args.config {
         Config::load(path).await?

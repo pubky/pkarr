@@ -1,8 +1,7 @@
 //! Configuration for the server
 
 use anyhow::{anyhow, Context, Result};
-use pkarr::client::DEFAULT_CACHE_SIZE;
-use pkarr::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
+use pkarr::{DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use serde::{Deserialize, Serialize};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::{
@@ -29,17 +28,17 @@ pub struct Config {
     ///
     /// Defaults to a directory in the OS data directory
     cache_path: Option<String>,
-    /// See [pkarr::client::Settings::cache_size]
+    /// See [pkarr::dht::Settings::cache_size]
     cache_size: Option<usize>,
     /// Resolvers
     ///
     /// Other servers to query in parallel with the Dht queries
     ///
-    /// See [pkarr::client::Settings::resolvers]
+    /// See [pkarr::dht::Settings::resolvers]
     resolvers: Option<Vec<String>>,
-    /// See [pkarr::client::Settings::minimum_ttl]
+    /// See [pkarr::dht::Settings::minimum_ttl]
     minimum_ttl: Option<u32>,
-    /// See [pkarr::client::Settings::maximum_ttl]
+    /// See [pkarr::dht::Settings::maximum_ttl]
     maximum_ttl: Option<u32>,
     rate_limiter: RateLimiterConfig,
 }

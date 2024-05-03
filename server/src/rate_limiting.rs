@@ -27,7 +27,7 @@ pub type RateLimiterLayer = GovernorLayer<PeerIpKeyExtractor, StateInformationMi
 /// Create the default rate-limiting layer.
 ///
 /// This will be used by the [crate::http_server::HttpServer] to guard all endpoints (GET and PUT)
-/// and in [crate::dht_server::DhtServer] before calling [pkarr::client::mainline::rpc::Rpc::get]
+/// and in [crate::dht_server::DhtServer] before calling [pkarr::dht::mainline::rpc::Rpc::get]
 /// after a cache miss or if its cached packet is expired.
 ///
 /// The purpose is to limit DHT queries as much as possible, while serving honest clients still.

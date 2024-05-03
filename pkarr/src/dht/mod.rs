@@ -1,5 +1,8 @@
 //! Native Pkarr client for publishing and resolving [SignedPacket]s.
 
+#[cfg(feature = "async")]
+pub mod r#async;
+
 use flume::{Receiver, Sender};
 use mainline::{
     dht::DhtSettings,
@@ -19,12 +22,14 @@ use tracing::{debug, instrument, trace};
 
 use crate::{
     cache::{InMemoryPkarrCache, PkarrCache},
-    Error, PublicKey, Result, SignedPacket, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
+    Error, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
+    DEFAULT_MINIMUM_TTL,
 };
 
 pub use mainline;
+#[cfg(feature = "async")]
+pub use r#async::AsyncPkarrClient;
 
-pub const DEFAULT_CACHE_SIZE: usize = 1000;
 pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
 
 #[derive(Debug)]

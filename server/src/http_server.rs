@@ -7,7 +7,7 @@ use tower_http::cors::{self, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
-use pkarr::async_client::AsyncPkarrClient;
+use pkarr::dht::AsyncPkarrClient;
 
 use crate::rate_limiting::RateLimiterLayer;
 

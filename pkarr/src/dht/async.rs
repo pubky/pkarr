@@ -4,11 +4,8 @@ use mainline::{Id, MutableItem};
 use std::net::SocketAddr;
 use tracing::{debug, instrument};
 
-use crate::{
-    cache::PkarrCache,
-    client::{ActorMessage, PkarrClient},
-    Error, PublicKey, Result, SignedPacket,
-};
+use super::{ActorMessage, PkarrClient};
+use crate::{cache::PkarrCache, Error, PublicKey, Result, SignedPacket};
 
 #[derive(Clone, Debug)]
 /// Async version of [crate::PkarrClient]

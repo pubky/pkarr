@@ -1,5 +1,6 @@
 relay_port = 6881
 dht_port = 6881
+# cache_path = "./storage/location"
 cache_size = 1_000_000
 resolvers =  []
 minimum_ttl =  300

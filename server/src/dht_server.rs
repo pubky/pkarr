@@ -2,7 +2,7 @@ use std::{fmt::Debug, net::SocketAddr};
 
 use pkarr::{
     cache::PkarrCache,
-    client::mainline::{
+    dht::mainline::{
         self,
         rpc::{
             messages::{
