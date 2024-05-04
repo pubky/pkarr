@@ -119,8 +119,56 @@ impl TryFrom<&[u8; 32]> for PublicKey {
 impl TryFrom<&str> for PublicKey {
     type Error = Error;
 
+    /// Convert the TLD in a `&str` to a [PublicKey].
+    ///
+    /// # Examples
+    ///
+    /// - `o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    /// - `pk:o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    /// - `http://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    /// - `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    /// - `https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy/foo/bar`
+    /// - `https://foo.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.`
+    /// - `https://foo.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.#hash`
+    /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.?q=v`
     fn try_from(s: &str) -> Result<PublicKey> {
-        let s = s.strip_prefix("pk:").unwrap_or(s);
+        let mut s = s;
+
+        // Remove scheme
+        if s.len() > 52 {
+            s = s.split_once(':').map(|tuple| tuple.1).unwrap_or(s);
+        }
+        if s.len() > 52 {
+            s = s.strip_prefix("//").unwrap_or(s);
+        }
+
+        // Remove username
+        if s.len() > 52 {
+            s = s.split_once('@').map(|tuple| tuple.1).unwrap_or(s);
+        }
+
+        // Remove trailing path
+        if s.len() > 52 {
+            s = s.split_once('/').map(|tuple| tuple.0).unwrap_or(s);
+        }
+        // Remove query
+        if s.len() > 52 {
+            s = s.split_once('?').map(|tuple| tuple.0).unwrap_or(s);
+        }
+        // Remove hash
+        if s.len() > 52 {
+            s = s.split_once('#').map(|tuple| tuple.0).unwrap_or(s);
+        }
+
+        // Remove trailing dot
+        if s.ends_with('.') {
+            s = s.trim_matches('.');
+        }
+
+        // Remove subdomains
+        if s.len() > 52 {
+            s = s.rsplit_once('.').map(|tuple| tuple.1).unwrap_or(s);
+        }
 
         let bytes = z32::decode(s.as_bytes())?;
 
@@ -226,6 +274,91 @@ mod tests {
     #[test]
     fn from_uri() {
         let str = "pk:yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uri_with_path() {
+        let str = "https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no///foo/bar";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uri_with_query() {
+        let str = "https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no?foo=bar";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uri_with_hash() {
+        let str = "https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no#foo";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uri_with_subdomain() {
+        let str = "https://foo.bar.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no#foo";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uri_with_trailing_dot() {
+        let str = "https://foo.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uri_with_username() {
+        let str = "https://foo@yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no#foo";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_uri_complex() {
+        let str =
+            "https://foo@bar.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.?q=v&a=b#foo";
         let expected = [
             1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
             207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
