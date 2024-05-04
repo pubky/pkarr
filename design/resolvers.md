@@ -1,6 +1,6 @@
 # Resolvers
 
-Resolvers are a special kind of DHT bootstrapping nodes. Like to bootstrapping nodes they are well-known and long running. Unlike normal DHT nodes though, Resolvers act more like DNS resolvers.
+Resolvers are a special kind of DHT nodes. Like to bootstrapping nodes they are well-known and long running. Unlike normal DHT nodes though, Resolvers act more like DNS resolvers.
 
 ## Behavior
 
@@ -12,7 +12,7 @@ On cache miss, the resolver queries the DHT itself, so subsequent requests to th
 
 ## Latency
 
-Since resolvers are hard coded in clients, they offer lower latency than the traversal of the DHT, at least for frequently queried Pkarr keys, on the assumption that Resolvers are using some form of a Least recently used (LRU) cache.
+Since resolvers are hard coded in clients, they offer lower latency than the traversal of the DHT, at least for frequently queried Pkarr keys, on the assumption that Resolvers are using some form of a Least Recently Used (LRU) cache.
 
 ## Reliability
 
