@@ -1,9 +1,6 @@
 use std::{borrow::Cow, path::Path};
 
-use pkarr::{
-    cache::{PkarrCache, PkarrCacheKey},
-    signed_packet::{system_time, SignedPacket},
-};
+use pkarr::{system_time, PkarrCache, PkarrCacheKey, SignedPacket};
 
 use byteorder::LittleEndian;
 use heed::{types::U64, BoxedError, BytesDecode, BytesEncode, Database, Env, EnvOpenOptions};

@@ -1,8 +1,7 @@
 use std::{fmt::Debug, net::SocketAddr};
 
 use pkarr::{
-    cache::PkarrCache,
-    dht::mainline::{
+    mainline::{
         self,
         rpc::{
             messages::{
@@ -14,6 +13,7 @@ use pkarr::{
         server::Server,
         MutableItem,
     },
+    PkarrCache,
 };
 
 use tracing::{debug, instrument};

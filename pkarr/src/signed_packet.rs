@@ -3,8 +3,6 @@
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
-#[cfg(feature = "dht")]
-use mainline::MutableItem;
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
@@ -346,35 +344,37 @@ pub fn system_time() -> u64 {
         .as_micros() as u64
 }
 
-#[cfg(feature = "dht")]
-impl From<&SignedPacket> for MutableItem {
-    fn from(s: &SignedPacket) -> Self {
-        let seq: i64 = s.timestamp() as i64;
-        let packet = s.inner.borrow_owner().slice(104..);
+if_native! {
+    use mainline::MutableItem;
 
-        Self::new_signed_unchecked(
-            s.public_key().to_bytes(),
-            s.signature().to_bytes(),
-            packet,
-            seq,
-            None,
-        )
+    impl From<&SignedPacket> for MutableItem {
+        fn from(s: &SignedPacket) -> Self {
+            let seq: i64 = s.timestamp() as i64;
+            let packet = s.inner.borrow_owner().slice(104..);
+
+            Self::new_signed_unchecked(
+                s.public_key().to_bytes(),
+                s.signature().to_bytes(),
+                packet,
+                seq,
+                None,
+            )
+        }
     }
-}
 
-#[cfg(feature = "dht")]
-impl TryFrom<&MutableItem> for SignedPacket {
-    type Error = Error;
+    impl TryFrom<&MutableItem> for SignedPacket {
+        type Error = Error;
 
-    fn try_from(i: &MutableItem) -> Result<Self> {
-        let public_key = PublicKey::try_from(i.key()).unwrap();
-        let seq = *i.seq() as u64;
-        let signature: Signature = i.signature().into();
+        fn try_from(i: &MutableItem) -> Result<Self> {
+            let public_key = PublicKey::try_from(i.key()).unwrap();
+            let seq = *i.seq() as u64;
+            let signature: Signature = i.signature().into();
 
-        Ok(Self {
-            inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
-            last_seen: system_time(),
-        })
+            Ok(Self {
+                inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
+                last_seen: system_time(),
+            })
+        }
     }
 }
 

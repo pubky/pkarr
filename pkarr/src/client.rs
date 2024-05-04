@@ -1,8 +1,5 @@
 //! Native Pkarr client for publishing and resolving [SignedPacket]s.
 
-#[cfg(feature = "async")]
-pub mod r#async;
-
 use flume::{Receiver, Sender};
 use mainline::{
     dht::DhtSettings,
@@ -20,19 +17,14 @@ use std::{
 };
 use tracing::{debug, instrument, trace};
 
-use crate::{
+use super::{
     cache::{InMemoryPkarrCache, PkarrCache},
-    Error, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
-    DEFAULT_MINIMUM_TTL,
+    DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
 };
-
-pub use mainline;
-#[cfg(feature = "async")]
-pub use r#async::AsyncPkarrClient;
-
-pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
+use crate::{Error, PublicKey, Result, SignedPacket};
 
 #[derive(Debug)]
+/// [PkarrClient]'s settings
 pub struct Settings {
     pub dht: DhtSettings,
     /// A set of [resolver](https://pkarr.org/resolvers)s
@@ -81,6 +73,7 @@ impl Default for Settings {
 }
 
 #[derive(Debug, Default)]
+/// Builder for [PkarrClient]
 pub struct PkarrClientBuilder {
     settings: Settings,
 }
@@ -142,7 +135,7 @@ impl PkarrClientBuilder {
 }
 
 #[derive(Clone, Debug)]
-/// Native Pkarr client for publishing and resolving [SignedPacket]s.
+/// Pkarr client for publishing and resolving [SignedPacket]s.
 pub struct PkarrClient {
     pub(crate) address: Option<SocketAddr>,
     pub(crate) sender: Sender<ActorMessage>,

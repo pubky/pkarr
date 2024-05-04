@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use tracing::{debug, info};
 
 use http_server::HttpServer;
-use pkarr::{dht::mainline::dht::DhtSettings, PkarrClient};
+use pkarr::{mainline::dht::DhtSettings, PkarrClient};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -29,10 +29,8 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Config::load();
     let args = Cli::parse();
 
-    dbg!(&args);
     tracing_subscriber::fmt()
         .with_env_filter(
             args.tracing_env_filter

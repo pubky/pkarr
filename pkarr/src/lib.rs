@@ -1,33 +1,45 @@
 #![doc = include_str!("../README.md")]
 
-// TODO: add support for wasm using relays.
+macro_rules! if_native {
+    ($($item:item)*) => {$(
+        #[cfg(not(target_arch = "wasm32"))]
+        $item
+    )*}
+}
 
 // Rexports
 pub use bytes;
 pub use simple_dns as dns;
 
 // Modules
+mod error;
+mod keys;
+mod signed_packet;
 
-pub mod cache;
-#[cfg(feature = "dht")]
-pub mod dht;
-pub mod error;
-pub mod keys;
-pub mod signed_packet;
-
-// Exports
-#[cfg(feature = "dht")]
-pub use crate::dht::PkarrClient;
-pub use crate::error::Error;
+// Common exports
+pub use crate::error::{Error, Result};
 pub use crate::keys::{Keypair, PublicKey};
-pub use crate::signed_packet::SignedPacket;
+pub use crate::signed_packet::{system_time, SignedPacket};
 
-/// Default minimum TTL: 5 minutes
-pub const DEFAULT_MINIMUM_TTL: u32 = 300;
-/// Default maximum TTL: 24 hours
-pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
-/// Default cache size: 1000
-pub const DEFAULT_CACHE_SIZE: usize = 1000;
+if_native! {
+    mod cache;
+    mod client;
+    mod client_async;
 
-// Alias Result to be the crate Result.
-pub type Result<T, E = Error> = core::result::Result<T, E>;
+    pub use client::{PkarrClientBuilder, PkarrClient, Settings};
+    #[cfg(feature = "async")]
+    pub use client_async::AsyncPkarrClient;
+
+    pub use cache::{PkarrCache, PkarrCacheKey, InMemoryPkarrCache};
+
+    pub use mainline;
+
+    /// Default minimum TTL: 5 minutes
+    pub const DEFAULT_MINIMUM_TTL: u32 = 300;
+    /// Default maximum TTL: 24 hours
+    pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
+    /// Default cache size: 1000
+    pub const DEFAULT_CACHE_SIZE: usize = 1000;
+    /// Default resolvers
+    pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
+}

@@ -4,7 +4,7 @@ use axum::{extract::State, response::IntoResponse};
 
 use bytes::Bytes;
 use http::{header, StatusCode};
-use tracing::error;
+use tracing::{error, instrument};
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 
 use super::http_server::AppState;
 
+#[instrument]
 pub async fn put(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
@@ -35,7 +36,7 @@ pub async fn put(
                 Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
             }
             error => {
-                error!(?error, "Unexpected error in pkarr relay PUT");
+                error!(?error, "Unexpected error");
                 Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
             }
         })?;
@@ -43,6 +44,7 @@ pub async fn put(
     Ok(StatusCode::OK)
 }
 
+#[instrument]
 pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
@@ -61,8 +63,7 @@ pub async fn get(
                     Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
                 }
                 error => {
-                    // TODO: do we need this explicit "in x", if we add better tracing tower stuff?
-                    error!(?error, "Unexpected error in pkarr relay GET");
+                    error!(?error, "Unexpected error");
                     Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
                 }
             })?

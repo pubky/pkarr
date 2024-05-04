@@ -14,13 +14,16 @@ dyn-clone = "1.0.17"
 ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
 flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
 lru = { version = "0.12.3", default-features = false }
-mainline = { version = "2.0.0", optional = true }
 rand = "0.8.5"
 self_cell = "1.0.2"
 simple-dns = "0.6.1"
 thiserror = "1.0.49"
 tracing = "0.1.40"
 z32 = "1.1.1"
+
+# For compiling to native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+mainline = { version = "2.0.0"}
 
 [dev-dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
@@ -29,9 +32,8 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [features]
 async= ["flume/async"]
-dht=["dep:mainline"]
 
-default = ["dht"]
+default = []
 
 [package.metadata.docs.rs]
 all-features = true

@@ -28,17 +28,17 @@ pub struct Config {
     ///
     /// Defaults to a directory in the OS data directory
     cache_path: Option<String>,
-    /// See [pkarr::dht::Settings::cache_size]
+    /// See [pkarr::Settings::cache_size]
     cache_size: Option<usize>,
     /// Resolvers
     ///
     /// Other servers to query in parallel with the Dht queries
     ///
-    /// See [pkarr::dht::Settings::resolvers]
+    /// See [pkarr::Settings::resolvers]
     resolvers: Option<Vec<String>>,
-    /// See [pkarr::dht::Settings::minimum_ttl]
+    /// See [pkarr::Settings::minimum_ttl]
     minimum_ttl: Option<u32>,
-    /// See [pkarr::dht::Settings::maximum_ttl]
+    /// See [pkarr::Settings::maximum_ttl]
     maximum_ttl: Option<u32>,
     rate_limiter: RateLimiterConfig,
 }

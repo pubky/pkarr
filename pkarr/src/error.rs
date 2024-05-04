@@ -1,5 +1,8 @@
 //! Main Crate Error
 
+// Alias Result to be the crate Result.
+pub type Result<T, E = Error> = core::result::Result<T, E>;
+
 #[derive(thiserror::Error, Debug)]
 /// Pkarr crate error enum.
 pub enum Error {
@@ -7,8 +10,9 @@ pub enum Error {
     /// Transparent [std::io::Error]
     IO(#[from] std::io::Error),
 
-    #[cfg(feature = "dht")]
+    #[cfg(not(target_arch = "wasm32"))]
     #[error(transparent)]
+    /// Transparent [mainline::Error]
     MainlineError(#[from] mainline::Error),
 
     // === Keys errors ===
