@@ -12,16 +12,16 @@ use crate::{Error, PublicKey, Result, SignedPacket};
 
 #[derive(Clone, Debug)]
 /// Async version of [PkarrClient]
-pub struct AsyncPkarrClient(PkarrClient);
+pub struct PkarrClientAsync(PkarrClient);
 
 impl PkarrClient {
-    /// Returns [AsyncPkarrClient]
-    pub fn as_async(self) -> AsyncPkarrClient {
-        AsyncPkarrClient(self)
+    /// Returns [PkarrClientAsync]
+    pub fn as_async(self) -> PkarrClientAsync {
+        PkarrClientAsync(self)
     }
 }
 
-impl AsyncPkarrClient {
+impl PkarrClientAsync {
     // === Getters ===
 
     /// Returns the local address of the udp socket this node is listening on.

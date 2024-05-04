@@ -10,7 +10,7 @@ pub enum Error {
     /// Transparent [std::io::Error]
     IO(#[from] std::io::Error),
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
     #[error(transparent)]
     /// Transparent [mainline::Error]
     MainlineError(#[from] mainline::Error),
@@ -63,4 +63,25 @@ pub enum Error {
     #[error("SignedPacket's timestamp is not the most recent")]
     /// Failed to publish because there is a more recent packet.
     NotMostRecent,
+
+    // === Relay errors ===
+    #[cfg(feature = "relay")]
+    #[error("Request {0} returned non-ok response : {1} {2}")]
+    /// Relay response is not 200 OK
+    RelayErrorResponse(String, reqwest::StatusCode, String),
+
+    #[cfg(feature = "relay")]
+    #[error(transparent)]
+    /// Transparent [reqwest::Error]
+    ReqwestError(#[from] reqwest::Error),
+
+    #[cfg(feature = "relay")]
+    #[error("Invalid relay url {0}")]
+    /// Invalid relay url
+    InvalidRelayUrl(url::Url),
+
+    #[cfg(feature = "relay")]
+    #[error("Empty list of relays")]
+    /// Empty list of relays
+    EmptyListOfRelays,
 }

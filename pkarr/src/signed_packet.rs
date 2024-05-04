@@ -344,7 +344,7 @@ pub fn system_time() -> u64 {
         .as_micros() as u64
 }
 
-if_native! {
+if_dht! {
     use mainline::MutableItem;
 
     impl From<&SignedPacket> for MutableItem {
@@ -456,7 +456,7 @@ fn normalize_name(origin: &str, name: String) -> String {
     format!("{}.{}", name, origin)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::dns;

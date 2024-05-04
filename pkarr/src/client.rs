@@ -1,4 +1,4 @@
-//! Native Pkarr client for publishing and resolving [SignedPacket]s.
+//! Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
 
 use flume::{Receiver, Sender};
 use mainline::{
@@ -135,7 +135,7 @@ impl PkarrClientBuilder {
 }
 
 #[derive(Clone, Debug)]
-/// Pkarr client for publishing and resolving [SignedPacket]s.
+/// Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
 pub struct PkarrClient {
     pub(crate) address: Option<SocketAddr>,
     pub(crate) sender: Sender<ActorMessage>,
