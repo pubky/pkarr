@@ -2,16 +2,16 @@
 
 > Public-Key Addressable Resource Records
 
-The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable domains. This system would be accessible to anyone capable of maintaining a private key.
+The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable, censorship-resistant top-level domains. This system would be accessible to anyone capable of maintaining a private key.
 
 Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
-- To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
+- To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT) (through a relay if necessary).
 - To resolve some key's resources, applications query the DHT directly, or through a relay, and verify the signature themselves. 
-- Existing applications unaware of Pkarr make normal DNS Queries over HTTPS ([DoH](https://www.rfc-editor.org/rfc/rfc8484)) to Pkarr servers. 
-- Clients and Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. 
-- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT. Also Pkarr servers could republish records recently requested, to keep popular records alive too.
+- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT.
+- Clients and Pkarr servers cache records extensively using the `TTL` values in them to minimize DHT traffic as much as possible for improved scalability and reliability. 
+- Existing applications unaware of Pkarr can still resolve Pkarr TLDs, if the DNS server they query recognize Pkarr TLDs and use Mainline as a parallel root server to ICANN. 
 
 ## DEMO 
 
@@ -30,14 +30,14 @@ Or if you prefer Rust [Examples](./pkarr/examples)
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Relay
+    participant Server
     participant DHT
     participant Republisher
 
-    Client->>Relay: Publish
-    note over Relay: Optional DHT Relay
-    Relay->>DHT: Put
-    Note over Relay,DHT: Store RRs (resource records)
+    Client->>Server: Publish
+    note over Server: Optional Pkarr Server
+    Server->>DHT: Put
+    Note over Server,DHT: Store signed DNS packet
 
     Client->>Republisher: Republish request
     note over Client, Republisher: Notify Hosting provider mentioned in RRs
@@ -46,32 +46,31 @@ sequenceDiagram
         Republisher->>DHT: Republish
     end
 
-    Client->>Relay: Get
-    Relay->>DHT: Get
-    DHT->>Relay: Response
-    Relay->>Client: Response
-    note over  Relay: Optional DNS over HTTPS server
+    Client->>Server: Resolve
+    Server->>DHT: Get
+    DHT->>Server: Response
+    Server->>Client: Response
 ```
 
 ### Clients
- #### Pkarr enabled applications.
+#### Pkarr enabled applications.
  
- Native applications, can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr server as a relay.
+Native applications, can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr server as a relay.
 
- Browser web apps should try calling local Pkarr server at the default port `7527`, if not accessible, they have to query a remote server instead. Eitherway, these apps should allow users to configure servers of their choice.
+Browser web apps should try calling local Pkarr server at the default port `6881`, if not accessible, they have to query a remote server instead. Eitherway, these apps should allow users to configure servers of their choice.
  
- Clients with private keys are also capable of submitting signed records either to the DHT directly, or through Pkarr server, to update user's records when needed.
+Clients with private keys are also capable of submitting signed records either to the DHT directly, or through Pkarr relay server, to update user's records when needed.
  
- #### Existing applications
- To support existing applications totally oblivious of Pkarr, users will have to (manually or programatically) edit their OS DNS servers to add one or more Pkarr servers to proxy DHT records as DNS over HTTPS.
+#### Existing applications
+To support existing applications totally oblivious of Pkarr, users will have to (manually or programatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT to resolve packets from there. However, the best outcome would be adoption from existing widely used resolvers like `1.1.1.1` and `8.8.8.8`.
 
-### Relays
+### Servers
 
 Pkarr relays are optional but they:
-1. Trustlessly relay requests from Web apps and applications behind NAT or firewall, to the DHT.
-2. Offer a DoH interface for applications that aren't aware of Pkarr at all, so they can resolve something like `https://<key>` as usual.
+1. Act as [relays](https://pkarr.org/relays) to enable web applications to query the DHT.
+2. Act as [resolvers](https://pkarr.org/resolvers) to provide lower latency, more reliability and scalability.
 
-Relays are very light and cheap to operate, that they can easily run altruistically, but private, and paid relays are possible too.
+Relays are very light and cheap to operate, that they can easily run altruistically, but private, and paid servers are possible too.
 
 ### Republishers
 
