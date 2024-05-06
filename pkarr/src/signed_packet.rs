@@ -1,8 +1,8 @@
+//! Signed DNS packet
+
 use crate::{Error, Keypair, PublicKey, Result};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::Signature;
-#[cfg(feature = "dht")]
-use mainline::common::MutableItem;
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
@@ -12,7 +12,7 @@ use std::{
     char,
     fmt::{self, Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 const DOT: char = '.';
@@ -22,140 +22,119 @@ self_cell!(
         owner: Bytes,
 
         #[covariant]
-        dependent: InnerParsed,
+        dependent: Packet,
     }
 
     impl{Debug}
 );
 
-#[derive(Debug)]
-struct InnerParsed<'a> {
-    public_key: PublicKey,
-    timestamp: u64,
-    signature: Signature,
-    packet: Packet<'a>,
-}
-
 impl Inner {
-    fn try_from_bytes(bytes: Bytes, verify_signature: bool) -> Result<Self> {
-        if bytes.len() < 104 {
-            return Err(Error::InvalidSingedPacketBytes(bytes.len()));
-        }
-        if bytes.len() > 1104 {
-            return Err(Error::PacketTooLarge(bytes.len()));
-        }
-        let public_key_bytes: [u8; 32] = bytes[..32].try_into().expect("just checked");
-        let public_key = PublicKey::try_from(public_key_bytes)?;
-        let signature =
-            Signature::from_bytes(bytes[32..96].try_into().expect("signature is 64 bytes"));
-        let timestamp = u64::from_be_bytes(bytes[96..104].try_into().expect("seq is 8 bytes"));
-
-        let encoded_packet = &bytes.slice(104..);
-
-        if verify_signature {
-            public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
-        }
-        Self::try_from_bytes_and_parts(bytes, public_key, timestamp, signature)
-    }
-
-    fn try_from_response(public_key: PublicKey, response: Bytes) -> Result<Self> {
-        if response.len() < 72 {
-            return Err(Error::InvalidSingedPacketBytes(response.len()));
-        }
-        if response.len() > 1072 {
-            return Err(Error::PacketTooLarge(response.len()));
-        }
-
-        let signature =
-            Signature::from_bytes(response[..64].try_into().expect("signature is 64 bytes"));
-        let timestamp = u64::from_be_bytes(response[64..72].try_into().expect("seq is 8 bytes"));
-
-        let encoded_packet = &response.slice(72..);
-
-        public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
-
-        let mut bytes = BytesMut::with_capacity(response.len() + 32);
-        bytes.extend_from_slice(&public_key.to_bytes());
-        bytes.extend_from_slice(&response);
-        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
-    }
-
     fn try_from_parts(
-        public_key: PublicKey,
-        encoded_packet: Bytes,
+        public_key: &PublicKey,
+        signature: &Signature,
         timestamp: u64,
-        signature: Signature,
+        encoded_packet: &Bytes,
     ) -> Result<Self> {
         // Create the inner bytes from <public_key><signature>timestamp><v>
         let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 104);
 
-        bytes.extend_from_slice(&public_key.to_bytes());
+        bytes.extend_from_slice(public_key.as_bytes());
         bytes.extend_from_slice(&signature.to_bytes());
         bytes.extend_from_slice(&timestamp.to_be_bytes());
-        bytes.extend_from_slice(&encoded_packet);
-        Self::try_from_bytes_and_parts(bytes.into(), public_key, timestamp, signature)
+        bytes.extend_from_slice(encoded_packet);
+
+        Ok(Self::try_new(bytes.into(), |bytes| {
+            Packet::parse(&bytes[104..])
+        })?)
     }
 
-    fn try_from_bytes_and_parts(
-        bytes: Bytes,
-        public_key: PublicKey,
-        timestamp: u64,
-        signature: Signature,
-    ) -> Result<Self> {
-        Self::try_new(bytes, |bytes| match Packet::parse(&bytes[104..]) {
-            Ok(packet) => Ok(InnerParsed {
-                public_key,
-                timestamp,
-                signature,
-                packet,
-            }),
-            Err(e) => Err(e),
-        })
-        .map_err(|e| e.into())
+    fn try_from_bytes(bytes: &Bytes) -> Result<Self> {
+        Ok(Inner::try_new(bytes.to_owned(), |bytes| {
+            Packet::parse(&bytes[104..])
+        })?)
     }
 }
 
 #[derive(Debug)]
-/// Signed DNS packet as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html).
-///
-/// `timestamp` is the number of microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).
+/// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
+    last_seen: u64,
 }
 
 impl SignedPacket {
-    /// Creates a new [SignedPacket] from a [PublicKey] and the 64 bytes Signature
-    /// concatenated with 8 bytes timestamp and encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
-    pub fn from_relay_response(public_key: PublicKey, response: Bytes) -> Result<SignedPacket> {
-        let inner = Inner::try_from_response(public_key, response)?;
+    /// Creates a [Self] from the serialized representation:
+    /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
+    ///
+    /// Performs the following validations:
+    /// - Bytes minimum length
+    /// - Validates the PublicKey
+    /// - Verifies the Signature
+    /// - Validates the DNS packet encoding
+    ///
+    /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
+    ///
+    /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
+    ///
+    /// # Errors
+    /// - Returns [crate::Error::InvalidSignedPacketBytesLength] if `bytes.len()` is smaller than 104 bytes
+    /// - Returns [crate::Error::PacketTooLarge] if `bytes.len()` is bigger than 1104 bytes
+    /// - Returns [crate::Error::InvalidEd25519PublicKey] if the first 32 bytes are invalid `ed25519` public key
+    /// - Returns [crate::Error::InvalidEd25519Signature] if the following 64 bytes are invalid `ed25519` signature
+    /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet after the first 104 bytes
+    pub fn from_bytes(bytes: &Bytes) -> Result<SignedPacket> {
+        if bytes.len() < 104 {
+            return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
+        }
+        if bytes.len() > 1104 {
+            return Err(Error::PacketTooLarge(bytes.len()));
+        }
+        let public_key = PublicKey::try_from(&bytes[..32])?;
+        let signature = Signature::from_bytes(bytes[32..96].try_into().unwrap());
+        let timestamp = u64::from_be_bytes(bytes[96..104].try_into().unwrap());
 
-        Ok(SignedPacket { inner })
+        let encoded_packet = &bytes.slice(104..);
+
+        public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
+
+        Ok(SignedPacket {
+            inner: Inner::try_from_bytes(bytes)?,
+            last_seen: system_time(),
+        })
     }
 
-    /// Creates a new [SignedPacket] from a 32 bytes PublicKey concatened with the 64 bytes Signature
-    /// concatenated with 8 bytes timestamp and encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
-    pub fn from_bytes(bytes: Bytes, verify_signature: bool) -> Result<SignedPacket> {
-        let inner = Inner::try_from_bytes(bytes, verify_signature)?;
-
-        Ok(SignedPacket { inner })
+    /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
+    /// like ones stored on disk or in a database.
+    pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: u64) -> SignedPacket {
+        SignedPacket {
+            inner: Inner::try_from_bytes(bytes).unwrap(),
+            last_seen,
+        }
     }
 
-    /// Returns the 32 bytes PublicKey concatened with the 64 bytes Signature
-    /// concatenated with 8 bytes timestamp and encoded [Packet].
-    pub fn as_bytes(&self) -> Bytes {
-        self.inner.borrow_owner().clone()
-    }
+    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
+    ///
+    /// # Errors
+    /// - Returns [crate::Error::InvalidSignedPacketBytesLength] if `payload` is too small
+    /// - Returns [crate::Error::PacketTooLarge] if the payload is too large.
+    /// - Returns [crate::Error::InvalidEd25519Signature] if the signature in the payload is invalid
+    /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet
+    pub fn from_relay_payload(public_key: &PublicKey, payload: &Bytes) -> Result<SignedPacket> {
+        let mut bytes = BytesMut::with_capacity(payload.len() + 32);
 
-    /// Returns the 64 bytes Signature concatenated with 8 bytes timestamp and
-    /// encoded [Packet] as defined in the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) spec.
-    pub fn as_relay_request(&self) -> Bytes {
-        self.inner.borrow_owner().slice(32..)
+        bytes.extend_from_slice(public_key.as_bytes());
+        bytes.extend_from_slice(payload);
+
+        SignedPacket::from_bytes(&bytes.into())
     }
 
     /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the [zbase32](z32) encoded [PublicKey] of the [Keypair] used to sign the Packet.
+    ///
+    /// # Errors
+    /// - Returns [crate::Error::DnsError] if the packet is invalid or it failed to compress or encode it.
     pub fn from_packet(keypair: &Keypair, packet: &Packet) -> Result<SignedPacket> {
         // Normalize names to the origin TLD
         let mut inner = Packet::new_reply(0);
@@ -190,66 +169,107 @@ impl SignedPacket {
             return Err(Error::PacketTooLarge(encoded_packet.len()));
         }
 
-        let timestamp = system_time().as_micros() as u64;
+        let timestamp = system_time();
 
         let signature = keypair.sign(&signable(timestamp, &encoded_packet));
 
         Ok(SignedPacket {
             inner: Inner::try_from_parts(
-                keypair.public_key(),
-                encoded_packet,
+                &keypair.public_key(),
+                &signature,
                 timestamp,
-                signature,
+                &encoded_packet,
             )?,
+            last_seen: system_time(),
         })
     }
 
     // === Getters ===
 
+    /// Returns the serialized signed packet:
+    /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
+    pub fn as_bytes(&self) -> &Bytes {
+        self.inner.borrow_owner()
+    }
+
+    /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
+    /// to be sent as a request/response body to or from [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
+    pub fn to_relay_payload(&self) -> Bytes {
+        self.inner.borrow_owner().slice(32..)
+    }
+
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
-    pub fn public_key(&self) -> &PublicKey {
-        &self.inner.borrow_dependent().public_key
-    }
-
-    /// Returns the timestamp in microseconds since the UNIX epoch
-    pub fn timestamp(&self) -> &u64 {
-        &self.inner.borrow_dependent().timestamp
-    }
-
-    /// Return the DNS [Packet].
-    pub fn packet(&self) -> &Packet {
-        &self.inner.borrow_dependent().packet
+    pub fn public_key(&self) -> PublicKey {
+        PublicKey::try_from(&self.inner.borrow_owner()[0..32]).unwrap()
     }
 
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
     /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
-    pub fn signature(&self) -> &Signature {
-        &self.inner.borrow_dependent().signature
+    pub fn signature(&self) -> Signature {
+        Signature::try_from(&self.inner.borrow_owner()[32..96]).unwrap()
     }
 
+    /// Returns the timestamp in microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).
+    ///
+    /// This timestamp is authored by the controller of the keypair,
+    /// and it is trusted as a way to order which packets where authored after which,
+    /// but it shouldn't be used for caching for example, instead, use [Self::last_seen]
+    /// which is set when you create a new packet.
+    pub fn timestamp(&self) -> u64 {
+        let bytes = self.inner.borrow_owner();
+        let slice: [u8; 8] = bytes[96..104].try_into().unwrap();
+
+        u64::from_be_bytes(slice)
+    }
+
+    /// Returns the DNS [Packet] compressed and encoded.
     pub fn encoded_packet(&self) -> Bytes {
         self.inner.borrow_owner().slice(104..)
     }
 
+    /// Return the DNS [Packet].
+    pub fn packet(&self) -> &Packet {
+        self.inner.borrow_dependent()
+    }
+
+    /// Unix last_seen time in microseconds
+    pub fn last_seen(&self) -> &u64 {
+        &self.last_seen
+    }
+
+    // === Setters ===
+
+    /// Set the [Self::last_seen] property
+    pub fn set_last_seen(&mut self, last_seen: &u64) {
+        self.last_seen = *last_seen;
+    }
+
     // === Public Methods ===
 
-    /// Return whether this {SignedPacket] is more recent than the given one.
+    /// Set the [Self::last_seen] to the current system time
+    pub fn refresh(&mut self) {
+        self.last_seen = system_time();
+    }
+
+    /// Return whether this [SignedPacket] is more recent than the given one.
     /// If the timestamps are erqual, the one with the largest value is considered more recent.
     /// Usefel for determining which packet contains the latest information from the Dht.
     /// Assumes that both packets have the same [PublicKey], you shouldn't compare packets from
     /// different keys.
     pub fn more_recent_than(&self, other: &SignedPacket) -> bool {
-        if self.timestamp() < other.timestamp() {
-            return false;
-        }
-
         // In the rare ocasion of timestamp collission,
         // we use the one with the largest value
-        if self.timestamp() == other.timestamp() && self.encoded_packet() < other.encoded_packet() {
-            return false;
+        if self.timestamp() == other.timestamp() {
+            self.encoded_packet() > other.encoded_packet()
+        } else {
+            self.timestamp() > other.timestamp()
         }
+    }
 
-        true
+    /// Returns true if both packets have the same timestamp and packet,
+    /// and only differ in [Self::last_seen]
+    pub fn is_same_as(&self, other: &SignedPacket) -> bool {
+        self.as_bytes() == other.as_bytes()
     }
 
     /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
@@ -263,23 +283,50 @@ impl SignedPacket {
             .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
     }
 
-    /// Return the duration of time elapsed since the timestamp of this [SignedPacket].
-    pub fn elapsed(&self) -> Duration {
-        system_time() - Duration::from_micros(*self.timestamp())
-    }
-
     /// Similar to [resource_records](SignedPacket::resource_records), but filters out
-    /// expired records.
+    /// expired records, according the the [Self::last_seen] value and each record's `ttl`.
     pub fn fresh_resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
 
-        let elapsed = self.elapsed().as_secs() as u32;
+        self.packet().answers.iter().filter(move |rr| {
+            rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > self.elapsed()
+        })
+    }
 
+    /// calculates the remaining seconds by comparing the [Self::ttl] (clamped by `min` and `max`)
+    /// to the [Self::last_seen].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min` < `max`
+    pub fn expires_in(&self, min: u32, max: u32) -> u32 {
+        match self.ttl(min, max).overflowing_sub(self.elapsed()) {
+            (_, true) => 0,
+            (ttl, false) => ttl,
+        }
+    }
+
+    /// Returns the smallest `ttl` in the [Self::packet] resource records,
+    /// calmped with `min` and `max`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min` < `max`
+    pub fn ttl(&self, min: u32, max: u32) -> u32 {
         self.packet()
             .answers
             .iter()
-            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > elapsed)
+            .map(|rr| rr.ttl)
+            .min()
+            .map_or(min, |v| v.clamp(min, max))
+    }
+
+    // === Private Methods ===
+
+    /// Time since the [Self::last_seen] in seconds
+    fn elapsed(&self) -> u32 {
+        ((system_time() - self.last_seen) / 1_000_000) as u32
     }
 }
 
@@ -289,41 +336,45 @@ fn signable(timestamp: u64, v: &Bytes) -> Bytes {
     signable.into()
 }
 
-fn system_time() -> Duration {
+/// Return the number of microseconds since [SystemTime::UNIX_EPOCH]
+pub fn system_time() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .expect("time drift")
+        .as_micros() as u64
 }
 
-#[cfg(feature = "dht")]
-impl From<&SignedPacket> for MutableItem {
-    fn from(s: &SignedPacket) -> Self {
-        let seq: i64 = *s.timestamp() as i64;
-        let packet = s.inner.borrow_owner().slice(104..);
+if_dht! {
+    use mainline::MutableItem;
 
-        Self::new_signed_unchecked(
-            s.public_key().to_bytes(),
-            s.signature().to_bytes(),
-            packet,
-            seq,
-            None,
-        )
+    impl From<&SignedPacket> for MutableItem {
+        fn from(s: &SignedPacket) -> Self {
+            let seq: i64 = s.timestamp() as i64;
+            let packet = s.inner.borrow_owner().slice(104..);
+
+            Self::new_signed_unchecked(
+                s.public_key().to_bytes(),
+                s.signature().to_bytes(),
+                packet,
+                seq,
+                None,
+            )
+        }
     }
-}
 
-#[cfg(feature = "dht")]
-impl TryFrom<MutableItem> for SignedPacket {
-    type Error = Error;
+    impl TryFrom<&MutableItem> for SignedPacket {
+        type Error = Error;
 
-    fn try_from(i: MutableItem) -> Result<Self> {
-        let public_key: PublicKey = i.key().to_owned().try_into().unwrap();
-        let encoded_packet: Bytes = i.value().to_vec().into();
-        let seq = i.seq().to_owned() as u64;
-        let signature: Signature = i.signature().into();
+        fn try_from(i: &MutableItem) -> Result<Self> {
+            let public_key = PublicKey::try_from(i.key()).unwrap();
+            let seq = *i.seq() as u64;
+            let signature: Signature = i.signature().into();
 
-        Ok(Self {
-            inner: Inner::try_from_parts(public_key, encoded_packet, seq, signature)?,
-        })
+            Ok(Self {
+                inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
+                last_seen: system_time(),
+            })
+        }
     }
 }
 
@@ -335,12 +386,19 @@ impl AsRef<[u8]> for SignedPacket {
     }
 }
 
+impl Clone for SignedPacket {
+    fn clone(&self) -> Self {
+        Self::from_bytes_unchecked(self.as_bytes(), self.last_seen)
+    }
+}
+
 impl Display for SignedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "SignedPacket ({}):\n    timestamp: {},\n    signature: {}\n    records:\n",
+            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {},\n    signature: {}\n    records:\n",
             &self.public_key(),
+            &self.elapsed(),
             &self.timestamp(),
             &self.signature(),
         )?;
@@ -388,7 +446,9 @@ fn normalize_name(origin: &str, name: String) -> String {
     if last == origin {
         // Already normalized.
         return name.to_string();
-    } else if last == "@" || last.is_empty() {
+    }
+
+    if last == "@" || last.is_empty() {
         // Shorthand of origin
         return origin.to_string();
     }
@@ -396,10 +456,12 @@ fn normalize_name(origin: &str, name: String) -> String {
     format!("{}.{}", name, origin)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use crate::dns;
+
+    use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
     #[test]
     fn normalize_names() {
@@ -439,9 +501,9 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        assert!(SignedPacket::from_relay_response(
-            signed_packet.public_key().clone(),
-            signed_packet.as_relay_request()
+        assert!(SignedPacket::from_relay_payload(
+            &signed_packet.public_key(),
+            &signed_packet.to_relay_payload()
         )
         .is_ok());
     }
@@ -451,7 +513,7 @@ mod tests {
         let keypair = Keypair::random();
 
         let bytes = Bytes::from(vec![0; 1073]);
-        let error = SignedPacket::from_relay_response(keypair.public_key().clone(), bytes);
+        let error = SignedPacket::from_relay_payload(&keypair.public_key(), &bytes);
 
         assert!(error.is_err());
     }
@@ -527,7 +589,7 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
         let item: MutableItem = (&signed_packet).into();
-        let seq: i64 = *signed_packet.timestamp() as i64;
+        let seq: i64 = signed_packet.timestamp() as i64;
 
         let expected = MutableItem::new(
             keypair.secret_key().into(),
@@ -591,14 +653,177 @@ mod tests {
         ));
         let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
         let bytes = signed.as_bytes();
-        let from_bytes = SignedPacket::from_bytes(bytes.clone(), true).unwrap();
+        let from_bytes = SignedPacket::from_bytes(bytes).unwrap();
         assert_eq!(signed.as_bytes(), from_bytes.as_bytes());
-        let from_bytes2 = SignedPacket::from_bytes(bytes, false).unwrap();
+        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, signed.last_seen);
         assert_eq!(signed.as_bytes(), from_bytes2.as_bytes());
 
         let public_key = keypair.public_key();
-        let response = signed.as_relay_request();
-        let from_relay_response = SignedPacket::from_relay_response(public_key, response).unwrap();
-        assert_eq!(signed.as_bytes(), from_relay_response.as_bytes());
+        let payload = signed.to_relay_payload();
+        let from_relay_payload = SignedPacket::from_relay_payload(&public_key, &payload).unwrap();
+        assert_eq!(signed.as_bytes(), from_relay_payload.as_bytes());
+    }
+
+    #[test]
+    fn clone() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let cloned = signed.clone();
+
+        assert_eq!(cloned.as_bytes(), signed.as_bytes());
+    }
+
+    #[test]
+    fn expires_in_minimum_ttl() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            10,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        signed.last_seen = system_time() - (20 * 1_000_000);
+
+        assert!(
+            signed.expires_in(30, u32::MAX) > 0,
+            "input minimum_ttl is 30 so ttl = 30"
+        );
+
+        assert!(
+            signed.expires_in(0, u32::MAX) == 0,
+            "input minimum_ttl is 0 so ttl = 10 (smallest in resource records)"
+        );
+    }
+
+    #[test]
+    fn expires_in_maximum_ttl() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            3 * DEFAULT_MAXIMUM_TTL,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        signed.last_seen = system_time() - (2 * (DEFAULT_MAXIMUM_TTL as u64) * 1_000_000);
+
+        assert!(
+            signed.expires_in(0, DEFAULT_MAXIMUM_TTL) == 0,
+            "input maximum_ttl is the dfeault 86400 so maximum ttl = 86400"
+        );
+
+        assert!(
+            signed.expires_in(0, 7 * DEFAULT_MAXIMUM_TTL) > 0,
+            "input maximum_ttl is 7 * 86400 so ttl = 3 * 86400 (smallest in resource records)"
+        );
+    }
+
+    #[test]
+    fn fresh_resource_records() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            60,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        signed.last_seen = system_time() - (30 * 1_000_000);
+
+        assert_eq!(signed.fresh_resource_records("_foo").count(), 1);
+    }
+
+    #[test]
+    fn ttl_empty() {
+        let keypair = Keypair::random();
+        let packet = Packet::new_reply(0);
+
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        assert_eq!(signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL), 300);
+    }
+
+    #[test]
+    fn ttl_with_records_less_than_minimum() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MINIMUM_TTL / 2,
+            RData::TXT("hello".try_into().unwrap()),
+        ));
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MINIMUM_TTL / 4,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        assert_eq!(
+            signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
+            DEFAULT_MINIMUM_TTL
+        );
+
+        assert_eq!(signed.ttl(0, DEFAULT_MAXIMUM_TTL), DEFAULT_MINIMUM_TTL / 4);
+    }
+
+    #[test]
+    fn ttl_with_records_more_than_maximum() {
+        let keypair = Keypair::random();
+        let mut packet = Packet::new_reply(0);
+
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MAXIMUM_TTL * 2,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("_foo").unwrap(),
+            dns::CLASS::IN,
+            DEFAULT_MAXIMUM_TTL * 4,
+            RData::TXT("world".try_into().unwrap()),
+        ));
+
+        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        assert_eq!(
+            signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
+            DEFAULT_MAXIMUM_TTL
+        );
+
+        assert_eq!(
+            signed.ttl(0, DEFAULT_MAXIMUM_TTL * 8),
+            DEFAULT_MAXIMUM_TTL * 2
+        );
     }
 }

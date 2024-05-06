@@ -6,12 +6,19 @@
 //! run this example from the project root:
 //!     $ cargo run --example publish
 
+use tracing::Level;
+use tracing_subscriber;
+
 use std::time::Instant;
 
 use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
 
 fn main() -> Result<()> {
-    let client = PkarrClient::new();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .init();
+
+    let client = PkarrClient::builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -27,14 +34,14 @@ fn main() -> Result<()> {
 
     let instant = Instant::now();
 
-    println!("\nPublishing {} ...", keypair.to_uri_string());
+    println!("\nPublishing {} ...", keypair.public_key());
 
     match client.publish(&signed_packet) {
-        Ok(metadata) => {
+        Ok(()) => {
             println!(
-                "\nSuccessfully published in {:?} to {} nodes",
+                "\nSuccessfully published {} in {:?}",
+                keypair.public_key(),
                 instant.elapsed(),
-                metadata.stored_at().len(),
             );
         }
         Err(err) => {

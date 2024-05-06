@@ -1,0 +1,1 @@
+resolver.pkarr.org:6881
