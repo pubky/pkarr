@@ -66,19 +66,9 @@ pub enum Error {
 
     // === Relay errors ===
     #[cfg(feature = "relay")]
-    #[error("Request {0} returned non-ok response : {1} {2}")]
-    /// Relay response is not 200 OK
-    RelayErrorResponse(String, reqwest::StatusCode, String),
-
-    #[cfg(feature = "relay")]
     #[error(transparent)]
-    /// Transparent [reqwest::Error]
-    ReqwestError(#[from] reqwest::Error),
-
-    #[cfg(feature = "relay")]
-    #[error("Invalid relay url {0}")]
-    /// Invalid relay url
-    InvalidRelayUrl(url::Url),
+    /// Transparent [ureq::Error]
+    RelayError(#[from] Box<ureq::Error>),
 
     #[cfg(feature = "relay")]
     #[error("Empty list of relays")]

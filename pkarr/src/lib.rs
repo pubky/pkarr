@@ -1,21 +1,32 @@
 #![doc = include_str!("../README.md")]
+//! ## Feature flags
+#![doc = document_features::document_features!()]
+//!
 
 macro_rules! if_dht {
     ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+        #[cfg(feature = "dht")]
         $item
     )*}
 }
 
-// Rexports
-pub use bytes;
-pub use simple_dns as dns;
+macro_rules! if_async {
+    ($($item:item)*) => {$(
+        #[cfg(feature = "async")]
+        $item
+    )*}
+}
+
+macro_rules! if_relay {
+    ($($item:item)*) => {$(
+        #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
+        $item
+    )*}
+}
 
 // Modules
 mod error;
 mod keys;
-#[cfg(feature = "relay")]
-mod relay_client;
 mod signed_packet;
 
 // Common exports
@@ -30,23 +41,34 @@ pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 /// Default cache size: 1000
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
+// Rexports
+pub use bytes;
+pub use simple_dns as dns;
+
 if_dht! {
     mod cache;
     mod client;
-    #[cfg(feature = "async")]
-    mod client_async;
+
+    if_async! {
+        mod client_async;
+        pub use client_async::PkarrClientAsync;
+    }
 
     pub use client::{PkarrClientBuilder, PkarrClient, Settings};
-    #[cfg(feature = "async")]
-    pub use client_async::PkarrClientAsync;
-
     pub use cache::{PkarrCache, PkarrCacheKey, InMemoryPkarrCache};
 
-    pub use mainline;
-
-    /// Default resolvers
     pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
+
+    // Rexports
+    pub use mainline;
 }
 
-#[cfg(feature = "relay")]
-pub use relay_client::{PkarrRelayClient, DEFAULT_RELAYS};
+if_relay! {
+    mod relay_client;
+    pub use relay_client::{PkarrRelayClient, DEFAULT_RELAYS};
+
+    // if_async! {
+        // mod client_async;
+        // pub use client_async::PkarrClientAsync;
+    // }
+}
