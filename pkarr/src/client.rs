@@ -17,7 +17,7 @@ use std::{
 };
 use tracing::{debug, instrument, trace};
 
-use super::{
+use crate::{
     cache::{InMemoryPkarrCache, PkarrCache},
     DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
 };
@@ -36,16 +36,11 @@ pub struct Settings {
     pub resolvers: Option<Vec<SocketAddr>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: NonZeroUsize,
-    /// Used in the `min` parametere in [SignedPacket::ttl].
-    ///
-    /// It is highly advisable to keep this number high enough,
-    /// especially when you run as a resolver that itself query resolvers
-    /// to query, because otherwise, you run the risk of two resolvers
-    /// get into an infinite recursion.
+    /// Used in the `min` parameter in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MINIMUM_TTL]
     pub minimum_ttl: u32,
-    /// Used in the `max` parametere in [SignedPacket::ttl].
+    /// Used in the `max` parameter in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
@@ -203,23 +198,7 @@ impl PkarrClient {
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
     pub fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
-        let mutable_item: MutableItem = (signed_packet).into();
-
-        if let Some(current) = self.cache.get(mutable_item.target()) {
-            if current.timestamp() > signed_packet.timestamp() {
-                return Err(Error::NotMostRecent);
-            }
-        };
-
-        self.cache.put(mutable_item.target(), signed_packet);
-
-        let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
-
-        self.sender
-            .send(ActorMessage::Publish(mutable_item, sender))
-            .map_err(|_| Error::DhtIsShutdown)?;
-
-        match receiver.recv() {
+        match self.publish_inner(signed_packet)?.recv() {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
                 mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
@@ -241,41 +220,8 @@ impl PkarrClient {
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
     /// the loop in the actor thread is stopped for any reason (like thread panic).
-    #[instrument(skip(self))]
     pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
-
-        let cached_packet = self.cache.get(&target);
-
-        if let Some(ref cached) = cached_packet {
-            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
-
-            if expires_in > 0 {
-                debug!(expires_in, "Have fresh signed_packet in cache.");
-                return Ok(Some(cached.clone()));
-            }
-
-            debug!(expires_in, "Have expired signed_packet in cache.");
-        } else {
-            debug!("Cache mess");
-        }
-
-        // Cache miss
-
-        let (sender, receiver) = flume::bounded::<SignedPacket>(1);
-
-        self.sender
-            .send(ActorMessage::Resolve(
-                target,
-                sender,
-                // Sending the `timestamp` of the known cache, help save some bandwith,
-                // since remote nodes will not send the encoded packet if they don't know
-                // any more recent versions.
-                cached_packet.as_ref().map(|cached| cached.timestamp()),
-            ))
-            .map_err(|_| Error::DhtIsShutdown)?;
-
-        Ok(receiver.recv().ok())
+        Ok(self.resolve_inner(public_key)?.recv().ok())
     }
 
     /// Shutdown the actor thread loop.
@@ -291,6 +237,70 @@ impl PkarrClient {
         self.address = None;
 
         Ok(())
+    }
+
+    // === Private Methods ===
+
+    #[instrument(skip(self))]
+    pub(crate) fn publish_inner(
+        &self,
+        signed_packet: &SignedPacket,
+    ) -> Result<Receiver<mainline::Result<Id>>> {
+        let mutable_item: MutableItem = (signed_packet).into();
+
+        if let Some(current) = self.cache.get(mutable_item.target()) {
+            if current.timestamp() > signed_packet.timestamp() {
+                return Err(Error::NotMostRecent);
+            }
+        };
+
+        self.cache.put(mutable_item.target(), signed_packet);
+
+        let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
+
+        self.sender
+            .send(ActorMessage::Publish(mutable_item, sender))
+            .map_err(|_| Error::DhtIsShutdown)?;
+
+        Ok(receiver)
+    }
+
+    #[instrument(skip(self))]
+    pub(crate) fn resolve_inner(&self, public_key: &PublicKey) -> Result<Receiver<SignedPacket>> {
+        let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
+
+        let (sender, receiver) = flume::bounded::<SignedPacket>(1);
+
+        let cached_packet = self.cache.get(&target);
+
+        if let Some(ref cached) = cached_packet {
+            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
+
+            if expires_in > 0 {
+                debug!(expires_in, "Have fresh signed_packet in cache.");
+
+                sender
+                    .send(cached.clone())
+                    .map_err(|_| Error::DhtIsShutdown)?;
+            }
+
+            debug!(expires_in, "Have expired signed_packet in cache.");
+        } else {
+            debug!("Cache mess");
+        }
+
+        self.sender
+            .send(ActorMessage::Resolve(
+                target,
+                sender,
+                // Sending the `timestamp` of the known cache, help save some bandwith,
+                // since remote nodes will not send the encoded packet if they don't know
+                // any more recent versions.
+                cached_packet.as_ref().map(|cached| cached.timestamp()),
+            ))
+            .map_err(|_| Error::DhtIsShutdown)?;
+
+        Ok(receiver)
     }
 }
 

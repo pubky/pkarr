@@ -1,8 +1,6 @@
 //! Async version of [PkarrClient]
 
-use mainline::{Id, MutableItem};
 use std::net::SocketAddr;
-use tracing::{debug, instrument};
 
 use super::{
     cache::PkarrCache,
@@ -47,24 +45,7 @@ impl PkarrClientAsync {
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
-        let mutable_item: MutableItem = (signed_packet).into();
-
-        if let Some(current) = self.0.cache.get(mutable_item.target()) {
-            if current.timestamp() > signed_packet.timestamp() {
-                return Err(Error::NotMostRecent);
-            }
-        };
-
-        self.0.cache.put(mutable_item.target(), signed_packet);
-
-        let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
-
-        self.0
-            .sender
-            .send(ActorMessage::Publish(mutable_item, sender))
-            .map_err(|_| Error::DhtIsShutdown)?;
-
-        match receiver.recv_async().await {
+        match self.0.publish_inner(signed_packet)?.recv_async().await {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
                 mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
@@ -84,44 +65,8 @@ impl PkarrClientAsync {
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
     /// the loop in the actor thread is stopped for any reason (like thread panic).
-    #[instrument(skip(self))]
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
-
-        let cached_packet = self.0.cache.get(&target);
-
-        if let Some(ref cached) = cached_packet {
-            let expires_in = cached.expires_in(self.0.minimum_ttl, self.0.maximum_ttl);
-
-            if expires_in > 0 {
-                debug!(expires_in, "Have fresh signed_packet in cache.");
-                return Ok(Some(cached.clone()));
-            }
-
-            debug!(expires_in, "Have expired signed_packet in cache.");
-        } else {
-            debug!("Cache mess");
-        }
-
-        // Cache miss
-
-        let (sender, receiver) = flume::bounded::<SignedPacket>(1);
-
-        debug!("Cache miss, asking the network for a fresh signed_packet");
-
-        self.0
-            .sender
-            .send(ActorMessage::Resolve(
-                target,
-                sender,
-                // Sending the `timestamp` of the known cache, help save some bandwith,
-                // since remote nodes will not send the encoded packet if they don't know
-                // any more recent versions.
-                cached_packet.as_ref().map(|cached| cached.timestamp()),
-            ))
-            .map_err(|_| Error::DhtIsShutdown)?;
-
-        Ok(receiver.recv_async().await.ok())
+        Ok(self.0.resolve_inner(public_key)?.recv_async().await.ok())
     }
 
     /// Shutdown the actor thread loop.
