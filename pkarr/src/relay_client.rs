@@ -1,28 +1,70 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 
-use futures::future::select_ok;
+use std::{num::NonZeroUsize, sync::Arc};
+
+use futures::{future::select_ok, lock::Mutex};
+use lru::LruCache;
 use reqwest::Client;
+use tracing::{debug, instrument};
 use url::Url;
 
-use crate::{Error, PublicKey, Result, SignedPacket};
+use crate::{
+    Error, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
+    DEFAULT_MINIMUM_TTL,
+};
 
 pub const DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
+
+#[derive(Debug, Clone)]
+/// [PkarrRelayClient]'s settings
+pub struct RelaySettings {
+    pub relays: Option<Vec<Url>>,
+    /// Defaults to [DEFAULT_CACHE_SIZE]
+    pub cache_size: NonZeroUsize,
+    /// Used in the `min` parameter in [SignedPacket::expires_in].
+    ///
+    /// Defaults to [DEFAULT_MINIMUM_TTL]
+    pub minimum_ttl: u32,
+    /// Used in the `max` parametere in [SignedPacket::expires_in].
+    ///
+    /// Defaults to [DEFAULT_MAXIMUM_TTL]
+    pub maximum_ttl: u32,
+    /// Custom [reqwest::Client]
+    pub http_client: Option<reqwest::Client>,
+}
+
+impl Default for RelaySettings {
+    fn default() -> Self {
+        Self {
+            relays: Some(DEFAULT_RELAYS.map(|s| s.try_into().unwrap()).to_vec()),
+            cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
+            minimum_ttl: DEFAULT_MINIMUM_TTL,
+            maximum_ttl: DEFAULT_MAXIMUM_TTL,
+            http_client: Some(Client::default()),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 pub struct PkarrRelayClient {
     http_client: Client,
     relays: Vec<Url>,
+    cache: Arc<Mutex<LruCache<PublicKey, SignedPacket>>>,
+    minimum_ttl: u32,
+    maximum_ttl: u32,
 }
 
 impl Default for PkarrRelayClient {
     fn default() -> Self {
-        Self::new(DEFAULT_RELAYS.map(|s| s.try_into().unwrap()).to_vec()).unwrap()
+        Self::new(RelaySettings::default()).unwrap()
     }
 }
 
 impl PkarrRelayClient {
-    pub fn new(relays: Vec<Url>) -> Result<Self> {
+    pub fn new(settings: RelaySettings) -> Result<Self> {
+        let relays = settings.relays.unwrap_or_default();
+
         if relays.is_empty() {
             return Err(Error::EmptyListOfRelays);
         }
@@ -35,15 +77,36 @@ impl PkarrRelayClient {
         }
 
         Ok(Self {
-            http_client: Client::new(),
+            http_client: settings.http_client.unwrap_or_default(),
             relays,
+            cache: Arc::new(Mutex::new(LruCache::new(settings.cache_size))),
+            minimum_ttl: settings.minimum_ttl,
+            maximum_ttl: settings.maximum_ttl,
         })
     }
 
     /// Publishes a [SignedPacket] to this client's relays.
     ///
     /// Return the first successful completion, or the last failure.
+    ///
+    /// # Errors
+    /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
+    /// - Returns a [Error::RelayErrorResponse] from the last responding relay, if all relays
+    /// responded with non-2xx status codes.
+    #[instrument(skip(self))]
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+        let public_key = signed_packet.public_key();
+        let mut cache = self.cache.lock().await;
+
+        if let Some(current) = cache.get(&public_key) {
+            if current.timestamp() > signed_packet.timestamp() {
+                return Err(Error::NotMostRecent);
+            }
+        };
+
+        cache.put(public_key, signed_packet.clone());
+        drop(cache);
+
         let futures = self.relays.iter().cloned().map(|relay| {
             Box::pin(async {
                 let mut url = relay;
@@ -61,12 +124,13 @@ impl PkarrRelayClient {
                 if response.status().is_success() {
                     Ok(())
                 } else {
-                    dbg!("publish error");
-                    Err(Error::RelayErrorResponse(
+                    let error = Err(Error::RelayErrorResponse(
                         url.to_string(),
                         response.status(),
                         response.text().await.unwrap_or_default(),
-                    ))
+                    ));
+                    debug!(?error);
+                    error
                 }
             })
         });
@@ -80,7 +144,25 @@ impl PkarrRelayClient {
     /// Resolve a [SignedPacket] from this client's relays.
     ///
     /// Return the first successful completion, or the last failure.
+    #[instrument(skip(self))]
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
+        let mut cache = self.cache.lock().await;
+
+        let cached_packet = cache.get(public_key);
+
+        if let Some(cached) = cached_packet {
+            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
+
+            if expires_in > 0 {
+                debug!(expires_in, "Have fresh signed_packet in cache.");
+                return Ok(Some(cached.clone()));
+            }
+
+            debug!(expires_in, "Have expired signed_packet in cache.");
+        } else {
+            debug!("Cache mess");
+        }
+
         let futures = self
             .relays
             .iter()
@@ -115,7 +197,7 @@ impl PkarrRelayClient {
 
 #[cfg(test)]
 mod tests {
-    use super::PkarrRelayClient;
+    use super::*;
     use crate::{dns, Keypair, SignedPacket};
     use url::Url;
 
@@ -148,9 +230,13 @@ mod tests {
             .create();
 
         let relays: Vec<Url> = vec![server.url().as_str().try_into().unwrap()];
+        let settings = RelaySettings {
+            relays: Some(relays),
+            ..RelaySettings::default()
+        };
 
-        let a = PkarrRelayClient::new(relays.clone()).unwrap();
-        let b = PkarrRelayClient::new(relays).unwrap();
+        let a = PkarrRelayClient::new(settings.clone()).unwrap();
+        let b = PkarrRelayClient::new(settings).unwrap();
 
         let _ = a.publish(&signed_packet).await;
 
