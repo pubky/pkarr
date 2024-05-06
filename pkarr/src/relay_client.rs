@@ -96,7 +96,7 @@ impl PkarrRelayClient {
     pub fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let mut last_error = Error::EmptyListOfRelays;
 
-        for response in self.publish_inner(signed_packet)? {
+        while let Ok(response) = self.publish_inner(signed_packet)?.recv() {
             match response {
                 Ok(_) => return Ok(()),
                 Err(error) => {
@@ -120,7 +120,7 @@ impl PkarrRelayClient {
     pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         let mut last_result = Ok(None);
 
-        for response in self.resolve_inner(public_key) {
+        while let Ok(response) = self.resolve_inner(public_key).recv() {
             match response {
                 Ok(Some(signed_packet)) => {
                     self.cache
@@ -241,6 +241,7 @@ impl PkarrRelayClient {
                                 let _ = sender.send(Ok(new_packet));
                             }
                             Err(error) => {
+                                debug!(?url, ?error, "Invalid signed_packet");
                                 let _ = sender.send(Err(error));
                             }
                         };

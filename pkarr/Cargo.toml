@@ -40,15 +40,13 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 [features]
 ## Use [PkarrClient]
 dht = ["dep:mainline", "dep:dyn-clone"]
-## Use async versions of [PkarrClient] and/or [PkarrRelayClient]
-async = ["flume/async"]
-
-## Use [PkarrRelayClient]
-relay = ["dep:reqwest", "dep:url"]
-
 ## Use [Keypair::random]
 rand = ["dep:rand", "ed25519-dalek/rand_core"]
-
+## Use async versions of [PkarrClient] and/or [PkarrRelayClient]
+async = ["flume/async"]
+## Use [PkarrRelayClient]
+relay = ["dep:reqwest", "dep:url"]
+## Use all features
 full = ["dht", "async", "relay", "rand"]
 
 default = ["dht", "rand"]

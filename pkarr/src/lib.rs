@@ -65,10 +65,10 @@ if_dht! {
 
 if_relay! {
     mod relay_client;
-    pub use relay_client::{PkarrRelayClient, DEFAULT_RELAYS};
+    pub use relay_client::{PkarrRelayClient, DEFAULT_RELAYS, RelaySettings};
 
-    // if_async! {
-        // mod client_async;
-        // pub use client_async::PkarrClientAsync;
-    // }
+    if_async! {
+        mod relay_client_async;
+        pub use relay_client_async::PkarrRelayClientAsync;
+    }
 }
