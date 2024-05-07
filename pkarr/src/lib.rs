@@ -5,21 +5,7 @@
 
 macro_rules! if_dht {
     ($($item:item)*) => {$(
-        #[cfg(feature = "dht")]
-        $item
-    )*}
-}
-
-macro_rules! if_async {
-    ($($item:item)*) => {$(
-        #[cfg(feature = "async")]
-        $item
-    )*}
-}
-
-macro_rules! if_relay {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
         $item
     )*}
 }
@@ -41,9 +27,27 @@ pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 /// Default cache size: 1000
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
+pub const DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
+
+pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
+
 // Rexports
 pub use bytes;
 pub use simple_dns as dns;
+
+macro_rules! if_async {
+    ($($item:item)*) => {$(
+        #[cfg(all(not(target_arch = "wasm32"), feature = "async"))]
+        $item
+    )*}
+}
+
+macro_rules! if_relay {
+    ($($item:item)*) => {$(
+        #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
+        $item
+    )*}
+}
 
 if_dht! {
     mod cache;
@@ -57,18 +61,21 @@ if_dht! {
     pub use client::{PkarrClientBuilder, PkarrClient, Settings};
     pub use cache::{PkarrCache, PkarrCacheKey, InMemoryPkarrCache};
 
-    pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
-
     // Rexports
     pub use mainline;
 }
 
 if_relay! {
     mod relay_client;
-    pub use relay_client::{PkarrRelayClient, DEFAULT_RELAYS, RelaySettings};
+    pub use relay_client::{PkarrRelayClient, RelaySettings};
 
     if_async! {
         mod relay_client_async;
         pub use relay_client_async::PkarrRelayClientAsync;
     }
 }
+
+#[cfg(target_arch = "wasm32")]
+mod relay_client_web;
+#[cfg(target_arch = "wasm32")]
+pub use relay_client_web::PkarrRelayClient;

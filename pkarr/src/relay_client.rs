@@ -14,10 +14,8 @@ use ureq::Agent;
 
 use crate::{
     Error, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
-    DEFAULT_MINIMUM_TTL,
+    DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS,
 };
-
-pub const DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
 
 #[derive(Debug, Clone)]
 /// [PkarrRelayClient]'s settings
@@ -33,7 +31,7 @@ pub struct RelaySettings {
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
-    /// Custom [reqwest::Client]
+    /// Custom [ureq::Agent]
     pub http_client: Agent,
 }
 
