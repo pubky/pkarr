@@ -190,8 +190,6 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let path = format!("/{}", signed_packet.public_key());
-
         let client = PkarrRelayClient::new(vec![
             "http://fail.non".to_string(),
             "https://relay.pkarr.org".to_string(),
