@@ -15,7 +15,7 @@ use std::{
     num::NonZeroUsize,
     thread,
 };
-use tracing::{debug, instrument, trace};
+use tracing::{debug, trace};
 
 use crate::{
     cache::{InMemoryPkarrCache, PkarrCache},
@@ -241,7 +241,6 @@ impl PkarrClient {
 
     // === Private Methods ===
 
-    #[instrument(skip(self))]
     pub(crate) fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
@@ -265,7 +264,6 @@ impl PkarrClient {
         Ok(receiver)
     }
 
-    #[instrument(skip(self))]
     pub(crate) fn resolve_inner(&self, public_key: &PublicKey) -> Result<Receiver<SignedPacket>> {
         let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
 

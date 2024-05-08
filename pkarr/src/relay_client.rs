@@ -9,7 +9,7 @@ use std::{
 
 use flume::Receiver;
 use lru::LruCache;
-use tracing::{debug, instrument};
+use tracing::debug;
 use ureq::Agent;
 
 use crate::{
@@ -137,7 +137,6 @@ impl PkarrRelayClient {
 
     // === Private Methods ===
 
-    #[instrument(skip(self))]
     pub(crate) fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
