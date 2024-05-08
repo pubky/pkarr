@@ -4,7 +4,7 @@ use axum::{extract::State, response::IntoResponse};
 
 use bytes::Bytes;
 use http::{header, StatusCode};
-use tracing::{error, instrument};
+use tracing::error;
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
@@ -12,7 +12,6 @@ use crate::error::{Error, Result};
 
 use super::http_server::AppState;
 
-#[instrument]
 pub async fn put(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
@@ -44,7 +43,6 @@ pub async fn put(
     Ok(StatusCode::OK)
 }
 
-#[instrument]
 pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,

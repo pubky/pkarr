@@ -16,7 +16,7 @@ use pkarr::{
     PkarrCache,
 };
 
-use tracing::{debug, instrument};
+use tracing::debug;
 
 use crate::{cache::HeedPkarrCache, rate_limiting::RateLimiterLayer};
 
@@ -57,7 +57,6 @@ impl DhtServer {
 }
 
 impl Server for DhtServer {
-    #[instrument(skip(self))]
     fn handle_request(
         &mut self,
         rpc: &mut Rpc,

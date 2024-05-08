@@ -7,7 +7,7 @@ use web_sys::RequestMode;
 
 use crate::{Error, PublicKey, Result, SignedPacket, DEFAULT_RELAYS};
 
-use tracing::{debug, instrument};
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct PkarrRelayClient {
@@ -90,7 +90,6 @@ impl PkarrRelayClient {
     }
 }
 
-#[instrument]
 async fn publish_inner(url: &String, bytes: Vec<u8>) -> Result<()> {
     let response = fetch_base(url, "PUT", Some(bytes)).await?;
     let bytes = response_body(&response).await?;
@@ -105,7 +104,6 @@ async fn publish_inner(url: &String, bytes: Vec<u8>) -> Result<()> {
     Ok(())
 }
 
-#[instrument]
 async fn resolve_inner(url: &String) -> Result<Vec<u8>> {
     let response = fetch_base(url, "GET", None).await?;
     let bytes = response_body(&response).await?;

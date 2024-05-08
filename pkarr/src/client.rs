@@ -15,7 +15,7 @@ use std::{
     num::NonZeroUsize,
     thread,
 };
-use tracing::{debug, instrument, trace};
+use tracing::{debug, trace};
 
 use crate::{
     cache::{InMemoryPkarrCache, PkarrCache},
@@ -241,7 +241,6 @@ impl PkarrClient {
 
     // === Private Methods ===
 
-    #[instrument(skip(self))]
     pub(crate) fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
@@ -265,7 +264,6 @@ impl PkarrClient {
         Ok(receiver)
     }
 
-    #[instrument(skip(self))]
     pub(crate) fn resolve_inner(&self, public_key: &PublicKey) -> Result<Receiver<SignedPacket>> {
         let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
 
@@ -385,20 +383,21 @@ fn run(
                             response: QueryResponseSpecific::Value(Response::Mutable(mutable_item)),
                         } => {
                             if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
-                                let new_packet = if let Some(ref cached) = cache.get(target) {
-                                    if signed_packet.more_recent_than(cached) {
-                                        debug!(
-                                            ?target,
-                                            "Received more recent packet than in cache"
-                                        );
-                                        Some(signed_packet)
+                                let new_packet =
+                                    if let Some(ref cached) = cache.get_read_only(target) {
+                                        if signed_packet.more_recent_than(cached) {
+                                            debug!(
+                                                ?target,
+                                                "Received more recent packet than in cache"
+                                            );
+                                            Some(signed_packet)
+                                        } else {
+                                            None
+                                        }
                                     } else {
-                                        None
-                                    }
-                                } else {
-                                    debug!(?target, "Received new packet after cache miss");
-                                    Some(signed_packet)
-                                };
+                                        debug!(?target, "Received new packet after cache miss");
+                                        Some(signed_packet)
+                                    };
 
                                 if let Some(packet) = new_packet {
                                     cache.put(target, packet);
@@ -416,7 +415,7 @@ fn run(
                             target,
                             response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
                         } => {
-                            if let Some(mut cached) = cache.get(target) {
+                            if let Some(mut cached) = cache.get_read_only(target) {
                                 if (*seq as u64) == cached.timestamp() {
                                     trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
 
