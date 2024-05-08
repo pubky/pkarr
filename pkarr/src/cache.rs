@@ -17,8 +17,22 @@ pub trait PkarrCache: Debug + Send + Sync + DynClone {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
+    /// Puts [SignedPacket] into cache.
     fn put(&self, key: &PkarrCacheKey, signed_packet: &SignedPacket);
+    /// Reads [SignedPacket] from cache, while moving it to the head of the LRU list.
     fn get(&self, key: &PkarrCacheKey) -> Option<SignedPacket>;
+    /// Reads [SignedPacket] from cache, without changing the LRU list.
+    ///
+    /// Used for internal reads that are not initiated by the user directly,
+    /// like comparing an received signed packet with existing one.
+    ///
+    /// Useful to implement differently from [PkarrCache::get], if you are implementing
+    /// persistent cache where writes are slower than reads.
+    ///
+    /// Otherwise it will just use [PkarrCache::get].
+    fn get_read_only(&self, key: &PkarrCacheKey) -> Option<SignedPacket> {
+        self.get(key)
+    }
 }
 
 dyn_clone::clone_trait_object!(PkarrCache);
@@ -64,8 +78,6 @@ impl PkarrCache for InMemoryPkarrCache {
         }
     }
 
-    /// Returns the [SignedPacket] for the public_key in the cache or None if it is not present in the cache.
-    /// Moves the key to the head of the LRU list if it exists.
     fn get(&self, key: &PkarrCacheKey) -> Option<SignedPacket> {
         self.inner.lock().unwrap().get(key).cloned()
     }

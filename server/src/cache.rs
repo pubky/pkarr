@@ -1,4 +1,4 @@
-use std::{borrow::Cow, path::Path};
+use std::{borrow::Cow, path::Path, time::Instant};
 
 use pkarr::{system_time, PkarrCache, PkarrCacheKey, SignedPacket};
 
@@ -157,9 +157,6 @@ impl HeedPkarrCache {
     }
 
     pub fn internal_get(&self, key: &PkarrCacheKey) -> Result<Option<SignedPacket>> {
-        // TODO: Optimize to use read transaction most of the time, and batch
-        // updating access times every few seconds.
-
         let mut wtxn = self.env.write_txn()?;
 
         let packets: PkarrCacheSignedPacketsTable = self
@@ -195,6 +192,23 @@ impl HeedPkarrCache {
 
         Ok(None)
     }
+
+    pub fn internal_get_read_only(&self, key: &PkarrCacheKey) -> Result<Option<SignedPacket>> {
+        let rtxn = self.env.read_txn()?;
+
+        let packets: PkarrCacheSignedPacketsTable = self
+            .env
+            .open_database(&rtxn, Some(PKARR_CACHE_TABLE_NAME_SIGNED_PACKET))?
+            .unwrap();
+
+        if let Some(signed_packet) = packets.get(&rtxn, key)? {
+            return Ok(Some(signed_packet));
+        }
+
+        rtxn.commit()?;
+
+        Ok(None)
+    }
 }
 
 impl PkarrCache for HeedPkarrCache {
@@ -216,6 +230,17 @@ impl PkarrCache for HeedPkarrCache {
 
     fn get(&self, key: &PkarrCacheKey) -> Option<SignedPacket> {
         match self.internal_get(key) {
+            Ok(result) => result,
+            Err(error) => {
+                debug!(?error, "Error in HeedPkarrCache::get");
+
+                None
+            }
+        }
+    }
+
+    fn get_read_only(&self, key: &PkarrCacheKey) -> Option<SignedPacket> {
+        match self.internal_get_read_only(key) {
             Ok(result) => result,
             Err(error) => {
                 debug!(?error, "Error in HeedPkarrCache::get");
