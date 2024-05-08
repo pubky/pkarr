@@ -70,8 +70,18 @@ pub enum Error {
     /// Transparent [ureq::Error]
     RelayError(#[from] Box<ureq::Error>),
 
-    #[cfg(feature = "relay")]
+    #[cfg(any(feature = "relay", target_arch = "wasm32"))]
     #[error("Empty list of relays")]
     /// Empty list of relays
     EmptyListOfRelays,
+
+    // === Wasm ===
+    #[cfg(target_arch = "wasm32")]
+    #[error("Relay response with status: {0}, and message: {1}")]
+    /// A response was successfully received but had status code >= 400.
+    WasmRelayError(u16, String),
+
+    #[cfg(target_arch = "wasm32")]
+    #[error("JS error")]
+    JsError(wasm_bindgen::JsValue),
 }
