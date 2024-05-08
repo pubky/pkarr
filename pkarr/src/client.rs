@@ -280,9 +280,9 @@ impl PkarrClient {
                 sender
                     .send(cached.clone())
                     .map_err(|_| Error::DhtIsShutdown)?;
+            } else {
+                debug!(expires_in, "Have expired signed_packet in cache.");
             }
-
-            debug!(expires_in, "Have expired signed_packet in cache.");
         } else {
             debug!("Cache mess");
         }

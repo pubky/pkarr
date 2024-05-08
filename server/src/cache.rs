@@ -1,4 +1,4 @@
-use std::{borrow::Cow, path::Path, time::Instant};
+use std::{borrow::Cow, path::Path};
 
 use pkarr::{system_time, PkarrCache, PkarrCacheKey, SignedPacket};
 
