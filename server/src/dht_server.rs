@@ -70,9 +70,14 @@ impl Server for DhtServer {
         } = request
         {
             let should_query = if let Some(cached) = self.cache.get(target) {
+                debug!(
+                    public_key = ?cached.public_key(),
+                    ?target,
+                    "cache hit responding with packet!"
+                );
+
                 // Respond with what we have, even if expired.
                 let mutable_item = MutableItem::from(&cached);
-                debug!(?target, "cache hit responding with packet!");
 
                 rpc.response(
                     from,
@@ -97,6 +102,7 @@ impl Server for DhtServer {
 
                 if expired {
                     debug!(
+                        public_key = ?cached.public_key(),
                         ?target,
                         ?expires_in,
                         "cache expired, querying the DHT to hydrate our cache for later."
