@@ -64,6 +64,9 @@ async fn main() -> Result<()> {
             ))),
             ..DhtSettings::default()
         })
+        .resolvers(config.resolvers())
+        .minimum_ttl(config.minimum_ttl())
+        .maximum_ttl(config.maximum_ttl())
         .cache(cache)
         .build()?
         .as_async();

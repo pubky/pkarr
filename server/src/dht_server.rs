@@ -1,4 +1,7 @@
-use std::{fmt::Debug, net::SocketAddr};
+use std::{
+    fmt::Debug,
+    net::{SocketAddr, ToSocketAddrs},
+};
 
 use pkarr::{
     mainline::{
@@ -39,7 +42,7 @@ impl Debug for DhtServer {
 impl DhtServer {
     pub fn new(
         cache: Box<HeedPkarrCache>,
-        resolvers: Option<Vec<SocketAddr>>,
+        resolvers: Option<Vec<String>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
         rate_limiter_layer: RateLimiterLayer,
@@ -48,7 +51,13 @@ impl DhtServer {
             // Default DhtServer used to stay a good citizen servicing the Dht.
             inner: mainline::server::DhtServer::default(),
             cache,
-            resolvers,
+            resolvers: resolvers.map(|resolvers| {
+                resolvers
+                    .iter()
+                    .flat_map(|resolver| resolver.to_socket_addrs())
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }),
             minimum_ttl,
             maximum_ttl,
             rate_limiter_layer,

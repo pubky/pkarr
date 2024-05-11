@@ -3,7 +3,6 @@
 use anyhow::{anyhow, Context, Result};
 use pkarr::{DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use serde::{Deserialize, Serialize};
-use std::net::{SocketAddr, ToSocketAddrs};
 use std::{
     fmt::Debug,
     path::{Path, PathBuf},
@@ -61,14 +60,8 @@ impl Config {
         self.dht_port.unwrap_or(6881)
     }
 
-    pub fn resolvers(&self) -> Option<Vec<SocketAddr>> {
-        self.resolvers.clone().map(|resolvers| {
-            resolvers
-                .iter()
-                .flat_map(|resolver| resolver.to_socket_addrs())
-                .flatten()
-                .collect::<Vec<_>>()
-        })
+    pub fn resolvers(&self) -> Option<Vec<String>> {
+        self.resolvers.clone()
     }
 
     pub fn minimum_ttl(&self) -> u32 {
