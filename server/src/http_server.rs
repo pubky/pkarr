@@ -91,9 +91,7 @@ pub fn create_app(state: AppState, rate_limiter: IpRateLimiter) -> Router {
         .layer(cors)
         .layer(TraceLayer::new_for_http());
 
-    rate_limiter.layer(&router);
-
-    router
+    rate_limiter.layer(router)
 }
 
 #[derive(Debug, Clone)]
