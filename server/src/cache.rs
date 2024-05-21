@@ -1,4 +1,4 @@
-use std::{borrow::Cow, path::Path};
+use std::{borrow::Cow, path::Path, time::Duration};
 
 use pkarr::{system_time, PkarrCache, PkarrCacheKey, SignedPacket};
 
@@ -89,7 +89,15 @@ impl HeedPkarrCache {
 
         wtxn.commit()?;
 
-        Ok(Self { capacity, env })
+        let instance = Self { capacity, env };
+
+        let clone = instance.clone();
+        std::thread::spawn(move || loop {
+            debug!(size = ?clone.len(), "Cache stats");
+            std::thread::sleep(Duration::from_secs(60));
+        });
+
+        Ok(instance)
     }
 
     pub fn internal_len(&self) -> Result<usize> {
@@ -102,6 +110,7 @@ impl HeedPkarrCache {
 
         Ok(db.len(&rtxn)? as usize)
     }
+
     pub fn internal_put(&self, key: &PkarrCacheKey, signed_packet: &SignedPacket) -> Result<()> {
         if self.capacity == 0 {
             return Ok(());
