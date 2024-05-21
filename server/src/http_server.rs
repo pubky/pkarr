@@ -9,7 +9,7 @@ use tracing::{info, warn};
 
 use pkarr::PkarrClientAsync;
 
-use crate::rate_limiting::RateLimiterLayer;
+use crate::rate_limiting::IpRateLimiter;
 
 pub struct HttpServer {
     tasks: JoinSet<std::io::Result<()>>,
@@ -20,9 +20,9 @@ impl HttpServer {
     pub async fn spawn(
         client: PkarrClientAsync,
         port: u16,
-        rate_limiter_layer: RateLimiterLayer,
+        rate_limiter: IpRateLimiter,
     ) -> Result<HttpServer> {
-        let app = create_app(AppState { client }, rate_limiter_layer);
+        let app = create_app(AppState { client }, rate_limiter);
 
         let mut tasks = JoinSet::new();
 
@@ -75,22 +75,25 @@ impl HttpServer {
     }
 }
 
-pub(crate) fn create_app(state: AppState, rate_limiter_layer: RateLimiterLayer) -> Router {
+pub fn create_app(state: AppState, rate_limiter: IpRateLimiter) -> Router {
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::PUT])
         .allow_origin(cors::Any);
 
-    Router::new()
+    let router = Router::new()
         .route("/:key", get(crate::handlers::get).put(crate::handlers::put))
         .route(
             "/",
             get(|| async { "This is a Pkarr relay: pkarr.org/relays.\n" }),
         )
         .with_state(state)
-        .layer(rate_limiter_layer)
         .layer(DefaultBodyLimit::max(1104))
         .layer(cors)
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http());
+
+    rate_limiter.layer(&router);
+
+    router
 }
 
 #[derive(Debug, Clone)]

@@ -21,7 +21,7 @@ use pkarr::{
 
 use tracing::debug;
 
-use crate::{cache::HeedPkarrCache, rate_limiting::RateLimiterLayer};
+use crate::{cache::HeedPkarrCache, rate_limiting::IpRateLimiter};
 
 /// DhtServer with Rate limiting
 pub struct DhtServer {
@@ -30,7 +30,7 @@ pub struct DhtServer {
     cache: Box<crate::cache::HeedPkarrCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
-    rate_limiter_layer: RateLimiterLayer,
+    rate_limiter: IpRateLimiter,
 }
 
 impl Debug for DhtServer {
@@ -45,7 +45,7 @@ impl DhtServer {
         resolvers: Option<Vec<String>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
-        rate_limiter_layer: RateLimiterLayer,
+        rate_limiter: IpRateLimiter,
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
@@ -60,7 +60,7 @@ impl DhtServer {
             }),
             minimum_ttl,
             maximum_ttl,
-            rate_limiter_layer,
+            rate_limiter,
         }
     }
 }
@@ -131,13 +131,9 @@ impl Server for DhtServer {
             if should_query {
                 // Rate limit nodes that are making too many request forcing us to making too
                 // many queries, either by querying the same non-existent key, or many unique keys.
-                if self
-                    .rate_limiter_layer
-                    .config
-                    .limiter()
-                    .check_key(&from.ip())
-                    .is_ok()
-                {
+                if self.rate_limiter.is_limited(&from.ip()) {
+                    debug!(?from, "Resolver rate limiting");
+                } else {
                     rpc.get(
                         *target,
                         RequestTypeSpecific::GetValue(GetValueRequestArguments {
@@ -148,8 +144,6 @@ impl Server for DhtServer {
                         None,
                         self.resolvers.to_owned(),
                     );
-                } else {
-                    debug!(?from, "Resolver rate limiting");
                 };
             }
         };

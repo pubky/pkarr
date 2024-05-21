@@ -6,5 +6,6 @@ resolvers =  []
 minimum_ttl =  300
 maximum_ttl =  86400
 [rate_limiter]
+behind_proxy = false
 per_second = 2
 burst_size = 10
