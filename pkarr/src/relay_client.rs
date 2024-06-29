@@ -196,6 +196,8 @@ impl PkarrRelayClient {
             if expires_in > 0 {
                 debug!(expires_in, "Have fresh signed_packet in cache.");
                 let _ = sender.send(Ok(Some(cached.clone())));
+
+                return receiver;
             }
 
             debug!(expires_in, "Have expired signed_packet in cache.");
