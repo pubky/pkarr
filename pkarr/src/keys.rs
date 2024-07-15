@@ -9,6 +9,7 @@ use std::{
     hash::Hash,
 };
 
+#[derive(Clone)]
 /// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
 pub struct Keypair(SigningKey);
 
