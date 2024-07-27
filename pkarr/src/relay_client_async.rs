@@ -49,27 +49,21 @@ impl PkarrRelayClientAsync {
     ///
     /// # Errors
     ///
-    /// - Returns [Error::RelayError] if the relay responded with a status >= 400 or something
-    /// wring with the transport, transparent from [ureq::Error].
+    /// - Returns [Error::RelayError] if the relay responded with a status >= 400
+    /// (except 404 in which case you should receive Ok(None)) or something wrong
+    /// with the transport, transparent from [ureq::Error].
     /// - Returns [Error::IO] if something went wrong while reading the payload.
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        let mut last_result = Ok(None);
+        if let Some(signed_packet) = self.0.resolve_inner(public_key).recv_async().await?? {
+            self.cache()
+                .lock()
+                .unwrap()
+                .put(public_key.clone(), signed_packet.clone());
 
-        while let Ok(response) = self.0.resolve_inner(public_key).recv_async().await {
-            match response {
-                Ok(Some(signed_packet)) => {
-                    self.cache()
-                        .lock()
-                        .unwrap()
-                        .put(public_key.clone(), signed_packet.clone());
+            return Ok(Some(signed_packet));
+        };
 
-                    return Ok(Some(signed_packet));
-                }
-                result => last_result = result,
-            }
-        }
-
-        last_result
+        Ok(None)
     }
 }
 
@@ -123,6 +117,33 @@ mod tests {
             assert_eq!(b.cache().lock().unwrap().len(), 1);
 
             assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        }
+
+        futures::executor::block_on(test());
+    }
+
+    #[test]
+    fn not_found() {
+        async fn test() {
+            let keypair = Keypair::random();
+
+            let mut server = mockito::Server::new();
+
+            let path = format!("/{}", keypair.public_key());
+
+            server.mock("GET", path.as_str()).with_status(404).create();
+
+            let relays: Vec<String> = vec![server.url()];
+            let settings = RelaySettings {
+                relays,
+                ..RelaySettings::default()
+            };
+
+            let client = PkarrRelayClient::new(settings.clone()).unwrap().as_async();
+
+            let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+
+            assert!(resolved.is_none());
         }
 
         futures::executor::block_on(test());

@@ -112,27 +112,21 @@ impl PkarrRelayClient {
     ///
     /// # Errors
     ///
-    /// - Returns [Error::RelayError] if the relay responded with a status >= 400 or something
-    /// wring with the transport, transparent from [ureq::Error].
+    /// - Returns [Error::RelayError] if the relay responded with a status >= 400
+    /// (except 404 in which case you should receive Ok(None)) or something wrong
+    /// with the transport, transparent from [ureq::Error].
     /// - Returns [Error::IO] if something went wrong while reading the payload.
     pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        let mut last_result = Ok(None);
+        if let Some(signed_packet) = self.resolve_inner(public_key).recv()?? {
+            self.cache
+                .lock()
+                .unwrap()
+                .put(public_key.clone(), signed_packet.clone());
 
-        while let Ok(response) = self.resolve_inner(public_key).recv() {
-            match response {
-                Ok(Some(signed_packet)) => {
-                    self.cache
-                        .lock()
-                        .unwrap()
-                        .put(public_key.clone(), signed_packet.clone());
+            return Ok(Some(signed_packet));
+        };
 
-                    return Ok(Some(signed_packet));
-                }
-                result => last_result = result,
-            }
-        }
-
-        last_result
+        Ok(None)
     }
 
     // === Private Methods ===
@@ -246,6 +240,10 @@ impl PkarrRelayClient {
                         };
                     }
                 }
+                Err(ureq::Error::Status(404, _)) => {
+                    debug!(?url, "SignedPacket not found");
+                    let _ = sender.send(Ok(None));
+                }
                 Err(error) => {
                     debug!(?url, ?error, "Error response");
                     let _ = sender.send(Err(Error::RelayError(Box::new(error))));
@@ -307,5 +305,28 @@ mod tests {
         assert_eq!(b.cache().lock().unwrap().len(), 1);
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+    }
+
+    #[test]
+    fn not_found() {
+        let keypair = Keypair::random();
+
+        let mut server = mockito::Server::new();
+
+        let path = format!("/{}", keypair.public_key());
+
+        server.mock("GET", path.as_str()).with_status(404).create();
+
+        let relays: Vec<String> = vec![server.url()];
+        let settings = RelaySettings {
+            relays,
+            ..RelaySettings::default()
+        };
+
+        let client = PkarrRelayClient::new(settings.clone()).unwrap();
+
+        let resolved = client.resolve(&keypair.public_key()).unwrap();
+
+        assert!(resolved.is_none());
     }
 }
