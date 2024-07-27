@@ -241,7 +241,6 @@ impl PkarrRelayClient {
                     }
                 }
                 Err(ureq::Error::Status(404, _)) => {
-                    dbg!(404);
                     debug!(?url, "SignedPacket not found");
                     let _ = sender.send(Ok(None));
                 }
