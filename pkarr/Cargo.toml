@@ -5,7 +5,7 @@ authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
 license = "MIT"
-repository = "https://github.com/nuhvi/pkarr"
+repository = "https://git.pkarr.org"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 
 [dependencies]
