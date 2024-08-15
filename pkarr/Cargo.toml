@@ -27,7 +27,7 @@ mainline = { version = "2.0.1", optional = true }
 dyn-clone = { version = "1.0.17", optional = true }
 
 # Relay client dependencies
-ureq = { version = "2.9.7", default-features = false, features = ["tls"], optional = true }
+ureq = { version = "2.10", default-features = false, features = ["tls"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 futures = "0.3.29"
