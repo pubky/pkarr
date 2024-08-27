@@ -133,7 +133,7 @@ impl SignedPacket {
     /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
-    /// which would be the [zbase32](z32) encoded [PublicKey] of the [Keypair] used to sign the Packet.
+    /// which would be the z-base32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
     ///
     /// # Errors
     /// - Returns [crate::Error::DnsError] if the packet is invalid or it failed to compress or encode it.

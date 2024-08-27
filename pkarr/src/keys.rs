@@ -59,12 +59,12 @@ impl Keypair {
 
 /// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
 ///
-/// It can formatted to and parsed from a [zbase32](z32) string.
+/// It can formatted to and parsed from a z-base32 string.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct PublicKey(VerifyingKey);
 
 impl PublicKey {
-    /// Format the public key as [zbase32](z32) string.
+    /// Format the public key as z-base32 string.
     pub fn to_z32(&self) -> String {
         self.to_string()
     }
@@ -185,7 +185,11 @@ impl TryFrom<&str> for PublicKey {
             }
         }
 
-        let bytes = z32::decode(s.as_bytes())?;
+        let bytes = if let Some(v) = base32::decode(base32::Alphabet::Z, s) {
+            Ok(v)
+        } else {
+            Err(Error::InvalidPublicKeyEncoding)
+        }?;
 
         let verifying_key = VerifyingKey::try_from(bytes.as_slice())
             .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
@@ -204,7 +208,11 @@ impl TryFrom<String> for PublicKey {
 
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", z32::encode(self.0.as_bytes()))
+        write!(
+            f,
+            "{}",
+            base32::encode(base32::Alphabet::Z, self.0.as_bytes())
+        )
     }
 }
 
