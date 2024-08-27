@@ -9,6 +9,9 @@ use std::{
     hash::Hash,
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone)]
 /// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
 pub struct Keypair(SigningKey);
@@ -223,6 +226,29 @@ impl Debug for PublicKey {
     }
 }
 
+#[cfg(feature = "serde")]
+impl Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        bytes.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: [u8; 32] = Deserialize::deserialize(deserializer)?;
+
+        (&bytes).try_into().map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,5 +416,21 @@ mod tests {
 
         let public_key: PublicKey = str.try_into().unwrap();
         assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde() {
+        let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+
+        let bytes = postcard::to_allocvec(&public_key).unwrap();
+
+        assert_eq!(bytes, expected)
     }
 }
