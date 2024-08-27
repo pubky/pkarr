@@ -15,7 +15,7 @@ PUT /:z-base32-encoded-key HTTP/2
 Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, PUT, OPTIONS
 
-<signature><timestamp>[<dns packet>]
+<body>
 ```
 
 Body is described at [Payload](#Payload) encoding section.
@@ -49,7 +49,7 @@ Access-Control-Allow-Methods: GET, PUT, OPTIONS
 Content-Type: application/pkarr.org/relays#payload
 Cache-Control: public, max-age=300
 
-<signature><timestamp>[<dns packet>]
+<body>
 ```
 
 `Cache-Control` header would help browsers reduce their reliance on the relay, the `max-age` should be set to be the minimum `ttl` in the resource records in the packet or some minimum ttl chosen by the relay.
@@ -70,12 +70,13 @@ On receiving a GET request, the relay server should:
 
 Relay payload is a subset of the [Canonical encoding](./base.md#Encoding), omitting the leading public key:
 
-| part       |  length  |         Note                         |
-| ---------- | -------- | ------------------------------------ | 
-| signature  | 64       | ed25519                              |
-| timestamp  | 8        | big-endian timestamp in microseconds |
-| DNS packet | variable | compressed DNS answer packet.        |
+```abnf
+RelayPayload = signature timestamp dns-packet
 
+signature   = 64 OCTET ; ed25519 signature over encoded DNS packet
+timestamp   =  8 OCTET ; big-endian UNIX timestamp in microseconds
+dns-packet  =  * OCTET ; compressed encoded DNS answer packet, less than 1000 bytes
+```
 
 ## Relation to resolvers
 

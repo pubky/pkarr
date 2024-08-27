@@ -57,6 +57,7 @@ impl PkarrRelayClient {
     /// # Errors
     ///
     /// - Returns [Error::WasmRelayError] For Error responses
+    /// (except 404, these get converted to Ok(None).
     /// - Returns [Error::JsError] If an error happened on JS side.
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         let futures = self.relays.iter().map(|relay| {
@@ -85,7 +86,13 @@ impl PkarrRelayClient {
 
         match select_ok(futures).await {
             Ok((response, _)) => Ok(response),
-            Err(e) => Err(e),
+            Err(e) => {
+                if let Error::WasmRelayError(404, _) = e {
+                    return Ok(None);
+                }
+
+                Err(e)
+            }
         }
     }
 }
@@ -176,6 +183,8 @@ mod tests {
         };
     }
 
+    const TEST_RELAY: &str = "http://localhost:6881";
+
     #[wasm_bindgen_test]
     async fn basic() {
         let keypair = Keypair::random();
@@ -190,11 +199,9 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let client = PkarrRelayClient::new(vec![
-            "http://fail.non".to_string(),
-            "https://relay.pkarr.org".to_string(),
-        ])
-        .unwrap();
+        let client =
+            PkarrRelayClient::new(vec!["http://fail.non".to_string(), TEST_RELAY.to_string()])
+                .unwrap();
 
         client.publish(&signed_packet).await.unwrap();
 
@@ -207,5 +214,18 @@ mod tests {
         log!("{:?}", resolved);
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+    }
+
+    #[wasm_bindgen_test]
+    async fn not_found() {
+        let keypair = Keypair::random();
+
+        let client = PkarrRelayClient::new(vec![TEST_RELAY.to_string()]).unwrap();
+
+        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+
+        log!("{:?}", resolved);
+
+        assert!(resolved.is_none());
     }
 }

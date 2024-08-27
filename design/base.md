@@ -20,12 +20,14 @@ Implementations should be able to parse both `pk:<zbase32 encoded key>`, standal
 
 The canonical serialization then for Signed Pkarr packet is as follows:
 
-| part       |  length  |         Note                              |
-| ---------- | -------- | ----------------------------------------- | 
-| public_key | 32       | ed25519 public key                        |
-| signature  | 64       | ed25519 signature over encoded dns packet |
-| timestamp  | 8        | big-endian timestamp in microseconds      |
-| DNS packet | variable | compressed encoded DNS answer packet      |
+```abnf
+SignedPacket = public-key signature timestamp dns-packet
+
+public-key  = 32 OCTET ; ed25519 public key
+signature   = 64 OCTET ; ed25519 signature over encoded DNS packet
+timestamp   =  8 OCTET ; big-endian UNIX timestamp in microseconds
+dns-packet  =  * OCTET ; compressed encoded DNS answer packet, less than 1000 bytes
+```
 
 ### DNS packet
 

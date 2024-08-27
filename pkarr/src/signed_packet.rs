@@ -12,8 +12,10 @@ use std::{
     char,
     fmt::{self, Display, Formatter},
     net::{Ipv4Addr, Ipv6Addr},
-    time::SystemTime,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::SystemTime;
 
 const DOT: char = '.';
 

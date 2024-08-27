@@ -65,7 +65,7 @@ pub enum Error {
     NotMostRecent,
 
     // === Relay errors ===
-    #[cfg(feature = "relay")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
     #[error(transparent)]
     /// Transparent [ureq::Error]
     RelayError(#[from] Box<ureq::Error>),
