@@ -20,6 +20,7 @@ z32 = "1.1.1"
 rand = { version = "0.8.5", optional = true }
 lru = { version = "0.12.3", default-features = false }
 flume = { version = "0.11.0", features = ["select", "eventual-fairness"], default-features = false }
+serde = { version = "1.0.209", features = ["derive"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Dht client dependencies:
@@ -45,6 +46,7 @@ web-sys = { version = "0.3.69", features = [
 
 [dev-dependencies]
 futures = "0.3.29"
+postcard = { version = "1.0.10", features = ["alloc"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
@@ -63,8 +65,11 @@ rand = ["dep:rand", "ed25519-dalek/rand_core"]
 async = ["flume/async"]
 ## Use [PkarrRelayClient]
 relay = ["dep:ureq"]
+## Derive serde Serialize/Deserialize for PublicKey
+serde = ["dep:serde"]
+
 ## Use all features
-full = ["dht", "async", "relay", "rand"]
+full = ["dht", "async", "relay", "rand", "serde"]
 
 default = ["dht", "rand"]
 
