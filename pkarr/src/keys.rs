@@ -138,6 +138,7 @@ impl TryFrom<&str> for PublicKey {
     /// - `https://foo.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.#hash`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.?q=v`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.:8888?q=v`
+    /// - `https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     fn try_from(s: &str) -> Result<PublicKey> {
         let mut s = s;
 
@@ -440,5 +441,20 @@ mod tests {
         let bytes = postcard::to_allocvec(&public_key).unwrap();
 
         assert_eq!(bytes, expected)
+    }
+
+    #[test]
+    fn from_uri_multiple_pkarr() {
+        // Should only catch the TLD.
+
+        let str =
+            "https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
     }
 }
