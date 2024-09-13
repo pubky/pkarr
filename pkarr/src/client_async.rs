@@ -88,7 +88,7 @@ impl PkarrClientAsync {
 
 #[cfg(test)]
 mod tests {
-    use mainline::{dht::DhtSettings, Testnet};
+    use mainline::Testnet;
 
     use super::*;
     use crate::{dns, Keypair, SignedPacket};
@@ -98,15 +98,7 @@ mod tests {
         async fn test() {
             let testnet = Testnet::new(3);
 
-            let mut a = PkarrClient::builder()
-                .dht_settings(DhtSettings {
-                    bootstrap: Some(testnet.bootstrap),
-                    request_timeout: None,
-                    server: None,
-                    port: None,
-                })
-                .build()
-                .unwrap();
+            let mut a = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
             assert_ne!(a.local_addr(), None);
 
@@ -123,15 +115,7 @@ mod tests {
         async fn test() {
             let testnet = Testnet::new(10);
 
-            let a = PkarrClient::builder()
-                .dht_settings(DhtSettings {
-                    bootstrap: Some(testnet.bootstrap.clone()),
-                    request_timeout: None,
-                    server: None,
-                    port: None,
-                })
-                .build()
-                .unwrap();
+            let a = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
             let keypair = Keypair::random();
 
@@ -147,15 +131,7 @@ mod tests {
 
             let _ = a.publish(&signed_packet);
 
-            let b = PkarrClient::builder()
-                .dht_settings(DhtSettings {
-                    bootstrap: Some(testnet.bootstrap),
-                    request_timeout: None,
-                    server: None,
-                    port: None,
-                })
-                .build()
-                .unwrap();
+            let b = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
             let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
             assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());

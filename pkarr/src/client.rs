@@ -7,7 +7,7 @@ use mainline::{
         messages, QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response,
         Rpc,
     },
-    Id, MutableItem,
+    Id, MutableItem, Testnet,
 };
 use std::{
     collections::HashMap,
@@ -121,6 +121,12 @@ impl PkarrClientBuilder {
     /// Set [DhtSettings]
     pub fn dht_settings(mut self, settings: DhtSettings) -> Self {
         self.settings.dht = settings;
+        self
+    }
+
+    /// Convienent methot to set the [DhtSettings::bootstrap] from [mainline::Testnet::bootstrap]
+    pub fn testnet(mut self, testnet: &Testnet) -> Self {
+        self.settings.dht.bootstrap = testnet.bootstrap.clone().into();
         self
     }
 
@@ -468,15 +474,7 @@ mod tests {
     fn shutdown() {
         let testnet = Testnet::new(3);
 
-        let mut a = PkarrClient::builder()
-            .dht_settings(DhtSettings {
-                bootstrap: Some(testnet.bootstrap),
-                request_timeout: None,
-                server: None,
-                port: None,
-            })
-            .build()
-            .unwrap();
+        let mut a = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
         assert_ne!(a.local_addr(), None);
 
@@ -489,15 +487,7 @@ mod tests {
     fn publish_resolve() {
         let testnet = Testnet::new(10);
 
-        let a = PkarrClient::builder()
-            .dht_settings(DhtSettings {
-                bootstrap: Some(testnet.bootstrap.clone()),
-                request_timeout: None,
-                server: None,
-                port: None,
-            })
-            .build()
-            .unwrap();
+        let a = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
         let keypair = Keypair::random();
 
@@ -513,15 +503,7 @@ mod tests {
 
         let _ = a.publish(&signed_packet);
 
-        let b = PkarrClient::builder()
-            .dht_settings(DhtSettings {
-                bootstrap: Some(testnet.bootstrap),
-                request_timeout: None,
-                server: None,
-                port: None,
-            })
-            .build()
-            .unwrap();
+        let b = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
         let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -535,15 +517,7 @@ mod tests {
     fn thread_safe() {
         let testnet = Testnet::new(10);
 
-        let a = PkarrClient::builder()
-            .dht_settings(DhtSettings {
-                bootstrap: Some(testnet.bootstrap.clone()),
-                request_timeout: None,
-                server: None,
-                port: None,
-            })
-            .build()
-            .unwrap();
+        let a = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
         let keypair = Keypair::random();
 
@@ -559,15 +533,7 @@ mod tests {
 
         let _ = a.publish(&signed_packet);
 
-        let b = PkarrClient::builder()
-            .dht_settings(DhtSettings {
-                bootstrap: Some(testnet.bootstrap),
-                request_timeout: None,
-                server: None,
-                port: None,
-            })
-            .build()
-            .unwrap();
+        let b = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
         thread::spawn(move || {
             let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
