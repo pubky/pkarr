@@ -64,6 +64,9 @@ pub enum Error {
     /// Failed to publish because there is a more recent packet.
     NotMostRecent,
 
+    #[error("Could not resolve Endpoint for domain: {0}")]
+    ResolveEndpoint(String),
+
     // === Relay errors ===
     #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
     #[error(transparent)]
