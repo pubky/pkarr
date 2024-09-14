@@ -64,7 +64,7 @@ impl PkarrClient {
 
 #[derive(Debug, Clone)]
 pub struct Endpoint {
-    target: String,
+    pub target: String,
 }
 
 fn getx(signed_packet: &SignedPacket, target: &str) -> Option<Endpoint> {
