@@ -8,7 +8,13 @@ use crate::{
 const MAX_ENDPOINT_RESOLUTION_RECURSION: u8 = 3;
 
 impl PkarrClient {
-    pub fn resolve_endpoint(&self, target: &str) -> Result<Endpoint> {
+    /// Resolve a `qname` to an alternative [Endpoint] as defined in [RFC9460](https://www.rfc-editor.org/rfc/rfc9460#name-terminology).
+    ///
+    /// A `qname` is can be either a regular domain name for HTTPS endpoints,
+    /// or it could use Attrleaf naming pattern for cusotm protcol. For example:
+    /// `_foo.example.com` for `foo://example.com`.
+    pub fn resolve_endpoint<'a>(&self, qname: &str) -> Result<Endpoint> {
+        let target = qname;
         // TODO: cache the result of this function?
 
         let mut step = 0;
@@ -54,7 +60,9 @@ impl PkarrClient {
 
         if let Some(svcb) = svcb {
             if PublicKey::try_from(svcb.target.as_str()).is_err() {
-                return Ok(svcb.clone());
+                return Ok(Endpoint {
+                    target: svcb.target,
+                });
             }
         }
 
@@ -68,12 +76,26 @@ pub struct Endpoint {
 }
 
 fn getx(signed_packet: &SignedPacket, target: &str) -> Option<Endpoint> {
+    let is_svcb = target.starts_with('_');
+
     signed_packet
         .resource_records(target)
         .fold(None, |prev: Option<SVCB>, answer| {
             if let Some(svcb) = match &answer.rdata {
-                RData::SVCB(svcb) => Some(svcb),
-                RData::HTTPS(curr) => Some(&curr.0),
+                RData::SVCB(svcb) => {
+                    if is_svcb {
+                        Some(svcb)
+                    } else {
+                        None
+                    }
+                }
+                RData::HTTPS(curr) => {
+                    if is_svcb {
+                        None
+                    } else {
+                        Some(&curr.0)
+                    }
+                }
                 _ => None,
             } {
                 let curr = svcb.clone();
@@ -147,11 +169,16 @@ mod tests {
                     "foo",
                     RData::HTTPS(SVCB::new(0, "https.example.com".try_into().unwrap()).into()),
                 ),
-                // // Make sure HTTPS only follows HTTPs
-                // (
-                //     "foo",
-                //     RData::SVCB(SVCB::new(0, "protocol.example.com".try_into().unwrap())),
-                // ),
+                // Make sure HTTPS only follows HTTPs
+                (
+                    "foo",
+                    RData::SVCB(SVCB::new(0, "protocol.example.com".try_into().unwrap())),
+                ),
+                // Make sure SVCB only follows SVCB
+                (
+                    "foo",
+                    RData::HTTPS(SVCB::new(0, "https.example.com".try_into().unwrap()).into()),
+                ),
                 (
                     "_foo",
                     RData::SVCB(SVCB::new(0, "protocol.example.com".try_into().unwrap())),
@@ -161,12 +188,12 @@ mod tests {
 
         let tld = keypairs.first().unwrap().public_key();
 
+        // Follow foo.tld HTTPS records
         let endpoint = client.resolve_endpoint(&format!("foo.{tld}")).unwrap();
-
         assert_eq!(endpoint.target, "https.example.com");
 
+        // Follow _foo.tld SVCB records
         let endpoint = client.resolve_endpoint(&format!("_foo.{tld}")).unwrap();
-
         assert_eq!(endpoint.target, "protocol.example.com");
     }
 }

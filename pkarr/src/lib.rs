@@ -53,7 +53,7 @@ macro_rules! if_relay {
 if_dht! {
     mod cache;
     mod client;
-    mod svcb;
+    mod endpoints;
 
     if_async! {
         mod client_async;
