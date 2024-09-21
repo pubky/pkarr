@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use tracing::{debug, info};
 
 use http_server::HttpServer;
-use pkarr::{mainline::dht::DhtSettings, PkarrClient};
+use pkarr::{mainline::dht::DhtSettings, Client};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
 
     let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
-    let client = PkarrClient::builder()
+    let client = Client::builder()
         .dht_settings(DhtSettings {
             port: Some(config.dht_port()),
             server: Some(Box::new(dht_server::DhtServer::new(

@@ -24,7 +24,7 @@ use crate::{
 use crate::{Error, PublicKey, Result, SignedPacket};
 
 #[derive(Debug)]
-/// [PkarrClient]'s settings
+/// [Client]'s settings
 pub struct Settings {
     pub dht: DhtSettings,
     /// A set of [resolver](https://pkarr.org/resolvers)s
@@ -68,12 +68,12 @@ impl Default for Settings {
 }
 
 #[derive(Debug, Default)]
-/// Builder for [PkarrClient]
-pub struct PkarrClientBuilder {
+/// Builder for [Client]
+pub struct ClientBuilder {
     settings: Settings,
 }
 
-impl PkarrClientBuilder {
+impl ClientBuilder {
     /// Set custom set of [resolvers](Settings::resolvers).
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
         self.settings.resolvers = resolvers.map(|resolvers| {
@@ -130,14 +130,14 @@ impl PkarrClientBuilder {
         self
     }
 
-    pub fn build(self) -> Result<PkarrClient> {
-        PkarrClient::new(self.settings)
+    pub fn build(self) -> Result<Client> {
+        Client::new(self.settings)
     }
 }
 
 #[derive(Clone, Debug)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
-pub struct PkarrClient {
+pub struct Client {
     pub(crate) address: Option<SocketAddr>,
     pub(crate) sender: Sender<ActorMessage>,
     pub(crate) cache: Box<dyn PkarrCache>,
@@ -145,8 +145,8 @@ pub struct PkarrClient {
     pub(crate) maximum_ttl: u32,
 }
 
-impl PkarrClient {
-    pub fn new(settings: Settings) -> Result<PkarrClient> {
+impl Client {
+    pub fn new(settings: Settings) -> Result<Client> {
         let (sender, receiver) = flume::bounded(32);
 
         let rpc = Rpc::new(&settings.dht)?;
@@ -159,7 +159,7 @@ impl PkarrClient {
             .unwrap_or(Box::new(InMemoryPkarrCache::new(settings.cache_size)));
         let cache_clone = cache.clone();
 
-        let client = PkarrClient {
+        let client = Client {
             address: Some(local_addr),
             sender,
             cache,
@@ -168,15 +168,15 @@ impl PkarrClient {
         };
 
         thread::Builder::new()
-            .name("PkarrClient loop".to_string())
+            .name("Client loop".to_string())
             .spawn(move || run(rpc, cache_clone, settings, receiver))?;
 
         Ok(client)
     }
 
-    /// Returns a builder to edit settings before creating PkarrClient.
-    pub fn builder() -> PkarrClientBuilder {
-        PkarrClientBuilder::default()
+    /// Returns a builder to edit settings before creating Client.
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::default()
     }
 
     // === Getters ===
@@ -198,12 +198,64 @@ impl PkarrClient {
     /// Publishes a [SignedPacket] to the Dht.
     ///
     /// # Errors
-    /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
+    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
     /// the loop in the actor thread is stopped for any reason (like thread panic).
     /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
-    pub fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+        match self.publish_inner(signed_packet)?.recv_async().await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(error)) => match error {
+                mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
+                _ => Err(Error::MainlineError(error)),
+            },
+            // Since we pass this sender to `Rpc::put`, the only reason the sender,
+            // would be dropped, is if `Rpc` is dropped, which should only happeng on shutdown.
+            Err(_) => Err(Error::DhtIsShutdown),
+        }
+    }
+
+    /// Returns a [SignedPacket] from cache if it is not expired, otherwise,
+    /// it will query the Dht, and return the first valid response, which may
+    /// or may not be expired itself.
+    ///
+    /// If the Dht was called, in the background, it continues receiving responses
+    /// and updating the cache with any more recent valid packets it receives.
+    ///
+    /// # Errors
+    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
+    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
+        Ok(self.resolve_inner(public_key)?.recv_async().await.ok())
+    }
+
+    /// Shutdown the actor thread loop.
+    pub async fn shutdown(&mut self) -> Result<()> {
+        let (sender, receiver) = flume::bounded(1);
+
+        self.sender
+            .send(ActorMessage::Shutdown(sender))
+            .map_err(|_| Error::DhtIsShutdown)?;
+
+        receiver.recv_async().await?;
+
+        self.address = None;
+
+        Ok(())
+    }
+
+    // === Sync ===
+
+    /// Publishes a [SignedPacket] to the Dht.
+    ///
+    /// # Errors
+    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
+    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
+    /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
+    /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
+    pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<()> {
         match self.publish_inner(signed_packet)?.recv() {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
@@ -224,14 +276,14 @@ impl PkarrClient {
     /// and updating the cache with any more recent valid packets it receives.
     ///
     /// # Errors
-    /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
+    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
     /// the loop in the actor thread is stopped for any reason (like thread panic).
-    pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
+    pub fn resolve_sync(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         Ok(self.resolve_inner(public_key)?.recv().ok())
     }
 
     /// Shutdown the actor thread loop.
-    pub fn shutdown(&mut self) -> Result<()> {
+    pub fn shutdown_sync(&mut self) -> Result<()> {
         let (sender, receiver) = flume::bounded(1);
 
         self.sender
@@ -316,7 +368,7 @@ fn run(
     settings: Settings,
     receiver: Receiver<ActorMessage>,
 ) {
-    debug!(?settings, "Starting PkarrClient main loop..");
+    debug!(?settings, "Starting Client main loop..");
 
     let mut server = settings.dht.server;
     let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
@@ -454,7 +506,7 @@ fn run(
         }
     }
 
-    debug!("PkarrClient main terminated");
+    debug!("Client main terminated");
 }
 
 pub enum ActorMessage {
@@ -471,23 +523,23 @@ mod tests {
     use crate::{dns, Keypair, SignedPacket};
 
     #[test]
-    fn shutdown() {
+    fn shutdown_sync() {
         let testnet = Testnet::new(3);
 
-        let mut a = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let mut a = Client::builder().testnet(&testnet).build().unwrap();
 
         assert_ne!(a.local_addr(), None);
 
-        a.shutdown().unwrap();
+        a.shutdown_sync().unwrap();
 
         assert_eq!(a.local_addr(), None);
     }
 
     #[test]
-    fn publish_resolve() {
+    fn publish_resolve_sync() {
         let testnet = Testnet::new(10);
 
-        let a = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let a = Client::builder().testnet(&testnet).build().unwrap();
 
         let keypair = Keypair::random();
 
@@ -501,23 +553,23 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let _ = a.publish(&signed_packet);
+        a.publish_sync(&signed_packet).unwrap();
 
-        let b = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let b = Client::builder().testnet(&testnet).build().unwrap();
 
-        let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
+        let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-        let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
+        let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     }
 
     #[test]
-    fn thread_safe() {
+    fn thread_safe_sync() {
         let testnet = Testnet::new(10);
 
-        let a = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let a = Client::builder().testnet(&testnet).build().unwrap();
 
         let keypair = Keypair::random();
 
@@ -531,19 +583,94 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let _ = a.publish(&signed_packet);
+        a.publish_sync(&signed_packet).unwrap();
 
-        let b = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let b = Client::builder().testnet(&testnet).build().unwrap();
 
         thread::spawn(move || {
-            let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
+            let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
             assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-            let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
+            let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
             assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
             assert_eq!(from_cache.last_seen(), resolved.last_seen());
         })
         .join()
         .unwrap();
+    }
+
+    #[tokio::test]
+async    fn shutdown() {
+        let testnet = Testnet::new(3);
+
+        let mut a = Client::builder().testnet(&testnet).build().unwrap();
+
+        assert_ne!(a.local_addr(), None);
+
+        a.shutdown().await.unwrap();
+
+        assert_eq!(a.local_addr(), None);
+    }
+
+    #[tokio::test]
+   async fn publish_resolve() {
+        let testnet = Testnet::new(10);
+
+        let a = Client::builder().testnet(&testnet).build().unwrap();
+
+        let keypair = Keypair::random();
+
+        let mut packet = dns::Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            dns::rdata::RData::TXT("bar".try_into().unwrap()),
+        ));
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        a.publish(&signed_packet).await.unwrap();
+
+        let b = Client::builder().testnet(&testnet).build().unwrap();
+
+        let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+
+        let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(from_cache.last_seen(), resolved.last_seen());
+    }
+
+    #[tokio::test]
+   async fn thread_safe() {
+        let testnet = Testnet::new(10);
+
+        let a = Client::builder().testnet(&testnet).build().unwrap();
+
+        let keypair = Keypair::random();
+
+        let mut packet = dns::Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            dns::rdata::RData::TXT("bar".try_into().unwrap()),
+        ));
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        a.publish(&signed_packet).await.unwrap();
+
+        let b = Client::builder().testnet(&testnet).build().unwrap();
+
+        tokio::spawn( async move {
+            let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+
+            let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+            assert_eq!(from_cache.last_seen(), resolved.last_seen());
+        }).await.unwrap();
     }
 }

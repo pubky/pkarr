@@ -6,18 +6,18 @@ use std::{
 };
 
 use lru::LruCache;
-use reqwest::{Client, Response, StatusCode};
+use reqwest::{Response, StatusCode};
 use tokio::task::JoinSet;
 use tracing::debug;
 
 use crate::{
-    Error, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
+    Error, PkarrCache, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
     DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS,
 };
 
 #[derive(Debug, Clone)]
-/// [PkarrRelayClient]'s settings
-pub struct RelaySettings {
+/// [Client]'s settings
+pub struct Settings {
     pub relays: Vec<String>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: NonZeroUsize,
@@ -30,39 +30,86 @@ pub struct RelaySettings {
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
     /// Custom [reqwest::Client]
-    pub http_client: Client,
+    pub http_client: reqwest::Client,
+    /// Custom [PkarrCache] implementation, defaults to [InMemoryPkarrCache]
+    pub cache: Option<Box<dyn PkarrCache>>,
 }
 
-impl Default for RelaySettings {
+impl Default for Settings {
     fn default() -> Self {
         Self {
             relays: DEFAULT_RELAYS.map(|s| s.into()).to_vec(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
-            http_client: Client::new(),
+            http_client: reqwest::Client::new(),
+            cache: None,
         }
+    }
+}
+
+#[derive(Debug, Default)]
+/// Builder for [Client]
+pub struct ClientBuilder {
+    settings: Settings,
+}
+
+impl ClientBuilder {
+    /// Set the [Settings::cache_size].
+    ///
+    /// Controls the capacity of [PkarrCache].
+    pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
+        self.settings.cache_size = cache_size;
+        self
+    }
+
+    /// Set the [Settings::minimum_ttl] value.
+    ///
+    /// Limits how soon a [SignedPacket] is considered expired.
+    pub fn minimum_ttl(mut self, ttl: u32) -> Self {
+        self.settings.minimum_ttl = ttl;
+        self.settings.maximum_ttl = self.settings.maximum_ttl.clamp(ttl, u32::MAX);
+        self
+    }
+
+    /// Set the [Settings::maximum_ttl] value.
+    ///
+    /// Limits how long it takes before a [SignedPacket] is considered expired.
+    pub fn maximum_ttl(mut self, ttl: u32) -> Self {
+        self.settings.maximum_ttl = ttl;
+        self.settings.minimum_ttl = self.settings.minimum_ttl.clamp(0, ttl);
+        self
+    }
+
+    /// Set a custom implementation of [PkarrCache].
+    pub fn cache(mut self, cache: Box<dyn PkarrCache>) -> Self {
+        self.settings.cache = Some(cache);
+        self
+    }
+
+    pub fn build(self) -> Result<Client> {
+        Client::new(self.settings)
     }
 }
 
 #[derive(Debug, Clone)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
-pub struct PkarrRelayClient {
-    http_client: Client,
+pub struct Client {
+    http_client: reqwest::Client,
     relays: Vec<String>,
     cache: Arc<Mutex<LruCache<PublicKey, SignedPacket>>>,
     minimum_ttl: u32,
     maximum_ttl: u32,
 }
 
-impl Default for PkarrRelayClient {
+impl Default for Client {
     fn default() -> Self {
-        Self::new(RelaySettings::default()).unwrap()
+        Self::new(Settings::default()).unwrap()
     }
 }
 
-impl PkarrRelayClient {
-    pub fn new(settings: RelaySettings) -> Result<Self> {
+impl Client {
+    pub fn new(settings: Settings) -> Result<Self> {
         if settings.relays.is_empty() {
             return Err(Error::EmptyListOfRelays);
         }
@@ -337,13 +384,13 @@ mod tests {
             .create();
 
         let relays: Vec<String> = vec![server.url()];
-        let settings = RelaySettings {
+        let settings = Settings {
             relays,
-            ..RelaySettings::default()
+            ..Settings::default()
         };
 
-        let a = PkarrRelayClient::new(settings.clone()).unwrap();
-        let b = PkarrRelayClient::new(settings).unwrap();
+        let a = Client::new(settings.clone()).unwrap();
+        let b = Client::new(settings).unwrap();
 
         a.publish(&signed_packet).await.unwrap();
 
@@ -366,12 +413,12 @@ mod tests {
         server.mock("GET", path.as_str()).with_status(404).create();
 
         let relays: Vec<String> = vec![server.url()];
-        let settings = RelaySettings {
+        let settings = Settings {
             relays,
-            ..RelaySettings::default()
+            ..Settings::default()
         };
 
-        let client = PkarrRelayClient::new(settings.clone()).unwrap();
+        let client = Client::new(settings.clone()).unwrap();
 
         let resolved = client.resolve(&keypair.public_key()).await.unwrap();
 

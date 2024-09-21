@@ -11,14 +11,15 @@ use tracing_subscriber;
 
 use std::time::Instant;
 
-use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
+use pkarr::{dns, Client, Keypair, Result, SignedPacket};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .init();
 
-    let client = PkarrClient::builder().build().unwrap();
+    let client = Client::builder().build()?;
 
     let keypair = Keypair::random();
 
@@ -36,7 +37,7 @@ fn main() -> Result<()> {
 
     println!("\nPublishing {} ...", keypair.public_key());
 
-    match client.publish(&signed_packet) {
+    match client.publish(&signed_packet).await {
         Ok(()) => {
             println!(
                 "\nSuccessfully published {} in {:?}",
