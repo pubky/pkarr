@@ -6,7 +6,7 @@ use std::{
 };
 
 use lru::LruCache;
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Response, StatusCode};
 use tokio::task::JoinSet;
 use tracing::debug;
 
@@ -105,40 +105,7 @@ impl PkarrRelayClient {
             cache.put(public_key.to_owned(), signed_packet.clone());
         }
 
-        let mut futures = JoinSet::new();
-
-        for relay in self.relays.clone() {
-            let url = format!("{relay}/{public_key}");
-            let http_client = self.http_client.clone();
-            let signed_packet = signed_packet.clone();
-
-            futures.spawn(async move {
-                http_client
-                    .put(&url)
-                    .body(signed_packet.to_relay_payload())
-                    .send()
-                    .await
-                    .map_err(|error| {
-                        debug!(?url, ?error, "Error response");
-
-                        error
-                    })
-            });
-        }
-
-        let mut last_error = Error::EmptyListOfRelays;
-
-        while let Some(result) = futures.join_next().await {
-            match result {
-                Ok(Ok(_)) => return Ok(()),
-                Ok(Err(error)) => last_error = Error::RelayError(error),
-                Err(joinerror) => {
-                    debug!(?joinerror);
-                }
-            }
-        }
-
-        Err(last_error)
+        self.race_publish(signed_packet).await
     }
 
     /// Resolve a [SignedPacket] from this client's relays.
@@ -152,38 +119,54 @@ impl PkarrRelayClient {
     /// with the transport, transparent from [reqwest::Error].
     /// - Returns [Error::IO] if something went wrong while reading the payload.
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        let cached_packet = {
-            let mut cache = self.cache.lock().unwrap();
-
-            let cached_packet = cache.get(public_key);
-
-            if let Some(cached) = cached_packet {
-                let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
-
-                if expires_in > 0 {
-                    debug!(expires_in, "Have fresh signed_packet in cache.");
-
-                    return Ok(Some(cached.clone()));
-                }
-
-                debug!(expires_in, "Have expired signed_packet in cache.");
-            } else {
-                debug!("Cache miss");
-            };
-
-            None
+        let cached_packet = match self.get_from_cache(public_key) {
+            None => None,
+            Some(signed_packet) => return Ok(Some(signed_packet)),
         };
 
+        self.race_resolve(public_key, cached_packet).await
+    }
+
+    // === Native Race implementation ===
+
+    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let mut futures = JoinSet::new();
 
         for relay in self.relays.clone() {
-            let http_client = self.http_client.clone();
+            let signed_packet = signed_packet.clone();
+            let this = self.clone();
+
+            futures.spawn(async move { this.publish_to_relay(relay, signed_packet).await });
+        }
+
+        let mut last_error = Error::EmptyListOfRelays;
+
+        while let Some(result) = futures.join_next().await {
+            match result {
+                Ok(Ok(_)) => return Ok(()),
+                Ok(Err(error)) => last_error = error,
+                Err(joinerror) => {
+                    debug!(?joinerror);
+                }
+            }
+        }
+
+        Err(last_error)
+    }
+
+    async fn race_resolve(
+        &self,
+        public_key: &PublicKey,
+        cached_packet: Option<SignedPacket>,
+    ) -> Result<Option<SignedPacket>> {
+        let mut futures = JoinSet::new();
+
+        for relay in self.relays.clone() {
             let public_key = public_key.clone();
             let cached = cached_packet.clone();
+            let this = self.clone();
 
-            futures.spawn(async move {
-                resolve_from_relay(relay, public_key, http_client, cached).await
-            });
+            futures.spawn(async move { this.resolve_from_relay(relay, public_key, cached).await });
         }
 
         let mut result: Result<Option<SignedPacket>> = Ok(None);
@@ -207,62 +190,116 @@ impl PkarrRelayClient {
 
         result
     }
+
+    // === Private Methods ===
+
+    async fn publish_to_relay(
+        &self,
+        relay: String,
+        signed_packet: SignedPacket,
+    ) -> Result<Response> {
+        let url = format!("{relay}/{}", signed_packet.public_key());
+
+        self.http_client
+            .put(&url)
+            .body(signed_packet.to_relay_payload())
+            .send()
+            .await
+            .map_err(|error| {
+                debug!(?url, ?error, "Error response");
+
+                Error::RelayError(error)
+            })
+    }
+
+    fn get_from_cache(&self, public_key: &PublicKey) -> Option<SignedPacket> {
+        let mut cache = self.cache.lock().unwrap();
+
+        let cached_packet = cache.get(public_key);
+
+        if let Some(cached) = cached_packet {
+            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
+
+            if expires_in > 0 {
+                debug!(expires_in, "Have fresh signed_packet in cache.");
+
+                return Some(cached.clone());
+            }
+
+            debug!(expires_in, "Have expired signed_packet in cache.");
+        } else {
+            debug!("Cache miss");
+        };
+
+        None
+    }
+
+    async fn resolve_from_relay(
+        &self,
+        relay: String,
+        public_key: PublicKey,
+        cached_packet: Option<SignedPacket>,
+    ) -> Result<Option<SignedPacket>> {
+        let url = format!("{relay}/{public_key}");
+
+        match self.http_client.get(&url).send().await {
+            Ok(mut response) => {
+                if response.status() == StatusCode::NOT_FOUND {
+                    debug!(?url, "SignedPacket not found");
+                    return Ok(None);
+                }
+
+                let payload = read(&mut response).await;
+
+                match SignedPacket::from_relay_payload(&public_key, &payload.into()) {
+                    Ok(signed_packet) => Ok(choose_most_recent(signed_packet, cached_packet)),
+                    Err(error) => {
+                        debug!(?url, ?error, "Invalid signed_packet");
+
+                        Err(error)
+                    }
+                }
+            }
+            Err(error) => {
+                debug!(?url, ?error, "Error response");
+
+                Err(Error::RelayError(error))
+            }
+        }
+    }
 }
 
-async fn resolve_from_relay(
-    relay: String,
-    public_key: PublicKey,
-    http_client: Client,
+async fn read(response: &mut Response) -> Vec<u8> {
+    let mut total_size = 0;
+    let mut payload = Vec::new();
+
+    while let Ok(Some(chunk)) = response.chunk().await {
+        total_size += chunk.len();
+        payload.extend_from_slice(&chunk);
+        if total_size >= SignedPacket::MAX_BYTES {
+            break;
+        }
+    }
+    payload
+}
+
+fn choose_most_recent(
+    signed_packet: SignedPacket,
     cached_packet: Option<SignedPacket>,
-) -> Result<Option<SignedPacket>> {
-    let url = format!("{relay}/{public_key}");
-
-    match http_client.get(&url).send().await {
-        Ok(mut response) => {
-            if response.status() == StatusCode::NOT_FOUND {
-                debug!(?url, "SignedPacket not found");
-                return Ok(None);
-            }
-
-            let mut total_size = 0;
-            let mut payload = Vec::new();
-
-            while let Ok(Some(chunk)) = response.chunk().await {
-                total_size += chunk.len();
-                payload.extend_from_slice(&chunk);
-                if total_size >= SignedPacket::MAX_BYTES {
-                    break;
-                }
-            }
-
-            match SignedPacket::from_relay_payload(&public_key, &payload.into()) {
-                Ok(signed_packet) => {
-                    let new_packet = if let Some(ref cached) = cached_packet {
-                        if signed_packet.more_recent_than(cached) {
-                            debug!(?public_key, "Received more recent packet than in cache");
-                            Some(signed_packet)
-                        } else {
-                            None
-                        }
-                    } else {
-                        debug!(?public_key, "Received new packet after cache miss");
-                        Some(signed_packet)
-                    };
-
-                    Ok(new_packet)
-                }
-                Err(error) => {
-                    debug!(?url, ?error, "Invalid signed_packet");
-
-                    Err(error)
-                }
-            }
+) -> Option<SignedPacket> {
+    if let Some(ref cached) = cached_packet {
+        if signed_packet.more_recent_than(cached) {
+            debug!(
+                 public_key = ?signed_packet.public_key(),
+                "Received more recent packet than in cache"
+            );
+            Some(signed_packet)
+        } else {
+            None
         }
-        Err(error) => {
-            debug!(?url, ?error, "Error response");
-
-            Err(Error::RelayError(error))
-        }
+    } else {
+        debug!(public_key= ?signed_packet.public_key(), "Received new packet after cache miss");
+        Some(signed_packet)
     }
 }
 
