@@ -32,6 +32,7 @@ rand = { version = "0.8.5", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.69"
+futures = "0.3.30" 
 
 [dev-dependencies]
 postcard = { version = "1.0.10", features = ["alloc"] }

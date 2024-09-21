@@ -65,7 +65,7 @@ pub struct SignedPacket {
 }
 
 impl SignedPacket {
-    pub const MAX_BYTES: usize = 1104;
+    pub const MAX_BYTES: u64 = 1104;
 
     /// Creates a [Self] from the serialized representation:
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
@@ -90,7 +90,7 @@ impl SignedPacket {
         if bytes.len() < 104 {
             return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
         }
-        if bytes.len() > SignedPacket::MAX_BYTES {
+        if (bytes.len() as u64) > SignedPacket::MAX_BYTES {
             return Err(Error::PacketTooLarge(bytes.len()));
         }
         let public_key = PublicKey::try_from(&bytes[..32])?;

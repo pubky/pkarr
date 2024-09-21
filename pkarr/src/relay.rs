@@ -5,6 +5,9 @@ use std::num::NonZeroUsize;
 use reqwest::{Response, StatusCode};
 use tracing::debug;
 
+#[cfg(target_arch = "wasm32")]
+use futures::future::select_ok;
+
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::task::JoinSet;
 
@@ -182,7 +185,7 @@ impl Client {
             let signed_packet = signed_packet.clone();
             let this = self.clone();
 
-            futures.spawn(async move { this.publish_to_relay(relay, signed_packet).await });
+            futures.spawn(async move { this.publish_to_relay(&relay, signed_packet).await });
         }
 
         let mut last_error = Error::EmptyListOfRelays;
@@ -213,7 +216,7 @@ impl Client {
             let cached = cached_packet.clone();
             let this = self.clone();
 
-            futures.spawn(async move { this.resolve_from_relay(relay, public_key, cached).await });
+            futures.spawn(async move { this.resolve_from_relay(&relay, public_key, cached).await });
         }
 
         let mut result: Result<Option<SignedPacket>> = Ok(None);
@@ -237,13 +240,56 @@ impl Client {
         result
     }
 
+    // === Wasm ===
+
+    #[cfg(target_arch = "wasm32")]
+    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+        let futures = self.relays.iter().map(|relay| {
+            let signed_packet = signed_packet.clone();
+            let this = self.clone();
+
+            Box::pin(async move { this.publish_to_relay(relay, signed_packet).await })
+        });
+
+        match select_ok(futures).await {
+            Ok((_, _)) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    async fn race_resolve(
+        &self,
+        public_key: &PublicKey,
+        cached_packet: Option<SignedPacket>,
+    ) -> Result<Option<SignedPacket>> {
+        let futures = self.relays.iter().map(|relay| {
+            let public_key = public_key.clone();
+            let cached = cached_packet.clone();
+            let this = self.clone();
+
+            Box::pin(async move { this.resolve_from_relay(relay, public_key, cached).await })
+        });
+
+        let mut result: Result<Option<SignedPacket>> = Ok(None);
+
+        match select_ok(futures).await {
+            Ok((Some(signed_packet), _)) => {
+                self.cache
+                    .put(&signed_packet.public_key().as_ref().into(), &signed_packet);
+
+                return Ok(Some(signed_packet));
+            }
+            Err(error) => result = Err(error),
+            Ok(_) => {}
+        }
+
+        result
+    }
+
     // === Private Methods ===
 
-    async fn publish_to_relay(
-        &self,
-        relay: String,
-        signed_packet: SignedPacket,
-    ) -> Result<Response> {
+    async fn publish_to_relay(&self, relay: &str, signed_packet: SignedPacket) -> Result<Response> {
         let url = format!("{relay}/{}", signed_packet.public_key());
 
         self.http_client
@@ -280,22 +326,27 @@ impl Client {
 
     async fn resolve_from_relay(
         &self,
-        relay: String,
+        relay: &str,
         public_key: PublicKey,
         cached_packet: Option<SignedPacket>,
     ) -> Result<Option<SignedPacket>> {
         let url = format!("{relay}/{public_key}");
 
         match self.http_client.get(&url).send().await {
-            Ok(mut response) => {
+            Ok(response) => {
                 if response.status() == StatusCode::NOT_FOUND {
                     debug!(?url, "SignedPacket not found");
                     return Ok(None);
                 }
+                if response.content_length().unwrap_or_default() > SignedPacket::MAX_BYTES {
+                    debug!(?url, "Response too large");
 
-                let payload = read(&mut response).await;
+                    return Ok(None);
+                }
 
-                match SignedPacket::from_relay_payload(&public_key, &payload.into()) {
+                let payload = response.bytes().await?;
+
+                match SignedPacket::from_relay_payload(&public_key, &payload) {
                     Ok(signed_packet) => Ok(choose_most_recent(signed_packet, cached_packet)),
                     Err(error) => {
                         debug!(?url, ?error, "Invalid signed_packet");
@@ -311,21 +362,6 @@ impl Client {
             }
         }
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn read(response: &mut Response) -> Vec<u8> {
-    let mut total_size = 0;
-    let mut payload = Vec::new();
-
-    while let Ok(Some(chunk)) = response.chunk().await {
-        total_size += chunk.len();
-        payload.extend_from_slice(&chunk);
-        if total_size >= SignedPacket::MAX_BYTES {
-            break;
-        }
-    }
-    payload
 }
 
 fn choose_most_recent(

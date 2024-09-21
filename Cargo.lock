@@ -1470,6 +1470,7 @@ dependencies = [
  "dyn-clone",
  "ed25519-dalek",
  "flume",
+ "futures",
  "js-sys",
  "lru",
  "mainline",
