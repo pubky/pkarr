@@ -95,52 +95,44 @@ mod tests {
 
     #[test]
     fn shutdown() {
-        async fn test() {
-            let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3);
 
-            let mut a = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let mut a = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
-            assert_ne!(a.local_addr(), None);
+        assert_ne!(a.local_addr(), None);
 
-            a.shutdown().unwrap();
+        a.shutdown().unwrap();
 
-            assert_eq!(a.local_addr(), None);
-        }
-
-        futures::executor::block_on(test());
+        assert_eq!(a.local_addr(), None);
     }
 
-    #[test]
-    fn publish_resolve() {
-        async fn test() {
-            let testnet = Testnet::new(10);
+    #[tokio::test]
+    async fn publish_resolve() {
+        let testnet = Testnet::new(10);
 
-            let a = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let a = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
-            let keypair = Keypair::random();
+        let keypair = Keypair::random();
 
-            let mut packet = dns::Packet::new_reply(0);
-            packet.answers.push(dns::ResourceRecord::new(
-                dns::Name::new("foo").unwrap(),
-                dns::CLASS::IN,
-                30,
-                dns::rdata::RData::TXT("bar".try_into().unwrap()),
-            ));
+        let mut packet = dns::Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            dns::rdata::RData::TXT("bar".try_into().unwrap()),
+        ));
 
-            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-            let _ = a.publish(&signed_packet);
+        let _ = a.publish(&signed_packet);
 
-            let b = PkarrClient::builder().testnet(&testnet).build().unwrap();
+        let b = PkarrClient::builder().testnet(&testnet).build().unwrap();
 
-            let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-            let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-            assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        }
-
-        futures::executor::block_on(test());
+        let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(from_cache.last_seen(), resolved.last_seen());
     }
 }

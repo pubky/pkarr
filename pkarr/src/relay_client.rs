@@ -1,16 +1,14 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 
 use std::{
-    io::Read,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
-    thread,
 };
 
-use flume::Receiver;
 use lru::LruCache;
+use reqwest::{Client, StatusCode};
+use tokio::task::JoinSet;
 use tracing::debug;
-use ureq::Agent;
 
 use crate::{
     Error, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
@@ -31,8 +29,8 @@ pub struct RelaySettings {
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
-    /// Custom [ureq::Agent]
-    pub http_client: Agent,
+    /// Custom [reqwest::Client]
+    pub http_client: Client,
 }
 
 impl Default for RelaySettings {
@@ -42,7 +40,7 @@ impl Default for RelaySettings {
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
-            http_client: ureq::Agent::new(),
+            http_client: Client::new(),
         }
     }
 }
@@ -50,7 +48,7 @@ impl Default for RelaySettings {
 #[derive(Debug, Clone)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 pub struct PkarrRelayClient {
-    http_client: Agent,
+    http_client: Client,
     relays: Vec<String>,
     cache: Arc<Mutex<LruCache<PublicKey, SignedPacket>>>,
     minimum_ttl: u32,
@@ -91,14 +89,51 @@ impl PkarrRelayClient {
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::RelayError] from the last responding relay, if all relays
     /// responded with non-2xx status codes.
-    pub fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+        let public_key = signed_packet.public_key();
+
+        // Let the compiler know we are dropping the cache before await
+        {
+            let mut cache = self.cache.lock().unwrap();
+
+            if let Some(current) = cache.get(&public_key) {
+                if current.timestamp() > signed_packet.timestamp() {
+                    return Err(Error::NotMostRecent);
+                }
+            };
+
+            cache.put(public_key.to_owned(), signed_packet.clone());
+        }
+
+        let mut futures = JoinSet::new();
+
+        for relay in self.relays.clone() {
+            let url = format!("{relay}/{public_key}");
+            let http_client = self.http_client.clone();
+            let signed_packet = signed_packet.clone();
+
+            futures.spawn(async move {
+                http_client
+                    .put(&url)
+                    .body(signed_packet.to_relay_payload())
+                    .send()
+                    .await
+                    .map_err(|error| {
+                        debug!(?url, ?error, "Error response");
+
+                        error
+                    })
+            });
+        }
+
         let mut last_error = Error::EmptyListOfRelays;
 
-        while let Ok(response) = self.publish_inner(signed_packet)?.recv() {
-            match response {
-                Ok(_) => return Ok(()),
-                Err(error) => {
-                    last_error = error;
+        while let Some(result) = futures.join_next().await {
+            match result {
+                Ok(Ok(_)) => return Ok(()),
+                Ok(Err(error)) => last_error = Error::RelayError(error),
+                Err(joinerror) => {
+                    debug!(?joinerror);
                 }
             }
         }
@@ -114,144 +149,120 @@ impl PkarrRelayClient {
     ///
     /// - Returns [Error::RelayError] if the relay responded with a status >= 400
     /// (except 404 in which case you should receive Ok(None)) or something wrong
-    /// with the transport, transparent from [ureq::Error].
+    /// with the transport, transparent from [reqwest::Error].
     /// - Returns [Error::IO] if something went wrong while reading the payload.
-    pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        if let Some(signed_packet) = self.resolve_inner(public_key).recv()?? {
-            self.cache
-                .lock()
-                .unwrap()
-                .put(public_key.clone(), signed_packet.clone());
+    pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
+        let cached_packet = {
+            let mut cache = self.cache.lock().unwrap();
 
-            return Ok(Some(signed_packet));
-        };
+            let cached_packet = cache.get(public_key);
 
-        Ok(None)
-    }
+            if let Some(cached) = cached_packet {
+                let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
 
-    // === Private Methods ===
+                if expires_in > 0 {
+                    debug!(expires_in, "Have fresh signed_packet in cache.");
 
-    pub(crate) fn publish_inner(
-        &self,
-        signed_packet: &SignedPacket,
-    ) -> Result<Receiver<Result<()>>> {
-        let public_key = signed_packet.public_key();
-        let mut cache = self.cache.lock().unwrap();
-
-        if let Some(current) = cache.get(&public_key) {
-            if current.timestamp() > signed_packet.timestamp() {
-                return Err(Error::NotMostRecent);
-            }
-        };
-
-        cache.put(public_key.to_owned(), signed_packet.clone());
-        drop(cache);
-
-        let (sender, receiver) = flume::bounded::<Result<()>>(1);
-
-        for relay in self.relays.clone() {
-            let url = format!("{relay}/{public_key}");
-            let http_client = self.http_client.clone();
-            let sender = sender.clone();
-            let signed_packet = signed_packet.clone();
-
-            thread::spawn(move || {
-                match http_client
-                    .put(&url)
-                    .send_bytes(&signed_packet.to_relay_payload())
-                {
-                    Ok(_) => {
-                        let _ = sender.send(Ok(()));
-                    }
-                    Err(error) => {
-                        debug!(?url, ?error, "Error response");
-                        let _ = sender.send(Err(Error::RelayError(Box::new(error))));
-                    }
+                    return Ok(Some(cached.clone()));
                 }
-            });
-        }
 
-        Ok(receiver)
-    }
+                debug!(expires_in, "Have expired signed_packet in cache.");
+            } else {
+                debug!("Cache miss");
+            };
 
-    pub(crate) fn resolve_inner(
-        &self,
-        public_key: &PublicKey,
-    ) -> Receiver<Result<Option<SignedPacket>>> {
-        let mut cache = self.cache.lock().unwrap();
-
-        let cached_packet = cache.get(public_key);
-
-        let (sender, receiver) = flume::bounded::<Result<Option<SignedPacket>>>(1);
-
-        if let Some(cached) = cached_packet {
-            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
-
-            if expires_in > 0 {
-                debug!(expires_in, "Have fresh signed_packet in cache.");
-                let _ = sender.send(Ok(Some(cached.clone())));
-
-                return receiver;
-            }
-
-            debug!(expires_in, "Have expired signed_packet in cache.");
-        } else {
-            debug!("Cache mess");
+            None
         };
 
+        let mut futures = JoinSet::new();
+
         for relay in self.relays.clone() {
-            let url = format!("{relay}/{public_key}");
             let http_client = self.http_client.clone();
             let public_key = public_key.clone();
-            let cached_packet = cached_packet.cloned();
-            let sender = sender.clone();
+            let cached = cached_packet.clone();
 
-            thread::spawn(move || match http_client.get(&url).call() {
-                Ok(response) => {
-                    let mut reader = response.into_reader();
-                    let mut payload = vec![];
-
-                    if let Err(err) = reader.read_to_end(&mut payload) {
-                        let _ = sender.send(Err(err.into()));
-                    } else {
-                        match SignedPacket::from_relay_payload(&public_key, &payload.into()) {
-                            Ok(signed_packet) => {
-                                let new_packet = if let Some(ref cached) = cached_packet {
-                                    if signed_packet.more_recent_than(cached) {
-                                        debug!(
-                                            ?public_key,
-                                            "Received more recent packet than in cache"
-                                        );
-                                        Some(signed_packet)
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    debug!(?public_key, "Received new packet after cache miss");
-                                    Some(signed_packet)
-                                };
-
-                                let _ = sender.send(Ok(new_packet));
-                            }
-                            Err(error) => {
-                                debug!(?url, ?error, "Invalid signed_packet");
-                                let _ = sender.send(Err(error));
-                            }
-                        };
-                    }
-                }
-                Err(ureq::Error::Status(404, _)) => {
-                    debug!(?url, "SignedPacket not found");
-                    let _ = sender.send(Ok(None));
-                }
-                Err(error) => {
-                    debug!(?url, ?error, "Error response");
-                    let _ = sender.send(Err(Error::RelayError(Box::new(error))));
-                }
+            futures.spawn(async move {
+                resolve_from_relay(relay, public_key, http_client, cached).await
             });
         }
 
-        receiver
+        let mut result: Result<Option<SignedPacket>> = Ok(None);
+
+        while let Some(task_result) = futures.join_next().await {
+            match task_result {
+                Ok(Ok(Some(signed_packet))) => {
+                    let mut cache = self.cache.lock().unwrap();
+
+                    cache.put(signed_packet.public_key(), signed_packet.clone());
+
+                    return Ok(Some(signed_packet));
+                }
+                Ok(Err(error)) => result = Err(error),
+                Ok(_) => {}
+                Err(joinerror) => {
+                    debug!(?joinerror);
+                }
+            }
+        }
+
+        result
+    }
+}
+
+async fn resolve_from_relay(
+    relay: String,
+    public_key: PublicKey,
+    http_client: Client,
+    cached_packet: Option<SignedPacket>,
+) -> Result<Option<SignedPacket>> {
+    let url = format!("{relay}/{public_key}");
+
+    match http_client.get(&url).send().await {
+        Ok(mut response) => {
+            if response.status() == StatusCode::NOT_FOUND {
+                debug!(?url, "SignedPacket not found");
+                return Ok(None);
+            }
+
+            let mut total_size = 0;
+            let mut payload = Vec::new();
+
+            while let Ok(Some(chunk)) = response.chunk().await {
+                total_size += chunk.len();
+                payload.extend_from_slice(&chunk);
+                if total_size >= SignedPacket::MAX_BYTES {
+                    break;
+                }
+            }
+
+            match SignedPacket::from_relay_payload(&public_key, &payload.into()) {
+                Ok(signed_packet) => {
+                    let new_packet = if let Some(ref cached) = cached_packet {
+                        if signed_packet.more_recent_than(cached) {
+                            debug!(?public_key, "Received more recent packet than in cache");
+                            Some(signed_packet)
+                        } else {
+                            None
+                        }
+                    } else {
+                        debug!(?public_key, "Received new packet after cache miss");
+                        Some(signed_packet)
+                    };
+
+                    Ok(new_packet)
+                }
+                Err(error) => {
+                    debug!(?url, ?error, "Invalid signed_packet");
+
+                    Err(error)
+                }
+            }
+        }
+        Err(error) => {
+            debug!(?url, ?error, "Error response");
+
+            Err(Error::RelayError(error))
+        }
     }
 }
 
@@ -260,8 +271,8 @@ mod tests {
     use super::*;
     use crate::{dns, Keypair, SignedPacket};
 
-    #[test]
-    fn publish_resolve() {
+    #[tokio::test]
+    async fn publish_resolve() {
         let keypair = Keypair::random();
 
         let mut packet = dns::Packet::new_reply(0);
@@ -274,7 +285,7 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        let mut server = mockito::Server::new();
+        let mut server = mockito::Server::new_async().await;
 
         let path = format!("/{}", signed_packet.public_key());
 
@@ -297,9 +308,9 @@ mod tests {
         let a = PkarrRelayClient::new(settings.clone()).unwrap();
         let b = PkarrRelayClient::new(settings).unwrap();
 
-        a.publish(&signed_packet).unwrap();
+        a.publish(&signed_packet).await.unwrap();
 
-        let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
+        let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
 
         assert_eq!(a.cache().lock().unwrap().len(), 1);
         assert_eq!(b.cache().lock().unwrap().len(), 1);
@@ -307,11 +318,11 @@ mod tests {
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
     }
 
-    #[test]
-    fn not_found() {
+    #[tokio::test]
+    async fn not_found() {
         let keypair = Keypair::random();
 
-        let mut server = mockito::Server::new();
+        let mut server = mockito::Server::new_async().await;
 
         let path = format!("/{}", keypair.public_key());
 
@@ -325,7 +336,7 @@ mod tests {
 
         let client = PkarrRelayClient::new(settings.clone()).unwrap();
 
-        let resolved = client.resolve(&keypair.public_key()).unwrap();
+        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
 
         assert!(resolved.is_none());
     }

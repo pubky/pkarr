@@ -292,7 +292,7 @@ impl PkarrClient {
 
             debug!(expires_in, "Have expired signed_packet in cache.");
         } else {
-            debug!("Cache mess");
+            debug!("Cache miss");
         }
 
         self.sender

@@ -65,23 +65,13 @@ pub enum Error {
     NotMostRecent,
 
     // === Relay errors ===
-    #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
+    #[cfg(feature = "relay")]
     #[error(transparent)]
-    /// Transparent [ureq::Error]
-    RelayError(#[from] Box<ureq::Error>),
+    /// Transparent [reqwest::Error]
+    RelayError(#[from] reqwest::Error),
 
-    #[cfg(any(feature = "relay", target_arch = "wasm32"))]
+    #[cfg(feature = "relay")]
     #[error("Empty list of relays")]
     /// Empty list of relays
     EmptyListOfRelays,
-
-    // === Wasm ===
-    #[cfg(target_arch = "wasm32")]
-    #[error("Relay response with status: {0}, and message: {1}")]
-    /// A response was successfully received but had status code >= 400.
-    WasmRelayError(u16, String),
-
-    #[cfg(target_arch = "wasm32")]
-    #[error("JS error")]
-    JsError(wasm_bindgen::JsValue),
 }

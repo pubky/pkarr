@@ -65,6 +65,8 @@ pub struct SignedPacket {
 }
 
 impl SignedPacket {
+    pub const MAX_BYTES: usize = 1104;
+
     /// Creates a [Self] from the serialized representation:
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
     ///
@@ -80,7 +82,7 @@ impl SignedPacket {
     ///
     /// # Errors
     /// - Returns [crate::Error::InvalidSignedPacketBytesLength] if `bytes.len()` is smaller than 104 bytes
-    /// - Returns [crate::Error::PacketTooLarge] if `bytes.len()` is bigger than 1104 bytes
+    /// - Returns [crate::Error::PacketTooLarge] if `bytes.len()` is bigger than [SignedPacket::MAX_BYTES] bytes
     /// - Returns [crate::Error::InvalidEd25519PublicKey] if the first 32 bytes are invalid `ed25519` public key
     /// - Returns [crate::Error::InvalidEd25519Signature] if the following 64 bytes are invalid `ed25519` signature
     /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet after the first 104 bytes
@@ -88,7 +90,7 @@ impl SignedPacket {
         if bytes.len() < 104 {
             return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
         }
-        if bytes.len() > 1104 {
+        if bytes.len() > SignedPacket::MAX_BYTES {
             return Err(Error::PacketTooLarge(bytes.len()));
         }
         let public_key = PublicKey::try_from(&bytes[..32])?;

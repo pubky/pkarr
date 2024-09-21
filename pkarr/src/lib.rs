@@ -69,14 +69,4 @@ if_dht! {
 if_relay! {
     mod relay_client;
     pub use relay_client::{PkarrRelayClient, RelaySettings};
-
-    if_async! {
-        mod relay_client_async;
-        pub use relay_client_async::PkarrRelayClientAsync;
-    }
 }
-
-#[cfg(target_arch = "wasm32")]
-mod relay_client_web;
-#[cfg(target_arch = "wasm32")]
-pub use relay_client_web::PkarrRelayClient;
