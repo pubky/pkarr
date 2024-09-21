@@ -1,18 +1,16 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 
-use std::{
-    num::NonZeroUsize,
-    sync::{Arc, Mutex},
-};
+use std::num::NonZeroUsize;
 
-use lru::LruCache;
 use reqwest::{Response, StatusCode};
-use tokio::task::JoinSet;
 use tracing::debug;
 
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::task::JoinSet;
+
 use crate::{
-    Error, PkarrCache, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
-    DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS,
+    Cache, Error, InMemoryCache, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE,
+    DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS,
 };
 
 #[derive(Debug, Clone)]
@@ -31,8 +29,8 @@ pub struct Settings {
     pub maximum_ttl: u32,
     /// Custom [reqwest::Client]
     pub http_client: reqwest::Client,
-    /// Custom [PkarrCache] implementation, defaults to [InMemoryPkarrCache]
-    pub cache: Option<Box<dyn PkarrCache>>,
+    /// Custom [Cache] implementation, defaults to [InMemoryCache]
+    pub cache: Option<Box<dyn Cache>>,
 }
 
 impl Default for Settings {
@@ -57,7 +55,7 @@ pub struct ClientBuilder {
 impl ClientBuilder {
     /// Set the [Settings::cache_size].
     ///
-    /// Controls the capacity of [PkarrCache].
+    /// Controls the capacity of [Cache].
     pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
         self.settings.cache_size = cache_size;
         self
@@ -81,8 +79,8 @@ impl ClientBuilder {
         self
     }
 
-    /// Set a custom implementation of [PkarrCache].
-    pub fn cache(mut self, cache: Box<dyn PkarrCache>) -> Self {
+    /// Set a custom implementation of [Cache].
+    pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
         self.settings.cache = Some(cache);
         self
     }
@@ -97,7 +95,7 @@ impl ClientBuilder {
 pub struct Client {
     http_client: reqwest::Client,
     relays: Vec<String>,
-    cache: Arc<Mutex<LruCache<PublicKey, SignedPacket>>>,
+    cache: Box<dyn Cache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
 }
@@ -114,17 +112,22 @@ impl Client {
             return Err(Error::EmptyListOfRelays);
         }
 
+        let cache = settings
+            .cache
+            .clone()
+            .unwrap_or(Box::new(InMemoryCache::new(settings.cache_size)));
+
         Ok(Self {
             http_client: settings.http_client,
             relays: settings.relays,
-            cache: Arc::new(Mutex::new(LruCache::new(settings.cache_size))),
+            cache,
             minimum_ttl: settings.minimum_ttl,
             maximum_ttl: settings.maximum_ttl,
         })
     }
 
     /// Returns a reference to the internal cache.
-    pub fn cache(&self) -> &Mutex<LruCache<PublicKey, SignedPacket>> {
+    pub fn cache(&self) -> &dyn Cache {
         self.cache.as_ref()
     }
 
@@ -139,18 +142,13 @@ impl Client {
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let public_key = signed_packet.public_key();
 
-        // Let the compiler know we are dropping the cache before await
-        {
-            let mut cache = self.cache.lock().unwrap();
+        if let Some(current) = self.cache.get(&public_key.as_ref().into()) {
+            if current.timestamp() > signed_packet.timestamp() {
+                return Err(Error::NotMostRecent);
+            }
+        };
 
-            if let Some(current) = cache.get(&public_key) {
-                if current.timestamp() > signed_packet.timestamp() {
-                    return Err(Error::NotMostRecent);
-                }
-            };
-
-            cache.put(public_key.to_owned(), signed_packet.clone());
-        }
+        self.cache.put(&public_key.as_ref().into(), signed_packet);
 
         self.race_publish(signed_packet).await
     }
@@ -176,6 +174,7 @@ impl Client {
 
     // === Native Race implementation ===
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let mut futures = JoinSet::new();
 
@@ -201,6 +200,7 @@ impl Client {
         Err(last_error)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn race_resolve(
         &self,
         public_key: &PublicKey,
@@ -221,9 +221,8 @@ impl Client {
         while let Some(task_result) = futures.join_next().await {
             match task_result {
                 Ok(Ok(Some(signed_packet))) => {
-                    let mut cache = self.cache.lock().unwrap();
-
-                    cache.put(signed_packet.public_key(), signed_packet.clone());
+                    self.cache
+                        .put(&signed_packet.public_key().as_ref().into(), &signed_packet);
 
                     return Ok(Some(signed_packet));
                 }
@@ -260,9 +259,7 @@ impl Client {
     }
 
     fn get_from_cache(&self, public_key: &PublicKey) -> Option<SignedPacket> {
-        let mut cache = self.cache.lock().unwrap();
-
-        let cached_packet = cache.get(public_key);
+        let cached_packet = self.cache.get(&public_key.as_ref().into());
 
         if let Some(cached) = cached_packet {
             let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
@@ -316,6 +313,7 @@ impl Client {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 async fn read(response: &mut Response) -> Vec<u8> {
     let mut total_size = 0;
     let mut payload = Vec::new();
@@ -396,8 +394,8 @@ mod tests {
 
         let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
 
-        assert_eq!(a.cache().lock().unwrap().len(), 1);
-        assert_eq!(b.cache().lock().unwrap().len(), 1);
+        assert_eq!(a.cache().len(), 1);
+        assert_eq!(b.cache().len(), 1);
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
     }

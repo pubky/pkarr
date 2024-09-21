@@ -16,18 +16,18 @@ use pkarr::{
         server::Server,
         MutableItem,
     },
-    PkarrCache,
+    Cache,
 };
 
 use tracing::debug;
 
-use crate::{cache::HeedPkarrCache, rate_limiting::IpRateLimiter};
+use crate::{cache::HeedCache, rate_limiting::IpRateLimiter};
 
 /// DhtServer with Rate limiting
 pub struct DhtServer {
     inner: mainline::server::DhtServer,
     resolvers: Option<Vec<SocketAddr>>,
-    cache: Box<crate::cache::HeedPkarrCache>,
+    cache: Box<crate::cache::HeedCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
     rate_limiter: IpRateLimiter,
@@ -41,7 +41,7 @@ impl Debug for DhtServer {
 
 impl DhtServer {
     pub fn new(
-        cache: Box<HeedPkarrCache>,
+        cache: Box<HeedCache>,
         resolvers: Option<Vec<String>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
@@ -78,7 +78,7 @@ impl Server for DhtServer {
             ..
         } = request
         {
-            let should_query = if let Some(cached) = self.cache.get(target) {
+            let should_query = if let Some(cached) = self.cache.get(&target.bytes) {
                 debug!(
                     public_key = ?cached.public_key(),
                     ?target,

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, path::Path, time::Duration};
 
-use pkarr::{system_time, PkarrCache, PkarrCacheKey, SignedPacket};
+use pkarr::{system_time, Cache, CacheKey, SignedPacket};
 
 use byteorder::LittleEndian;
 use heed::{types::U64, BoxedError, BytesDecode, BytesEncode, Database, Env, EnvOpenOptions};
@@ -12,25 +12,26 @@ const PKARR_CACHE_TABLE_NAME_SIGNED_PACKET: &str = "pkarrcache:signed_packet";
 const PKARR_CACHE_TABLE_NAME_KEY_TO_TIME: &str = "pkarrcache:key_to_time";
 const PKARR_CACHE_TABLE_NAME_TIME_TO_KEY: &str = "pkarrcache:time_to_key";
 
-type PkarrCacheSignedPacketsTable = Database<PkarrCacheKeyCodec, SignedPacketCodec>;
-type PkarrCacheKeyToTimeTable = Database<PkarrCacheKeyCodec, U64<LittleEndian>>;
-type PkarrCacheTimeToKeyTable = Database<U64<LittleEndian>, PkarrCacheKeyCodec>;
+type CacheSignedPacketsTable = Database<CacheKeyCodec, SignedPacketCodec>;
+type CacheKeyToTimeTable = Database<CacheKeyCodec, U64<LittleEndian>>;
+type CacheTimeToKeyTable = Database<U64<LittleEndian>, CacheKeyCodec>;
 
-pub struct PkarrCacheKeyCodec;
+pub struct CacheKeyCodec;
 
-impl<'a> BytesEncode<'a> for PkarrCacheKeyCodec {
-    type EItem = PkarrCacheKey;
+impl<'a> BytesEncode<'a> for CacheKeyCodec {
+    type EItem = CacheKey;
 
     fn bytes_encode(key: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
-        Ok(Cow::Owned(key.bytes.to_vec()))
+        Ok(Cow::Owned(key.to_vec()))
     }
 }
 
-impl<'a> BytesDecode<'a> for PkarrCacheKeyCodec {
-    type DItem = PkarrCacheKey;
+impl<'a> BytesDecode<'a> for CacheKeyCodec {
+    type DItem = CacheKey;
 
     fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
-        Ok(PkarrCacheKey::from_bytes(bytes)?)
+        let key: [u8; 20] = bytes.try_into()?;
+        Ok(key)
     }
 }
 
@@ -65,12 +66,12 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
 }
 
 #[derive(Debug, Clone)]
-pub struct HeedPkarrCache {
+pub struct HeedCache {
     capacity: usize,
     env: Env,
 }
 
-impl HeedPkarrCache {
+impl HeedCache {
     pub fn new(env_path: &Path, capacity: usize) -> Result<Self> {
         let env = unsafe {
             EnvOpenOptions::new()
@@ -80,11 +81,11 @@ impl HeedPkarrCache {
         };
 
         let mut wtxn = env.write_txn()?;
-        let _: PkarrCacheSignedPacketsTable =
+        let _: CacheSignedPacketsTable =
             env.create_database(&mut wtxn, Some(PKARR_CACHE_TABLE_NAME_SIGNED_PACKET))?;
-        let _: PkarrCacheKeyToTimeTable =
+        let _: CacheKeyToTimeTable =
             env.create_database(&mut wtxn, Some(PKARR_CACHE_TABLE_NAME_KEY_TO_TIME))?;
-        let _: PkarrCacheTimeToKeyTable =
+        let _: CacheTimeToKeyTable =
             env.create_database(&mut wtxn, Some(PKARR_CACHE_TABLE_NAME_TIME_TO_KEY))?;
 
         wtxn.commit()?;
@@ -103,7 +104,7 @@ impl HeedPkarrCache {
     pub fn internal_len(&self) -> Result<usize> {
         let rtxn = self.env.read_txn()?;
 
-        let db: PkarrCacheSignedPacketsTable = self
+        let db: CacheSignedPacketsTable = self
             .env
             .open_database(&rtxn, Some(PKARR_CACHE_TABLE_NAME_SIGNED_PACKET))?
             .unwrap();
@@ -111,24 +112,24 @@ impl HeedPkarrCache {
         Ok(db.len(&rtxn)? as usize)
     }
 
-    pub fn internal_put(&self, key: &PkarrCacheKey, signed_packet: &SignedPacket) -> Result<()> {
+    pub fn internal_put(&self, key: &CacheKey, signed_packet: &SignedPacket) -> Result<()> {
         if self.capacity == 0 {
             return Ok(());
         }
 
         let mut wtxn = self.env.write_txn()?;
 
-        let packets: PkarrCacheSignedPacketsTable = self
+        let packets: CacheSignedPacketsTable = self
             .env
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_SIGNED_PACKET))?
             .unwrap();
 
-        let key_to_time: PkarrCacheKeyToTimeTable = self
+        let key_to_time: CacheKeyToTimeTable = self
             .env
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_KEY_TO_TIME))?
             .unwrap();
 
-        let time_to_key: PkarrCacheTimeToKeyTable = self
+        let time_to_key: CacheTimeToKeyTable = self
             .env
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_TIME_TO_KEY))?
             .unwrap();
@@ -165,19 +166,19 @@ impl HeedPkarrCache {
         Ok(())
     }
 
-    pub fn internal_get(&self, key: &PkarrCacheKey) -> Result<Option<SignedPacket>> {
+    pub fn internal_get(&self, key: &CacheKey) -> Result<Option<SignedPacket>> {
         let mut wtxn = self.env.write_txn()?;
 
-        let packets: PkarrCacheSignedPacketsTable = self
+        let packets: CacheSignedPacketsTable = self
             .env
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_SIGNED_PACKET))?
             .unwrap();
 
-        let key_to_time: PkarrCacheKeyToTimeTable = self
+        let key_to_time: CacheKeyToTimeTable = self
             .env
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_KEY_TO_TIME))?
             .unwrap();
-        let time_to_key: PkarrCacheTimeToKeyTable = self
+        let time_to_key: CacheTimeToKeyTable = self
             .env
             .open_database(&wtxn, Some(PKARR_CACHE_TABLE_NAME_TIME_TO_KEY))?
             .unwrap();
@@ -202,10 +203,10 @@ impl HeedPkarrCache {
         Ok(None)
     }
 
-    pub fn internal_get_read_only(&self, key: &PkarrCacheKey) -> Result<Option<SignedPacket>> {
+    pub fn internal_get_read_only(&self, key: &CacheKey) -> Result<Option<SignedPacket>> {
         let rtxn = self.env.read_txn()?;
 
-        let packets: PkarrCacheSignedPacketsTable = self
+        let packets: CacheSignedPacketsTable = self
             .env
             .open_database(&rtxn, Some(PKARR_CACHE_TABLE_NAME_SIGNED_PACKET))?
             .unwrap();
@@ -220,39 +221,39 @@ impl HeedPkarrCache {
     }
 }
 
-impl PkarrCache for HeedPkarrCache {
+impl Cache for HeedCache {
     fn len(&self) -> usize {
         match self.internal_len() {
             Ok(result) => result,
             Err(error) => {
-                debug!(?error, "Error in HeedPkarrCache::len");
+                debug!(?error, "Error in HeedCache::len");
                 0
             }
         }
     }
 
-    fn put(&self, key: &PkarrCacheKey, signed_packet: &SignedPacket) {
+    fn put(&self, key: &CacheKey, signed_packet: &SignedPacket) {
         if let Err(error) = self.internal_put(key, signed_packet) {
-            debug!(?error, "Error in HeedPkarrCache::put");
+            debug!(?error, "Error in HeedCache::put");
         };
     }
 
-    fn get(&self, key: &PkarrCacheKey) -> Option<SignedPacket> {
+    fn get(&self, key: &CacheKey) -> Option<SignedPacket> {
         match self.internal_get(key) {
             Ok(result) => result,
             Err(error) => {
-                debug!(?error, "Error in HeedPkarrCache::get");
+                debug!(?error, "Error in HeedCache::get");
 
                 None
             }
         }
     }
 
-    fn get_read_only(&self, key: &PkarrCacheKey) -> Option<SignedPacket> {
+    fn get_read_only(&self, key: &CacheKey) -> Option<SignedPacket> {
         match self.internal_get_read_only(key) {
             Ok(result) => result,
             Err(error) => {
-                debug!(?error, "Error in HeedPkarrCache::get");
+                debug!(?error, "Error in HeedCache::get");
 
                 None
             }

@@ -7,7 +7,7 @@ mod http_server;
 mod rate_limiting;
 
 use anyhow::Result;
-use cache::HeedPkarrCache;
+use cache::HeedCache;
 use clap::Parser;
 use config::Config;
 use std::fs;
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
 
     let env_path = &config.cache_path()?;
     fs::create_dir_all(env_path)?;
-    let cache = Box::new(HeedPkarrCache::new(env_path, config.cache_size()).unwrap());
+    let cache = Box::new(HeedCache::new(env_path, config.cache_size()).unwrap());
 
     let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
@@ -68,8 +68,7 @@ async fn main() -> Result<()> {
         .minimum_ttl(config.minimum_ttl())
         .maximum_ttl(config.maximum_ttl())
         .cache(cache)
-        .build()?
-        .as_async();
+        .build()?;
 
     let udp_address = client.local_addr().unwrap();
 

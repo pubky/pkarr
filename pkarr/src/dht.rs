@@ -18,7 +18,7 @@ use std::{
 use tracing::{debug, trace};
 
 use crate::{
-    cache::{InMemoryPkarrCache, PkarrCache},
+    cache::{InMemoryCache, Cache},
     DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
 };
 use crate::{Error, PublicKey, Result, SignedPacket};
@@ -44,8 +44,8 @@ pub struct Settings {
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
-    /// Custom [PkarrCache] implementation, defaults to [InMemoryPkarrCache]
-    pub cache: Option<Box<dyn PkarrCache>>,
+    /// Custom [Cache] implementation, defaults to [InMemoryCache]
+    pub cache: Option<Box<dyn Cache>>,
 }
 
 impl Default for Settings {
@@ -88,7 +88,7 @@ impl ClientBuilder {
 
     /// Set the [Settings::cache_size].
     ///
-    /// Controls the capacity of [PkarrCache].
+    /// Controls the capacity of [Cache].
     pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
         self.settings.cache_size = cache_size;
         self
@@ -112,8 +112,8 @@ impl ClientBuilder {
         self
     }
 
-    /// Set a custom implementation of [PkarrCache].
-    pub fn cache(mut self, cache: Box<dyn PkarrCache>) -> Self {
+    /// Set a custom implementation of [Cache].
+    pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
         self.settings.cache = Some(cache);
         self
     }
@@ -138,11 +138,11 @@ impl ClientBuilder {
 #[derive(Clone, Debug)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
 pub struct Client {
-    pub(crate) address: Option<SocketAddr>,
-    pub(crate) sender: Sender<ActorMessage>,
-    pub(crate) cache: Box<dyn PkarrCache>,
-    pub(crate) minimum_ttl: u32,
-    pub(crate) maximum_ttl: u32,
+    address: Option<SocketAddr>,
+    sender: Sender<ActorMessage>,
+    cache: Box<dyn Cache>,
+    minimum_ttl: u32,
+    maximum_ttl: u32,
 }
 
 impl Client {
@@ -156,7 +156,7 @@ impl Client {
         let cache = settings
             .cache
             .clone()
-            .unwrap_or(Box::new(InMemoryPkarrCache::new(settings.cache_size)));
+            .unwrap_or(Box::new(InMemoryCache::new(settings.cache_size)));
         let cache_clone = cache.clone();
 
         let client = Client {
@@ -189,7 +189,7 @@ impl Client {
     }
 
     /// Returns a reference to the internal cache.
-    pub fn cache(&self) -> &dyn PkarrCache {
+    pub fn cache(&self) -> &dyn Cache {
         self.cache.as_ref()
     }
 
@@ -305,13 +305,13 @@ impl Client {
     ) -> Result<Receiver<mainline::Result<Id>>> {
         let mutable_item: MutableItem = (signed_packet).into();
 
-        if let Some(current) = self.cache.get(mutable_item.target()) {
+        if let Some(current) = self.cache.get(&mutable_item.target().bytes) {
             if current.timestamp() > signed_packet.timestamp() {
                 return Err(Error::NotMostRecent);
             }
         };
 
-        self.cache.put(mutable_item.target(), signed_packet);
+        self.cache.put(&mutable_item.target().bytes, signed_packet);
 
         let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
 
@@ -327,7 +327,7 @@ impl Client {
 
         let (sender, receiver) = flume::bounded::<SignedPacket>(1);
 
-        let cached_packet = self.cache.get(&target);
+        let cached_packet = self.cache.get(&target.bytes);
 
         if let Some(ref cached) = cached_packet {
             let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
@@ -364,7 +364,7 @@ impl Client {
 
 fn run(
     mut rpc: Rpc,
-    cache: Box<dyn PkarrCache>,
+    cache: Box<dyn Cache>,
     settings: Settings,
     receiver: Receiver<ActorMessage>,
 ) {
@@ -444,7 +444,7 @@ fn run(
                         } => {
                             if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
                                 let new_packet =
-                                    if let Some(ref cached) = cache.get_read_only(target) {
+                                    if let Some(ref cached) = cache.get_read_only(&target.bytes) {
                                         if signed_packet.more_recent_than(cached) {
                                             debug!(
                                                 ?target,
@@ -460,7 +460,7 @@ fn run(
                                     };
 
                                 if let Some(packet) = new_packet {
-                                    cache.put(target, packet);
+                                    cache.put(&target.bytes, packet);
 
                                     if let Some(set) = senders.get(target) {
                                         for sender in set {
@@ -475,12 +475,12 @@ fn run(
                             target,
                             response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
                         } => {
-                            if let Some(mut cached) = cache.get_read_only(target) {
+                            if let Some(mut cached) = cache.get_read_only(&target.bytes) {
                                 if (*seq as u64) == cached.timestamp() {
                                     trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
 
                                     cached.refresh();
-                                    cache.put(target, &cached);
+                                    cache.put(&target.bytes, &cached);
 
                                     // Send the found sequence as a timestamp to the caller to decide what to do
                                     // with it.

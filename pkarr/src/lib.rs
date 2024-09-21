@@ -11,14 +11,16 @@ macro_rules! if_dht {
 }
 
 // Modules
+mod cache;
 mod error;
 mod keys;
 mod signed_packet;
 
 // Common exports
-pub use crate::error::{Error, Result};
-pub use crate::keys::{Keypair, PublicKey};
-pub use crate::signed_packet::{system_time, SignedPacket};
+pub use cache::{Cache, CacheKey, InMemoryCache};
+pub use error::{Error, Result};
+pub use keys::{Keypair, PublicKey};
+pub use signed_packet::{system_time, SignedPacket};
 
 /// Default minimum TTL: 5 minutes
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -36,11 +38,9 @@ pub use bytes;
 pub use simple_dns as dns;
 
 if_dht! {
-    mod cache;
     mod dht;
 
     pub use dht::{ClientBuilder, Client, Settings};
-    pub use cache::{PkarrCache, PkarrCacheKey, InMemoryPkarrCache};
 
     // Rexports
     pub use mainline;

@@ -7,7 +7,7 @@ use tower_http::cors::{self, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
-use pkarr::ClientAsync;
+use pkarr::Client;
 
 use crate::rate_limiting::IpRateLimiter;
 
@@ -18,7 +18,7 @@ pub struct HttpServer {
 impl HttpServer {
     /// Spawn the server
     pub async fn spawn(
-        client: ClientAsync,
+        client: Client,
         port: u16,
         rate_limiter: IpRateLimiter,
     ) -> Result<HttpServer> {
@@ -96,5 +96,5 @@ pub fn create_app(state: AppState, rate_limiter: IpRateLimiter) -> Router {
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub client: ClientAsync,
+    pub client: Client,
 }
