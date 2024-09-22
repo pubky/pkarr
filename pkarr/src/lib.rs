@@ -48,3 +48,8 @@ if_dht! {
 
 #[cfg(feature = "relay")]
 pub mod relay;
+
+#[cfg(target_arch = "wasm32")]
+pub mod relay;
+#[cfg(target_arch = "wasm32")]
+pub use relay::{Client, ClientBuilder, Settings};

@@ -58,7 +58,7 @@ relay = ["dep:reqwest", "dep:tokio"]
 ## Use all features
 full = ["dht", "relay", "rand", "serde"]
 
-default = ["full"]
+default = ["dht", "rand", "serde"]
 
 [package.metadata.docs.rs]
 all-features = true
