@@ -66,12 +66,12 @@ pub enum Error {
     NotMostRecent,
 
     // === Relay errors ===
-    #[cfg(feature = "relay")]
+    #[cfg(any(feature = "relay", target_arch = "wasm32"))]
     #[error(transparent)]
     /// Transparent [reqwest::Error]
     RelayError(#[from] reqwest::Error),
 
-    #[cfg(feature = "relay")]
+    #[cfg(any(feature = "relay", target_arch = "wasm32"))]
     #[error("Empty list of relays")]
     /// Empty list of relays
     EmptyListOfRelays,

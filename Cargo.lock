@@ -1471,6 +1471,7 @@ dependencies = [
  "ed25519-dalek",
  "flume",
  "futures",
+ "getrandom",
  "js-sys",
  "lru",
  "mainline",
