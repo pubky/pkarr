@@ -56,6 +56,12 @@ pub struct ClientBuilder {
 }
 
 impl ClientBuilder {
+    /// Set the relays to publish and resolve [SignedPacket]s to and from.
+    pub fn relays(mut self, relays: Vec<String>) -> Self {
+        self.settings.relays = relays;
+        self
+    }
+
     /// Set the [Settings::cache_size].
     ///
     /// Controls the capacity of [Cache].
@@ -127,6 +133,11 @@ impl Client {
             minimum_ttl: settings.minimum_ttl,
             maximum_ttl: settings.maximum_ttl,
         })
+    }
+
+    /// Returns a builder to edit settings before creating Client.
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::default()
     }
 
     /// Returns a reference to the internal cache.
@@ -417,14 +428,9 @@ mod tests {
             .with_body(signed_packet.to_relay_payload())
             .create();
 
-        let relays: Vec<String> = vec![server.url()];
-        let settings = Settings {
-            relays,
-            ..Settings::default()
-        };
-
-        let a = Client::new(settings.clone()).unwrap();
-        let b = Client::new(settings).unwrap();
+        let relays = vec![server.url()];
+        let a = Client::builder().relays(relays.clone()).build().unwrap();
+        let b = Client::builder().relays(relays).build().unwrap();
 
         a.publish(&signed_packet).await.unwrap();
 
@@ -446,13 +452,8 @@ mod tests {
 
         server.mock("GET", path.as_str()).with_status(404).create();
 
-        let relays: Vec<String> = vec![server.url()];
-        let settings = Settings {
-            relays,
-            ..Settings::default()
-        };
-
-        let client = Client::new(settings.clone()).unwrap();
+        let relays = vec![server.url()];
+        let client = Client::builder().relays(relays).build().unwrap();
 
         let resolved = client.resolve(&keypair.public_key()).await.unwrap();
 
