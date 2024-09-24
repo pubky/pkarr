@@ -3,24 +3,17 @@
 #![doc = document_features::document_features!()]
 //!
 
-macro_rules! if_dht {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-        $item
-    )*}
-}
-
 // Modules
-mod cache;
+mod base;
+mod client;
 mod error;
-mod keys;
-mod signed_packet;
 
-// Common exports
-pub use cache::{Cache, CacheKey, InMemoryCache};
+// Exports
+pub use base::cache::{Cache, CacheKey, InMemoryCache};
+pub use base::keys::{Keypair, PublicKey};
+pub use base::signed_packet::SignedPacket;
+pub use base::time::system_time;
 pub use error::{Error, Result};
-pub use keys::{Keypair, PublicKey};
-pub use signed_packet::{system_time, SignedPacket};
 
 /// Default minimum TTL: 5 minutes
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -33,23 +26,11 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 /// Default [resolver](https://pkarr.org/resolvers)s
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.app:6881"];
 
+pub use client::{Client, ClientBuilder, Settings};
+
 // Rexports
 pub use bytes;
 pub use simple_dns as dns;
 
-if_dht! {
-    mod dht;
-
-    pub use dht::{ClientBuilder, Client, Settings};
-
-    // Rexports
-    pub use mainline;
-}
-
-#[cfg(feature = "relay")]
-pub mod relay;
-
-#[cfg(target_arch = "wasm32")]
-pub mod relay;
-#[cfg(target_arch = "wasm32")]
-pub use relay::{Client, ClientBuilder, Settings};
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+pub use mainline;

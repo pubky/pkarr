@@ -6,6 +6,10 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 #[derive(thiserror::Error, Debug)]
 /// Pkarr crate error enum.
 pub enum Error {
+    #[error("{0}")]
+    // TODO: replace with proper errors.
+    Generic(String),
+
     #[error(transparent)]
     /// Transparent [std::io::Error]
     IO(#[from] std::io::Error),
@@ -75,4 +79,9 @@ pub enum Error {
     #[error("Empty list of relays")]
     /// Empty list of relays
     EmptyListOfRelays,
+
+    // === endpoints ===
+    #[error("Could not resolve enpdoint {0}")]
+    /// Could not resolve enpdoint
+    ResolveEndpoint(String),
 }

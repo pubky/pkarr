@@ -18,8 +18,8 @@ use std::{
 use tracing::{debug, trace};
 
 use crate::{
-    cache::{InMemoryCache, Cache},
-    DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
+    Cache, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
+    DEFAULT_RESOLVERS,
 };
 use crate::{Error, PublicKey, Result, SignedPacket};
 
@@ -362,12 +362,7 @@ impl Client {
     }
 }
 
-fn run(
-    mut rpc: Rpc,
-    cache: Box<dyn Cache>,
-    settings: Settings,
-    receiver: Receiver<ActorMessage>,
-) {
+fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiver<ActorMessage>) {
     debug!(?settings, "Starting Client main loop..");
 
     let mut server = settings.dht.server;
@@ -600,7 +595,7 @@ mod tests {
     }
 
     #[tokio::test]
-async    fn shutdown() {
+    async fn shutdown() {
         let testnet = Testnet::new(3);
 
         let mut a = Client::builder().testnet(&testnet).build().unwrap();
@@ -613,7 +608,7 @@ async    fn shutdown() {
     }
 
     #[tokio::test]
-   async fn publish_resolve() {
+    async fn publish_resolve() {
         let testnet = Testnet::new(10);
 
         let a = Client::builder().testnet(&testnet).build().unwrap();
@@ -643,7 +638,7 @@ async    fn shutdown() {
     }
 
     #[tokio::test]
-   async fn thread_safe() {
+    async fn thread_safe() {
         let testnet = Testnet::new(10);
 
         let a = Client::builder().testnet(&testnet).build().unwrap();
@@ -664,13 +659,15 @@ async    fn shutdown() {
 
         let b = Client::builder().testnet(&testnet).build().unwrap();
 
-        tokio::spawn( async move {
+        tokio::spawn(async move {
             let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
             assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
             let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
             assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
             assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 }

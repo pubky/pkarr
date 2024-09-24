@@ -14,8 +14,7 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::SystemTime;
+use crate::system_time;
 
 const DOT: char = '.';
 
@@ -340,55 +339,38 @@ fn signable(timestamp: u64, v: &Bytes) -> Bytes {
     signable.into()
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-/// Return the number of microseconds since [SystemTime::UNIX_EPOCH]
-pub fn system_time() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("time drift")
-        .as_micros() as u64
-}
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+use mainline::MutableItem;
 
-#[cfg(target_arch = "wasm32")]
-/// Return the number of microseconds since [SystemTime::UNIX_EPOCH]
-pub fn system_time() -> u64 {
-    // Won't be an issue for more than 5000 years!
-    (js_sys::Date::now() as u64 )
-    // Turn miliseconds to microseconds
-    * 1000
-}
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+impl From<&SignedPacket> for MutableItem {
+    fn from(s: &SignedPacket) -> Self {
+        let seq: i64 = s.timestamp() as i64;
+        let packet = s.inner.borrow_owner().slice(104..);
 
-if_dht! {
-    use mainline::MutableItem;
-
-    impl From<&SignedPacket> for MutableItem {
-        fn from(s: &SignedPacket) -> Self {
-            let seq: i64 = s.timestamp() as i64;
-            let packet = s.inner.borrow_owner().slice(104..);
-
-            Self::new_signed_unchecked(
-                s.public_key().to_bytes(),
-                s.signature().to_bytes(),
-                packet,
-                seq,
-                None,
-            )
-        }
+        Self::new_signed_unchecked(
+            s.public_key().to_bytes(),
+            s.signature().to_bytes(),
+            packet,
+            seq,
+            None,
+        )
     }
+}
 
-    impl TryFrom<&MutableItem> for SignedPacket {
-        type Error = Error;
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+impl TryFrom<&MutableItem> for SignedPacket {
+    type Error = Error;
 
-        fn try_from(i: &MutableItem) -> Result<Self> {
-            let public_key = PublicKey::try_from(i.key()).unwrap();
-            let seq = *i.seq() as u64;
-            let signature: Signature = i.signature().into();
+    fn try_from(i: &MutableItem) -> Result<Self> {
+        let public_key = PublicKey::try_from(i.key()).unwrap();
+        let seq = *i.seq() as u64;
+        let signature: Signature = i.signature().into();
 
-            Ok(Self {
-                inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
-                last_seen: system_time(),
-            })
-        }
+        Ok(Self {
+            inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
+            last_seen: system_time(),
+        })
     }
 }
 
