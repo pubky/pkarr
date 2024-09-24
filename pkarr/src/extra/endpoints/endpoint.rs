@@ -20,7 +20,7 @@ pub struct Endpoint {
 impl Endpoint {
     /// 1. Find the SVCB or HTTPS records with the lowest priority
     /// 2. Choose a random one of the list of the above
-    /// 3. If the target is `.`, check A and AAAA records (https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
+    /// 3. If the target is `.`, check A and AAAA records see [rfc9460](https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
     pub(crate) fn find(
         signed_packet: &SignedPacket,
         target: &str,

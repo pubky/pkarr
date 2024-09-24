@@ -62,7 +62,7 @@ pub enum Error {
     DhtIsShutdown,
 
     #[error("Publish query is already inflight for the same public_key")]
-    /// [crate::dht::Client::publish] is already inflight to the same public_key
+    /// [crate::Client::publish] is already inflight to the same public_key
     PublishInflight,
 
     #[error("SignedPacket's timestamp is not the most recent")]
