@@ -9,3 +9,6 @@ pub use dht::{Client, ClientBuilder, Settings};
 mod relay;
 #[cfg(target_arch = "wasm32")]
 pub use relay::{Client, ClientBuilder, Settings};
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
+pub mod relay;

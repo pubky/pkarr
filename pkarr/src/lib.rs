@@ -32,5 +32,7 @@ pub use client::{Client, ClientBuilder, Settings};
 pub use bytes;
 pub use simple_dns as dns;
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
+pub use client::relay;
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 pub use mainline;
