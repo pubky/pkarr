@@ -7,6 +7,7 @@
 mod base;
 mod client;
 mod error;
+mod extra;
 
 // Exports
 pub use base::cache::{Cache, CacheKey, InMemoryCache};

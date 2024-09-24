@@ -57,8 +57,12 @@ dht = ["dep:mainline", "flume"]
 ## Use [relay::Client]
 relay = ["dep:reqwest", "dep:tokio"]
 
+# Extra
+## 
+endpoints = []
+
 ## Use all features
-full = ["dht", "relay", "rand", "serde"]
+full = ["dht", "relay", "rand", "serde", "endpoints"]
 
 default = ["dht", "rand", "serde"]
 
