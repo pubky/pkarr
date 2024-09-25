@@ -1,6 +1,6 @@
 use std::{borrow::Cow, path::Path, time::Duration};
 
-use pkarr::{system_time, Cache, CacheKey, SignedPacket};
+use pkarr::{Cache, CacheKey, SignedPacket, Timestamp};
 
 use byteorder::LittleEndian;
 use heed::{types::U64, BoxedError, BytesDecode, BytesEncode, Database, Env, EnvOpenOptions};
@@ -45,7 +45,9 @@ impl<'a> BytesEncode<'a> for SignedPacketCodec {
 
         let mut vec = Vec::with_capacity(bytes.len() + 8);
 
-        vec.extend(<U64<LittleEndian>>::bytes_encode(signed_packet.last_seen())?.as_ref());
+        vec.extend(
+            <U64<LittleEndian>>::bytes_encode(&signed_packet.last_seen().into_u64())?.as_ref(),
+        );
         vec.extend(bytes);
 
         Ok(Cow::Owned(vec))
@@ -154,10 +156,10 @@ impl HeedCache {
             time_to_key.delete(&mut wtxn, &old_time)?;
         }
 
-        let new_time = system_time();
+        let new_time = Timestamp::now();
 
-        time_to_key.put(&mut wtxn, &new_time, key)?;
-        key_to_time.put(&mut wtxn, key, &new_time)?;
+        time_to_key.put(&mut wtxn, &new_time.into_u64(), key)?;
+        key_to_time.put(&mut wtxn, key, &new_time.into_u64())?;
 
         packets.put(&mut wtxn, key, signed_packet)?;
 
@@ -188,10 +190,10 @@ impl HeedCache {
                 time_to_key.delete(&mut wtxn, &time)?;
             };
 
-            let new_time = system_time();
+            let new_time = Timestamp::now();
 
-            time_to_key.put(&mut wtxn, &new_time, key)?;
-            key_to_time.put(&mut wtxn, key, &new_time)?;
+            time_to_key.put(&mut wtxn, &new_time.into_u64(), key)?;
+            key_to_time.put(&mut wtxn, key, &new_time.into_u64())?;
 
             wtxn.commit()?;
 

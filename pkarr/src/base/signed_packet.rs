@@ -14,7 +14,7 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr},
 };
 
-use crate::system_time;
+use crate::Timestamp;
 
 const DOT: char = '.';
 
@@ -60,7 +60,7 @@ impl Inner {
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
-    last_seen: u64,
+    last_seen: Timestamp,
 }
 
 impl SignedPacket {
@@ -102,16 +102,16 @@ impl SignedPacket {
 
         Ok(SignedPacket {
             inner: Inner::try_from_bytes(bytes)?,
-            last_seen: system_time(),
+            last_seen: Timestamp::now(),
         })
     }
 
     /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
     /// like ones stored on disk or in a database.
-    pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: u64) -> SignedPacket {
+    pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: impl Into<Timestamp>) -> SignedPacket {
         SignedPacket {
             inner: Inner::try_from_bytes(bytes).unwrap(),
-            last_seen,
+            last_seen: last_seen.into(),
         }
     }
 
@@ -172,7 +172,7 @@ impl SignedPacket {
             return Err(Error::PacketTooLarge(encoded_packet.len()));
         }
 
-        let timestamp = system_time();
+        let timestamp = Timestamp::now().into();
 
         let signature = keypair.sign(&signable(timestamp, &encoded_packet));
 
@@ -183,7 +183,7 @@ impl SignedPacket {
                 timestamp,
                 &encoded_packet,
             )?,
-            last_seen: system_time(),
+            last_seen: Timestamp::now(),
         })
     }
 
@@ -236,22 +236,22 @@ impl SignedPacket {
     }
 
     /// Unix last_seen time in microseconds
-    pub fn last_seen(&self) -> &u64 {
+    pub fn last_seen(&self) -> &Timestamp {
         &self.last_seen
     }
 
     // === Setters ===
 
     /// Set the [Self::last_seen] property
-    pub fn set_last_seen(&mut self, last_seen: &u64) {
-        self.last_seen = *last_seen;
+    pub fn set_last_seen(&mut self, last_seen: &Timestamp) {
+        self.last_seen = last_seen.into();
     }
 
     // === Public Methods ===
 
     /// Set the [Self::last_seen] to the current system time
     pub fn refresh(&mut self) {
-        self.last_seen = system_time();
+        self.last_seen = Timestamp::now();
     }
 
     /// Return whether this [SignedPacket] is more recent than the given one.
@@ -329,7 +329,7 @@ impl SignedPacket {
 
     /// Time since the [Self::last_seen] in seconds
     fn elapsed(&self) -> u32 {
-        ((system_time() - self.last_seen) / 1_000_000) as u32
+        ((Timestamp::now().into_u64() - self.last_seen.into_u64()) / 1_000_000) as u32
     }
 }
 
@@ -369,7 +369,7 @@ impl TryFrom<&MutableItem> for SignedPacket {
 
         Ok(Self {
             inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
-            last_seen: system_time(),
+            last_seen: Timestamp::now(),
         })
     }
 }
@@ -384,7 +384,7 @@ impl AsRef<[u8]> for SignedPacket {
 
 impl Clone for SignedPacket {
     fn clone(&self) -> Self {
-        Self::from_bytes_unchecked(self.as_bytes(), self.last_seen)
+        Self::from_bytes_unchecked(self.as_bytes(), &self.last_seen)
     }
 }
 
@@ -651,7 +651,7 @@ mod tests {
         let bytes = signed.as_bytes();
         let from_bytes = SignedPacket::from_bytes(bytes).unwrap();
         assert_eq!(signed.as_bytes(), from_bytes.as_bytes());
-        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, signed.last_seen);
+        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, &signed.last_seen);
         assert_eq!(signed.as_bytes(), from_bytes2.as_bytes());
 
         let public_key = keypair.public_key();
@@ -690,7 +690,7 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        signed.last_seen = system_time() - (20 * 1_000_000);
+        signed.last_seen -= 20 * 1_000_000_u64;
 
         assert!(
             signed.expires_in(30, u32::MAX) > 0,
@@ -716,7 +716,7 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        signed.last_seen = system_time() - (2 * (DEFAULT_MAXIMUM_TTL as u64) * 1_000_000);
+        signed.last_seen -= 2 * (DEFAULT_MAXIMUM_TTL as u64) * 1_000_000;
 
         assert!(
             signed.expires_in(0, DEFAULT_MAXIMUM_TTL) == 0,
@@ -748,7 +748,7 @@ mod tests {
 
         let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-        signed.last_seen = system_time() - (30 * 1_000_000);
+        signed.last_seen -= 30 * 1_000_000;
 
         assert_eq!(signed.fresh_resource_records("_foo").count(), 1);
     }

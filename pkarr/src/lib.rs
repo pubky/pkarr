@@ -13,7 +13,7 @@ mod extra;
 pub use base::cache::{Cache, CacheKey, InMemoryCache};
 pub use base::keys::{Keypair, PublicKey};
 pub use base::signed_packet::SignedPacket;
-pub use base::time::system_time;
+pub use base::timestamp::Timestamp;
 pub use error::{Error, Result};
 
 /// Default minimum TTL: 5 minutes

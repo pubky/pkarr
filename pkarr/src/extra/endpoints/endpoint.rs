@@ -7,7 +7,7 @@ use crate::{
 };
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 
-use crate::system_time;
+use crate::Timestamp;
 
 #[derive(Debug, Clone)]
 pub struct Endpoint {
@@ -45,7 +45,7 @@ impl Endpoint {
         }
 
         // Good enough random selection
-        let now = system_time();
+        let now = Timestamp::now().into_u64();
         let slice = &records[lowest_priority_index..];
         let index = if slice.is_empty() {
             0
