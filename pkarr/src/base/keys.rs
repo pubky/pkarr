@@ -2,7 +2,6 @@
 
 use crate::{Error, Result};
 use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
-#[cfg(feature = "rand")]
 use rand::rngs::OsRng;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -17,7 +16,6 @@ use serde::{Deserialize, Serialize};
 pub struct Keypair(SigningKey);
 
 impl Keypair {
-    #[cfg(feature = "rand")]
     pub fn random() -> Keypair {
         let mut csprng = OsRng;
         let signing_key: SigningKey = SigningKey::generate(&mut csprng);
