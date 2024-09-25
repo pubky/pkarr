@@ -12,49 +12,60 @@ use endpoint::Endpoint;
 
 const DEFAULT_MAX_CHAIN_LENGTH: u8 = 3;
 
-pub(crate) trait EndpointResolver {
-    async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>>;
+pub trait EndpointResolver {
+    fn resolve(
+        &self,
+        public_key: &PublicKey,
+    ) -> impl std::future::Future<Output = Result<Option<SignedPacket>>> + Send;
 
-    async fn resolve_endpoint(&self, qname: &str) -> Result<Endpoint> {
-        let target = qname;
-        // TODO: cache the result of this function?
+    fn resolve_endpoint(
+        &self,
+        qname: &str,
+    ) -> impl std::future::Future<Output = Result<Endpoint>> + Send
+    where
+        Self: std::marker::Sync,
+    {
+        async move {
+            let target = qname;
+            // TODO: cache the result of this function?
 
-        let is_svcb = target.starts_with('_');
+            let is_svcb = target.starts_with('_');
 
-        let mut step = 0;
-        let mut svcb: Option<Endpoint> = None;
+            let mut step = 0;
+            let mut svcb: Option<Endpoint> = None;
 
-        loop {
-            let current = svcb.clone().map_or(target.to_string(), |s| s.target);
-            if let Ok(tld) = PublicKey::try_from(current.clone()) {
-                if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
-                    if step >= DEFAULT_MAX_CHAIN_LENGTH {
+            loop {
+                let current = svcb.clone().map_or(target.to_string(), |s| s.target);
+                if let Ok(tld) = PublicKey::try_from(current.clone()) {
+                    if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
+                        if step >= DEFAULT_MAX_CHAIN_LENGTH {
+                            break;
+                        };
+                        step += 1;
+
+                        // Choose most prior SVCB record
+                        svcb = Endpoint::find(&signed_packet, &current, is_svcb);
+
+                        // TODO: support wildcard?
+                    } else {
                         break;
-                    };
-                    step += 1;
-
-                    // Choose most prior SVCB record
-                    svcb = Endpoint::find(&signed_packet, &current, is_svcb);
-
-                    // TODO: support wildcard?
+                    }
                 } else {
                     break;
                 }
-            } else {
-                break;
             }
-        }
 
-        if let Some(svcb) = svcb {
-            if PublicKey::try_from(svcb.target.as_str()).is_err() {
-                return Ok(svcb);
+            if let Some(svcb) = svcb {
+                if PublicKey::try_from(svcb.target.as_str()).is_err() {
+                    return Ok(svcb);
+                }
             }
-        }
 
-        Err(Error::Generic(format!(
-            "Failed to find an endopint {}",
-            target
-        )))
+            Err(Error::Generic(format!(
+                "Failed to find an endopint {}",
+                target
+            )))
+        }
     }
 }
 

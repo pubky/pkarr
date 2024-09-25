@@ -37,3 +37,6 @@ pub use simple_dns as dns;
 pub use client::relay;
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 pub use mainline;
+
+#[cfg(feature = "endpoints")]
+pub use extra::endpoints::EndpointResolver;

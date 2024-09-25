@@ -1,2 +1,2 @@
 #[cfg(feature = "endpoints")]
-mod endpoints;
+pub mod endpoints;
