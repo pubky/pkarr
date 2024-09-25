@@ -12,10 +12,10 @@ use crate::Timestamp;
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
 pub struct Endpoint {
-    pub(crate) target: String,
+    target: String,
     // public_key: PublicKey,
-    pub(crate) port: u16,
-    pub(crate) addrs: Vec<IpAddr>,
+    port: Option<u16>,
+    addrs: Vec<IpAddr>,
 }
 
 impl Endpoint {
@@ -72,33 +72,53 @@ impl Endpoint {
             Endpoint {
                 target,
                 // public_key: signed_packet.public_key(),
-                port: u16::from_be_bytes(
-                    s.get_param(SVCB::PORT)
-                        .unwrap_or_default()
-                        .try_into()
-                        .unwrap_or([0, 0]),
-                ),
+                port: s.get_param(SVCB::PORT).map(|bytes| {
+                    let mut arr = [0_u8; 2];
+                    arr[0] = bytes[0];
+                    arr[1] = bytes[1];
+
+                    u16::from_be_bytes(arr)
+                }),
                 addrs,
             }
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    /// Return the endpoint target, i.e the domain it points to
+    /// "." means this endpoint points to its own [Endpoint::public_key]
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    pub fn port(&self) -> Option<u16> {
+        self.port
+    }
+
+    // pub fn public_key(&self) ->  {
+    //     &self.target
+    // }
+
     /// Return an iterator of [SocketAddr], either by resolving the [Endpoint::target] using normal DNS,
     /// or, if the target is ".", return the [RData::A] or [RData::AAAA] records
     /// from the endpoint's [SignedPacket], if available.
-    pub fn to_socket_addrs(&self) -> std::io::Result<std::vec::IntoIter<SocketAddr>> {
+    pub fn to_socket_addrs(&self) -> Vec<SocketAddr> {
         if self.target == "." {
-            let port = self.port;
-            return Ok(self
+            let port = self.port.unwrap_or(0);
+
+            return self
                 .addrs
                 .iter()
                 .map(|addr| SocketAddr::from((*addr, port)))
-                .collect::<Vec<_>>()
-                .into_iter());
+                .collect::<Vec<_>>();
         }
 
-        format!("{}:{}", self.target, self.port).to_socket_addrs()
+        if cfg!(target_arch = "wasm32") {
+            vec![]
+        } else {
+            format!("{}:{}", self.target, self.port.unwrap_or(0))
+                .to_socket_addrs()
+                .map_or(vec![], |v| v.collect::<Vec<_>>())
+        }
     }
 }
 
@@ -213,9 +233,9 @@ mod tests {
 
         assert_eq!(endpoint.target, ".");
 
-        let addrs = endpoint.to_socket_addrs().unwrap();
+        let addrs = endpoint.to_socket_addrs();
         assert_eq!(
-            addrs.map(|s| s.to_string()).collect::<Vec<_>>(),
+            addrs.into_iter().map(|s| s.to_string()).collect::<Vec<_>>(),
             vec!["209.151.148.15:6881", "[2a05:d014:275:6201::64]:6881"]
         )
     }

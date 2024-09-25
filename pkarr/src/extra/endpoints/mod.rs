@@ -16,12 +16,9 @@ pub trait EndpointResolver {
     fn resolve(
         &self,
         public_key: &PublicKey,
-    ) -> impl std::future::Future<Output = Result<Option<SignedPacket>>> + Send;
+    ) -> impl std::future::Future<Output = Result<Option<SignedPacket>>>;
 
-    fn resolve_endpoint(
-        &self,
-        qname: &str,
-    ) -> impl std::future::Future<Output = Result<Endpoint>> + Send
+    fn resolve_endpoint(&self, qname: &str) -> impl std::future::Future<Output = Result<Endpoint>>
     where
         Self: std::marker::Sync,
     {
@@ -35,7 +32,9 @@ pub trait EndpointResolver {
             let mut svcb: Option<Endpoint> = None;
 
             loop {
-                let current = svcb.clone().map_or(target.to_string(), |s| s.target);
+                let current = svcb
+                    .clone()
+                    .map_or(target.to_string(), |s| s.target().to_string());
                 if let Ok(tld) = PublicKey::try_from(current.clone()) {
                     if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
                         if step >= DEFAULT_MAX_CHAIN_LENGTH {
@@ -56,7 +55,7 @@ pub trait EndpointResolver {
             }
 
             if let Some(svcb) = svcb {
-                if PublicKey::try_from(svcb.target.as_str()).is_err() {
+                if PublicKey::try_from(svcb.target()).is_err() {
                     return Ok(svcb);
                 }
             }
@@ -165,9 +164,10 @@ mod tests {
         let tld = generate(&client, 3, 3, Some("example.com".to_string())).await;
 
         let endpoint = client.resolve_endpoint(&tld.to_string()).await.unwrap();
-        assert_eq!(endpoint.target, "example.com");
+        assert_eq!(endpoint.target(), "example.com");
     }
 
+    // TODO: Test max_chain_exceeded
     // #[tokio::test]
     // async fn max_chain_exceeded() {
     //     let testnet = Testnet::new(3);
@@ -199,12 +199,11 @@ mod tests {
         let tld = generate(&client, 3, 3, None).await;
 
         let endpoint = client.resolve_endpoint(&tld.to_string()).await.unwrap();
-        assert_eq!(endpoint.target, ".");
-        assert_eq!(endpoint.port, 3000);
+        assert_eq!(endpoint.target(), ".");
+        assert_eq!(endpoint.port(), Some(3000));
         assert_eq!(
             endpoint
                 .to_socket_addrs()
-                .unwrap()
                 .into_iter()
                 .map(|s| s.to_string())
                 .collect::<Vec<String>>(),
