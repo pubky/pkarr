@@ -83,6 +83,7 @@ impl Endpoint {
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     /// Return an iterator of [SocketAddr], either by resolving the [Endpoint::target] using normal DNS,
     /// or, if the target is ".", return the [RData::A] or [RData::AAAA] records
     /// from the endpoint's [SignedPacket], if available.

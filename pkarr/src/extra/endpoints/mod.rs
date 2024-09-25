@@ -8,7 +8,7 @@ use crate::{
     Client, PublicKey, SignedPacket,
 };
 
-use endpoint::Endpoint;
+pub use endpoint::Endpoint;
 
 const DEFAULT_MAX_CHAIN_LENGTH: u8 = 3;
 

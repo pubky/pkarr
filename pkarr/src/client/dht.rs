@@ -199,7 +199,7 @@ impl Client {
     ///
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
-    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
@@ -225,7 +225,7 @@ impl Client {
     ///
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
-    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         Ok(self.resolve_inner(public_key)?.recv_async().await.ok())
     }
@@ -251,7 +251,7 @@ impl Client {
     ///
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
-    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
@@ -277,7 +277,7 @@ impl Client {
     ///
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
-    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     pub fn resolve_sync(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         Ok(self.resolve_inner(public_key)?.recv().ok())
     }

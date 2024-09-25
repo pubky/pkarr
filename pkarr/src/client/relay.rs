@@ -152,7 +152,7 @@ impl Client {
     /// # Errors
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::RelayError] from the last responding relay, if all relays
-    /// responded with non-2xx status codes.
+    ///   responded with non-2xx status codes.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let public_key = signed_packet.public_key();
 
@@ -174,8 +174,8 @@ impl Client {
     /// # Errors
     ///
     /// - Returns [Error::RelayError] if the relay responded with a status >= 400
-    /// (except 404 in which case you should receive Ok(None)) or something wrong
-    /// with the transport, transparent from [reqwest::Error].
+    ///   (except 404 in which case you should receive Ok(None)) or something wrong
+    ///   with the transport, transparent from [reqwest::Error].
     /// - Returns [Error::IO] if something went wrong while reading the payload.
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         let cached_packet = match self.get_from_cache(public_key) {

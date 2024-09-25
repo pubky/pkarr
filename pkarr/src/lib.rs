@@ -39,4 +39,4 @@ pub use client::relay;
 pub use mainline;
 
 #[cfg(feature = "endpoints")]
-pub use extra::endpoints::EndpointResolver;
+pub use extra::endpoints::{Endpoint, EndpointResolver};
