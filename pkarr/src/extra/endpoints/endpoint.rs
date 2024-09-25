@@ -10,6 +10,7 @@ use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use crate::Timestamp;
 
 #[derive(Debug, Clone)]
+/// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
 pub struct Endpoint {
     pub(crate) target: String,
     // public_key: PublicKey,
@@ -82,6 +83,9 @@ impl Endpoint {
         })
     }
 
+    /// Return an iterator of [SocketAddr], either by resolving the [Endpoint::target] using normal DNS,
+    /// or, if the target is ".", return the [RData::A] or [RData::AAAA] records
+    /// from the endpoint's [SignedPacket], if available.
     pub fn to_socket_addrs(&self) -> std::io::Result<std::vec::IntoIter<SocketAddr>> {
         if self.target == "." {
             let port = self.port;

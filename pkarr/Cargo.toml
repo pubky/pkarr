@@ -25,7 +25,6 @@ document-features = "0.2.8"
 serde = { version = "1.0.209", features = ["derive"], optional = true }
 rand = { version = "0.8.5", optional = true }
 
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Dht client dependencies:
 mainline = { version = "2.0.1", optional = true }
@@ -65,7 +64,7 @@ endpoints = []
 ## Use all features
 full = ["dht", "relay", "rand", "serde", "endpoints"]
 
-default = ["dht", "rand", "serde"]
+default = ["full"]
 
 [package.metadata.docs.rs]
 all-features = true
