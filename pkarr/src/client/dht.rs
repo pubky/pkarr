@@ -151,7 +151,7 @@ impl Client {
 
         let rpc = Rpc::new(&settings.dht)?;
 
-        let local_addr = rpc.local_addr();
+        let local_addr = rpc.local_addr()?;
 
         let cache = settings
             .cache
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn shutdown_sync() {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3).unwrap();
 
         let mut a = Client::builder().testnet(&testnet).build().unwrap();
 
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn publish_resolve_sync() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder().testnet(&testnet).build().unwrap();
 
@@ -562,7 +562,7 @@ mod tests {
 
     #[test]
     fn thread_safe_sync() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder().testnet(&testnet).build().unwrap();
 
@@ -596,7 +596,7 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown() {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3).unwrap();
 
         let mut a = Client::builder().testnet(&testnet).build().unwrap();
 
@@ -609,7 +609,7 @@ mod tests {
 
     #[tokio::test]
     async fn publish_resolve() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder().testnet(&testnet).build().unwrap();
 
@@ -639,7 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn thread_safe() {
-        let testnet = Testnet::new(10);
+        let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder().testnet(&testnet).build().unwrap();
 
