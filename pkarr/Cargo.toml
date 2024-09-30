@@ -20,14 +20,15 @@ dyn-clone = "1.0.17"
 once_cell = {version = "1.19.0", default-features = false }
 lru = { version = "0.12.3", default-features = false }
 document-features = "0.2.8"
+rand = "0.8.5"
 
 # optional dependencies
 serde = { version = "1.0.209", features = ["derive"], optional = true }
-rand = { version = "0.8.5", optional = true }
+futures = { version = "0.3.30", optional = true, default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Dht client dependencies:
-mainline = { version = "3.0.0", optional = true }
+mainline = { git = "https://github.com/pubky/mainline", branch = "dev", optional = true }
 flume = { version = "0.11.0", features = ["select", "eventual-fairness", "async"], default-features = false , optional = true }
 tokio = { version = "1.40.0", optional = true }
 reqwest = { version = "0.12.7", features = ["rustls-tls"], optional = true }
@@ -58,13 +59,16 @@ dht = ["dep:mainline", "flume"]
 relay = ["dep:reqwest", "dep:tokio"]
 
 # Extra
-## 
-endpoints = []
+## Use [Client::resolve_endpoints] and [Client::resolve_https_endpoints]
+endpoints = ["dep:futures"]
 
 ## Use all features
-full = ["dht", "relay", "rand", "serde", "endpoints"]
+full = ["dht", "relay", "serde", "endpoints"]
 
-default = ["full"]
+default = ["dht", "relay", "serde"]
 
 [package.metadata.docs.rs]
 all-features = true
+
+# [lints.clippy]
+# unwrap_used = "deny"

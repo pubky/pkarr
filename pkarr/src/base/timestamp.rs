@@ -14,7 +14,7 @@ use rand::Rng;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::SystemTime;
 
-/// ~4% chance of none of 10 clocks have matching id.
+/// ~0.4% chance of none of 10 clocks have matching id.
 const CLOCK_MASK: u64 = (1 << 8) - 1;
 const TIME_MASK: u64 = !0 >> 8;
 

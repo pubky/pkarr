@@ -231,18 +231,13 @@ impl Client {
     }
 
     /// Shutdown the actor thread loop.
-    pub async fn shutdown(&mut self) -> Result<()> {
+    pub async fn shutdown(&mut self) {
         let (sender, receiver) = flume::bounded(1);
 
-        self.sender
-            .send(ActorMessage::Shutdown(sender))
-            .map_err(|_| Error::DhtIsShutdown)?;
-
-        receiver.recv_async().await?;
+        let _ = self.sender.send(ActorMessage::Shutdown(sender));
+        let _ = receiver.recv_async().await;
 
         self.address = None;
-
-        Ok(())
     }
 
     // === Sync ===
@@ -283,18 +278,13 @@ impl Client {
     }
 
     /// Shutdown the actor thread loop.
-    pub fn shutdown_sync(&mut self) -> Result<()> {
+    pub fn shutdown_sync(&mut self) {
         let (sender, receiver) = flume::bounded(1);
 
-        self.sender
-            .send(ActorMessage::Shutdown(sender))
-            .map_err(|_| Error::DhtIsShutdown)?;
-
-        receiver.recv()?;
+        let _ = self.sender.send(ActorMessage::Shutdown(sender));
+        let _ = receiver.recv();
 
         self.address = None;
-
-        Ok(())
     }
 
     // === Private Methods ===
@@ -426,8 +416,6 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
 
         // === Receive and handle incoming messages ===
         if let Some(ReceivedFrom { from, message }) = &report.received_from {
-            // match &report.received_from {
-            // Some(ReceivedFrom { from, message }) => match message {
             match message {
                 // === Responses ===
                 ReceivedMessage::QueryResponse(response) => {
@@ -501,7 +489,7 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
         }
     }
 
-    debug!("Client main terminated");
+    debug!("Client main loop terminated");
 }
 
 pub enum ActorMessage {
@@ -525,7 +513,7 @@ mod tests {
 
         assert_ne!(a.local_addr(), None);
 
-        a.shutdown_sync().unwrap();
+        a.shutdown_sync();
 
         assert_eq!(a.local_addr(), None);
     }
@@ -602,7 +590,7 @@ mod tests {
 
         assert_ne!(a.local_addr(), None);
 
-        a.shutdown().await.unwrap();
+        a.shutdown().await;
 
         assert_eq!(a.local_addr(), None);
     }
