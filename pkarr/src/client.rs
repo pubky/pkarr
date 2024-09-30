@@ -379,8 +379,6 @@ fn run(
 
         // === Receive and handle incoming messages ===
         if let Some(ReceivedFrom { from, message }) = &report.received_from {
-            // match &report.received_from {
-            // Some(ReceivedFrom { from, message }) => match message {
             match message {
                 // === Responses ===
                 ReceivedMessage::QueryResponse(response) => {
@@ -454,6 +452,7 @@ fn run(
         }
     }
 
+    dbg!("PkarrClient main loop terminated");
     debug!("PkarrClient main terminated");
 }
 

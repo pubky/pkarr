@@ -45,7 +45,14 @@ impl PkarrClientAsync {
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
-        match self.0.publish_inner(signed_packet)?.recv_async().await {
+        let result = self.0.publish_inner(signed_packet)?.recv_async().await;
+
+        if result.is_err() {
+            dbg!(&result);
+            println!("{:?}", &result);
+        }
+
+        match result {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
                 mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
