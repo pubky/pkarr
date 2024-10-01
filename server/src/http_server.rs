@@ -78,7 +78,7 @@ impl HttpServer {
 pub fn create_app(state: AppState, rate_limiter: IpRateLimiter) -> Router {
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::PUT])
-        .allow_origin(cors::Any);
+        .allow_any_origin();
 
     let router = Router::new()
         .route("/:key", get(crate::handlers::get).put(crate::handlers::put))
