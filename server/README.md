@@ -22,3 +22,9 @@ Run with an optional config file
 ```bash
 ../target/release/pkarr-server --config=./config.toml
 ```
+
+You can customize logging levels
+
+```bash
+../target/release/pkarr-server --config=./config.toml -t=pkarr=debug,tower_http=debug
+```
