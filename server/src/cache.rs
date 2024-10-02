@@ -72,9 +72,12 @@ pub struct HeedPkarrCache {
 
 impl HeedPkarrCache {
     pub fn new(env_path: &Path, capacity: usize) -> Result<Self> {
+        // Page aligned but more than enough bytes for `capacity` many SignedPacket
+        let map_size = (((capacity * 1112) + 4095) / 4096) * 4096;
+
         let env = unsafe {
             EnvOpenOptions::new()
-                .map_size(10 * 1024 * 1024) // 10MB
+                .map_size(map_size)
                 .max_dbs(3)
                 .open(env_path)?
         };
