@@ -69,20 +69,19 @@ pub async fn get(
                 })?
         {
             Some(signed_packet)
-        } else if let Some(signed_packet) = state
-            .client
-            .cache()
-            .get_read_only(&MutableItem::target_from_key(public_key.as_bytes(), &None))
-        {
+        } else {
             // Respond with what we have, even if expired.
             // TODO: move this fallback to the client itself, closing #67
-            Some(signed_packet)
-        } else {
-            None
+            state
+                .client
+                .cache()
+                .get_read_only(&MutableItem::target_from_key(public_key.as_bytes(), &None))
         }
     };
 
     if let Some(signed_packet) = signed_packet {
+        tracing::debug!(?public_key, "cache hit responding with packet!");
+
         let body = signed_packet.to_relay_payload();
 
         let ttl = signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL);
