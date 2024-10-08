@@ -9,6 +9,8 @@ All notable changes to pkarr client and server will be documented in this file.
 - Add strict monotonic unix `Timestamp`.
 - Impl `PartialEq, Eq` for `SignedPacket`.
 - Impl `From<PublicKey>` for `CacheKey`.
+- Add `SignedPacket::serialize` and `SignedPacket::deserialize`.
+- Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.
 
 ### Changed
 

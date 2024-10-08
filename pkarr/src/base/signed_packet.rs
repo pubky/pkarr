@@ -14,6 +14,9 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr},
 };
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 use crate::Timestamp;
 
 const DOT: char = '.';
@@ -49,7 +52,7 @@ impl Inner {
         })?)
     }
 
-    fn try_from_bytes(bytes: &Bytes) -> Result<Self> {
+    fn try_from_bytes(bytes: Bytes) -> Result<Self> {
         Ok(Inner::try_new(bytes.to_owned(), |bytes| {
             Packet::parse(&bytes[104..])
         })?)
@@ -101,7 +104,7 @@ impl SignedPacket {
         public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
 
         Ok(SignedPacket {
-            inner: Inner::try_from_bytes(bytes)?,
+            inner: Inner::try_from_bytes(bytes.to_owned())?,
             last_seen: Timestamp::now(),
         })
     }
@@ -110,7 +113,7 @@ impl SignedPacket {
     /// like ones stored on disk or in a database.
     pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: impl Into<Timestamp>) -> SignedPacket {
         SignedPacket {
-            inner: Inner::try_from_bytes(bytes).unwrap(),
+            inner: Inner::try_from_bytes(bytes.to_owned()).unwrap(),
             last_seen: last_seen.into(),
         }
     }
@@ -193,6 +196,37 @@ impl SignedPacket {
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
     pub fn as_bytes(&self) -> &Bytes {
         self.inner.borrow_owner()
+    }
+
+    /// Returns a serialized representation of this [SignedPacket] including
+    /// the [SignedPacket::last_seen] timestamp followed by the returned value from [SignedPacket::as_bytes].
+    pub fn serialize(&self) -> Bytes {
+        let mut bytes = Vec::with_capacity(SignedPacket::MAX_BYTES as usize);
+        bytes.extend_from_slice(&self.last_seen.to_bytes());
+        bytes.extend_from_slice(self.as_bytes());
+
+        bytes.into()
+    }
+
+    /// Deserialize [SignedPacket] from a serialized version for persistent storage using
+    /// [SignedPacket::serialize].
+    ///
+    /// If deserializing the [SignedPacket::last_seen] failed, or is far in the future,
+    /// it will be unwrapped to default, i.e the UNIX_EPOCH.
+    ///
+    /// That is useful for backwards compatibility if you
+    /// ever stored the [SignedPacket::last_seen] as Little Endian in previous versions.
+    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
+        let mut last_seen = Timestamp::try_from(&bytes[0..8]).unwrap_or_default();
+
+        if last_seen > (&Timestamp::now() + 60_000_000) {
+            last_seen = Timestamp::from(0)
+        }
+
+        Ok(SignedPacket {
+            inner: Inner::try_from_bytes(bytes[8..].to_owned().into())?,
+            last_seen,
+        })
     }
 
     /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
@@ -339,6 +373,29 @@ fn signable(timestamp: u64, v: &Bytes) -> Bytes {
     signable.into()
 }
 
+fn normalize_name(origin: &str, name: String) -> String {
+    let name = if name.ends_with(DOT) {
+        name[..name.len() - 1].to_string()
+    } else {
+        name
+    };
+
+    let parts: Vec<&str> = name.split('.').collect();
+    let last = *parts.last().unwrap_or(&"");
+
+    if last == origin {
+        // Already normalized.
+        return name.to_string();
+    }
+
+    if last == "@" || last.is_empty() {
+        // Shorthand of origin
+        return origin.to_string();
+    }
+
+    format!("{}.{}", name, origin)
+}
+
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 use mainline::MutableItem;
 
@@ -429,27 +486,30 @@ impl Display for SignedPacket {
     }
 }
 
-fn normalize_name(origin: &str, name: String) -> String {
-    let name = if name.ends_with(DOT) {
-        name[..name.len() - 1].to_string()
-    } else {
-        name
-    };
+// === Serialization ===
 
-    let parts: Vec<&str> = name.split('.').collect();
-    let last = *parts.last().unwrap_or(&"");
-
-    if last == origin {
-        // Already normalized.
-        return name.to_string();
+#[cfg(feature = "serde")]
+impl Serialize for SignedPacket {
+    /// Serialize a [SignedPacket] for persistent storage.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.serialize().serialize(serializer)
     }
+}
 
-    if last == "@" || last.is_empty() {
-        // Shorthand of origin
-        return origin.to_string();
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for SignedPacket {
+    /// Deserialize a [SignedPacket] from persistent storage.
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
+
+        SignedPacket::deserialize(&bytes).map_err(serde::de::Error::custom)
     }
-
-    format!("{}.{}", name, origin)
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -822,5 +882,44 @@ mod tests {
             signed.ttl(0, DEFAULT_MAXIMUM_TTL * 8),
             DEFAULT_MAXIMUM_TTL * 2
         );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde() {
+        use postcard::{from_bytes, to_allocvec};
+
+        let keypair = Keypair::random();
+
+        let mut packet = Packet::new_reply(0);
+        packet.answers.push(ResourceRecord::new(
+            Name::new("_derp_region.iroh.").unwrap(),
+            simple_dns::CLASS::IN,
+            30,
+            RData::A(A {
+                address: Ipv4Addr::new(1, 1, 1, 1).into(),
+            }),
+        ));
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        let serialized = to_allocvec(&signed_packet).unwrap();
+        let deserialized: SignedPacket = from_bytes(&serialized).unwrap();
+
+        assert_eq!(deserialized, signed_packet);
+
+        // Backwards compat
+        {
+            let mut bytes = vec![];
+
+            bytes.extend_from_slice(&[210, 1]);
+            bytes.extend_from_slice(&signed_packet.last_seen().into_u64().to_le_bytes());
+            bytes.extend_from_slice(signed_packet.as_bytes());
+
+            let deserialized: SignedPacket = from_bytes(&bytes).unwrap();
+
+            assert_eq!(deserialized.as_bytes(), signed_packet.as_bytes());
+            assert_eq!(deserialized.last_seen(), &Timestamp::from(0));
+        }
     }
 }
