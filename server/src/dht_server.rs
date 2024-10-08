@@ -21,13 +21,13 @@ use pkarr::{
 
 use tracing::debug;
 
-use crate::{cache::HeedCache, rate_limiting::IpRateLimiter};
+use crate::rate_limiting::IpRateLimiter;
 
 /// DhtServer with Rate limiting
 pub struct DhtServer {
     inner: mainline::server::DhtServer,
     resolvers: Option<Vec<SocketAddr>>,
-    cache: Box<crate::cache::HeedCache>,
+    cache: Box<pkarr::LmdbCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
     rate_limiter: IpRateLimiter,
@@ -41,7 +41,7 @@ impl Debug for DhtServer {
 
 impl DhtServer {
     pub fn new(
-        cache: Box<HeedCache>,
+        cache: Box<pkarr::LmdbCache>,
         resolvers: Option<Vec<String>>,
         minimum_ttl: u32,
         maximum_ttl: u32,

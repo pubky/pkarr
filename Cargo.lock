@@ -1468,6 +1468,7 @@ name = "pkarr"
 version = "3.0.0"
 dependencies = [
  "base32",
+ "byteorder",
  "bytes",
  "clap",
  "document-features",
@@ -1476,6 +1477,7 @@ dependencies = [
  "flume",
  "futures",
  "getrandom",
+ "heed",
  "js-sys",
  "lru",
  "mainline",
@@ -1501,12 +1503,10 @@ dependencies = [
  "anyhow",
  "axum",
  "axum-server",
- "byteorder",
  "bytes",
  "clap",
  "dirs-next",
  "governor",
- "heed",
  "http",
  "pkarr",
  "rustls",

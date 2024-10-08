@@ -41,3 +41,6 @@ pub use mainline;
 
 #[cfg(feature = "endpoints")]
 pub use extra::endpoints::{Endpoint, EndpointResolver};
+
+#[cfg(feature = "lmdb-cache")]
+pub use extra::lmdb_cache::LmdbCache;

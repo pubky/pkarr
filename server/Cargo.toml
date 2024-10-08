@@ -20,10 +20,8 @@ thiserror = "1.0.49"
 bytes = "1.7.1"
 tower_governor = "0.4.2"
 governor = "0.6.3"
-heed = { version = "0.20.0", default-features = false }
-byteorder = "1.5.0"
 serde = { version = "1.0.199", features = ["derive"] }
 toml = "0.8.12"
 clap = { version = "4.5.1", features = ["derive"] }
 dirs-next = "2.0.0"
-pkarr = { version = "3.0.0", path = "../pkarr" }
+pkarr = { version = "3.0.0", path = "../pkarr", features = ["dht", "lmdb-cache"] }

@@ -1,4 +1,3 @@
-mod cache;
 mod config;
 mod dht_server;
 mod error;
@@ -7,15 +6,13 @@ mod http_server;
 mod rate_limiting;
 
 use anyhow::Result;
-use cache::HeedCache;
 use clap::Parser;
 use config::Config;
-use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
 use http_server::HttpServer;
-use pkarr::{mainline::dht::DhtSettings, Client};
+use pkarr::{mainline::dht::DhtSettings, Client, LmdbCache};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -46,9 +43,7 @@ async fn main() -> Result<()> {
 
     debug!(?config, "Pkarr server config");
 
-    let env_path = &config.cache_path()?;
-    fs::create_dir_all(env_path)?;
-    let cache = Box::new(HeedCache::new(env_path, config.cache_size()).unwrap());
+    let cache = Box::new(LmdbCache::new(&config.cache_path()?, config.cache_size())?);
 
     let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
