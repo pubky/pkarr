@@ -158,7 +158,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_endpoints() {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3).unwrap();
         let client = Client::builder().testnet(&testnet).build().unwrap();
 
         let tld = generate(&client, 3, 3, Some("example.com".to_string())).await;
@@ -193,7 +193,7 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_addresses() {
-        let testnet = Testnet::new(3);
+        let testnet = Testnet::new(3).unwrap();
         let client = Client::builder().testnet(&testnet).build().unwrap();
 
         let tld = generate(&client, 3, 3, None).await;

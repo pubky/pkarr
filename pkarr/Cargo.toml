@@ -71,4 +71,4 @@ default = ["dht", "relay", "serde"]
 all-features = true
 
 # [lints.clippy]
-# unwrap_used = "deny"
+unwrap_used = "deny"
