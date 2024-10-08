@@ -7,17 +7,17 @@ The simplest possible streamlined integration between the Domain Name System and
 Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
-- To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT) (through a relay if necessary).
-- To resolve some key's resources, applications query the DHT directly, or through a relay, and verify the signature themselves. 
-- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT.
-- Clients and Pkarr servers cache records extensively using the `TTL` values in them to minimize DHT traffic as much as possible for improved scalability and reliability. 
-- Existing applications unaware of Pkarr can still resolve Pkarr TLDs, if the DNS server they query recognize Pkarr TLDs and use Mainline as a parallel root server to ICANN. 
+- To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
+- To resolve some key's resources, applications query the DHT directly, or through a [relay](./design/relays.md), and verify the signature themselves. 
+- Clients and Pkarr servers cache records extensively and minimize DHT traffic as much as possible for improved scalability. 
+- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT. Also Pkarr servers could republish records recently requested, to keep popular records alive too.
+- Optional: Existing applications unaware of Pkarr can still function if the user added a Pkarr-aware DNS servers to their operating system DNS servers. 
 
 ## DEMO 
 
 Try the [web app demo](https://app.pkarr.org).
 
-Or if you prefer Rust [Examples](./pkarr/examples) 
+Or if you prefer Rust [Examples](./pkarr/examples/README.md) 
 
 ## TOC
 - [Architecture](#Architecture)
