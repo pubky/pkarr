@@ -178,12 +178,24 @@ impl Client {
     ///   with the transport, transparent from [reqwest::Error].
     /// - Returns [Error::IO] if something went wrong while reading the payload.
     pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        let cached_packet = match self.get_from_cache(public_key) {
-            None => None,
-            Some(signed_packet) => return Ok(Some(signed_packet)),
-        };
+        if let Some(cached_packet) = self.cache.get(&public_key.as_ref().into()) {
+            let expires_in = cached_packet.expires_in(self.minimum_ttl, self.maximum_ttl);
 
-        self.race_resolve(public_key, cached_packet).await
+            if expires_in > 0 {
+                debug!(expires_in, "Have fresh signed_packet in cache.");
+                return Ok(Some(cached_packet));
+            }
+
+            debug!(expires_in, "Have expired signed_packet in cache.");
+
+            return Ok(self
+                .race_resolve(public_key, Some(cached_packet.clone()))
+                .await?
+                .or(Some(cached_packet)));
+        };
+        debug!("Cache miss");
+
+        self.race_resolve(public_key, None).await
     }
 
     // === Native Race implementation ===
@@ -315,26 +327,6 @@ impl Client {
             })
     }
 
-    fn get_from_cache(&self, public_key: &PublicKey) -> Option<SignedPacket> {
-        let cached_packet = self.cache.get(&public_key.as_ref().into());
-
-        if let Some(cached) = cached_packet {
-            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
-
-            if expires_in > 0 {
-                debug!(expires_in, "Have fresh signed_packet in cache.");
-
-                return Some(cached.clone());
-            }
-
-            debug!(expires_in, "Have expired signed_packet in cache.");
-        } else {
-            debug!("Cache miss");
-        };
-
-        None
-    }
-
     async fn resolve_from_relay(
         &self,
         relay: &str,
@@ -458,5 +450,34 @@ mod tests {
         let resolved = client.resolve(&keypair.public_key()).await.unwrap();
 
         assert!(resolved.is_none());
+    }
+
+    #[tokio::test]
+    async fn return_expired_packet_fallback() {
+        let keypair = Keypair::random();
+
+        let mut server = mockito::Server::new_async().await;
+
+        let path = format!("/{}", keypair.public_key());
+
+        server.mock("GET", path.as_str()).with_status(404).create();
+
+        let relays = vec![server.url()];
+        let client = Client::builder()
+            .relays(relays)
+            .maximum_ttl(0)
+            .build()
+            .unwrap();
+
+        let packet = dns::Packet::new_reply(0);
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        client
+            .cache()
+            .put(&keypair.public_key().into(), &signed_packet);
+
+        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+
+        assert_eq!(resolved, Some(signed_packet));
     }
 }

@@ -26,7 +26,7 @@ self_cell!(
         dependent: Packet,
     }
 
-    impl{Debug}
+    impl{Debug, PartialEq, Eq}
 );
 
 impl Inner {
@@ -56,7 +56,7 @@ impl Inner {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
@@ -569,6 +569,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "dht")]
     #[test]
     fn to_mutable() {
         let keypair = Keypair::random();

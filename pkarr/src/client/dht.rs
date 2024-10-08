@@ -412,7 +412,15 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
 
         // === Drop senders to done queries ===
         for id in &report.done_get_queries {
-            senders.remove(id);
+            if let Some(senders) = senders.remove(id) {
+                if let Some(cached) = cache.get(id.as_bytes()) {
+                    debug!(public_key = ?cached.public_key(), "Returning expired cache as a fallback");
+                    // Send cached packets if available
+                    for sender in senders {
+                        let _ = sender.send(cached.clone());
+                    }
+                }
+            };
         }
 
         // === Receive and handle incoming messages ===
@@ -502,6 +510,8 @@ pub enum ActorMessage {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use mainline::Testnet;
 
     use super::*;
@@ -663,14 +673,29 @@ mod tests {
 
     #[tokio::test]
     async fn return_expired_packet_fallback() {
-        let client = Client::builder().build().unwrap();
+        let testnet = Testnet::new(10).unwrap();
+
+        let client = Client::builder()
+            .testnet(&testnet)
+            .dht_settings(DhtSettings {
+                request_timeout: Duration::from_millis(10).into(),
+                ..Default::default()
+            })
+            // Everything is expired
+            .maximum_ttl(0)
+            .build()
+            .unwrap();
 
         let keypair = Keypair::random();
-        let mut packet = dns::Packet::new_reply(0);
+        let packet = dns::Packet::new_reply(0);
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         client
             .cache()
-            .put(keypair.public_key().into(), &signed_packet);
+            .put(&keypair.public_key().into(), &signed_packet);
+
+        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+
+        assert_eq!(resolved, Some(signed_packet));
     }
 }

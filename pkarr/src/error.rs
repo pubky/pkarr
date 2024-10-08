@@ -52,7 +52,7 @@ pub enum Error {
     PacketTooLarge(usize),
 
     // === Flume errors ===
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
     #[error(transparent)]
     /// Transparent [flume::RecvError]
     Receive(#[from] flume::RecvError),

@@ -25,6 +25,7 @@ rand = "0.8.5"
 # optional dependencies
 serde = { version = "1.0.209", features = ["derive"], optional = true }
 futures = { version = "0.3.30", optional = true, default-features = false }
+sha1_smol = { version = "1.0.1", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Dht client dependencies:
@@ -38,6 +39,7 @@ js-sys = "0.3.69"
 futures = "0.3.30" 
 getrandom = { version = "0.2", features = ["js"] }
 reqwest = "0.12.7"
+sha1_smol = "1.0.1"
 
 [dev-dependencies]
 postcard = { version = "1.0.10", features = ["alloc"] }
@@ -56,7 +58,7 @@ serde = ["dep:serde"]
 ## Use [dht::Client]
 dht = ["dep:mainline", "flume"]
 ## Use [relay::Client]
-relay = ["dep:reqwest", "dep:tokio"]
+relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol"]
 
 # Extra
 ## Use [Client::resolve_endpoints] and [Client::resolve_https_endpoints]
@@ -65,7 +67,7 @@ endpoints = ["dep:futures"]
 ## Use all features
 full = ["dht", "relay", "serde", "endpoints"]
 
-default = ["dht", "relay", "serde"]
+default = ["dht", "serde"]
 
 [package.metadata.docs.rs]
 all-features = true

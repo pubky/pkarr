@@ -6,24 +6,38 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
-use crate::{PublicKey, SignedPacket};
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+use mainline::MutableItem;
+
+use crate::SignedPacket;
 
 /// The sha1 hash of the [PublicKey] used as the key in [Cache].
 pub type CacheKey = [u8; 20];
 
-impl From<&PublicKey> for CacheKey {
-    /// Take the first 20 bytes from a [PublicKey] instead of hashing with sha1.
-    /// Useful when you don't want to import Sha1 hasher, or mainline crate.
-    ///
-    /// Risks evicting SignedPackets from the cache if there ar two packets whose
-    /// PublicKey share the first 20 bytes.
-    ///
-    /// Don't use both PublicKey and SignedPacket::target() to store packets,
-    /// otherwise you will end up duplicating and wasting cache space.
-    fn from(public_key: &PublicKey) -> CacheKey {
-        let cache_key: [u8; 20] = public_key.as_bytes()[0..20].try_into().unwrap();
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+impl From<&crate::PublicKey> for CacheKey {
+    fn from(public_key: &crate::PublicKey) -> CacheKey {
+        MutableItem::target_from_key(public_key.as_bytes(), &None).into()
+    }
+}
 
-        cache_key
+#[cfg(any(target_arch = "wasm32", all(not(feature = "dht"), feature = "relay")))]
+impl From<&crate::PublicKey> for CacheKey {
+    fn from(public_key: &crate::PublicKey) -> CacheKey {
+        let mut encoded = vec![];
+
+        encoded.extend(public_key);
+
+        let mut hasher = Sha1::new();
+        hasher.update(&encoded);
+        hasher.digest().bytes()
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", feature = "dht", feature = "relay"))]
+impl From<crate::PublicKey> for CacheKey {
+    fn from(value: crate::PublicKey) -> Self {
+        (&value).into()
     }
 }
 

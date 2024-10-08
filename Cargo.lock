@@ -1486,6 +1486,7 @@ dependencies = [
  "reqwest",
  "self_cell",
  "serde",
+ "sha1_smol",
  "simple-dns",
  "thiserror",
  "tokio",

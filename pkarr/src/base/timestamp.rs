@@ -302,6 +302,7 @@ mod tests {
         assert_eq!(decoded, timestamp)
     }
 
+    #[cfg(feature = "serde")]
     #[test]
     fn serde() {
         let timestamp = Timestamp::now();
