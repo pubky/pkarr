@@ -4,7 +4,6 @@ use axum::{extract::State, response::IntoResponse};
 
 use bytes::Bytes;
 use http::{header, StatusCode};
-use pkarr::mainline::MutableItem;
 use tracing::error;
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
@@ -51,35 +50,22 @@ pub async fn get(
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let signed_packet = {
-        if let Some(signed_packet) =
-            state
-                .client
-                .resolve(&public_key)
-                .await
-                .map_err(|error| match error {
-                    pkarr::Error::DhtIsShutdown => {
-                        error!("Dht is shutdown");
-                        Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
-                    }
-                    error => {
-                        error!(?error, "Unexpected error");
-                        Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
-                    }
-                })?
-        {
-            Some(signed_packet)
-        } else {
-            // Respond with what we have, even if expired.
-            // TODO: move this fallback to the client itself, closing #67
-            state
-                .client
-                .cache()
-                .get_read_only(&MutableItem::target_from_key(public_key.as_bytes(), &None))
-        }
-    };
-
-    if let Some(signed_packet) = signed_packet {
+    if let Some(signed_packet) = state
+        .client
+        .resolve(&public_key)
+        .await
+        // TODO: remove this map
+        .map_err(|error| match error {
+            pkarr::Error::DhtIsShutdown => {
+                error!("Dht is shutdown");
+                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+            error => {
+                error!(?error, "Unexpected error");
+                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        })?
+    {
         tracing::debug!(?public_key, "cache hit responding with packet!");
 
         let body = signed_packet.to_relay_payload();
