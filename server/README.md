@@ -11,8 +11,20 @@ Build
 cargo build --release
 ```
 
+Optinally Copy config file
+
+```bash
+cp src/config.example.toml config.toml
+```
+
 Run with an optional config file
 
 ```bash
-../target/release/pkarr-server --config=./src/config.toml
+../target/release/pkarr-server --config=./config.toml
+```
+
+You can customize logging levels
+
+```bash
+../target/release/pkarr-server --config=./config.toml -t=pkarr=debug,tower_http=debug
 ```

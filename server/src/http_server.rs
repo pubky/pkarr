@@ -1,9 +1,9 @@
 use anyhow::Result;
 use axum::extract::DefaultBodyLimit;
-use axum::{http::Method, routing::get, Router};
+use axum::{routing::get, Router};
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, task::JoinSet};
-use tower_http::cors::{self, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
@@ -76,10 +76,6 @@ impl HttpServer {
 }
 
 pub fn create_app(state: AppState, rate_limiter: IpRateLimiter) -> Router {
-    let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::PUT])
-        .allow_origin(cors::Any);
-
     let router = Router::new()
         .route("/:key", get(crate::handlers::get).put(crate::handlers::put))
         .route(
@@ -88,7 +84,7 @@ pub fn create_app(state: AppState, rate_limiter: IpRateLimiter) -> Router {
         )
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
-        .layer(cors)
+        .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http());
 
     rate_limiter.layer(router)
