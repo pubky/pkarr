@@ -78,7 +78,7 @@ impl Server for DhtServer {
             ..
         } = request
         {
-            let should_query = if let Some(cached) = self.cache.get(&target.bytes) {
+            let should_query = if let Some(cached) = self.cache.get(target.as_bytes()) {
                 debug!(
                     public_key = ?cached.public_key(),
                     ?target,

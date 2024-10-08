@@ -295,13 +295,14 @@ impl Client {
     ) -> Result<Receiver<mainline::Result<Id>>> {
         let mutable_item: MutableItem = (signed_packet).into();
 
-        if let Some(current) = self.cache.get(&mutable_item.target().bytes) {
+        if let Some(current) = self.cache.get(mutable_item.target().as_bytes()) {
             if current.timestamp() > signed_packet.timestamp() {
                 return Err(Error::NotMostRecent);
             }
         };
 
-        self.cache.put(&mutable_item.target().bytes, signed_packet);
+        self.cache
+            .put(mutable_item.target().as_bytes(), signed_packet);
 
         let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
 
@@ -317,7 +318,7 @@ impl Client {
 
         let (sender, receiver) = flume::bounded::<SignedPacket>(1);
 
-        let cached_packet = self.cache.get(&target.bytes);
+        let cached_packet = self.cache.get(target.as_bytes());
 
         if let Some(ref cached) = cached_packet {
             let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
@@ -426,24 +427,25 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
                             response: QueryResponseSpecific::Value(Response::Mutable(mutable_item)),
                         } => {
                             if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
-                                let new_packet =
-                                    if let Some(ref cached) = cache.get_read_only(&target.bytes) {
-                                        if signed_packet.more_recent_than(cached) {
-                                            debug!(
-                                                ?target,
-                                                "Received more recent packet than in cache"
-                                            );
-                                            Some(signed_packet)
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        debug!(?target, "Received new packet after cache miss");
+                                let new_packet = if let Some(ref cached) =
+                                    cache.get_read_only(target.as_bytes())
+                                {
+                                    if signed_packet.more_recent_than(cached) {
+                                        debug!(
+                                            ?target,
+                                            "Received more recent packet than in cache"
+                                        );
                                         Some(signed_packet)
-                                    };
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    debug!(?target, "Received new packet after cache miss");
+                                    Some(signed_packet)
+                                };
 
                                 if let Some(packet) = new_packet {
-                                    cache.put(&target.bytes, packet);
+                                    cache.put(target.as_bytes(), packet);
 
                                     if let Some(set) = senders.get(target) {
                                         for sender in set {
@@ -458,12 +460,12 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
                             target,
                             response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
                         } => {
-                            if let Some(mut cached) = cache.get_read_only(&target.bytes) {
+                            if let Some(mut cached) = cache.get_read_only(target.as_bytes()) {
                                 if (*seq as u64) == cached.timestamp() {
                                     trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
 
                                     cached.refresh();
-                                    cache.put(&target.bytes, &cached);
+                                    cache.put(target.as_bytes(), &cached);
 
                                     // Send the found sequence as a timestamp to the caller to decide what to do
                                     // with it.
@@ -657,5 +659,18 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn return_expired_packet_fallback() {
+        let client = Client::builder().build().unwrap();
+
+        let keypair = Keypair::random();
+        let mut packet = dns::Packet::new_reply(0);
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        client
+            .cache()
+            .put(keypair.public_key().into(), &signed_packet);
     }
 }
