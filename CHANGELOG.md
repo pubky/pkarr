@@ -11,6 +11,7 @@ All notable changes to pkarr client and server will be documented in this file.
 - Impl `From<PublicKey>` for `CacheKey`.
 - Add `SignedPacket::serialize` and `SignedPacket::deserialize`.
 - Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.
+- Add `pkarr::LmdbCache` for persistent cache using lmdb.
 
 ### Changed
 

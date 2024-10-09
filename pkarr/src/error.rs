@@ -16,8 +16,7 @@ pub enum Error {
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
     #[error(transparent)]
-    /// Transparent [mainline::Error]
-    MainlineError(#[from] mainline::Error),
+    PublishError(#[from] mainline::PutError),
 
     // === Keys errors ===
     #[error("Invalid PublicKey length, expected 32 bytes but got: {0}")]

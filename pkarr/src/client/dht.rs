@@ -7,7 +7,7 @@ use mainline::{
         messages, QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response,
         Rpc,
     },
-    Id, MutableItem, Testnet,
+    Id, MutableItem, PutError, Testnet,
 };
 use std::{
     collections::HashMap,
@@ -207,8 +207,8 @@ impl Client {
         match self.publish_inner(signed_packet)?.recv_async().await {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
-                mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
-                _ => Err(Error::MainlineError(error)),
+                PutError::PutQueryIsInflight(_) => Err(Error::PublishInflight),
+                _ => Err(Error::PublishError(error)),
             },
             // Since we pass this sender to `Rpc::put`, the only reason the sender,
             // would be dropped, is if `Rpc` is dropped, which should only happeng on shutdown.
@@ -254,8 +254,8 @@ impl Client {
         match self.publish_inner(signed_packet)?.recv() {
             Ok(Ok(_)) => Ok(()),
             Ok(Err(error)) => match error {
-                mainline::Error::PutQueryIsInflight(_) => Err(Error::PublishInflight),
-                _ => Err(Error::MainlineError(error)),
+                PutError::PutQueryIsInflight(_) => Err(Error::PublishInflight),
+                _ => Err(Error::PublishError(error)),
             },
             // Since we pass this sender to `Rpc::put`, the only reason the sender,
             // would be dropped, is if `Rpc` is dropped, which should only happeng on shutdown.
@@ -292,7 +292,7 @@ impl Client {
     pub(crate) fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
-    ) -> Result<Receiver<mainline::Result<Id>>> {
+    ) -> Result<Receiver<Result<Id, PutError>>> {
         let mutable_item: MutableItem = (signed_packet).into();
 
         if let Some(current) = self.cache.get(mutable_item.target().as_bytes()) {
@@ -304,7 +304,7 @@ impl Client {
         self.cache
             .put(mutable_item.target().as_bytes(), signed_packet);
 
-        let (sender, receiver) = flume::bounded::<mainline::Result<Id>>(1);
+        let (sender, receiver) = flume::bounded::<Result<Id, PutError>>(1);
 
         self.sender
             .send(ActorMessage::Publish(mutable_item, sender))
@@ -503,7 +503,7 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
 }
 
 pub enum ActorMessage {
-    Publish(MutableItem, Sender<mainline::Result<Id>>),
+    Publish(MutableItem, Sender<Result<Id, PutError>>),
     Resolve(Id, Sender<SignedPacket>, Option<u64>),
     Shutdown(Sender<()>),
 }

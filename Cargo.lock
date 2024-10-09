@@ -1143,7 +1143,7 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 [[package]]
 name = "mainline"
 version = "3.0.0"
-source = "git+https://github.com/pubky/mainline?branch=dev#51ebed1bb69e7ab53d5857f44a10453b97ef0723"
+source = "git+https://github.com/pubky/mainline?branch=dev#bb68155c9110a1db74be1e7b30c30456de2458f6"
 dependencies = [
  "bytes",
  "crc",
