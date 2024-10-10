@@ -25,8 +25,8 @@ pub enum Error {
     #[error("Invalid Ed25519 signature")]
     InvalidEd25519Signature,
 
-    #[error(transparent)]
-    InvalidPublicKeyEncoding(#[from] z32::Z32Error),
+    #[error("Invalid PublicKey encoding")]
+    InvalidPublicKeyEncoding,
 
     // === Packets errors ===
     #[error(transparent)]

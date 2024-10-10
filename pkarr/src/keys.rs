@@ -9,7 +9,10 @@ use std::{
     hash::Hash,
 };
 
-#[derive(Clone)]
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, PartialEq, Eq)]
 /// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
 pub struct Keypair(SigningKey);
 
@@ -56,12 +59,12 @@ impl Keypair {
 
 /// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
 ///
-/// It can formatted to and parsed from a [zbase32](z32) string.
+/// It can formatted to and parsed from a z-base32 string.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct PublicKey(VerifyingKey);
 
 impl PublicKey {
-    /// Format the public key as [zbase32](z32) string.
+    /// Format the public key as z-base32 string.
     pub fn to_z32(&self) -> String {
         self.to_string()
     }
@@ -135,6 +138,7 @@ impl TryFrom<&str> for PublicKey {
     /// - `https://foo.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.#hash`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.?q=v`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.:8888?q=v`
+    /// - `https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
     fn try_from(s: &str) -> Result<PublicKey> {
         let mut s = s;
 
@@ -182,7 +186,11 @@ impl TryFrom<&str> for PublicKey {
             }
         }
 
-        let bytes = z32::decode(s.as_bytes())?;
+        let bytes = if let Some(v) = base32::decode(base32::Alphabet::Z, s) {
+            Ok(v)
+        } else {
+            Err(Error::InvalidPublicKeyEncoding)
+        }?;
 
         let verifying_key = VerifyingKey::try_from(bytes.as_slice())
             .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
@@ -201,7 +209,11 @@ impl TryFrom<String> for PublicKey {
 
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", z32::encode(self.0.as_bytes()))
+        write!(
+            f,
+            "{}",
+            base32::encode(base32::Alphabet::Z, self.0.as_bytes())
+        )
     }
 }
 
@@ -220,6 +232,29 @@ impl Debug for Keypair {
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PublicKey({})", self)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        bytes.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: [u8; 32] = Deserialize::deserialize(deserializer)?;
+
+        (&bytes).try_into().map_err(serde::de::Error::custom)
     }
 }
 
@@ -383,6 +418,37 @@ mod tests {
     fn from_uri_complex() {
         let str =
             "https://foo@bar.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.:8888?q=v&a=b#foo";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde() {
+        let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+
+        let bytes = postcard::to_allocvec(&public_key).unwrap();
+
+        assert_eq!(bytes, expected)
+    }
+
+    #[test]
+    fn from_uri_multiple_pkarr() {
+        // Should only catch the TLD.
+
+        let str =
+            "https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
         let expected = [
             1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
             207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
