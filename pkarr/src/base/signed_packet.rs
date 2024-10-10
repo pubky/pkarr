@@ -1,12 +1,12 @@
 //! Signed DNS packet
 
-use crate::{Error, Keypair, PublicKey, Result};
+use crate::{Keypair, PublicKey};
 use bytes::{Bytes, BytesMut};
-use ed25519_dalek::Signature;
+use ed25519_dalek::{Signature, SignatureError};
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA},
-    Name, Packet, ResourceRecord,
+    Name, Packet, ResourceRecord, SimpleDnsError,
 };
 use std::{
     char,
@@ -38,7 +38,7 @@ impl Inner {
         signature: &Signature,
         timestamp: u64,
         encoded_packet: &Bytes,
-    ) -> Result<Self> {
+    ) -> Result<Self, SimpleDnsError> {
         // Create the inner bytes from <public_key><signature>timestamp><v>
         let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 104);
 
@@ -47,15 +47,11 @@ impl Inner {
         bytes.extend_from_slice(&timestamp.to_be_bytes());
         bytes.extend_from_slice(encoded_packet);
 
-        Ok(Self::try_new(bytes.into(), |bytes| {
-            Packet::parse(&bytes[104..])
-        })?)
+        Self::try_new(bytes.into(), |bytes| Packet::parse(&bytes[104..]))
     }
 
-    fn try_from_bytes(bytes: Bytes) -> Result<Self> {
-        Ok(Inner::try_new(bytes.to_owned(), |bytes| {
-            Packet::parse(&bytes[104..])
-        })?)
+    fn try_from_bytes(bytes: Bytes) -> Result<Self, SimpleDnsError> {
+        Inner::try_new(bytes.to_owned(), |bytes| Packet::parse(&bytes[104..]))
     }
 }
 
@@ -81,19 +77,14 @@ impl SignedPacket {
     /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
     ///
     /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
-    ///
-    /// # Errors
-    /// - Returns [crate::Error::InvalidSignedPacketBytesLength] if `bytes.len()` is smaller than 104 bytes
-    /// - Returns [crate::Error::PacketTooLarge] if `bytes.len()` is bigger than [SignedPacket::MAX_BYTES] bytes
-    /// - Returns [crate::Error::InvalidEd25519PublicKey] if the first 32 bytes are invalid `ed25519` public key
-    /// - Returns [crate::Error::InvalidEd25519Signature] if the following 64 bytes are invalid `ed25519` signature
-    /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet after the first 104 bytes
-    pub fn from_bytes(bytes: &Bytes) -> Result<SignedPacket> {
+    pub fn from_bytes(bytes: &Bytes) -> Result<SignedPacket, SignedPacketError> {
         if bytes.len() < 104 {
-            return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
+            return Err(SignedPacketError::InvalidSignedPacketBytesLength(
+                bytes.len(),
+            ));
         }
         if (bytes.len() as u64) > SignedPacket::MAX_BYTES {
-            return Err(Error::PacketTooLarge(bytes.len()));
+            return Err(SignedPacketError::PacketTooLarge(bytes.len()));
         }
         let public_key = PublicKey::try_from(&bytes[..32])?;
         let signature = Signature::from_bytes(bytes[32..96].try_into().unwrap());
@@ -119,13 +110,10 @@ impl SignedPacket {
     }
 
     /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
-    ///
-    /// # Errors
-    /// - Returns [crate::Error::InvalidSignedPacketBytesLength] if `payload` is too small
-    /// - Returns [crate::Error::PacketTooLarge] if the payload is too large.
-    /// - Returns [crate::Error::InvalidEd25519Signature] if the signature in the payload is invalid
-    /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet
-    pub fn from_relay_payload(public_key: &PublicKey, payload: &Bytes) -> Result<SignedPacket> {
+    pub fn from_relay_payload(
+        public_key: &PublicKey,
+        payload: &Bytes,
+    ) -> Result<SignedPacket, SignedPacketError> {
         let mut bytes = BytesMut::with_capacity(payload.len() + 32);
 
         bytes.extend_from_slice(public_key.as_bytes());
@@ -138,10 +126,10 @@ impl SignedPacket {
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the z-base32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
-    ///
-    /// # Errors
-    /// - Returns [crate::Error::DnsError] if the packet is invalid or it failed to compress or encode it.
-    pub fn from_packet(keypair: &Keypair, packet: &Packet) -> Result<SignedPacket> {
+    pub fn from_packet(
+        keypair: &Keypair,
+        packet: &Packet,
+    ) -> Result<SignedPacket, SignedPacketError> {
         // Normalize names to the origin TLD
         let mut inner = Packet::new_reply(0);
 
@@ -172,7 +160,7 @@ impl SignedPacket {
         let encoded_packet: Bytes = inner.build_bytes_vec_compressed()?.into();
 
         if encoded_packet.len() > 1000 {
-            return Err(Error::PacketTooLarge(encoded_packet.len()));
+            return Err(SignedPacketError::PacketTooLarge(encoded_packet.len()));
         }
 
         let timestamp = Timestamp::now().into();
@@ -216,7 +204,7 @@ impl SignedPacket {
     ///
     /// That is useful for backwards compatibility if you
     /// ever stored the [SignedPacket::last_seen] as Little Endian in previous versions.
-    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, SimpleDnsError> {
         let mut last_seen = Timestamp::try_from(&bytes[0..8]).unwrap_or_default();
 
         if last_seen > (&Timestamp::now() + 60_000_000) {
@@ -399,6 +387,8 @@ fn normalize_name(origin: &str, name: String) -> String {
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 use mainline::MutableItem;
 
+use super::keys::PublicKeyError;
+
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 impl From<&SignedPacket> for MutableItem {
     fn from(s: &SignedPacket) -> Self {
@@ -417,10 +407,10 @@ impl From<&SignedPacket> for MutableItem {
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 impl TryFrom<&MutableItem> for SignedPacket {
-    type Error = Error;
+    type Error = SignedPacketError;
 
-    fn try_from(i: &MutableItem) -> Result<Self> {
-        let public_key = PublicKey::try_from(i.key()).unwrap();
+    fn try_from(i: &MutableItem) -> Result<Self, SignedPacketError> {
+        let public_key = PublicKey::try_from(i.key())?;
         let seq = *i.seq() as u64;
         let signature: Signature = i.signature().into();
 
@@ -510,6 +500,34 @@ impl<'de> Deserialize<'de> for SignedPacket {
 
         SignedPacket::deserialize(&bytes).map_err(serde::de::Error::custom)
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Errors trying to parse or create a [SignedPacket]
+pub enum SignedPacketError {
+    #[error(transparent)]
+    SignatureError(#[from] SignatureError),
+
+    #[error(transparent)]
+    PublicKeyError(#[from] PublicKeyError),
+
+    #[error(transparent)]
+    /// Transparent [simple_dns::SimpleDnsError]
+    DnsError(#[from] simple_dns::SimpleDnsError),
+
+    #[error("Invalid SignedPacket bytes length, expected at least 104 bytes but got: {0}")]
+    /// Serialized signed packets are `<32 bytes publickey><64 bytes signature><8 bytes
+    /// timestamp><less than or equal to 1000 bytes encoded dns packet>`.
+    InvalidSignedPacketBytesLength(usize),
+
+    #[error("Invalid relay payload size, expected at least 72 bytes but got: {0}")]
+    /// Relay api http-body should be `<64 bytes signature><8 bytes timestamp>
+    /// <less than or equal to 1000 bytes encoded dns packet>`.
+    InvalidRelayPayloadSize(usize),
+
+    #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
+    // DNS packet endocded and compressed is larger than 1000 bytes
+    PacketTooLarge(usize),
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

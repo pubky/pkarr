@@ -6,7 +6,6 @@
 // Modules
 mod base;
 mod client;
-mod error;
 mod extra;
 
 // Exports
@@ -14,7 +13,6 @@ pub use base::cache::{Cache, CacheKey, InMemoryCache};
 pub use base::keys::{Keypair, PublicKey};
 pub use base::signed_packet::SignedPacket;
 pub use base::timestamp::Timestamp;
-pub use error::{Error, Result};
 
 /// Default minimum TTL: 5 minutes
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -29,6 +27,12 @@ pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubk
 
 #[cfg(any(target_arch = "wasm32", feature = "dht"))]
 pub use client::{Client, ClientBuilder, Settings};
+
+// Errors
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+pub use client::dht::{ClientWasShutdown, PublishError};
+#[cfg(any(target_arch = "wasm32", feature = "relay"))]
+pub use client::relay::{EmptyListOfRelays, PublishToRelayError};
 
 // Rexports
 pub use bytes;

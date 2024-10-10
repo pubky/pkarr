@@ -11,7 +11,7 @@ use mainline::MutableItem;
 
 use crate::SignedPacket;
 
-/// The sha1 hash of the [PublicKey] used as the key in [Cache].
+/// The sha1 hash of the [crate::PublicKey] used as the key in [Cache].
 pub type CacheKey = [u8; 20];
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]

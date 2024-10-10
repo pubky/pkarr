@@ -238,6 +238,7 @@ pub fn system_time() -> u64 {
 }
 
 #[derive(thiserror::Error, Debug)]
+/// Errors trying to decode a [Timestamp]
 pub enum TimestampError {
     #[error("Invalid bytes length, Timestamp should be encoded as 8 bytes, got {0}")]
     InvalidBytesLength(usize),

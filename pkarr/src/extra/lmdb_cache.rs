@@ -1,4 +1,3 @@
-use core::result::Result;
 use std::{borrow::Cow, fs, path::Path, time::Duration};
 
 use crate::{Cache, CacheKey, SignedPacket, Timestamp};

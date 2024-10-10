@@ -1,5 +1,6 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 
+use std::fmt::{self, Debug, Display, Formatter};
 use std::num::NonZeroUsize;
 
 use reqwest::{Response, StatusCode};
@@ -12,8 +13,8 @@ use futures::future::select_ok;
 use tokio::task::JoinSet;
 
 use crate::{
-    Cache, Error, InMemoryCache, PublicKey, Result, SignedPacket, DEFAULT_CACHE_SIZE,
-    DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS,
+    Cache, InMemoryCache, PublicKey, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
+    DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS,
 };
 
 #[derive(Debug, Clone)]
@@ -94,7 +95,7 @@ impl ClientBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Client> {
+    pub fn build(self) -> Result<Client, EmptyListOfRelays> {
         Client::new(self.settings)
     }
 }
@@ -116,9 +117,9 @@ impl Default for Client {
 }
 
 impl Client {
-    pub fn new(settings: Settings) -> Result<Self> {
+    pub fn new(settings: Settings) -> Result<Self, EmptyListOfRelays> {
         if settings.relays.is_empty() {
-            return Err(Error::EmptyListOfRelays);
+            return Err(EmptyListOfRelays);
         }
 
         let cache = settings
@@ -148,23 +149,18 @@ impl Client {
     /// Publishes a [SignedPacket] to this client's relays.
     ///
     /// Return the first successful completion, or the last failure.
-    ///
-    /// # Errors
-    /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
-    /// - Returns a [Error::RelayError] from the last responding relay, if all relays
-    ///   responded with non-2xx status codes.
-    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishToRelayError> {
         let public_key = signed_packet.public_key();
 
         if let Some(current) = self.cache.get(&public_key.as_ref().into()) {
             if current.timestamp() > signed_packet.timestamp() {
-                return Err(Error::NotMostRecent);
+                return Err(PublishToRelayError::NotMostRecent);
             }
         };
 
         self.cache.put(&public_key.as_ref().into(), signed_packet);
 
-        self.race_publish(signed_packet).await
+        Ok(self.race_publish(signed_packet).await?)
     }
 
     /// Resolve a [SignedPacket] from this client's relays.
@@ -172,12 +168,15 @@ impl Client {
     /// Return the first successful response, or the failure from the last responding relay.
     ///
     /// # Errors
-    ///
-    /// - Returns [Error::RelayError] if the relay responded with a status >= 400
+    /// - Returns [reqwest::Error] if all relays responded with a status >= 400
     ///   (except 404 in which case you should receive Ok(None)) or something wrong
     ///   with the transport, transparent from [reqwest::Error].
-    /// - Returns [Error::IO] if something went wrong while reading the payload.
-    pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
+    ///
+    ///   In that case, return the last error we got from the last responding relay.
+    pub async fn resolve(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<Option<SignedPacket>, reqwest::Error> {
         if let Some(cached_packet) = self.cache.get(&public_key.as_ref().into()) {
             let expires_in = cached_packet.expires_in(self.minimum_ttl, self.maximum_ttl);
 
@@ -201,7 +200,7 @@ impl Client {
     // === Native Race implementation ===
 
     #[cfg(not(target_arch = "wasm32"))]
-    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<(), reqwest::Error> {
         let mut futures = JoinSet::new();
 
         for relay in self.relays.clone() {
@@ -211,19 +210,19 @@ impl Client {
             futures.spawn(async move { this.publish_to_relay(&relay, signed_packet).await });
         }
 
-        let mut last_error = Error::EmptyListOfRelays;
+        let mut last_error = None;
 
         while let Some(result) = futures.join_next().await {
             match result {
                 Ok(Ok(_)) => return Ok(()),
-                Ok(Err(error)) => last_error = error,
+                Ok(Err(error)) => last_error = Some(error),
                 Err(joinerror) => {
                     debug!(?joinerror);
                 }
             }
         }
 
-        Err(last_error)
+        Err(last_error.expect("failed to receive any error responses!"))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -231,7 +230,7 @@ impl Client {
         &self,
         public_key: &PublicKey,
         cached_packet: Option<SignedPacket>,
-    ) -> Result<Option<SignedPacket>> {
+    ) -> Result<Option<SignedPacket>, reqwest::Error> {
         let mut futures = JoinSet::new();
 
         for relay in self.relays.clone() {
@@ -242,7 +241,7 @@ impl Client {
             futures.spawn(async move { this.resolve_from_relay(&relay, public_key, cached).await });
         }
 
-        let mut result: Result<Option<SignedPacket>> = Ok(None);
+        let mut result: Result<Option<SignedPacket>, reqwest::Error> = Ok(None);
 
         while let Some(task_result) = futures.join_next().await {
             match task_result {
@@ -266,7 +265,7 @@ impl Client {
     // === Wasm ===
 
     #[cfg(target_arch = "wasm32")]
-    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<()> {
+    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<(), reqwest::Error> {
         let futures = self.relays.iter().map(|relay| {
             let signed_packet = signed_packet.clone();
             let this = self.clone();
@@ -285,7 +284,7 @@ impl Client {
         &self,
         public_key: &PublicKey,
         cached_packet: Option<SignedPacket>,
-    ) -> Result<Option<SignedPacket>> {
+    ) -> Result<Option<SignedPacket>, reqwest::Error> {
         let futures = self.relays.iter().map(|relay| {
             let public_key = public_key.clone();
             let cached = cached_packet.clone();
@@ -312,7 +311,11 @@ impl Client {
 
     // === Private Methods ===
 
-    async fn publish_to_relay(&self, relay: &str, signed_packet: SignedPacket) -> Result<Response> {
+    async fn publish_to_relay(
+        &self,
+        relay: &str,
+        signed_packet: SignedPacket,
+    ) -> Result<Response, reqwest::Error> {
         let url = format!("{relay}/{}", signed_packet.public_key());
 
         self.http_client
@@ -323,7 +326,7 @@ impl Client {
             .map_err(|error| {
                 debug!(?url, ?error, "Error response");
 
-                Error::RelayError(error)
+                error
             })
     }
 
@@ -332,7 +335,7 @@ impl Client {
         relay: &str,
         public_key: PublicKey,
         cached_packet: Option<SignedPacket>,
-    ) -> Result<Option<SignedPacket>> {
+    ) -> Result<Option<SignedPacket>, reqwest::Error> {
         let url = format!("{relay}/{public_key}");
 
         match self.http_client.get(&url).send().await {
@@ -341,6 +344,9 @@ impl Client {
                     debug!(?url, "SignedPacket not found");
                     return Ok(None);
                 }
+
+                let response = response.error_for_status()?;
+
                 if response.content_length().unwrap_or_default() > SignedPacket::MAX_BYTES {
                     debug!(?url, "Response too large");
 
@@ -354,14 +360,14 @@ impl Client {
                     Err(error) => {
                         debug!(?url, ?error, "Invalid signed_packet");
 
-                        Err(error)
+                        Ok(None)
                     }
                 }
             }
             Err(error) => {
-                debug!(?url, ?error, "Error response");
+                debug!(?url, ?error, "Resolve Error response");
 
-                Err(Error::RelayError(error))
+                Err(error)
             }
         }
     }
@@ -384,6 +390,37 @@ fn choose_most_recent(
     } else {
         debug!(public_key= ?signed_packet.public_key(), "Received new packet after cache miss");
         Some(signed_packet)
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Errors during publishing a [SignedPacket] to a list of relays
+pub enum PublishToRelayError {
+    #[error("SignedPacket's timestamp is not the most recent")]
+    /// Failed to publish because there is a more recent packet.
+    NotMostRecent,
+
+    #[error(transparent)]
+    /// Transparent [reqwest::Error]
+    ///
+    /// All relays responded with non-2xx status code,
+    /// or something wrong with the transport, transparent from [reqwest::Error].
+    ///
+    /// This was last error response.
+    RelayError(#[from] reqwest::Error),
+}
+
+#[derive(Debug)]
+pub struct EmptyListOfRelays;
+
+impl std::error::Error for EmptyListOfRelays {}
+
+impl Display for EmptyListOfRelays {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Can not create a Pkarr relay Client with an empty list of relays"
+        )
     }
 }
 

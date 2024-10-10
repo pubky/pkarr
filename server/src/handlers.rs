@@ -28,15 +28,17 @@ pub async fn put(
         .publish(&signed_packet)
         .await
         .map_err(|error| match error {
-            pkarr::Error::PublishInflight => Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error)),
-            pkarr::Error::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
-            pkarr::Error::DhtIsShutdown => {
-                error!("Dht is shutdown");
-                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+            pkarr::PublishError::PublishInflight => {
+                Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error))
+            }
+            pkarr::PublishError::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
+            pkarr::PublishError::ClientWasShutdown => {
+                error!("Pkarr client was shutdown");
+                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
             error => {
                 error!(?error, "Unexpected error");
-                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
+                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
         })?;
 
@@ -55,15 +57,9 @@ pub async fn get(
         .resolve(&public_key)
         .await
         // TODO: remove this map
-        .map_err(|error| match error {
-            pkarr::Error::DhtIsShutdown => {
-                error!("Dht is shutdown");
-                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            error => {
-                error!(?error, "Unexpected error");
-                Error::with_status(StatusCode::INTERNAL_SERVER_ERROR)
-            }
+        .map_err(|error| {
+            error!("Pkarr Client was shutdown");
+            Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
         })?
     {
         tracing::debug!(?public_key, "cache hit responding with packet!");

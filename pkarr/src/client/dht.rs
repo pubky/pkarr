@@ -21,7 +21,7 @@ use crate::{
     Cache, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
     DEFAULT_RESOLVERS,
 };
-use crate::{Error, PublicKey, Result, SignedPacket};
+use crate::{PublicKey, SignedPacket};
 
 #[derive(Debug)]
 /// [Client]'s settings
@@ -130,7 +130,7 @@ impl ClientBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Client> {
+    pub fn build(self) -> Result<Client, std::io::Error> {
         Client::new(self.settings)
     }
 }
@@ -146,7 +146,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(settings: Settings) -> Result<Client> {
+    pub fn new(settings: Settings) -> Result<Client, std::io::Error> {
         let (sender, receiver) = flume::bounded(32);
 
         let rpc = Rpc::new(&settings.dht)?;
@@ -196,24 +196,17 @@ impl Client {
     // === Public Methods ===
 
     /// Publishes a [SignedPacket] to the Dht.
-    ///
-    /// # Errors
-    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
-    ///   the loop in the actor thread is stopped for any reason (like thread panic).
-    /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
-    /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
-    /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
-    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
-        match self.publish_inner(signed_packet)?.recv_async().await {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(error)) => match error {
-                PutError::PutQueryIsInflight(_) => Err(Error::PublishInflight),
-                _ => Err(Error::PublishError(error)),
-            },
-            // Since we pass this sender to `Rpc::put`, the only reason the sender,
-            // would be dropped, is if `Rpc` is dropped, which should only happeng on shutdown.
-            Err(_) => Err(Error::DhtIsShutdown),
-        }
+    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
+        self.publish_inner(signed_packet)?
+            .recv_async()
+            .await
+            .expect("Query was dropped before sending a response, please open an issue.")
+            .map_err(|error| match error {
+                PutError::PutQueryIsInflight(_) => PublishError::PublishInflight,
+                _ => PublishError::MainlinePutError(error),
+            })?;
+
+        Ok(())
     }
 
     /// Returns a [SignedPacket] from cache if it is not expired, otherwise,
@@ -224,9 +217,12 @@ impl Client {
     /// and updating the cache with any more recent valid packets it receives.
     ///
     /// # Errors
-    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
+    /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
     ///   the loop in the actor thread is stopped for any reason (like thread panic).
-    pub async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
+    pub async fn resolve(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
         Ok(self.resolve_inner(public_key)?.recv_async().await.ok())
     }
 
@@ -243,24 +239,16 @@ impl Client {
     // === Sync ===
 
     /// Publishes a [SignedPacket] to the Dht.
-    ///
-    /// # Errors
-    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
-    ///   the loop in the actor thread is stopped for any reason (like thread panic).
-    /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
-    /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
-    /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
-    pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<()> {
-        match self.publish_inner(signed_packet)?.recv() {
-            Ok(Ok(_)) => Ok(()),
-            Ok(Err(error)) => match error {
-                PutError::PutQueryIsInflight(_) => Err(Error::PublishInflight),
-                _ => Err(Error::PublishError(error)),
-            },
-            // Since we pass this sender to `Rpc::put`, the only reason the sender,
-            // would be dropped, is if `Rpc` is dropped, which should only happeng on shutdown.
-            Err(_) => Err(Error::DhtIsShutdown),
-        }
+    pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
+        self.publish_inner(signed_packet)?
+            .recv()
+            .expect("Query was dropped before sending a response, please open an issue.")
+            .map_err(|error| match error {
+                PutError::PutQueryIsInflight(_) => PublishError::PublishInflight,
+                _ => PublishError::MainlinePutError(error),
+            })?;
+
+        Ok(())
     }
 
     /// Returns a [SignedPacket] from cache if it is not expired, otherwise,
@@ -271,9 +259,12 @@ impl Client {
     /// and updating the cache with any more recent valid packets it receives.
     ///
     /// # Errors
-    /// - Returns a [Error::DhtIsShutdown] if [Client::shutdown] was called, or
+    /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
     ///   the loop in the actor thread is stopped for any reason (like thread panic).
-    pub fn resolve_sync(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
+    pub fn resolve_sync(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
         Ok(self.resolve_inner(public_key)?.recv().ok())
     }
 
@@ -292,12 +283,12 @@ impl Client {
     pub(crate) fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
-    ) -> Result<Receiver<Result<Id, PutError>>> {
+    ) -> Result<Receiver<Result<Id, PutError>>, PublishError> {
         let mutable_item: MutableItem = (signed_packet).into();
 
         if let Some(current) = self.cache.get(mutable_item.target().as_bytes()) {
             if current.timestamp() > signed_packet.timestamp() {
-                return Err(Error::NotMostRecent);
+                return Err(PublishError::NotMostRecent);
             }
         };
 
@@ -308,12 +299,15 @@ impl Client {
 
         self.sender
             .send(ActorMessage::Publish(mutable_item, sender))
-            .map_err(|_| Error::DhtIsShutdown)?;
+            .map_err(|_| PublishError::ClientWasShutdown)?;
 
         Ok(receiver)
     }
 
-    pub(crate) fn resolve_inner(&self, public_key: &PublicKey) -> Result<Receiver<SignedPacket>> {
+    pub(crate) fn resolve_inner(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
         let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
 
         let (sender, receiver) = flume::bounded::<SignedPacket>(1);
@@ -326,9 +320,7 @@ impl Client {
             if expires_in > 0 {
                 debug!(expires_in, "Have fresh signed_packet in cache.");
 
-                sender
-                    .send(cached.clone())
-                    .map_err(|_| Error::DhtIsShutdown)?;
+                sender.send(cached.clone()).map_err(|_| ClientWasShutdown)?;
 
                 return Ok(receiver);
             }
@@ -347,10 +339,39 @@ impl Client {
                 // any more recent versions.
                 cached_packet.as_ref().map(|cached| cached.timestamp()),
             ))
-            .map_err(|_| Error::DhtIsShutdown)?;
+            .map_err(|_| ClientWasShutdown)?;
 
         Ok(receiver)
     }
+}
+
+#[derive(Debug)]
+pub struct ClientWasShutdown;
+
+impl std::error::Error for ClientWasShutdown {}
+
+impl std::fmt::Display for ClientWasShutdown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Pkarr Client was shutdown")
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Errors occuring during publishing a [SignedPacket]
+pub enum PublishError {
+    #[error("Found a more recent SignedPacket in the client's cache")]
+    /// Found a more recent SignedPacket in the client's cache
+    NotMostRecent,
+
+    #[error("Pkarr Client was shutdown")]
+    ClientWasShutdown,
+
+    #[error("Publish query is already inflight for the same public_key")]
+    /// [crate::Client::publish] is already inflight to the same public_key
+    PublishInflight,
+
+    #[error(transparent)]
+    MainlinePutError(#[from] PutError),
 }
 
 fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiver<ActorMessage>) {

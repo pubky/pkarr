@@ -57,13 +57,13 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 serde = ["dep:serde"]
 
 # Clients 
-## Use [dht::Client]
+## Use [client::dht::Client]
 dht = ["dep:mainline", "flume"]
-## Use [relay::Client]
+## Use [client::relay::Client]
 relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol"]
 
 # Extra
-## Use [Client::resolve_endpoints] and [Client::resolve_https_endpoints]
+## Use [extra::endpoints::EndpointResolver] trait
 endpoints = ["dep:futures"]
 ## Use [LmdbCache]
 lmdb-cache = ["dep:heed", "dep:byteorder"]

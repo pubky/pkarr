@@ -11,15 +11,15 @@ use tracing_subscriber;
 
 use std::time::Instant;
 
-use pkarr::{dns, Client, Keypair, Result, SignedPacket};
+use pkarr::{dns, Client, Keypair, SignedPacket};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .init();
 
-    let client = Client::builder().build()?;
+    let client = Client::builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -28,10 +28,10 @@ async fn main() -> Result<()> {
         dns::Name::new("_foo").unwrap(),
         dns::CLASS::IN,
         30,
-        dns::rdata::RData::TXT("bar".try_into()?),
+        dns::rdata::RData::TXT("bar".try_into().unwrap()),
     ));
 
-    let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
+    let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
     let instant = Instant::now();
 
@@ -49,6 +49,4 @@ async fn main() -> Result<()> {
             println!("\nFailed to publish {} \n {}", keypair.public_key(), err);
         }
     };
-
-    Ok(())
 }

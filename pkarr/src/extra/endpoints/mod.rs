@@ -3,10 +3,7 @@
 // mod async_iter;
 mod endpoint;
 
-use crate::{
-    error::{Error, Result},
-    Client, PublicKey, SignedPacket,
-};
+use crate::{Client, PublicKey, SignedPacket};
 
 pub use endpoint::Endpoint;
 
@@ -16,9 +13,12 @@ pub trait EndpointResolver {
     fn resolve(
         &self,
         public_key: &PublicKey,
-    ) -> impl std::future::Future<Output = Result<Option<SignedPacket>>>;
+    ) -> impl std::future::Future<Output = Result<Option<SignedPacket>, ResolveError>>;
 
-    fn resolve_endpoint(&self, qname: &str) -> impl std::future::Future<Output = Result<Endpoint>>
+    fn resolve_endpoint(
+        &self,
+        qname: &str,
+    ) -> impl std::future::Future<Output = Result<Endpoint, FailedToResolveEndpoint>>
     where
         Self: std::marker::Sync,
     {
@@ -60,24 +60,54 @@ pub trait EndpointResolver {
                 }
             }
 
-            Err(Error::Generic(format!(
-                "Failed to find an endopint {}",
-                target
-            )))
+            Err(FailedToResolveEndpoint)
         }
     }
 }
 
 impl EndpointResolver for Client {
-    async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        self.resolve(public_key).await
+    async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>, ResolveError> {
+        self.resolve(public_key).await.map_err(|error| match error {
+            crate::client::dht::ClientWasShutdown => ResolveError::ClientWasShutdown,
+        })
     }
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
 impl EndpointResolver for crate::relay::Client {
-    async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
-        self.resolve(public_key).await
+    async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>, ResolveError> {
+        self.resolve(public_key)
+            .await
+            .map_err(ResolveError::Reqwest)
+    }
+}
+
+#[derive(Debug)]
+struct FailedToResolveEndpoint;
+
+impl std::error::Error for FailedToResolveEndpoint {}
+
+impl std::fmt::Display for FailedToResolveEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "The Pkarr Client was shutdown")
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Resolve Error from a client
+pub enum ResolveError {
+    ClientWasShutdown,
+    #[cfg(any(target_arch = "wasm32", feature = "relay"))]
+    Reqwest(reqwest::Error),
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Resolve endpoint error from the client::resolve {:?}",
+            self
+        )
     }
 }
 

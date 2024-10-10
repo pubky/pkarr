@@ -1,7 +1,8 @@
 //! Utility structs for Ed25519 keys.
 
-use crate::{Error, Result};
-use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{
+    SecretKey, Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey,
+};
 use rand::rngs::OsRng;
 use std::{
     fmt::{self, Debug, Display, Formatter},
@@ -31,11 +32,8 @@ impl Keypair {
         self.0.sign(message)
     }
 
-    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
-        self.0
-            .verify(message, signature)
-            .map_err(|_| Error::InvalidEd25519Signature)?;
-        Ok(())
+    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<(), SignatureError> {
+        self.0.verify(message, signature)
     }
 
     pub fn secret_key(&self) -> SecretKey {
@@ -73,11 +71,8 @@ impl PublicKey {
     }
 
     /// Verify a signature over a message.
-    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
-        self.0
-            .verify(message, signature)
-            .map_err(|_| Error::InvalidEd25519Signature)?;
-        Ok(())
+    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<(), SignatureError> {
+        self.0.verify(message, signature)
     }
 
     /// Return a reference to the underlying [VerifyingKey]
@@ -109,31 +104,33 @@ impl AsRef<PublicKey> for PublicKey {
 }
 
 impl TryFrom<&[u8]> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let bytes_32: &[u8; 32] = bytes
             .try_into()
-            .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
+            .map_err(|_| PublicKeyError::InvalidPublicKeyLength(bytes.len()))?;
 
         Ok(Self(
-            VerifyingKey::from_bytes(bytes_32).map_err(|_| Error::InvalidEd25519PublicKey)?,
+            VerifyingKey::from_bytes(bytes_32)
+                .map_err(|_| PublicKeyError::InvalidEd25519PublicKey)?,
         ))
     }
 }
 
 impl TryFrom<&[u8; 32]> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
     fn try_from(public: &[u8; 32]) -> Result<Self, Self::Error> {
         Ok(Self(
-            VerifyingKey::from_bytes(public).map_err(|_| Error::InvalidEd25519PublicKey)?,
+            VerifyingKey::from_bytes(public)
+                .map_err(|_| PublicKeyError::InvalidEd25519PublicKey)?,
         ))
     }
 }
 
 impl TryFrom<&str> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
     /// Convert the TLD in a `&str` to a [PublicKey].
     ///
@@ -149,7 +146,7 @@ impl TryFrom<&str> for PublicKey {
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.?q=v`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.:8888?q=v`
     /// - `https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    fn try_from(s: &str) -> Result<PublicKey> {
+    fn try_from(s: &str) -> Result<PublicKey, PublicKeyError> {
         let mut s = s;
 
         if s.len() > 52 {
@@ -199,20 +196,20 @@ impl TryFrom<&str> for PublicKey {
         let bytes = if let Some(v) = base32::decode(base32::Alphabet::Z, s) {
             Ok(v)
         } else {
-            Err(Error::InvalidPublicKeyEncoding)
+            Err(PublicKeyError::InvalidPublicKeyEncoding)
         }?;
 
         let verifying_key = VerifyingKey::try_from(bytes.as_slice())
-            .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
+            .map_err(|_| PublicKeyError::InvalidPublicKeyLength(bytes.len()))?;
 
         Ok(PublicKey(verifying_key))
     }
 }
 
 impl TryFrom<String> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
-    fn try_from(s: String) -> Result<PublicKey> {
+    fn try_from(s: String) -> Result<PublicKey, PublicKeyError> {
         s.as_str().try_into()
     }
 }
@@ -266,6 +263,23 @@ impl<'de> Deserialize<'de> for PublicKey {
 
         (&bytes).try_into().map_err(serde::de::Error::custom)
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Errors while trying to create a [PublicKey]
+pub enum PublicKeyError {
+    #[error("Invalid PublicKey length, expected 32 bytes but got: {0}")]
+    InvalidPublicKeyLength(usize),
+
+    #[error("Invalid Ed25519 publickey; Cannot decompress Edwards point")]
+    InvalidEd25519PublicKey,
+
+    #[error("Invalid PublicKey encoding")]
+    InvalidPublicKeyEncoding,
+
+    #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
+    // DNS packet endocded and compressed is larger than 1000 bytes
+    PacketTooLarge(usize),
 }
 
 #[cfg(test)]
