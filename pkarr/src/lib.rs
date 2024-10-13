@@ -3,22 +3,15 @@
 #![doc = document_features::document_features!()]
 //!
 
-macro_rules! if_dht {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-        $item
-    )*}
-}
-
 // Modules
-mod error;
-mod keys;
-mod signed_packet;
+mod base;
+pub mod client;
+pub mod extra;
 
-// Common exports
-pub use crate::error::{Error, Result};
-pub use crate::keys::{Keypair, PublicKey};
-pub use crate::signed_packet::{system_time, SignedPacket};
+// Exports
+pub use base::cache::{Cache, CacheKey, InMemoryCache};
+pub use base::keys::{Keypair, PublicKey};
+pub use base::signed_packet::SignedPacket;
 
 /// Default minimum TTL: 5 minutes
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -26,57 +19,27 @@ pub const DEFAULT_MINIMUM_TTL: u32 = 300;
 pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 /// Default cache size: 1000
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
+/// Default [relay](https://pkarr.org/relays)s
+pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.app"];
+/// Default [resolver](https://pkarr.org/resolvers)s
+pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.app:6881"];
 
-pub const DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
-
-pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
+#[cfg(any(target_arch = "wasm32", feature = "dht"))]
+pub use client::Client;
 
 // Rexports
 pub use bytes;
 pub use simple_dns as dns;
 
-#[cfg(not(target_arch = "wasm32"))]
-macro_rules! if_async {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "async"))]
-        $item
-    )*}
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+pub use mainline;
+
+pub mod errors {
+    //! Exported errors
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+    pub use super::client::dht::{ClientWasShutdown, PublishError};
+
+    #[cfg(any(target_arch = "wasm32", feature = "relay"))]
+    pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
 }
-
-macro_rules! if_relay {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-        $item
-    )*}
-}
-
-if_dht! {
-    mod cache;
-    mod client;
-
-    if_async! {
-        mod client_async;
-        pub use client_async::PkarrClientAsync;
-    }
-
-    pub use client::{PkarrClientBuilder, PkarrClient, Settings};
-    pub use cache::{PkarrCache, PkarrCacheKey, InMemoryPkarrCache};
-
-    // Rexports
-    pub use mainline;
-}
-
-if_relay! {
-    mod relay_client;
-    pub use relay_client::{PkarrRelayClient, RelaySettings};
-
-    if_async! {
-        mod relay_client_async;
-        pub use relay_client_async::PkarrRelayClientAsync;
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-mod relay_client_web;
-#[cfg(target_arch = "wasm32")]
-pub use relay_client_web::PkarrRelayClient;

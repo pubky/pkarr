@@ -68,3 +68,9 @@ impl From<std::io::Error> for Error {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
     }
 }
+
+impl From<pkarr::errors::ClientWasShutdown> for Error {
+    fn from(value: pkarr::errors::ClientWasShutdown) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
+    }
+}

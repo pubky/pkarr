@@ -1,4 +1,3 @@
-mod cache;
 mod config;
 mod dht_server;
 mod error;
@@ -7,15 +6,13 @@ mod http_server;
 mod rate_limiting;
 
 use anyhow::Result;
-use cache::HeedPkarrCache;
 use clap::Parser;
 use config::Config;
-use std::fs;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
 use http_server::HttpServer;
-use pkarr::{mainline::dht::DhtSettings, PkarrClient};
+use pkarr::{extra::lmdb_cache::LmdbCache, mainline, Client};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -46,14 +43,12 @@ async fn main() -> Result<()> {
 
     debug!(?config, "Pkarr server config");
 
-    let env_path = &config.cache_path()?;
-    fs::create_dir_all(env_path)?;
-    let cache = Box::new(HeedPkarrCache::new(env_path, config.cache_size()).unwrap());
+    let cache = Box::new(LmdbCache::new(&config.cache_path()?, config.cache_size())?);
 
     let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
-    let client = PkarrClient::builder()
-        .dht_settings(DhtSettings {
+    let client = Client::builder()
+        .dht_settings(mainline::Settings {
             port: Some(config.dht_port()),
             server: Some(Box::new(dht_server::DhtServer::new(
                 cache.clone(),
@@ -62,14 +57,13 @@ async fn main() -> Result<()> {
                 config.maximum_ttl(),
                 rate_limiter.clone(),
             ))),
-            ..DhtSettings::default()
+            ..mainline::Settings::default()
         })
         .resolvers(config.resolvers())
         .minimum_ttl(config.minimum_ttl())
         .maximum_ttl(config.maximum_ttl())
         .cache(cache)
-        .build()?
-        .as_async();
+        .build()?;
 
     let udp_address = client.local_addr().unwrap();
 

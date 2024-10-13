@@ -4,6 +4,7 @@ use std::{
 };
 
 use pkarr::{
+    extra::lmdb_cache::LmdbCache,
     mainline::{
         self,
         rpc::{
@@ -16,18 +17,18 @@ use pkarr::{
         server::Server,
         MutableItem,
     },
-    PkarrCache,
+    Cache,
 };
 
 use tracing::debug;
 
-use crate::{cache::HeedPkarrCache, rate_limiting::IpRateLimiter};
+use crate::rate_limiting::IpRateLimiter;
 
 /// DhtServer with Rate limiting
 pub struct DhtServer {
-    inner: mainline::server::DhtServer,
+    inner: mainline::server::DefaultServer,
     resolvers: Option<Vec<SocketAddr>>,
-    cache: Box<crate::cache::HeedPkarrCache>,
+    cache: Box<LmdbCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
     rate_limiter: IpRateLimiter,
@@ -41,7 +42,7 @@ impl Debug for DhtServer {
 
 impl DhtServer {
     pub fn new(
-        cache: Box<HeedPkarrCache>,
+        cache: Box<LmdbCache>,
         resolvers: Option<Vec<String>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
@@ -49,7 +50,7 @@ impl DhtServer {
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
-            inner: mainline::server::DhtServer::default(),
+            inner: mainline::server::DefaultServer::default(),
             cache,
             resolvers: resolvers.map(|resolvers| {
                 resolvers
@@ -78,7 +79,7 @@ impl Server for DhtServer {
             ..
         } = request
         {
-            let should_query = if let Some(cached) = self.cache.get(target) {
+            let should_query = if let Some(cached) = self.cache.get(target.as_bytes()) {
                 debug!(
                     public_key = ?cached.public_key(),
                     ?target,
