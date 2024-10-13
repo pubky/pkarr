@@ -24,7 +24,7 @@ rand = "0.8.5"
 
 # feat: relay dependencies
 tokio = { version = "1.40.0", optional = true }
-## inherited from feat:dht as well.
+# inherited from feat:dht as well.
 sha1_smol = { version = "1.0.1", optional = true }
 
 # feat: serde dependencies
@@ -63,14 +63,14 @@ mockito = "1.4.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [features]
-## Derive serde Serialize/Deserialize for PublicKey
-serde = ["dep:serde"]
-
 # Clients 
 ## Use [client::dht::Client]
 dht = ["dep:mainline", "dep:flume"]
 ## Use [client::relay::Client]
 relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol"]
+
+## Derive serde Serialize/Deserialize for PublicKey
+serde = ["dep:serde"]
 
 # Extra
 ## Use [extra::endpoints::EndpointResolver] trait

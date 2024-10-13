@@ -2,12 +2,12 @@
 
 use flume::{Receiver, Sender};
 use mainline::{
-    dht::DhtSettings,
+    errors::PutError,
     rpc::{
         messages, QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response,
         Rpc,
     },
-    Id, MutableItem, PutError, Testnet,
+    Id, MutableItem, Testnet,
 };
 use std::{
     collections::HashMap,
@@ -26,7 +26,7 @@ use crate::{PublicKey, SignedPacket};
 #[derive(Debug)]
 /// [Client]'s settings
 pub struct Settings {
-    pub dht: DhtSettings,
+    pub dht: mainline::Settings,
     /// A set of [resolver](https://pkarr.org/resolvers)s
     /// to be queried alongside the Dht routing table, to
     /// lower the latency on cold starts, and help if the
@@ -51,7 +51,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            dht: DhtSettings::default(),
+            dht: mainline::Settings::default(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
             resolvers: Some(
                 DEFAULT_RESOLVERS
@@ -118,13 +118,13 @@ impl ClientBuilder {
         self
     }
 
-    /// Set [DhtSettings]
-    pub fn dht_settings(mut self, settings: DhtSettings) -> Self {
+    /// Set [Settings::dht]
+    pub fn dht_settings(mut self, settings: mainline::Settings) -> Self {
         self.settings.dht = settings;
         self
     }
 
-    /// Convienent methot to set the [DhtSettings::bootstrap] from [mainline::Testnet::bootstrap]
+    /// Convienent methot to set the [mainline::Settings::bootstrap] from [mainline::Testnet::bootstrap]
     pub fn testnet(mut self, testnet: &Testnet) -> Self {
         self.settings.dht.bootstrap = testnet.bootstrap.clone().into();
         self
@@ -698,7 +698,7 @@ mod tests {
 
         let client = Client::builder()
             .testnet(&testnet)
-            .dht_settings(DhtSettings {
+            .dht_settings(mainline::Settings {
                 request_timeout: Duration::from_millis(10).into(),
                 ..Default::default()
             })

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use tracing::{debug, info};
 
 use http_server::HttpServer;
-use pkarr::{extra::lmdb_cache::LmdbCache, mainline::dht::DhtSettings, Client};
+use pkarr::{extra::lmdb_cache::LmdbCache, mainline, Client};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
     let client = Client::builder()
-        .dht_settings(DhtSettings {
+        .dht_settings(mainline::Settings {
             port: Some(config.dht_port()),
             server: Some(Box::new(dht_server::DhtServer::new(
                 cache.clone(),
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
                 config.maximum_ttl(),
                 rate_limiter.clone(),
             ))),
-            ..DhtSettings::default()
+            ..mainline::Settings::default()
         })
         .resolvers(config.resolvers())
         .minimum_ttl(config.minimum_ttl())

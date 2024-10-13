@@ -1,3 +1,5 @@
+//! Persistent [crate::base::cache::Cache] implementation using LMDB's bindings [heed]
+
 use std::{borrow::Cow, fs, path::Path, time::Duration};
 
 use crate::{
@@ -61,6 +63,7 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
 }
 
 #[derive(Debug, Clone)]
+/// Persistent [crate::base::cache::Cache] implementation using LMDB's bindings [heed]
 pub struct LmdbCache {
     capacity: usize,
     env: Env,
@@ -71,8 +74,8 @@ pub struct LmdbCache {
 
 impl LmdbCache {
     /// Creates a new [LmdbCache] at the `env_path` and set the [heed::EnvOpenOptions::map_size]
-    /// to a multiple of the `capacity` by [SignedPacket::MAX_BYTES], aligned to 4096 bytes, and
-    /// a maximum of 10 TB.
+    /// to a multiple of the `capacity` by [SignedPacket::MAX_BYTES], aligned to system's page size,
+    /// a maximum of 10 TB, and a minimum of 10 MB.
     pub fn new(env_path: &Path, capacity: usize) -> Result<Self, Error> {
         let page_size = unsafe { sysconf(_SC_PAGESIZE) as usize };
 

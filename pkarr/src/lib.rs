@@ -35,6 +35,8 @@ pub use simple_dns as dns;
 pub use mainline;
 
 pub mod errors {
+    //! Exported errors
+
     #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
     pub use super::client::dht::{ClientWasShutdown, PublishError};
 

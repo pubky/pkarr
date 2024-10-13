@@ -26,7 +26,7 @@ use crate::rate_limiting::IpRateLimiter;
 
 /// DhtServer with Rate limiting
 pub struct DhtServer {
-    inner: mainline::server::DhtServer,
+    inner: mainline::server::DefaultServer,
     resolvers: Option<Vec<SocketAddr>>,
     cache: Box<LmdbCache>,
     minimum_ttl: u32,
@@ -50,7 +50,7 @@ impl DhtServer {
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
-            inner: mainline::server::DhtServer::default(),
+            inner: mainline::server::DefaultServer::default(),
             cache,
             resolvers: resolvers.map(|resolvers| {
                 resolvers
