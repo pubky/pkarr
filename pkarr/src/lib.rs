@@ -5,14 +5,13 @@
 
 // Modules
 mod base;
-mod client;
-mod extra;
+pub mod client;
+pub mod extra;
 
 // Exports
 pub use base::cache::{Cache, CacheKey, InMemoryCache};
 pub use base::keys::{Keypair, PublicKey};
 pub use base::signed_packet::SignedPacket;
-pub use base::timestamp::Timestamp;
 
 /// Default minimum TTL: 5 minutes
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -26,25 +25,19 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.app:6881"];
 
 #[cfg(any(target_arch = "wasm32", feature = "dht"))]
-pub use client::{Client, ClientBuilder, Settings};
-
-// Errors
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-pub use client::dht::{ClientWasShutdown, PublishError};
-#[cfg(any(target_arch = "wasm32", feature = "relay"))]
-pub use client::relay::{EmptyListOfRelays, PublishToRelayError};
+pub use client::Client;
 
 // Rexports
 pub use bytes;
 pub use simple_dns as dns;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-pub use client::relay;
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 pub use mainline;
 
-#[cfg(feature = "endpoints")]
-pub use extra::endpoints::{Endpoint, EndpointResolver};
+pub mod errors {
+    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+    pub use super::client::dht::{ClientWasShutdown, PublishError};
 
-#[cfg(feature = "lmdb-cache")]
-pub use extra::lmdb_cache::LmdbCache;
+    #[cfg(any(target_arch = "wasm32", feature = "relay"))]
+    pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
+}

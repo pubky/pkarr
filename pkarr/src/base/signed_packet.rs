@@ -17,7 +17,7 @@ use std::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::Timestamp;
+use super::timestamp::Timestamp;
 
 const DOT: char = '.';
 
@@ -351,7 +351,7 @@ impl SignedPacket {
 
     /// Time since the [Self::last_seen] in seconds
     fn elapsed(&self) -> u32 {
-        ((Timestamp::now().into_u64() - self.last_seen.into_u64()) / 1_000_000) as u32
+        ((Timestamp::now().as_u64() - self.last_seen.as_u64()) / 1_000_000) as u32
     }
 }
 
@@ -931,7 +931,7 @@ mod tests {
             let mut bytes = vec![];
 
             bytes.extend_from_slice(&[210, 1]);
-            bytes.extend_from_slice(&signed_packet.last_seen().into_u64().to_le_bytes());
+            bytes.extend_from_slice(&signed_packet.last_seen().as_u64().to_le_bytes());
             bytes.extend_from_slice(signed_packet.as_bytes());
 
             let deserialized: SignedPacket = from_bytes(&bytes).unwrap();

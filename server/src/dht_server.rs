@@ -4,6 +4,7 @@ use std::{
 };
 
 use pkarr::{
+    extra::lmdb_cache::LmdbCache,
     mainline::{
         self,
         rpc::{
@@ -27,7 +28,7 @@ use crate::rate_limiting::IpRateLimiter;
 pub struct DhtServer {
     inner: mainline::server::DhtServer,
     resolvers: Option<Vec<SocketAddr>>,
-    cache: Box<pkarr::LmdbCache>,
+    cache: Box<LmdbCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
     rate_limiter: IpRateLimiter,
@@ -41,7 +42,7 @@ impl Debug for DhtServer {
 
 impl DhtServer {
     pub fn new(
-        cache: Box<pkarr::LmdbCache>,
+        cache: Box<LmdbCache>,
         resolvers: Option<Vec<String>>,
         minimum_ttl: u32,
         maximum_ttl: u32,

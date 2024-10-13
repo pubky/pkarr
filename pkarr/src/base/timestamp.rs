@@ -80,7 +80,7 @@ impl Timestamp {
         (self.0 as i64) - (rhs.0 as i64)
     }
 
-    pub fn into_u64(&self) -> u64 {
+    pub fn as_u64(&self) -> u64 {
         self.0
     }
 }
@@ -129,13 +129,13 @@ impl From<&Timestamp> for Timestamp {
 
 impl From<Timestamp> for u64 {
     fn from(value: Timestamp) -> Self {
-        value.into_u64()
+        value.as_u64()
     }
 }
 
 impl From<&Timestamp> for u64 {
     fn from(value: &Timestamp) -> Self {
-        value.into_u64()
+        value.as_u64()
     }
 }
 

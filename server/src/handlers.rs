@@ -28,11 +28,13 @@ pub async fn put(
         .publish(&signed_packet)
         .await
         .map_err(|error| match error {
-            pkarr::PublishError::PublishInflight => {
+            pkarr::errors::PublishError::PublishInflight => {
                 Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error))
             }
-            pkarr::PublishError::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
-            pkarr::PublishError::ClientWasShutdown => {
+            pkarr::errors::PublishError::NotMostRecent => {
+                Error::new(StatusCode::CONFLICT, Some(error))
+            }
+            pkarr::errors::PublishError::ClientWasShutdown => {
                 error!("Pkarr client was shutdown");
                 Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
@@ -52,16 +54,7 @@ pub async fn get(
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    if let Some(signed_packet) = state
-        .client
-        .resolve(&public_key)
-        .await
-        // TODO: remove this map
-        .map_err(|error| {
-            error!("Pkarr Client was shutdown");
-            Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
-        })?
-    {
+    if let Some(signed_packet) = state.client.resolve(&public_key).await? {
         tracing::debug!(?public_key, "cache hit responding with packet!");
 
         let body = signed_packet.to_relay_payload();

@@ -7,7 +7,7 @@ use crate::{
 };
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 
-use crate::Timestamp;
+use super::super::super::base::timestamp::Timestamp;
 
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
@@ -46,7 +46,7 @@ impl Endpoint {
         }
 
         // Good enough random selection
-        let now = Timestamp::now().into_u64();
+        let now = Timestamp::now().as_u64();
         let slice = &records[lowest_priority_index..];
         let index = if slice.is_empty() {
             0

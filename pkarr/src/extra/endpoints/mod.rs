@@ -74,7 +74,7 @@ impl EndpointResolver for Client {
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-impl EndpointResolver for crate::relay::Client {
+impl EndpointResolver for crate::client::relay::Client {
     async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>, ResolveError> {
         self.resolve(public_key)
             .await

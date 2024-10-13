@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use tracing::{debug, info};
 
 use http_server::HttpServer;
-use pkarr::{mainline::dht::DhtSettings, Client, LmdbCache};
+use pkarr::{extra::lmdb_cache::LmdbCache, mainline::dht::DhtSettings, Client};
 
 #[derive(Parser, Debug)]
 struct Cli {
