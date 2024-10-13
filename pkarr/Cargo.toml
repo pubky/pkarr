@@ -22,19 +22,29 @@ lru = { version = "0.12.3", default-features = false }
 document-features = "0.2.8"
 rand = "0.8.5"
 
-# optional dependencies
-serde = { version = "1.0.209", features = ["derive"], optional = true }
-futures = { version = "0.3.30", optional = true, default-features = false }
+# feat: relay dependencies
+tokio = { version = "1.40.0", optional = true }
+## inherited from feat:dht as well.
 sha1_smol = { version = "1.0.1", optional = true }
-heed = { version = "0.20.0", default-features = false, optional = true }
-byteorder = { version = "1.5.0", default-features = false, optional = true }
+
+# feat: serde dependencies
+serde = { version = "1.0.209", features = ["derive"], optional = true }
+
+# feat: endpoints dependencies
+futures = { version = "0.3.30", optional = true, default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# Dht client dependencies:
+# feat: dht dependencies
 mainline = { git = "https://github.com/pubky/mainline", branch = "dev", optional = true }
 flume = { version = "0.11.0", features = ["select", "eventual-fairness", "async"], default-features = false , optional = true }
-tokio = { version = "1.40.0", optional = true }
+
+# feat: relay dependencies
 reqwest = { version = "0.12.7", features = ["rustls-tls"], optional = true }
+
+# feat: lmdb-cache defendencies
+heed = { version = "0.20.0", default-features = false, optional = true }
+byteorder = { version = "1.5.0", default-features = false, optional = true }
+libc = { version = "0.2.159", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.69"
@@ -58,7 +68,7 @@ serde = ["dep:serde"]
 
 # Clients 
 ## Use [client::dht::Client]
-dht = ["dep:mainline", "flume"]
+dht = ["dep:mainline", "dep:flume"]
 ## Use [client::relay::Client]
 relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol"]
 
@@ -66,7 +76,7 @@ relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol"]
 ## Use [extra::endpoints::EndpointResolver] trait
 endpoints = ["dep:futures"]
 ## Use [LmdbCache]
-lmdb-cache = ["dep:heed", "dep:byteorder"]
+lmdb-cache = ["dep:heed", "dep:byteorder", "dep:libc"]
 
 ## Use all features
 full = ["dht", "relay", "serde", "endpoints", "lmdb-cache"]

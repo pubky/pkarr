@@ -1,13 +1,19 @@
 use std::{borrow::Cow, fs, path::Path, time::Duration};
 
-use crate::{Cache, CacheKey, SignedPacket, Timestamp};
+use crate::{
+    base::cache::{Cache, CacheKey},
+    base::timestamp::Timestamp,
+    SignedPacket,
+};
 
 use byteorder::LittleEndian;
 use heed::{types::U64, BoxedError, BytesDecode, BytesEncode, Database, Env, EnvOpenOptions};
+use libc::{sysconf, _SC_PAGESIZE};
 
 use tracing::debug;
 
 const MAX_MAP_SIZE: usize = 10995116277760; // 10 TB
+const MIN_MAP_SIZE: usize = 10 * 1024 * 1024; // 10 mb
 
 const SIGNED_PACKET_TABLE: &str = "pkarrcache:signed_packet";
 const KEY_TO_TIME_TABLE: &str = "pkarrcache:key_to_time";
@@ -68,13 +74,16 @@ impl LmdbCache {
     /// to a multiple of the `capacity` by [SignedPacket::MAX_BYTES], aligned to 4096 bytes, and
     /// a maximum of 10 TB.
     pub fn new(env_path: &Path, capacity: usize) -> Result<Self, Error> {
+        let page_size = unsafe { sysconf(_SC_PAGESIZE) as usize };
+
         // Page aligned but more than enough bytes for `capacity` many SignedPacket
         let map_size = capacity
             .checked_mul(SignedPacket::MAX_BYTES as usize)
-            .and_then(|x| x.checked_add(4096))
-            .and_then(|x| x.checked_div(4096))
-            .and_then(|x| x.checked_mul(4096))
-            .unwrap_or(MAX_MAP_SIZE);
+            .and_then(|x| x.checked_add(page_size))
+            .and_then(|x| x.checked_div(page_size))
+            .and_then(|x| x.checked_mul(page_size))
+            .unwrap_or(MAX_MAP_SIZE)
+            .max(MIN_MAP_SIZE);
 
         fs::create_dir_all(env_path)?;
 
@@ -158,8 +167,8 @@ impl LmdbCache {
 
         let new_time = Timestamp::now();
 
-        time_to_key.put(&mut wtxn, &new_time.into_u64(), key)?;
-        key_to_time.put(&mut wtxn, key, &new_time.into_u64())?;
+        time_to_key.put(&mut wtxn, &new_time.as_u64(), key)?;
+        key_to_time.put(&mut wtxn, key, &new_time.as_u64())?;
 
         packets.put(&mut wtxn, key, signed_packet)?;
 
@@ -182,8 +191,8 @@ impl LmdbCache {
 
             let new_time = Timestamp::now();
 
-            time_to_key.put(&mut wtxn, &new_time.into_u64(), key)?;
-            key_to_time.put(&mut wtxn, key, &new_time.into_u64())?;
+            time_to_key.put(&mut wtxn, &new_time.as_u64(), key)?;
+            key_to_time.put(&mut wtxn, key, &new_time.as_u64())?;
 
             wtxn.commit()?;
 

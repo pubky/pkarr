@@ -1479,6 +1479,7 @@ dependencies = [
  "getrandom",
  "heed",
  "js-sys",
+ "libc",
  "lru",
  "mainline",
  "mockito",
