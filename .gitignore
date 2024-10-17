@@ -1,2 +1,4 @@
 target/
 config.toml
+/result
+/.direnv
