@@ -310,38 +310,47 @@ impl Client {
     ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
         let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
 
-        let (sender, receiver) = flume::bounded::<SignedPacket>(1);
-
         let cached_packet = self.cache.get(target.as_bytes());
 
-        if let Some(ref cached) = cached_packet {
-            let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
+        let (tx, rx) = flume::bounded::<SignedPacket>(1);
 
-            if expires_in > 0 {
-                debug!(expires_in, "Have fresh signed_packet in cache.");
+        let as_ref = cached_packet.as_ref();
 
-                sender.send(cached.clone()).map_err(|_| ClientWasShutdown)?;
+        // Should query?
+        if as_ref
+            .as_ref()
+            .map(|c| c.is_expired(self.minimum_ttl, self.maximum_ttl))
+            .unwrap_or(true)
+        {
+            debug!(
+                ?public_key,
+                "querying the DHT to hydrate our cache for later."
+            );
 
-                return Ok(receiver);
-            }
-
-            debug!(expires_in, "Have expired signed_packet in cache.");
-        } else {
-            debug!("Cache miss");
+            self.sender
+                .send(ActorMessage::Resolve(
+                    target,
+                    tx.clone(),
+                    // Sending the `timestamp` of the known cache, help save some bandwith,
+                    // since remote nodes will not send the encoded packet if they don't know
+                    // any more recent versions.
+                    // most_recent_known_timestamp,
+                    as_ref.map(|cached| cached.timestamp()),
+                ))
+                .map_err(|_| ClientWasShutdown)?;
         }
 
-        self.sender
-            .send(ActorMessage::Resolve(
-                target,
-                sender,
-                // Sending the `timestamp` of the known cache, help save some bandwith,
-                // since remote nodes will not send the encoded packet if they don't know
-                // any more recent versions.
-                cached_packet.as_ref().map(|cached| cached.timestamp()),
-            ))
-            .map_err(|_| ClientWasShutdown)?;
+        if let Some(cached_packet) = cached_packet {
+            debug!(
+                public_key = ?cached_packet.public_key(),
+                "responding with cached packet even if expired"
+            );
 
-        Ok(receiver)
+            // If the receiver was dropped.. no harm.
+            let _ = tx.send(cached_packet);
+        }
+
+        Ok(rx)
     }
 }
 

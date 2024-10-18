@@ -79,57 +79,18 @@ impl Server for DhtServer {
             ..
         } = request
         {
-            let should_query = if let Some(cached) = self.cache.get(target.as_bytes()) {
-                debug!(
-                    public_key = ?cached.public_key(),
-                    ?target,
-                    "cache hit responding with packet!"
-                );
+            let cached_packet = self.cache.get(target.as_bytes());
 
-                // Respond with what we have, even if expired.
-                let mutable_item = MutableItem::from(&cached);
+            let as_ref = cached_packet.as_ref();
 
-                rpc.response(
-                    from,
-                    transaction_id,
-                    ResponseSpecific::GetMutable(GetMutableResponseArguments {
-                        responder_id: *rpc.id(),
-                        // Token doesn't matter much, as we are most likely _not_ the
-                        // closest nodes, so we shouldn't expect an PUT requests based on
-                        // this response.
-                        token: vec![0, 0, 0, 0],
-                        nodes: None,
-                        v: mutable_item.value().to_vec(),
-                        k: mutable_item.key().to_vec(),
-                        seq: *mutable_item.seq(),
-                        sig: mutable_item.signature().to_vec(),
-                    }),
-                );
+            // Should query?
+            if as_ref
+                .as_ref()
+                .map(|c| c.is_expired(self.minimum_ttl, self.maximum_ttl))
+                .unwrap_or(true)
+            {
+                debug!(?target, "querying the DHT to hydrate our cache for later.");
 
-                // If expired, we try to hydrate the packet from the DHT.
-                let expires_in = cached.expires_in(self.minimum_ttl, self.maximum_ttl);
-                let expired = expires_in == 0;
-
-                if expired {
-                    debug!(
-                        public_key = ?cached.public_key(),
-                        ?target,
-                        ?expires_in,
-                        "cache expired, querying the DHT to hydrate our cache for later."
-                    );
-                };
-
-                expired
-            } else {
-                debug!(
-                    ?target,
-                    "cache miss, querying the DHT to hydrate our cache for later."
-                );
-                true
-            };
-
-            //  Either cache miss or expired cached packet
-            if should_query {
                 // Rate limit nodes that are making too many request forcing us to making too
                 // many queries, either by querying the same non-existent key, or many unique keys.
                 if self.rate_limiter.is_limited(&from.ip()) {
@@ -146,6 +107,33 @@ impl Server for DhtServer {
                         self.resolvers.to_owned(),
                     );
                 };
+            }
+
+            // Respond with what we have, even if expired.
+            if let Some(cached_packet) = cached_packet {
+                debug!(
+                    public_key = ?cached_packet.public_key(),
+                    "responding with cached packet even if expired"
+                );
+
+                let mutable_item = MutableItem::from(&cached_packet);
+
+                rpc.response(
+                    from,
+                    transaction_id,
+                    ResponseSpecific::GetMutable(GetMutableResponseArguments {
+                        responder_id: *rpc.id(),
+                        // Token doesn't matter much, as we are most likely _not_ the
+                        // closest nodes, so we shouldn't expect a PUT requests based on
+                        // this response.
+                        token: vec![0, 0, 0, 0],
+                        nodes: None,
+                        v: mutable_item.value().to_vec(),
+                        k: mutable_item.key().to_vec(),
+                        seq: *mutable_item.seq(),
+                        sig: mutable_item.signature().to_vec(),
+                    }),
+                );
             }
         };
 

@@ -177,24 +177,46 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, reqwest::Error> {
-        if let Some(cached_packet) = self.cache.get(&public_key.as_ref().into()) {
-            let expires_in = cached_packet.expires_in(self.minimum_ttl, self.maximum_ttl);
+        let cached_packet = self.cache.get(&(public_key.into()));
 
-            if expires_in > 0 {
-                debug!(expires_in, "Have fresh signed_packet in cache.");
-                return Ok(Some(cached_packet));
-            }
+        let (tx, rx) = flume::bounded::<Result<Option<SignedPacket>, reqwest::Error>>(1);
 
-            debug!(expires_in, "Have expired signed_packet in cache.");
+        let as_ref = cached_packet.as_ref();
 
-            return Ok(self
-                .race_resolve(public_key, Some(cached_packet.clone()))
-                .await?
-                .or(Some(cached_packet)));
-        };
-        debug!("Cache miss");
+        // Should query?
+        if as_ref
+            .as_ref()
+            .map(|c| c.is_expired(self.minimum_ttl, self.maximum_ttl))
+            .unwrap_or(true)
+        {
+            debug!(
+                ?public_key,
+                "querying relays to hydrate our cache for later."
+            );
 
-        self.race_resolve(public_key, None).await
+            let pubky = public_key.clone();
+            let tx = tx.clone();
+            let this = self.clone();
+
+            tokio::task::spawn(async move {
+                // If the receiver was dropped.. no harm.
+                let _ = tx.send(this.race_resolve(&pubky, None).await);
+            });
+        }
+
+        if let Some(cached_packet) = cached_packet {
+            debug!(
+                public_key = ?cached_packet.public_key(),
+                "responding with cached packet even if expired"
+            );
+
+            // If the receiver was dropped.. no harm.
+            let _ = tx.send(Ok(Some(cached_packet)));
+        }
+
+        rx.recv_async()
+            .await
+            .expect("at least one sender should send before being dropped")
     }
 
     // === Native Race implementation ===

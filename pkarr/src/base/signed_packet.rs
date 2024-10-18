@@ -347,6 +347,12 @@ impl SignedPacket {
             .map_or(min, |v| v.clamp(min, max))
     }
 
+    /// Returns whether or not this packet is considered expired according to
+    /// a given `min` and `max` TTLs
+    pub fn is_expired(&self, min: u32, max: u32) -> bool {
+        self.expires_in(min, max) == 0
+    }
+
     // === Private Methods ===
 
     /// Time since the [Self::last_seen] in seconds
