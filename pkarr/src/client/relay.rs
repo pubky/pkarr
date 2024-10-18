@@ -3,7 +3,8 @@
 use std::fmt::{self, Debug, Display, Formatter};
 use std::num::NonZeroUsize;
 
-use reqwest::{Response, StatusCode};
+use reqwest::header::HeaderValue;
+use reqwest::{header, Response, StatusCode};
 use tracing::debug;
 
 #[cfg(target_arch = "wasm32")]
@@ -360,7 +361,20 @@ impl Client {
     ) -> Result<Option<SignedPacket>, reqwest::Error> {
         let url = format!("{relay}/{public_key}");
 
-        match self.http_client.get(&url).send().await {
+        let mut request = self.http_client.get(&url);
+
+        if let Some(httpdate) = cached_packet
+            .as_ref()
+            .map(|c| c.timestamp().format_http_date())
+        {
+            request = request.header(
+                header::IF_MODIFIED_SINCE,
+                HeaderValue::from_str(httpdate.as_str())
+                    .expect("httpdate to be valid header value"),
+            );
+        }
+
+        match request.send().await {
             Ok(response) => {
                 if response.status() == StatusCode::NOT_FOUND {
                     debug!(?url, "SignedPacket not found");
