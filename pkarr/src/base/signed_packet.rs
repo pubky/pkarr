@@ -17,7 +17,7 @@ use std::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use super::timestamp::Timestamp;
+use pubky_timestamp::Timestamp;
 
 const DOT: char = '.';
 
@@ -207,7 +207,7 @@ impl SignedPacket {
     pub fn deserialize(bytes: &[u8]) -> Result<Self, SimpleDnsError> {
         let mut last_seen = Timestamp::try_from(&bytes[0..8]).unwrap_or_default();
 
-        if last_seen > (&Timestamp::now() + 60_000_000) {
+        if last_seen > (Timestamp::now() + 60_000_000) {
             last_seen = Timestamp::from(0)
         }
 

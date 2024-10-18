@@ -7,7 +7,7 @@ use crate::{
 };
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 
-use super::super::super::base::timestamp::Timestamp;
+use pubky_timestamp::Timestamp;
 
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records

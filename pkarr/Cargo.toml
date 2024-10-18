@@ -17,10 +17,11 @@ simple-dns = "0.6.1"
 thiserror = "1.0.49"
 tracing = "0.1.40"
 dyn-clone = "1.0.17"
-once_cell = {version = "1.19.0", default-features = false }
-lru = { version = "0.12.3", default-features = false }
 document-features = "0.2.8"
 rand = "0.8.5"
+once_cell = {version = "1.19.0", default-features = false }
+lru = { version = "0.12.3", default-features = false }
+pubky-timestamp = { version = "0.2.0", default-features = false }
 
 # feat: relay dependencies
 tokio = { version = "1.40.0", optional = true, default-features = false }
@@ -70,7 +71,7 @@ dht = ["dep:mainline", "dep:flume"]
 relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol"]
 
 ## Derive serde Serialize/Deserialize for PublicKey
-serde = ["dep:serde"]
+serde = ["dep:serde", "pubky-timestamp/serde"]
 
 # Extra
 ## Use [extra::endpoints::EndpointResolver] trait

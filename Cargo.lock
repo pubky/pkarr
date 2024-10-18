@@ -1486,6 +1486,7 @@ dependencies = [
  "mockito",
  "once_cell",
  "postcard",
+ "pubky-timestamp",
  "rand",
  "reqwest",
  "self_cell",
@@ -1573,6 +1574,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3e4daa0dcf6feba26f985457cdf104d4b4256fc5a09547140f3631bb076b19a"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "pubky-timestamp"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "084b6e5bfcc186781b71257d636b660f20e94bb588c3ba52393fd9faf7a7bfda"
+dependencies = [
+ "document-features",
+ "getrandom",
+ "js-sys",
+ "once_cell",
+ "serde",
 ]
 
 [[package]]

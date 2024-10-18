@@ -3,4 +3,3 @@
 pub mod cache;
 pub mod keys;
 pub mod signed_packet;
-pub mod timestamp;
