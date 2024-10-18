@@ -53,18 +53,42 @@ pub async fn put(
 pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
-    headers: HeaderMap,
+    request_headers: HeaderMap,
 ) -> Result<impl IntoResponse> {
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let mut response = HeaderMap::new().into_response();
-
     if let Some(signed_packet) = state.client.resolve(&public_key).await? {
         tracing::debug!(?public_key, "cache hit responding with packet!");
 
+        let mut response_headers = HeaderMap::new();
+
+        response_headers.insert(
+            header::CONTENT_TYPE,
+            "application/pkarr.org/relays#payload".try_into().unwrap(),
+        );
+        response_headers.insert(
+            header::CACHE_CONTROL,
+            format!(
+                "public, max-age={}",
+                signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL)
+            )
+            .try_into()
+            .unwrap(),
+        );
+        response_headers.insert(
+            header::LAST_MODIFIED,
+            signed_packet
+                .timestamp()
+                .format_http_date()
+                .try_into()
+                .expect("expect last-modified to be a valid HeaderValue"),
+        );
+
+        let mut response = response_headers.into_response();
+
         // Handle IF_MODIFIED_SINCE
-        if let Some(condition_http_date) = headers
+        if let Some(condition_http_date) = request_headers
             .get(header::IF_MODIFIED_SINCE)
             .and_then(|h| h.to_str().ok())
             .and_then(|s| HttpDate::from_str(s).ok())
@@ -77,30 +101,6 @@ pub async fn get(
         } else {
             *response.body_mut() = signed_packet.to_relay_payload().into();
         };
-
-        let mut header_map = HeaderMap::new();
-
-        header_map.insert(
-            header::CONTENT_TYPE,
-            "application/pkarr.org/relays#payload".try_into().unwrap(),
-        );
-        header_map.insert(
-            header::CACHE_CONTROL,
-            format!(
-                "public, max-age={}",
-                signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL)
-            )
-            .try_into()
-            .unwrap(),
-        );
-        header_map.insert(
-            header::LAST_MODIFIED,
-            signed_packet
-                .timestamp()
-                .format_http_date()
-                .try_into()
-                .expect("expect last-modified to be a valid HeaderValue"),
-        );
 
         Ok(response)
     } else {
