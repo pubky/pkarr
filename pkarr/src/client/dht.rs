@@ -335,7 +335,7 @@ impl Client {
                     // since remote nodes will not send the encoded packet if they don't know
                     // any more recent versions.
                     // most_recent_known_timestamp,
-                    as_ref.map(|cached| cached.timestamp()),
+                    as_ref.map(|cached| cached.timestamp().as_u64()),
                 ))
                 .map_err(|_| ClientWasShutdown)?;
         }
@@ -499,7 +499,7 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
                             response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
                         } => {
                             if let Some(mut cached) = cache.get_read_only(target.as_bytes()) {
-                                if (*seq as u64) == cached.timestamp() {
+                                if (*seq as u64) == cached.timestamp().as_u64() {
                                     trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
 
                                     cached.refresh();

@@ -25,3 +25,5 @@ toml = "0.8.12"
 clap = { version = "4.5.1", features = ["derive"] }
 dirs-next = "2.0.0"
 pkarr = { version = "3.0.0", path = "../pkarr", features = ["dht", "lmdb-cache"] }
+httpdate = "1.0.3"
+pubky-timestamp = { version = "0.2.0", features = ["httpdate"] }

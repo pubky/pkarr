@@ -1511,7 +1511,9 @@ dependencies = [
  "dirs-next",
  "governor",
  "http",
+ "httpdate",
  "pkarr",
+ "pubky-timestamp",
  "rustls",
  "serde",
  "thiserror",
@@ -1584,6 +1586,7 @@ checksum = "084b6e5bfcc186781b71257d636b660f20e94bb588c3ba52393fd9faf7a7bfda"
 dependencies = [
  "document-features",
  "getrandom",
+ "httpdate",
  "js-sys",
  "once_cell",
  "serde",

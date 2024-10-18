@@ -1,9 +1,12 @@
+use std::str::FromStr;
+
 use axum::extract::Path;
 use axum::http::HeaderMap;
 use axum::{extract::State, response::IntoResponse};
 
 use bytes::Bytes;
 use http::{header, StatusCode};
+use httpdate::HttpDate;
 use tracing::error;
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
@@ -50,16 +53,30 @@ pub async fn put(
 pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
+    headers: HeaderMap,
 ) -> Result<impl IntoResponse> {
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
+    let mut response = HeaderMap::new().into_response();
+
     if let Some(signed_packet) = state.client.resolve(&public_key).await? {
         tracing::debug!(?public_key, "cache hit responding with packet!");
 
-        let body = signed_packet.to_relay_payload();
+        // Handle IF_MODIFIED_SINCE
+        if let Some(condition_http_date) = headers
+            .get(header::IF_MODIFIED_SINCE)
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| HttpDate::from_str(s).ok())
+        {
+            let entry_http_date: HttpDate = signed_packet.timestamp().into();
 
-        let ttl = signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL);
+            if condition_http_date >= entry_http_date {
+                *response.status_mut() = StatusCode::NOT_MODIFIED;
+            }
+        } else {
+            *response.body_mut() = signed_packet.to_relay_payload().into();
+        };
 
         let mut header_map = HeaderMap::new();
 
@@ -69,10 +86,23 @@ pub async fn get(
         );
         header_map.insert(
             header::CACHE_CONTROL,
-            format!("public, max-age={}", ttl).try_into().unwrap(),
+            format!(
+                "public, max-age={}",
+                signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL)
+            )
+            .try_into()
+            .unwrap(),
+        );
+        header_map.insert(
+            header::LAST_MODIFIED,
+            signed_packet
+                .timestamp()
+                .format_http_date()
+                .try_into()
+                .expect("expect last-modified to be a valid HeaderValue"),
         );
 
-        Ok((header_map, body))
+        Ok(response)
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
     }

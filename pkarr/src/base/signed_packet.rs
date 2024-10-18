@@ -240,11 +240,11 @@ impl SignedPacket {
     /// and it is trusted as a way to order which packets where authored after which,
     /// but it shouldn't be used for caching for example, instead, use [Self::last_seen]
     /// which is set when you create a new packet.
-    pub fn timestamp(&self) -> u64 {
+    pub fn timestamp(&self) -> Timestamp {
         let bytes = self.inner.borrow_owner();
         let slice: [u8; 8] = bytes[96..104].try_into().unwrap();
 
-        u64::from_be_bytes(slice)
+        u64::from_be_bytes(slice).into()
     }
 
     /// Returns the DNS [Packet] compressed and encoded.
@@ -398,7 +398,7 @@ use super::keys::PublicKeyError;
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 impl From<&SignedPacket> for MutableItem {
     fn from(s: &SignedPacket) -> Self {
-        let seq: i64 = s.timestamp() as i64;
+        let seq = s.timestamp().as_u64() as i64;
         let packet = s.inner.borrow_owner().slice(104..);
 
         Self::new_signed_unchecked(
@@ -437,7 +437,7 @@ impl AsRef<[u8]> for SignedPacket {
 
 impl Clone for SignedPacket {
     fn clone(&self) -> Self {
-        Self::from_bytes_unchecked(self.as_bytes(), &self.last_seen)
+        Self::from_bytes_unchecked(self.as_bytes(), self.last_seen)
     }
 }
 
@@ -670,7 +670,7 @@ mod tests {
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
         let item: MutableItem = (&signed_packet).into();
-        let seq: i64 = signed_packet.timestamp() as i64;
+        let seq = signed_packet.timestamp().as_u64() as i64;
 
         let expected = MutableItem::new(
             keypair.secret_key().into(),
