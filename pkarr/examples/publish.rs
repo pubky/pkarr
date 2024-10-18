@@ -11,12 +11,18 @@ use tracing_subscriber;
 
 use std::time::Instant;
 
-use pkarr::{dns, Client, Keypair, SignedPacket};
+use pkarr::{dns, Keypair, SignedPacket};
+
+#[cfg(feature = "relay")]
+use pkarr::client::relay::Client;
+#[cfg(not(feature = "relay"))]
+use pkarr::Client;
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
+        .with_env_filter("pkarr")
         .init();
 
     let client = Client::builder().build().unwrap();

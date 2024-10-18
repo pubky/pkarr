@@ -11,9 +11,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pkarr::{Client, PublicKey};
-
 use clap::Parser;
+
+use pkarr::PublicKey;
+
+#[cfg(feature = "relay")]
+use pkarr::client::relay::Client;
+#[cfg(not(feature = "relay"))]
+use pkarr::Client;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
