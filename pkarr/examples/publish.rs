@@ -11,14 +11,21 @@ use tracing_subscriber;
 
 use std::time::Instant;
 
-use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
+use pkarr::{dns, Keypair, SignedPacket};
 
-fn main() -> Result<()> {
+#[cfg(feature = "relay")]
+use pkarr::client::relay::Client;
+#[cfg(not(feature = "relay"))]
+use pkarr::Client;
+
+#[tokio::main]
+async fn main() {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
+        .with_env_filter("pkarr")
         .init();
 
-    let client = PkarrClient::builder().build().unwrap();
+    let client = Client::builder().build().unwrap();
 
     let keypair = Keypair::random();
 
@@ -27,16 +34,16 @@ fn main() -> Result<()> {
         dns::Name::new("_foo").unwrap(),
         dns::CLASS::IN,
         30,
-        dns::rdata::RData::TXT("bar".try_into()?),
+        dns::rdata::RData::TXT("bar".try_into().unwrap()),
     ));
 
-    let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
+    let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
     let instant = Instant::now();
 
     println!("\nPublishing {} ...", keypair.public_key());
 
-    match client.publish(&signed_packet) {
+    match client.publish(&signed_packet).await {
         Ok(()) => {
             println!(
                 "\nSuccessfully published {} in {:?}",
@@ -48,6 +55,4 @@ fn main() -> Result<()> {
             println!("\nFailed to publish {} \n {}", keypair.public_key(), err);
         }
     };
-
-    Ok(())
 }

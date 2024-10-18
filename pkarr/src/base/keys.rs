@@ -1,20 +1,22 @@
 //! Utility structs for Ed25519 keys.
 
-use crate::{Error, Result};
-use ed25519_dalek::{SecretKey, Signature, Signer, SigningKey, Verifier, VerifyingKey};
-#[cfg(feature = "rand")]
+use ed25519_dalek::{
+    SecretKey, Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey,
+};
 use rand::rngs::OsRng;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
 };
 
-#[derive(Clone)]
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, PartialEq, Eq)]
 /// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
 pub struct Keypair(SigningKey);
 
 impl Keypair {
-    #[cfg(feature = "rand")]
     pub fn random() -> Keypair {
         let mut csprng = OsRng;
         let signing_key: SigningKey = SigningKey::generate(&mut csprng);
@@ -30,11 +32,8 @@ impl Keypair {
         self.0.sign(message)
     }
 
-    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
-        self.0
-            .verify(message, signature)
-            .map_err(|_| Error::InvalidEd25519Signature)?;
-        Ok(())
+    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<(), SignatureError> {
+        self.0.verify(message, signature)
     }
 
     pub fn secret_key(&self) -> SecretKey {
@@ -56,12 +55,12 @@ impl Keypair {
 
 /// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
 ///
-/// It can formatted to and parsed from a [zbase32](z32) string.
+/// It can formatted to and parsed from a z-base32 string.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct PublicKey(VerifyingKey);
 
 impl PublicKey {
-    /// Format the public key as [zbase32](z32) string.
+    /// Format the public key as z-base32 string.
     pub fn to_z32(&self) -> String {
         self.to_string()
     }
@@ -72,11 +71,8 @@ impl PublicKey {
     }
 
     /// Verify a signature over a message.
-    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<()> {
-        self.0
-            .verify(message, signature)
-            .map_err(|_| Error::InvalidEd25519Signature)?;
-        Ok(())
+    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<(), SignatureError> {
+        self.0.verify(message, signature)
     }
 
     /// Return a reference to the underlying [VerifyingKey]
@@ -95,32 +91,46 @@ impl PublicKey {
     }
 }
 
+impl AsRef<Keypair> for Keypair {
+    fn as_ref(&self) -> &Keypair {
+        self
+    }
+}
+
+impl AsRef<PublicKey> for PublicKey {
+    fn as_ref(&self) -> &PublicKey {
+        self
+    }
+}
+
 impl TryFrom<&[u8]> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         let bytes_32: &[u8; 32] = bytes
             .try_into()
-            .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
+            .map_err(|_| PublicKeyError::InvalidPublicKeyLength(bytes.len()))?;
 
         Ok(Self(
-            VerifyingKey::from_bytes(bytes_32).map_err(|_| Error::InvalidEd25519PublicKey)?,
+            VerifyingKey::from_bytes(bytes_32)
+                .map_err(|_| PublicKeyError::InvalidEd25519PublicKey)?,
         ))
     }
 }
 
 impl TryFrom<&[u8; 32]> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
     fn try_from(public: &[u8; 32]) -> Result<Self, Self::Error> {
         Ok(Self(
-            VerifyingKey::from_bytes(public).map_err(|_| Error::InvalidEd25519PublicKey)?,
+            VerifyingKey::from_bytes(public)
+                .map_err(|_| PublicKeyError::InvalidEd25519PublicKey)?,
         ))
     }
 }
 
 impl TryFrom<&str> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
     /// Convert the TLD in a `&str` to a [PublicKey].
     ///
@@ -135,7 +145,8 @@ impl TryFrom<&str> for PublicKey {
     /// - `https://foo.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.#hash`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.?q=v`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.:8888?q=v`
-    fn try_from(s: &str) -> Result<PublicKey> {
+    /// - `https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
+    fn try_from(s: &str) -> Result<PublicKey, PublicKeyError> {
         let mut s = s;
 
         if s.len() > 52 {
@@ -182,26 +193,34 @@ impl TryFrom<&str> for PublicKey {
             }
         }
 
-        let bytes = z32::decode(s.as_bytes())?;
+        let bytes = if let Some(v) = base32::decode(base32::Alphabet::Z, s) {
+            Ok(v)
+        } else {
+            Err(PublicKeyError::InvalidPublicKeyEncoding)
+        }?;
 
         let verifying_key = VerifyingKey::try_from(bytes.as_slice())
-            .map_err(|_| Error::InvalidPublicKeyLength(bytes.len()))?;
+            .map_err(|_| PublicKeyError::InvalidPublicKeyLength(bytes.len()))?;
 
         Ok(PublicKey(verifying_key))
     }
 }
 
 impl TryFrom<String> for PublicKey {
-    type Error = Error;
+    type Error = PublicKeyError;
 
-    fn try_from(s: String) -> Result<PublicKey> {
+    fn try_from(s: String) -> Result<PublicKey, PublicKeyError> {
         s.as_str().try_into()
     }
 }
 
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", z32::encode(self.0.as_bytes()))
+        write!(
+            f,
+            "{}",
+            base32::encode(base32::Alphabet::Z, self.0.as_bytes())
+        )
     }
 }
 
@@ -221,6 +240,46 @@ impl Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PublicKey({})", self)
     }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for PublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        bytes.serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for PublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes: [u8; 32] = Deserialize::deserialize(deserializer)?;
+
+        (&bytes).try_into().map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Errors while trying to create a [PublicKey]
+pub enum PublicKeyError {
+    #[error("Invalid PublicKey length, expected 32 bytes but got: {0}")]
+    InvalidPublicKeyLength(usize),
+
+    #[error("Invalid Ed25519 publickey; Cannot decompress Edwards point")]
+    InvalidEd25519PublicKey,
+
+    #[error("Invalid PublicKey encoding")]
+    InvalidPublicKeyEncoding,
+
+    #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
+    // DNS packet endocded and compressed is larger than 1000 bytes
+    PacketTooLarge(usize),
 }
 
 #[cfg(test)]
@@ -383,6 +442,37 @@ mod tests {
     fn from_uri_complex() {
         let str =
             "https://foo@bar.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.:8888?q=v&a=b#foo";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde() {
+        let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.try_into().unwrap();
+
+        let bytes = postcard::to_allocvec(&public_key).unwrap();
+
+        assert_eq!(bytes, expected)
+    }
+
+    #[test]
+    fn from_uri_multiple_pkarr() {
+        // Should only catch the TLD.
+
+        let str =
+            "https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
         let expected = [
             1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
             207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
