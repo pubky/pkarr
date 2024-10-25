@@ -26,4 +26,4 @@ serde = { version = "1.0.199", features = ["derive"] }
 toml = "0.8.12"
 clap = { version = "4.5.1", features = ["derive"] }
 dirs-next = "2.0.0"
-pkarr = { version = "2.2.1-alpha.1", path = "../pkarr", features = ["async"] }
+pkarr = { version = "2.2.1-alpha.2", path = "../pkarr", features = ["async"] }
