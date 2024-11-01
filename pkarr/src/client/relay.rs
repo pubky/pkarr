@@ -21,21 +21,21 @@ use crate::{
 #[derive(Debug, Clone)]
 /// [Client]'s settings
 pub struct Settings {
-    pub relays: Vec<String>,
+    pub(crate) relays: Vec<String>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
-    pub cache_size: NonZeroUsize,
+    pub(crate) cache_size: NonZeroUsize,
     /// Used in the `min` parameter in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MINIMUM_TTL]
-    pub minimum_ttl: u32,
+    pub(crate) minimum_ttl: u32,
     /// Used in the `max` parametere in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
-    pub maximum_ttl: u32,
+    pub(crate) maximum_ttl: u32,
     /// Custom [reqwest::Client]
-    pub http_client: reqwest::Client,
+    pub(crate) http_client: reqwest::Client,
     /// Custom [Cache] implementation, defaults to [InMemoryCache]
-    pub cache: Option<Box<dyn Cache>>,
+    pub(crate) cache: Option<Box<dyn Cache>>,
 }
 
 impl Default for Settings {
@@ -51,16 +51,10 @@ impl Default for Settings {
     }
 }
 
-#[derive(Debug, Default)]
-/// Builder for [Client]
-pub struct ClientBuilder {
-    settings: Settings,
-}
-
-impl ClientBuilder {
+impl Settings {
     /// Set the relays to publish and resolve [SignedPacket]s to and from.
     pub fn relays(mut self, relays: Vec<String>) -> Self {
-        self.settings.relays = relays;
+        self.relays = relays;
         self
     }
 
@@ -68,7 +62,7 @@ impl ClientBuilder {
     ///
     /// Controls the capacity of [Cache].
     pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
-        self.settings.cache_size = cache_size;
+        self.cache_size = cache_size;
         self
     }
 
@@ -76,8 +70,8 @@ impl ClientBuilder {
     ///
     /// Limits how soon a [SignedPacket] is considered expired.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.minimum_ttl = ttl;
-        self.settings.maximum_ttl = self.settings.maximum_ttl.clamp(ttl, u32::MAX);
+        self.minimum_ttl = ttl;
+        self.maximum_ttl = self.maximum_ttl.clamp(ttl, u32::MAX);
         self
     }
 
@@ -85,19 +79,19 @@ impl ClientBuilder {
     ///
     /// Limits how long it takes before a [SignedPacket] is considered expired.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.maximum_ttl = ttl;
-        self.settings.minimum_ttl = self.settings.minimum_ttl.clamp(0, ttl);
+        self.maximum_ttl = ttl;
+        self.minimum_ttl = self.minimum_ttl.clamp(0, ttl);
         self
     }
 
     /// Set a custom implementation of [Cache].
     pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
-        self.settings.cache = Some(cache);
+        self.cache = Some(cache);
         self
     }
 
     pub fn build(self) -> Result<Client, EmptyListOfRelays> {
-        Client::new(self.settings)
+        Client::new(self)
     }
 }
 
@@ -138,8 +132,8 @@ impl Client {
     }
 
     /// Returns a builder to edit settings before creating Client.
-    pub fn builder() -> ClientBuilder {
-        ClientBuilder::default()
+    pub fn builder() -> Settings {
+        Settings::default()
     }
 
     /// Returns a reference to the internal cache.

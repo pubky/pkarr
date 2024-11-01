@@ -48,17 +48,17 @@ async fn main() -> Result<()> {
     let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
     let client = Client::builder()
-        .dht_settings(mainline::Settings {
-            port: Some(config.dht_port()),
-            server: Some(Box::new(dht_server::DhtServer::new(
-                cache.clone(),
-                config.resolvers(),
-                config.minimum_ttl(),
-                config.maximum_ttl(),
-                rate_limiter.clone(),
-            ))),
-            ..mainline::Settings::default()
-        })
+        .dht_settings(
+            mainline::Settings::default()
+                .port(config.dht_port())
+                .custom_server(Box::new(dht_server::DhtServer::new(
+                    cache.clone(),
+                    config.resolvers(),
+                    config.minimum_ttl(),
+                    config.maximum_ttl(),
+                    rate_limiter.clone(),
+                ))),
+        )
         .resolvers(config.resolvers())
         .minimum_ttl(config.minimum_ttl())
         .maximum_ttl(config.maximum_ttl())

@@ -26,32 +26,32 @@ use crate::{PublicKey, SignedPacket};
 #[derive(Debug)]
 /// [Client]'s settings
 pub struct Settings {
-    pub dht: mainline::Settings,
+    pub(crate) dht_settings: mainline::Settings,
     /// A set of [resolver](https://pkarr.org/resolvers)s
     /// to be queried alongside the Dht routing table, to
     /// lower the latency on cold starts, and help if the
     /// Dht is missing values not't republished often enough.
     ///
     /// Defaults to [DEFAULT_RESOLVERS]
-    pub resolvers: Option<Vec<SocketAddr>>,
+    pub(crate) resolvers: Option<Vec<SocketAddr>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
-    pub cache_size: NonZeroUsize,
+    pub(crate) cache_size: NonZeroUsize,
     /// Used in the `min` parameter in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MINIMUM_TTL]
-    pub minimum_ttl: u32,
+    pub(crate) minimum_ttl: u32,
     /// Used in the `max` parameter in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
-    pub maximum_ttl: u32,
+    pub(crate) maximum_ttl: u32,
     /// Custom [Cache] implementation, defaults to [InMemoryCache]
-    pub cache: Option<Box<dyn Cache>>,
+    pub(crate) cache: Option<Box<dyn Cache>>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            dht: mainline::Settings::default(),
+            dht_settings: mainline::Dht::builder(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
             resolvers: Some(
                 DEFAULT_RESOLVERS
@@ -67,16 +67,10 @@ impl Default for Settings {
     }
 }
 
-#[derive(Debug, Default)]
-/// Builder for [Client]
-pub struct ClientBuilder {
-    settings: Settings,
-}
-
-impl ClientBuilder {
+impl Settings {
     /// Set custom set of [resolvers](Settings::resolvers).
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
-        self.settings.resolvers = resolvers.map(|resolvers| {
+        self.resolvers = resolvers.map(|resolvers| {
             resolvers
                 .iter()
                 .flat_map(|resolver| resolver.to_socket_addrs())
@@ -90,7 +84,7 @@ impl ClientBuilder {
     ///
     /// Controls the capacity of [Cache].
     pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
-        self.settings.cache_size = cache_size;
+        self.cache_size = cache_size;
         self
     }
 
@@ -98,8 +92,8 @@ impl ClientBuilder {
     ///
     /// Limits how soon a [SignedPacket] is considered expired.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.minimum_ttl = ttl;
-        self.settings.maximum_ttl = self.settings.maximum_ttl.clamp(ttl, u32::MAX);
+        self.minimum_ttl = ttl;
+        self.maximum_ttl = self.maximum_ttl.clamp(ttl, u32::MAX);
         self
     }
 
@@ -107,31 +101,32 @@ impl ClientBuilder {
     ///
     /// Limits how long it takes before a [SignedPacket] is considered expired.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
-        self.settings.maximum_ttl = ttl;
-        self.settings.minimum_ttl = self.settings.minimum_ttl.clamp(0, ttl);
+        self.maximum_ttl = ttl;
+        self.minimum_ttl = self.minimum_ttl.clamp(0, ttl);
         self
     }
 
     /// Set a custom implementation of [Cache].
     pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
-        self.settings.cache = Some(cache);
+        self.cache = Some(cache);
         self
     }
 
     /// Set [Settings::dht]
     pub fn dht_settings(mut self, settings: mainline::Settings) -> Self {
-        self.settings.dht = settings;
+        self.dht_settings = settings;
         self
     }
 
     /// Convienent methot to set the [mainline::Settings::bootstrap] from [mainline::Testnet::bootstrap]
     pub fn testnet(mut self, testnet: &Testnet) -> Self {
-        self.settings.dht.bootstrap = testnet.bootstrap.clone().into();
+        self.dht_settings = self.dht_settings.bootstrap(&testnet.bootstrap);
+
         self
     }
 
     pub fn build(self) -> Result<Client, std::io::Error> {
-        Client::new(self.settings)
+        Client::new(self)
     }
 }
 
@@ -149,7 +144,7 @@ impl Client {
     pub fn new(settings: Settings) -> Result<Client, std::io::Error> {
         let (sender, receiver) = flume::bounded(32);
 
-        let rpc = Rpc::new(&settings.dht)?;
+        let rpc = settings.dht_settings.build_rpc()?;
 
         let local_addr = rpc.local_addr()?;
 
@@ -167,6 +162,8 @@ impl Client {
             maximum_ttl: settings.maximum_ttl,
         };
 
+        debug!(?settings, "Starting Client main loop..");
+
         thread::Builder::new()
             .name("Client loop".to_string())
             .spawn(move || run(rpc, cache_clone, settings, receiver))?;
@@ -175,8 +172,8 @@ impl Client {
     }
 
     /// Returns a builder to edit settings before creating Client.
-    pub fn builder() -> ClientBuilder {
-        ClientBuilder::default()
+    pub fn builder() -> Settings {
+        Settings::default()
     }
 
     // === Getters ===
@@ -384,9 +381,7 @@ pub enum PublishError {
 }
 
 fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiver<ActorMessage>) {
-    debug!(?settings, "Starting Client main loop..");
-
-    let mut server = settings.dht.server;
+    let mut server = settings.dht_settings.into_server();
     let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
 
     loop {
@@ -707,10 +702,9 @@ mod tests {
 
         let client = Client::builder()
             .testnet(&testnet)
-            .dht_settings(mainline::Settings {
-                request_timeout: Duration::from_millis(10).into(),
-                ..Default::default()
-            })
+            .dht_settings(
+                mainline::Settings::default().request_timeout(Duration::from_millis(10).into()),
+            )
             // Everything is expired
             .maximum_ttl(0)
             .build()

@@ -23,6 +23,7 @@ All notable changes to pkarr client and server will be documented in this file.
 - update `mainline` to v3.0.0
 - `Client::shutdown` and `Client::shutdown_sync` are now idempotent and return `()`.
 - `Client::resolve`, `Client::resolve_sync` and `relay::Client::resolve` return expired cached `SignedPacket` _before_ making query to the network (Relays/Resolvers/Dht).
+- Export `Settings` as client builder.
 
 ### Removed
 

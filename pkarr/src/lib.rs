@@ -26,6 +26,7 @@ pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubk
 
 #[cfg(any(target_arch = "wasm32", feature = "dht"))]
 pub use client::Client;
+pub use client::Settings;
 
 // Rexports
 pub use bytes;
