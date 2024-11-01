@@ -20,9 +20,9 @@ pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 /// Default cache size: 1000
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 /// Default [relay](https://pkarr.org/relays)s
-pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.app"];
+pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.org"];
 /// Default [resolver](https://pkarr.org/resolvers)s
-pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.app:6881"];
+pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
 
 #[cfg(any(target_arch = "wasm32", feature = "dht"))]
 pub use client::Client;

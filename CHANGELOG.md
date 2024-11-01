@@ -12,6 +12,7 @@ All notable changes to pkarr client and server will be documented in this file.
 - Add `SignedPacket::serialize` and `SignedPacket::deserialize`.
 - Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.
 - Add `pkarr::LmdbCache` for persistent cache using lmdb.
+- Add `pkarr.pubky.org` as an extra default Relay and Resolver.
 
 ### Changed
 
