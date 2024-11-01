@@ -1,12 +1,12 @@
 //! Client implementation.
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-pub mod dht;
+pub(crate) mod dht;
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 pub use dht::{Client, Settings};
 
 #[cfg(target_arch = "wasm32")]
-pub mod relay;
+pub(crate) mod relay;
 #[cfg(target_arch = "wasm32")]
 pub use relay::{Client, Settings};
 

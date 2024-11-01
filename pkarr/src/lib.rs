@@ -43,4 +43,7 @@ pub mod errors {
 
     #[cfg(any(target_arch = "wasm32", feature = "relay"))]
     pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
+
+    pub use super::base::keys::PublicKeyError;
+    pub use super::base::signed_packet::SignedPacketError;
 }
