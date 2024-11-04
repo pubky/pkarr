@@ -19,21 +19,6 @@ Try the [web app demo](https://app.pkarr.org).
 
 Or if you prefer Rust [Examples](./pkarr/examples) 
 
-## Docker Setup
-To build and run the Pkarr server using Docker, follow these steps:
-
-1. **Build the Docker image**:
-```bash
-docker build -t pkarr-server .
-```
-
-2. Run the Docker container:
-```bash
-docker run -p 6881:6881 --name pkarr-server-container pkarr-server
-```
-
-This will make the Pkarr server accessible at http://localhost:6881.
-
 ## TOC
 - [Architecture](#Architecture)
 - [Expectations](#Expectations)
@@ -175,4 +160,34 @@ Open social networks often attempt to solve discovery natively within their netw
     - If an overlay network is developed that surpasses the performance of a 10-million-node DHT with a 15-year track record, Pkarr should still be capable of utilizing your network as a backend, either as an alternative or alongside existing solutions.
 
 3. **How can I run the Pkarr server using Docker?**
-   To run the server with Docker, build the image and start the container using the instructions in the [Docker Setup](#docker-setup) section.
+To build and run the Pkarr server using Docker, you can use a small `docker-compose.yml` such as:
+
+```
+services:
+  pkarr:
+    container_name: pkarr
+    build:
+      context: ./pkarr
+    volumes: 
+      - ./config.toml:/config.toml
+      - .pkarr_cache:/cache
+    command: pkarr-server --config=/config.toml
+```
+In the example above `.pkarr_cache` relative directory will be used to permanently store pkarr cached keys.
+
+An example `./config.toml` here (we are mounting it on the container)
+```
+relay_port = 6881
+dht_port = 6881
+cache_path = "/cache"
+cache_size = 1_000_000
+resolvers = []
+minimum_ttl = 300
+maximum_ttl = 86400
+[rate_limiter]
+behind_proxy = false
+per_second = 2
+burst_size = 10
+```
+
+This will make the Pkarr server accessible at http://localhost:6881.
