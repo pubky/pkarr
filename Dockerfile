@@ -1,7 +1,7 @@
 # ========================
 # Build Stage
 # ========================
-FROM rust:1.81.0-alpine3.20 AS builder
+FROM rust:1.82.0-alpine3.20 AS builder
 
 # Install build dependencies, including static OpenSSL libraries
 RUN apk add --no-cache \
