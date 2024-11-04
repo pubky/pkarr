@@ -19,6 +19,21 @@ Try the [web app demo](https://app.pkarr.org).
 
 Or if you prefer Rust [Examples](./pkarr/examples) 
 
+## Docker Setup
+To build and run the Pkarr server using Docker, follow these steps:
+
+1. **Build the Docker image**:
+```bash
+docker build -t pkarr-server .
+```
+
+2. Run the Docker container:
+```bash
+docker run -p 6881:6881 --name pkarr-server-container pkarr-server
+```
+
+This will make the Pkarr server accessible at http://localhost:6881.
+
 ## TOC
 - [Architecture](#Architecture)
 - [Expectations](#Expectations)
@@ -158,3 +173,6 @@ Open social networks often attempt to solve discovery natively within their netw
     - Their infrastructure would need to become a gossip overlay network, which may not be desirable.
     - Achieving consistency and load balancing would require further optimization, effectively reinventing a DHT.
     - If an overlay network is developed that surpasses the performance of a 10-million-node DHT with a 15-year track record, Pkarr should still be capable of utilizing your network as a backend, either as an alternative or alongside existing solutions.
+
+3. **How can I run the Pkarr server using Docker?**
+   To run the server with Docker, build the image and start the container using the instructions in the [Docker Setup](#docker-setup) section.
