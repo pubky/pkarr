@@ -166,8 +166,7 @@ To build and run the Pkarr server using Docker, you can use a small `docker-comp
 services:
   pkarr:
     container_name: pkarr
-    build:
-      context: ./pkarr
+    build: .
     volumes: 
       - ./config.toml:/config.toml
       - .pkarr_cache:/cache
