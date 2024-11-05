@@ -159,34 +159,5 @@ Open social networks often attempt to solve discovery natively within their netw
     - Achieving consistency and load balancing would require further optimization, effectively reinventing a DHT.
     - If an overlay network is developed that surpasses the performance of a 10-million-node DHT with a 15-year track record, Pkarr should still be capable of utilizing your network as a backend, either as an alternative or alongside existing solutions.
 
-3. **How can I run the Pkarr server using Docker?**
-To build and run the Pkarr server using Docker, you can use a small `docker-compose.yml` such as:
-
-```
-services:
-  pkarr:
-    container_name: pkarr
-    build: .
-    volumes: 
-      - ./config.toml:/config.toml
-      - .pkarr_cache:/cache
-    command: pkarr-server --config=/config.toml
-```
-In the example above `.pkarr_cache` relative directory will be used to permanently store pkarr cached keys.
-
-An example `./config.toml` here (we are mounting it on the container)
-```
-relay_port = 6881
-dht_port = 6881
-cache_path = "/cache"
-cache_size = 1_000_000
-resolvers = []
-minimum_ttl = 300
-maximum_ttl = 86400
-[rate_limiter]
-behind_proxy = false
-per_second = 2
-burst_size = 10
-```
-
-This will make the Pkarr server accessible at http://localhost:6881.
+3. **How can I run the Pkarr server?**
+You can find building instruction [here](./server/README.md).
