@@ -158,3 +158,6 @@ Open social networks often attempt to solve discovery natively within their netw
     - Their infrastructure would need to become a gossip overlay network, which may not be desirable.
     - Achieving consistency and load balancing would require further optimization, effectively reinventing a DHT.
     - If an overlay network is developed that surpasses the performance of a 10-million-node DHT with a 15-year track record, Pkarr should still be capable of utilizing your network as a backend, either as an alternative or alongside existing solutions.
+
+3. **How can I run the Pkarr server?**
+You can find building instruction [here](./server/README.md).
