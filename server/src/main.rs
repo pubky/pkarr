@@ -65,7 +65,8 @@ async fn main() -> Result<()> {
         .cache(cache)
         .build()?;
 
-    let udp_address = client.local_addr().unwrap();
+    let info = client.info()?;
+    let udp_address = info.local_addr()?;
 
     info!("Running as a resolver on UDP socket {udp_address}");
 

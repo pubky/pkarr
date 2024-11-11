@@ -133,7 +133,6 @@ impl Settings {
 #[derive(Clone, Debug)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
 pub struct Client {
-    address: Option<SocketAddr>,
     sender: Sender<ActorMessage>,
     cache: Box<dyn Cache>,
     minimum_ttl: u32,
@@ -144,10 +143,6 @@ impl Client {
     pub fn new(settings: Settings) -> Result<Client, std::io::Error> {
         let (sender, receiver) = flume::bounded(32);
 
-        let rpc = settings.dht_settings.build_rpc()?;
-
-        let local_addr = rpc.local_addr()?;
-
         let cache = settings
             .cache
             .clone()
@@ -155,7 +150,6 @@ impl Client {
         let cache_clone = cache.clone();
 
         let client = Client {
-            address: Some(local_addr),
             sender,
             cache,
             minimum_ttl: settings.minimum_ttl,
@@ -165,8 +159,17 @@ impl Client {
         debug!(?settings, "Starting Client main loop..");
 
         thread::Builder::new()
-            .name("Client loop".to_string())
-            .spawn(move || run(rpc, cache_clone, settings, receiver))?;
+            .name("Pkarr Dht actor thread".to_string())
+            .spawn(move || run(cache_clone, settings, receiver))?;
+
+        let (tx, rx) = flume::bounded(1);
+
+        client
+            .sender
+            .send(ActorMessage::Check(tx))
+            .expect("actor thread unexpectedly shutdown");
+
+        rx.recv().expect("infallible")?;
 
         Ok(client)
     }
@@ -178,11 +181,15 @@ impl Client {
 
     // === Getters ===
 
-    /// Returns the local address of the udp socket this node is listening on.
-    ///
-    /// Returns `None` if the node is shutdown
-    pub fn local_addr(&self) -> Option<SocketAddr> {
-        self.address
+    /// Returns [Info] about the running session from the actor thread.
+    pub fn info(&self) -> Result<Info, ClientWasShutdown> {
+        let (tx, rx) = flume::bounded(1);
+
+        self.sender
+            .send(ActorMessage::Info(tx))
+            .map_err(|_| ClientWasShutdown)?;
+
+        rx.recv().map_err(|_| ClientWasShutdown)
     }
 
     /// Returns a reference to the internal cache.
@@ -229,8 +236,6 @@ impl Client {
 
         let _ = self.sender.send(ActorMessage::Shutdown(sender));
         let _ = receiver.recv_async().await;
-
-        self.address = None;
     }
 
     // === Sync ===
@@ -266,13 +271,11 @@ impl Client {
     }
 
     /// Shutdown the actor thread loop.
-    pub fn shutdown_sync(&mut self) {
+    pub fn shutdown_sync(&self) {
         let (sender, receiver) = flume::bounded(1);
 
         let _ = self.sender.send(ActorMessage::Shutdown(sender));
         let _ = receiver.recv();
-
-        self.address = None;
     }
 
     // === Private Methods ===
@@ -380,8 +383,27 @@ pub enum PublishError {
     MainlinePutError(#[from] PutError),
 }
 
-fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiver<ActorMessage>) {
-    let mut server = settings.dht_settings.into_server();
+fn run(cache: Box<dyn Cache>, settings: Settings, receiver: Receiver<ActorMessage>) {
+    match settings.dht_settings.build_rpc() {
+        Ok(mut rpc) => {
+            let mut server = settings.dht_settings.into_server();
+            actor_thread(&mut rpc, &mut server, cache, receiver, settings.resolvers)
+        }
+        Err(err) => {
+            if let Ok(ActorMessage::Check(sender)) = receiver.try_recv() {
+                let _ = sender.send(Err(err));
+            }
+        }
+    }
+}
+
+fn actor_thread(
+    rpc: &mut Rpc,
+    server: &mut Option<Box<dyn mainline::server::Server>>,
+    cache: Box<dyn Cache>,
+    receiver: Receiver<ActorMessage>,
+    resolvers: Option<Vec<SocketAddr>>,
+) {
     let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
 
     loop {
@@ -426,7 +448,15 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
                         },
                     );
 
-                    rpc.get(target, request, None, settings.resolvers.clone())
+                    rpc.get(target, request, None, resolvers.clone())
+                }
+                ActorMessage::Info(sender) => {
+                    let local_addr = rpc.local_addr();
+
+                    let _ = sender.send(Info { local_addr });
+                }
+                ActorMessage::Check(sender) => {
+                    let _ = sender.send(Ok(()));
                 }
             }
         }
@@ -517,7 +547,7 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
                 // === Requests ===
                 ReceivedMessage::Request((transaction_id, request)) => {
                     if let Some(server) = server.as_mut() {
-                        server.handle_request(&mut rpc, *from, *transaction_id, request);
+                        server.handle_request(rpc, *from, *transaction_id, request);
                     }
                 }
             };
@@ -527,10 +557,25 @@ fn run(mut rpc: Rpc, cache: Box<dyn Cache>, settings: Settings, receiver: Receiv
     debug!("Client main loop terminated");
 }
 
-pub enum ActorMessage {
+enum ActorMessage {
     Publish(MutableItem, Sender<Result<Id, PutError>>),
     Resolve(Id, Sender<SignedPacket>, Option<u64>),
     Shutdown(Sender<()>),
+    Info(Sender<Info>),
+    Check(Sender<Result<(), std::io::Error>>),
+}
+
+pub struct Info {
+    local_addr: Result<SocketAddr, std::io::Error>,
+}
+
+impl Info {
+    /// Local UDP Ipv4 socket address that this node is listening on.
+    pub fn local_addr(&self) -> Result<&SocketAddr, std::io::Error> {
+        self.local_addr
+            .as_ref()
+            .map_err(|e| std::io::Error::new(e.kind(), e.to_string()))
+    }
 }
 
 #[cfg(test)]
@@ -546,13 +591,17 @@ mod tests {
     fn shutdown_sync() {
         let testnet = Testnet::new(3).unwrap();
 
-        let mut a = Client::builder().testnet(&testnet).build().unwrap();
+        let client = Client::builder().testnet(&testnet).build().unwrap();
 
-        assert_ne!(a.local_addr(), None);
+        let local_addr = client.info().unwrap().local_addr().unwrap().to_string();
 
-        a.shutdown_sync();
+        println!("{}", local_addr);
 
-        assert_eq!(a.local_addr(), None);
+        assert!(client.info().unwrap().local_addr().is_ok());
+
+        client.shutdown_sync();
+
+        assert!(client.info().is_err());
     }
 
     #[test]
@@ -625,11 +674,11 @@ mod tests {
 
         let mut a = Client::builder().testnet(&testnet).build().unwrap();
 
-        assert_ne!(a.local_addr(), None);
+        assert!(a.info().unwrap().local_addr().is_ok());
 
         a.shutdown().await;
 
-        assert_eq!(a.local_addr(), None);
+        assert!(a.info().is_err());
     }
 
     #[tokio::test]
