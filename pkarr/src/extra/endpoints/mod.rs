@@ -1,7 +1,9 @@
 //! EndpointResolver trait for different clients
 
-// mod async_iter;
 mod endpoint;
+
+use futures_lite::Stream;
+use genawaiter::sync::Gen;
 
 use crate::{Client, PublicKey, SignedPacket};
 
@@ -15,14 +17,8 @@ pub trait EndpointResolver {
         public_key: &PublicKey,
     ) -> impl std::future::Future<Output = Result<Option<SignedPacket>, ResolveError>>;
 
-    fn resolve_endpoint(
-        &self,
-        qname: &str,
-    ) -> impl std::future::Future<Output = Result<Endpoint, FailedToResolveEndpoint>>
-    where
-        Self: std::marker::Sync,
-    {
-        async move {
+    fn resolve_endpoint(&self, qname: &str) -> impl Stream<Item = Endpoint> {
+        Gen::new(|co| async move {
             let target = qname;
             // TODO: cache the result of this function?
 
@@ -56,12 +52,12 @@ pub trait EndpointResolver {
 
             if let Some(svcb) = svcb {
                 if PublicKey::try_from(svcb.target()).is_err() {
-                    return Ok(svcb);
+                    co.yield_(svcb).await
                 }
             }
 
-            Err(FailedToResolveEndpoint)
-        }
+            // co.yield_(None).await
+        })
     }
 }
 
@@ -79,17 +75,6 @@ impl EndpointResolver for crate::client::relay::Client {
         self.resolve(public_key)
             .await
             .map_err(ResolveError::Reqwest)
-    }
-}
-
-#[derive(Debug)]
-struct FailedToResolveEndpoint;
-
-impl std::error::Error for FailedToResolveEndpoint {}
-
-impl std::fmt::Display for FailedToResolveEndpoint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "The Pkarr Client was shutdown")
     }
 }
 
@@ -121,6 +106,8 @@ mod tests {
 
     use std::future::Future;
     use std::pin::Pin;
+
+    use futures_lite::StreamExt;
 
     fn generate_subtree(
         client: Client,
@@ -193,8 +180,25 @@ mod tests {
 
         let tld = generate(&client, 3, 3, Some("example.com".to_string())).await;
 
-        let endpoint = client.resolve_endpoint(&tld.to_string()).await.unwrap();
+        let endpoint = client
+            .resolve_endpoint(&tld.to_string())
+            .next()
+            .await
+            .unwrap();
+
         assert_eq!(endpoint.target(), "example.com");
+    }
+
+    #[tokio::test]
+    async fn empty() {
+        let testnet = Testnet::new(3).unwrap();
+        let client = Client::builder().testnet(&testnet).build().unwrap();
+
+        let pubky = Keypair::random().public_key();
+
+        let endpoint = client.resolve_endpoint(&pubky.to_string()).next().await;
+
+        assert!(endpoint.is_none());
     }
 
     // TODO: Test max_chain_exceeded
@@ -228,7 +232,12 @@ mod tests {
 
         let tld = generate(&client, 3, 3, None).await;
 
-        let endpoint = client.resolve_endpoint(&tld.to_string()).await.unwrap();
+        let endpoint = client
+            .resolve_endpoint(&tld.to_string())
+            .next()
+            .await
+            .unwrap();
+
         assert_eq!(endpoint.target(), ".");
         assert_eq!(endpoint.port(), Some(3000));
         assert_eq!(

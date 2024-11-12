@@ -32,7 +32,8 @@ sha1_smol = { version = "1.0.1", optional = true }
 serde = { version = "1.0.209", features = ["derive"], optional = true }
 
 # feat: endpoints dependencies
-futures = { version = "0.3.30", optional = true, default-features = false }
+futures-lite = { version = "2.5.0", default-features = false, optional = true }
+genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # feat: dht dependencies
@@ -49,7 +50,7 @@ libc = { version = "0.2.159", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.69"
-futures = "0.3.30" 
+futures-lite = { version = "2.5.0", default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 reqwest = "0.12.7"
 sha1_smol = "1.0.1"
@@ -75,7 +76,7 @@ serde = ["dep:serde", "pubky-timestamp/serde", "pubky-timestamp/httpdate"]
 
 # Extra
 ## Use [extra::endpoints::EndpointResolver] trait
-endpoints = ["dep:futures"]
+endpoints = ["dep:futures-lite"]
 ## Use [LmdbCache]
 lmdb-cache = ["dep:heed", "dep:byteorder", "dep:libc"]
 
