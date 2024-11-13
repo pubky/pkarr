@@ -116,7 +116,7 @@ impl std::fmt::Display for ResolveError {
 }
 
 #[derive(Debug)]
-struct FailedToResolveEndpoint;
+pub struct FailedToResolveEndpoint;
 
 impl std::error::Error for FailedToResolveEndpoint {}
 

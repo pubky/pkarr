@@ -1169,7 +1169,7 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 [[package]]
 name = "mainline"
 version = "3.0.1"
-source = "git+https://github.com/pubky/mainline#dc656d8c72c0a525e8575798eba987863bf37df2"
+source = "git+https://github.com/pubky/mainline#ce935827349341d2130589486a40e6411c8c790e"
 dependencies = [
  "bytes",
  "crc",
@@ -1494,6 +1494,8 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 name = "pkarr"
 version = "3.0.0"
 dependencies = [
+ "axum",
+ "axum-server",
  "base32",
  "byteorder",
  "bytes",

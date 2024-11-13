@@ -56,6 +56,8 @@ reqwest = "0.12.7"
 sha1_smol = "1.0.1"
 
 [dev-dependencies]
+axum = "0.7.7"
+axum-server = "0.7.1"
 postcard = { version = "1.0.10", features = ["alloc"] }
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
 
@@ -77,11 +79,13 @@ serde = ["dep:serde", "pubky-timestamp/serde", "pubky-timestamp/httpdate"]
 # Extra
 ## Use [extra::endpoints::EndpointResolver] trait
 endpoints = ["dep:futures-lite"]
+## Implement reqwest::dns::Resolve trait for Pkarr clients
+reqwest-resolve = ["dep:reqwest", "endpoints"]
 ## Use [LmdbCache]
 lmdb-cache = ["dep:heed", "dep:byteorder", "dep:libc"]
 
 ## Use all features
-full = ["dht", "relay", "serde", "endpoints", "lmdb-cache"]
+full = ["dht", "relay", "serde", "endpoints", "lmdb-cache", "reqwest-resolve"]
 
 default = ["dht"]
 
