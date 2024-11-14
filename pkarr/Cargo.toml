@@ -32,7 +32,8 @@ sha1_smol = { version = "1.0.1", optional = true }
 serde = { version = "1.0.209", features = ["derive"], optional = true }
 
 # feat: endpoints dependencies
-futures = { version = "0.3.30", optional = true, default-features = false }
+futures-lite = { version = "2.5.0", default-features = false, optional = true }
+genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pubky-timestamp = { version = "0.2.0", default-features = false }
@@ -51,13 +52,15 @@ libc = { version = "0.2.159", optional = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pubky-timestamp = { version = "0.2.0", default-features = false, features = ["httpdate"] }
 js-sys = "0.3.69"
-futures = "0.3.30" 
+futures-lite = { version = "2.5.0", default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 reqwest = "0.12.7"
 sha1_smol = "1.0.1"
 wasm-bindgen-futures = "0.4.45"
 
 [dev-dependencies]
+axum = "0.7.7"
+axum-server = "0.7.1"
 postcard = { version = "1.0.10", features = ["alloc"] }
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
 
@@ -78,12 +81,14 @@ serde = ["dep:serde", "pubky-timestamp/serde", "pubky-timestamp/httpdate"]
 
 # Extra
 ## Use [extra::endpoints::EndpointResolver] trait
-endpoints = ["dep:futures"]
+endpoints = ["dep:futures-lite"]
+## Implement reqwest::dns::Resolve trait for Pkarr clients
+reqwest-resolve = ["dep:reqwest", "endpoints"]
 ## Use [LmdbCache]
 lmdb-cache = ["dep:heed", "dep:byteorder", "dep:libc"]
 
 ## Use all features
-full = ["dht", "relay", "serde", "endpoints", "lmdb-cache"]
+full = ["dht", "relay", "serde", "endpoints", "lmdb-cache", "reqwest-resolve"]
 
 default = ["full"]
 
