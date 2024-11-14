@@ -26,9 +26,9 @@ impl From<&crate::PublicKey> for CacheKey {
     fn from(public_key: &crate::PublicKey) -> CacheKey {
         let mut encoded = vec![];
 
-        encoded.extend(public_key);
+        encoded.extend(public_key.as_bytes());
 
-        let mut hasher = Sha1::new();
+        let mut hasher = sha1_smol::Sha1::new();
         hasher.update(&encoded);
         hasher.digest().bytes()
     }

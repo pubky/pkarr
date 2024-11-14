@@ -193,7 +193,13 @@ impl Client {
             let tx = tx.clone();
             let this = self.clone();
 
+            #[cfg(not(target_arch = "wasm32"))]
             tokio::task::spawn(async move {
+                // If the receiver was dropped.. no harm.
+                let _ = tx.send(this.race_resolve(&pubky, None).await);
+            });
+            #[cfg(target_arch = "wasm32")]
+            wasm_bindgen_futures::spawn_local(async move {
                 // If the receiver was dropped.. no harm.
                 let _ = tx.send(this.race_resolve(&pubky, None).await);
             });
@@ -310,7 +316,7 @@ impl Client {
             Box::pin(async move { this.resolve_from_relay(relay, public_key, cached).await })
         });
 
-        let mut result: Result<Option<SignedPacket>> = Ok(None);
+        let mut result: Result<Option<SignedPacket>, reqwest::Error> = Ok(None);
 
         match select_ok(futures).await {
             Ok((Some(signed_packet), _)) => {

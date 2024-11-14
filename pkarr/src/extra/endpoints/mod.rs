@@ -3,7 +3,7 @@
 // mod async_iter;
 mod endpoint;
 
-use crate::{Client, PublicKey, SignedPacket};
+use crate::{PublicKey, SignedPacket};
 
 pub use endpoint::Endpoint;
 
@@ -65,7 +65,8 @@ pub trait EndpointResolver {
     }
 }
 
-impl EndpointResolver for Client {
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+impl EndpointResolver for crate::client::dht::Client {
     async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>, ResolveError> {
         self.resolve(public_key).await.map_err(|error| match error {
             crate::client::dht::ClientWasShutdown => ResolveError::ClientWasShutdown,
@@ -117,7 +118,7 @@ mod tests {
     use crate::dns::rdata::{A, SVCB};
     use crate::dns::{self, rdata::RData};
     use crate::SignedPacket;
-    use crate::{mainline::Testnet, Keypair};
+    use crate::{mainline::Testnet, Client, Keypair};
 
     use std::future::Future;
     use std::pin::Pin;
