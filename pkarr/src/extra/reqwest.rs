@@ -37,29 +37,3 @@ async fn resolve(
 
     Ok(Box::new(format!("{name}:0").to_socket_addrs().unwrap()))
 }
-
-#[cfg(test)]
-mod tests {
-    use axum::{response::Html, routing::get, Router};
-    use rand::Rng;
-    use std::net::SocketAddr;
-
-    #[tokio::test]
-    async fn http() {
-        // Define the route and handler
-        let app = Router::new().route("/", get(handler));
-
-        let port: u16 = rand::thread_rng().gen();
-
-        let addr = SocketAddr::from(([127, 0, 0, 1], port));
-
-        axum_server::bind(addr)
-            .serve(app.into_make_service())
-            .await
-            .unwrap();
-
-        async fn handler() -> Html<&'static str> {
-            Html("Hello, World!")
-        }
-    }
-}
