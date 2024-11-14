@@ -52,7 +52,7 @@ libc = { version = "0.2.159", optional = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pubky-timestamp = { version = "0.2.0", default-features = false, features = ["httpdate"] }
 js-sys = "0.3.69"
-futures-lite = { version = "2.5.0", default-features = false }
+futures = "0.3.30"
 getrandom = { version = "0.2", features = ["js"] }
 reqwest = "0.12.7"
 sha1_smol = "1.0.1"
