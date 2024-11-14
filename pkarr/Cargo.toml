@@ -21,7 +21,7 @@ document-features = "0.2.8"
 rand = "0.8.5"
 once_cell = {version = "1.19.0", default-features = false }
 lru = { version = "0.12.3", default-features = false }
-pubky-timestamp = { version = "0.2.0", default-features = false }
+flume = { version = "0.11.0", features = ["select", "eventual-fairness", "async"], default-features = false , optional = true }
 
 # feat: relay dependencies
 tokio = { version = "1.40.0", optional = true, default-features = false }
@@ -36,9 +36,10 @@ futures-lite = { version = "2.5.0", default-features = false, optional = true }
 genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pubky-timestamp = { version = "0.2.0", default-features = false }
+
 # feat: dht dependencies
 mainline = { git = "https://github.com/pubky/mainline", optional = true }
-flume = { version = "0.11.0", features = ["select", "eventual-fairness", "async"], default-features = false , optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.7", features = ["rustls-tls"], optional = true }
@@ -49,11 +50,13 @@ byteorder = { version = "1.5.0", default-features = false, optional = true }
 libc = { version = "0.2.159", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+pubky-timestamp = { version = "0.2.0", default-features = false, features = ["httpdate"] }
 js-sys = "0.3.69"
 futures-lite = { version = "2.5.0", default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 reqwest = "0.12.7"
 sha1_smol = "1.0.1"
+wasm-bindgen-futures = "0.4.45"
 
 [dev-dependencies]
 axum = "0.7.7"
@@ -71,7 +74,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 ## Use [client::dht::Client]
 dht = ["dep:mainline", "dep:flume"]
 ## Use [client::relay::Client]
-relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol"]
+relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:flume"]
 
 ## Derive serde Serialize/Deserialize for PublicKey
 serde = ["dep:serde", "pubky-timestamp/serde", "pubky-timestamp/httpdate"]
@@ -87,7 +90,7 @@ lmdb-cache = ["dep:heed", "dep:byteorder", "dep:libc"]
 ## Use all features
 full = ["dht", "relay", "serde", "endpoints", "lmdb-cache", "reqwest-resolve"]
 
-default = ["dht"]
+default = ["full"]
 
 [package.metadata.docs.rs]
 all-features = true
