@@ -2,7 +2,7 @@ use reqwest::dns::{Addrs, Resolve};
 
 use crate::{Client, PublicKey};
 
-use super::endpoints::EndpointResolver;
+use super::endpoints::EndpointsResolver;
 
 use std::net::ToSocketAddrs;
 
@@ -22,13 +22,13 @@ impl Resolve for crate::client::relay::Client {
 }
 
 async fn resolve(
-    client: impl EndpointResolver,
+    client: impl EndpointsResolver,
     name: reqwest::dns::Name,
 ) -> Result<Addrs, Box<dyn std::error::Error + Send + Sync>> {
     let name = name.as_str();
 
     if PublicKey::try_from(name).is_ok() {
-        let endpoint = client.resolve_endpoint(name).await?;
+        let endpoint = client.resolve_https_endpoint(name).await?;
 
         let addrs: Addrs = Box::new(endpoint.to_socket_addrs().into_iter());
 
