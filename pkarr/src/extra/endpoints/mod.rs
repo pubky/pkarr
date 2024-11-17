@@ -18,7 +18,7 @@ impl EndpointsResolver for crate::client::dht::Client {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
+#[cfg(any(target_arch = "wasm32", feature = "relay"))]
 impl EndpointsResolver for crate::client::relay::Client {
     async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>, ResolveError> {
         self.resolve(public_key)

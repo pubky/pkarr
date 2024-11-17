@@ -19,38 +19,35 @@ pub trait EndpointsResolver {
     fn resolve_endpoints(&self, qname: &str, is_svcb: bool) -> impl Stream<Item = Endpoint> {
         Gen::new(|co| async move {
             // TODO: cache the result of this function?
+            // TODO: test load balancing
+            // TODO: test failover
+            // TODO: custom max_chain_length
 
             let mut step = 0;
-            let mut endpoint: Option<Endpoint> = None;
+            let mut stack: Vec<Endpoint> = Vec::new();
 
-            loop {
-                let current = endpoint.as_ref().map(|s| s.domain()).unwrap_or(qname);
-
-                if let Ok(tld) = PublicKey::try_from(current) {
-                    if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
-                        if step >= DEFAULT_MAX_CHAIN_LENGTH {
-                            break;
-                        };
-                        step += 1;
-
-                        // Choose most prior SVCB record
-                        // TODO: test dns load balancing
-                        // TODO: test failover
-
-                        endpoint = Endpoint::find(&signed_packet, current, is_svcb);
-
-                        // TODO: support wildcard?
-                    } else {
-                        break;
-                    }
-                } else {
-                    break;
+            // Initialize the stack with endpoints from the starting domain.
+            if let Ok(tld) = PublicKey::try_from(qname) {
+                if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
+                    step += 1;
+                    stack.extend(Endpoint::parse(&signed_packet, qname, is_svcb));
                 }
             }
 
-            if let Some(endpoint) = endpoint {
-                if PublicKey::try_from(endpoint.domain()).is_err() {
-                    co.yield_(endpoint).await
+            while let Some(next) = stack.pop() {
+                let current = next.domain();
+
+                // Attempt to resolve the domain as a public key.
+                match PublicKey::try_from(current) {
+                    Ok(tld) => match self.resolve(&tld).await {
+                        Ok(Some(signed_packet)) if step < DEFAULT_MAX_CHAIN_LENGTH => {
+                            step += 1;
+                            stack.extend(Endpoint::parse(&signed_packet, current, is_svcb));
+                        }
+                        _ => break, // Stop on resolution failure or chain length exceeded.
+                    },
+                    // Yield if the domain is not pointing to another Pkarr TLD domain.
+                    Err(_) => co.yield_(next).await,
                 }
             }
         })

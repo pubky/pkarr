@@ -10,7 +10,7 @@ use std::{
     net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
-use pubky_timestamp::Timestamp;
+use rand::{seq::SliceRandom, thread_rng};
 
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
@@ -23,78 +23,72 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    /// 1. Find the SVCB or HTTPS records with the lowest priority
-    /// 2. Choose a random one of the list of the above
-    /// 3. If the target is `.`, check A and AAAA records see [rfc9460](https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
-    pub(crate) fn find(
+    /// Returns a stack of endpoints from a SignedPacket
+    ///
+    /// 1. Find the SVCB or HTTPS records
+    /// 2. Sort them by priority (reverse)
+    /// 3. Shuffle records within each priority
+    /// 3. If the target is `.`, keep track of A and AAAA records see [rfc9460](https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
+    pub(crate) fn parse(
         signed_packet: &SignedPacket,
         target: &str,
         is_svcb: bool,
-    ) -> Option<Endpoint> {
-        let mut lowest_priority = u16::MAX;
-        let mut lowest_priority_index = 0;
-        let mut records = vec![];
+    ) -> Vec<Endpoint> {
+        let mut records = signed_packet
+            .resource_records(target)
+            .filter_map(|record| get_svcb(record, is_svcb))
+            .collect::<Vec<_>>();
 
-        for record in signed_packet.resource_records(target) {
-            if let Some(svcb) = get_svcb(record, is_svcb) {
-                match svcb.priority.cmp(&lowest_priority) {
-                    std::cmp::Ordering::Equal => records.push(svcb),
-                    std::cmp::Ordering::Less => {
-                        lowest_priority_index = records.len();
-                        lowest_priority = svcb.priority;
-                        records.push(svcb)
-                    }
-                    _ => {}
+        // TODO: support wildcard?
+
+        // Shuffle the vector first
+        let mut rng = thread_rng();
+        records.shuffle(&mut rng);
+        // Sort by priority
+        records.sort_by(|a, b| b.priority.cmp(&a.priority));
+
+        let mut addrs = HashSet::new();
+        for record in signed_packet.resource_records("@") {
+            match &record.rdata {
+                RData::A(ip) => {
+                    addrs.insert(IpAddr::V4(ip.address.into()));
                 }
+                RData::AAAA(ip) => {
+                    addrs.insert(IpAddr::V6(ip.address.into()));
+                }
+                _ => {}
             }
         }
+        let addrs = addrs.into_iter().collect::<Vec<_>>();
 
-        // Good enough random selection
-        let now = Timestamp::now().as_u64();
-        let slice = &records[lowest_priority_index..];
-        let index = if slice.is_empty() {
-            0
-        } else {
-            (now as usize) % slice.len()
-        };
+        records
+            .into_iter()
+            .map(|s| {
+                let target = s.target.to_string();
 
-        slice.get(index).map(|s| {
-            let target = s.target.to_string();
+                let port = s
+                    .get_param(SVCB::PORT)
+                    .map(|bytes| {
+                        let mut arr = [0_u8; 2];
+                        arr[0] = bytes[0];
+                        arr[1] = bytes[1];
 
-            let mut addrs = HashSet::new();
+                        u16::from_be_bytes(arr)
+                    })
+                    .unwrap_or_default();
 
-            let port = s
-                .get_param(SVCB::PORT)
-                .map(|bytes| {
-                    let mut arr = [0_u8; 2];
-                    arr[0] = bytes[0];
-                    arr[1] = bytes[1];
-
-                    u16::from_be_bytes(arr)
-                })
-                .unwrap_or_default();
-
-            if &target == "." {
-                for record in signed_packet.resource_records("@") {
-                    match &record.rdata {
-                        RData::A(ip) => {
-                            addrs.insert(IpAddr::V4(ip.address.into()));
-                        }
-                        RData::AAAA(ip) => {
-                            addrs.insert(IpAddr::V6(ip.address.into()));
-                        }
-                        _ => {}
-                    }
+                Endpoint {
+                    target,
+                    port,
+                    public_key: signed_packet.public_key(),
+                    addrs: if s.target.to_string() == "." {
+                        addrs.clone()
+                    } else {
+                        Vec::with_capacity(0)
+                    },
                 }
-            }
-
-            Endpoint {
-                target,
-                port,
-                public_key: signed_packet.public_key(),
-                addrs: addrs.into_iter().collect(),
-            }
-        })
+            })
+            .collect::<Vec<_>>()
     }
 
     /// Returns the [SVCB] record's `target` value.
@@ -201,11 +195,15 @@ mod tests {
         let tld = keypair.public_key();
 
         // Follow foo.tld HTTPS records
-        let endpoint = Endpoint::find(&signed_packet, &format!("foo.{tld}"), false).unwrap();
+        let endpoint = Endpoint::parse(&signed_packet, &format!("foo.{tld}"), false)
+            .pop()
+            .unwrap();
         assert_eq!(endpoint.domain(), "https.example.com");
 
         // Follow _foo.tld SVCB records
-        let endpoint = Endpoint::find(&signed_packet, &format!("_foo.{tld}"), true).unwrap();
+        let endpoint = Endpoint::parse(&signed_packet, &format!("_foo.{tld}"), true)
+            .pop()
+            .unwrap();
         assert_eq!(endpoint.domain(), "protocol.example.com");
     }
 
@@ -238,11 +236,12 @@ mod tests {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         // Follow foo.tld HTTPS records
-        let endpoint = Endpoint::find(
+        let endpoint = Endpoint::parse(
             &signed_packet,
             &signed_packet.public_key().to_string(),
             false,
         )
+        .pop()
         .unwrap();
 
         assert_eq!(endpoint.domain(), ".");
