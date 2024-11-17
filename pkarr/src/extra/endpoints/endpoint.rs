@@ -3,9 +3,12 @@ use crate::{
         rdata::{RData, SVCB},
         ResourceRecord,
     },
-    SignedPacket,
+    PublicKey, SignedPacket,
 };
-use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, SocketAddr, ToSocketAddrs},
+};
 
 use pubky_timestamp::Timestamp;
 
@@ -13,8 +16,9 @@ use pubky_timestamp::Timestamp;
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
 pub struct Endpoint {
     target: String,
-    // public_key: PublicKey,
-    port: Option<u16>,
+    public_key: PublicKey,
+    port: u16,
+    /// SocketAddrs from the [SignedPacket]
     addrs: Vec<IpAddr>,
 }
 
@@ -57,13 +61,28 @@ impl Endpoint {
         slice.get(index).map(|s| {
             let target = s.target.to_string();
 
-            let mut addrs: Vec<IpAddr> = vec![];
+            let mut addrs = HashSet::new();
+
+            let port = s
+                .get_param(SVCB::PORT)
+                .map(|bytes| {
+                    let mut arr = [0_u8; 2];
+                    arr[0] = bytes[0];
+                    arr[1] = bytes[1];
+
+                    u16::from_be_bytes(arr)
+                })
+                .unwrap_or_default();
 
             if &target == "." {
                 for record in signed_packet.resource_records("@") {
                     match &record.rdata {
-                        RData::A(ip) => addrs.push(IpAddr::V4(ip.address.into())),
-                        RData::AAAA(ip) => addrs.push(IpAddr::V6(ip.address.into())),
+                        RData::A(ip) => {
+                            addrs.insert(IpAddr::V4(ip.address.into()));
+                        }
+                        RData::AAAA(ip) => {
+                            addrs.insert(IpAddr::V6(ip.address.into()));
+                        }
                         _ => {}
                     }
                 }
@@ -71,35 +90,34 @@ impl Endpoint {
 
             Endpoint {
                 target,
-                // public_key: signed_packet.public_key(),
-                port: s.get_param(SVCB::PORT).map(|bytes| {
-                    let mut arr = [0_u8; 2];
-                    arr[0] = bytes[0];
-                    arr[1] = bytes[1];
-
-                    u16::from_be_bytes(arr)
-                }),
-                addrs,
+                port,
+                public_key: signed_packet.public_key(),
+                addrs: addrs.into_iter().collect(),
             }
         })
     }
 
-    /// Return the endpoint target, i.e the domain it points to
-    /// "." means this endpoint points to its own [Endpoint::public_key]
-    pub fn target(&self) -> &str {
+    /// Returns the [SVCB] record's `target` value.
+    ///
+    /// Useful in web browsers where we can't use [Self::to_socket_addrs]
+    pub fn domain(&self) -> &str {
         &self.target
     }
 
-    pub fn port(&self) -> Option<u16> {
-        self.port
+    /// Return the [PublicKey] of the [SignedPacket] this endpoint was found at.
+    ///
+    /// This is useful as the [PublicKey] of the endpoint (server), and could be
+    /// used for TLS.
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
     }
 
-    /// Return an iterator of [SocketAddr], either by resolving the [Endpoint::target] using normal DNS,
+    /// Return an iterator of [SocketAddr], either by resolving the [Endpoint::domain] using normal DNS,
     /// or, if the target is ".", return the [RData::A] or [RData::AAAA] records
     /// from the endpoint's [SignedPacket], if available.
     pub fn to_socket_addrs(&self) -> Vec<SocketAddr> {
         if self.target == "." {
-            let port = self.port.unwrap_or(0);
+            let port = self.port;
 
             return self
                 .addrs
@@ -111,7 +129,7 @@ impl Endpoint {
         if cfg!(target_arch = "wasm32") {
             vec![]
         } else {
-            format!("{}:{}", self.target, self.port.unwrap_or(0))
+            format!("{}:{}", self.target, self.port)
                 .to_socket_addrs()
                 .map_or(vec![], |v| v.collect::<Vec<_>>())
         }
@@ -149,7 +167,7 @@ mod tests {
     use crate::{dns, Keypair};
 
     #[tokio::test]
-    async fn endpoint_target() {
+    async fn endpoint_domain() {
         let mut packet = dns::Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
             dns::Name::new("foo").unwrap(),
@@ -184,11 +202,11 @@ mod tests {
 
         // Follow foo.tld HTTPS records
         let endpoint = Endpoint::find(&signed_packet, &format!("foo.{tld}"), false).unwrap();
-        assert_eq!(endpoint.target, "https.example.com");
+        assert_eq!(endpoint.domain(), "https.example.com");
 
         // Follow _foo.tld SVCB records
         let endpoint = Endpoint::find(&signed_packet, &format!("_foo.{tld}"), true).unwrap();
-        assert_eq!(endpoint.target, "protocol.example.com");
+        assert_eq!(endpoint.domain(), "protocol.example.com");
     }
 
     #[test]
@@ -227,9 +245,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(endpoint.target, ".");
+        assert_eq!(endpoint.domain(), ".");
 
-        let addrs = endpoint.to_socket_addrs();
+        let mut addrs = endpoint.to_socket_addrs();
+        addrs.sort();
+
         assert_eq!(
             addrs.into_iter().map(|s| s.to_string()).collect::<Vec<_>>(),
             vec!["209.151.148.15:6881", "[2a05:d014:275:6201::64]:6881"]

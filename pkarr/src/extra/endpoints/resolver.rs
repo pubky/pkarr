@@ -18,17 +18,15 @@ pub trait EndpointsResolver {
     /// Returns an async stream of either [HTTPS] or [SVCB] [Endpoint]s
     fn resolve_endpoints(&self, qname: &str, is_svcb: bool) -> impl Stream<Item = Endpoint> {
         Gen::new(|co| async move {
-            let target = qname;
             // TODO: cache the result of this function?
 
             let mut step = 0;
-            let mut svcb: Option<Endpoint> = None;
+            let mut endpoint: Option<Endpoint> = None;
 
             loop {
-                let current = svcb
-                    .clone()
-                    .map_or(target.to_string(), |s| s.target().to_string());
-                if let Ok(tld) = PublicKey::try_from(current.clone()) {
+                let current = endpoint.as_ref().map(|s| s.domain()).unwrap_or(qname);
+
+                if let Ok(tld) = PublicKey::try_from(current) {
                     if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
                         if step >= DEFAULT_MAX_CHAIN_LENGTH {
                             break;
@@ -36,7 +34,10 @@ pub trait EndpointsResolver {
                         step += 1;
 
                         // Choose most prior SVCB record
-                        svcb = Endpoint::find(&signed_packet, &current, is_svcb);
+                        // TODO: test dns load balancing
+                        // TODO: test failover
+
+                        endpoint = Endpoint::find(&signed_packet, current, is_svcb);
 
                         // TODO: support wildcard?
                     } else {
@@ -47,13 +48,11 @@ pub trait EndpointsResolver {
                 }
             }
 
-            if let Some(svcb) = svcb {
-                if PublicKey::try_from(svcb.target()).is_err() {
-                    co.yield_(svcb).await
+            if let Some(endpoint) = endpoint {
+                if PublicKey::try_from(endpoint.domain()).is_err() {
+                    co.yield_(endpoint).await
                 }
             }
-
-            // co.yield_(None).await
         })
     }
 

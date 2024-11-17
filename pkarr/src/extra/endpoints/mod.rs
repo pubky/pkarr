@@ -29,6 +29,8 @@ impl EndpointsResolver for crate::client::relay::Client {
 
 #[cfg(test)]
 mod tests {
+    use simple_dns::rdata::AAAA;
+
     use super::*;
     use crate::dns::rdata::{A, SVCB};
     use crate::dns::{self, rdata::RData};
@@ -36,13 +38,19 @@ mod tests {
     use crate::{PublicKey, SignedPacket};
 
     use std::future::Future;
+    use std::net::IpAddr;
     use std::pin::Pin;
+    use std::str::FromStr;
+
+    // TODO: test SVCB too.
 
     fn generate_subtree(
         client: Client,
         depth: u8,
         branching: u8,
         domain: Option<String>,
+        ips: Vec<IpAddr>,
+        port: Option<u16>,
     ) -> Pin<Box<dyn Future<Output = PublicKey>>> {
         Box::pin(async move {
             let keypair = Keypair::random();
@@ -54,17 +62,42 @@ mod tests {
 
                 if depth == 0 {
                     svcb.priority = 1;
-                    svcb.set_port((branching) as u16 * 1000);
+
+                    if let Some(port) = port {
+                        svcb.set_port(port);
+                    }
 
                     if let Some(target) = &domain {
                         let target: &'static str = Box::leak(target.clone().into_boxed_str());
                         svcb.target = target.try_into().unwrap()
                     }
+
+                    for ip in ips.clone() {
+                        packet.answers.push(dns::ResourceRecord::new(
+                            dns::Name::new("@").unwrap(),
+                            dns::CLASS::IN,
+                            3600,
+                            match ip {
+                                IpAddr::V4(address) => RData::A(A {
+                                    address: address.into(),
+                                }),
+                                IpAddr::V6(address) => RData::AAAA(AAAA {
+                                    address: address.into(),
+                                }),
+                            },
+                        ));
+                    }
                 } else {
-                    let target =
-                        generate_subtree(client.clone(), depth - 1, branching, domain.clone())
-                            .await
-                            .to_string();
+                    let target = generate_subtree(
+                        client.clone(),
+                        depth - 1,
+                        branching,
+                        domain.clone(),
+                        ips.clone(),
+                        port,
+                    )
+                    .await
+                    .to_string();
                     let target: &'static str = Box::leak(target.into_boxed_str());
                     svcb.target = target.try_into().unwrap();
                 };
@@ -77,15 +110,6 @@ mod tests {
                 ));
             }
 
-            if depth == 0 {
-                packet.answers.push(dns::ResourceRecord::new(
-                    dns::Name::new("@").unwrap(),
-                    dns::CLASS::IN,
-                    3600,
-                    RData::A(A { address: 10 }),
-                ));
-            }
-
             let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
             client.publish(&signed_packet).await.unwrap();
 
@@ -93,13 +117,34 @@ mod tests {
         })
     }
 
+    /// depth of (3): A -> B -> C
+    /// branch of (2): A -> B0,  A ->  B1
+    /// domain, ips, and port are all at the end (C, or B1)
     fn generate(
         client: &Client,
         depth: u8,
         branching: u8,
         domain: Option<String>,
+        ips: Vec<IpAddr>,
+        port: Option<u16>,
     ) -> Pin<Box<dyn Future<Output = PublicKey>>> {
-        generate_subtree(client.clone(), depth - 1, branching, domain)
+        generate_subtree(client.clone(), depth - 1, branching, domain, ips, port)
+    }
+
+    #[tokio::test]
+    async fn direct_endpoint_resolution() {
+        let testnet = Testnet::new(3).unwrap();
+        let client = Client::builder().testnet(&testnet).build().unwrap();
+
+        let tld = generate(&client, 1, 1, Some("example.com".to_string()), vec![], None).await;
+
+        let endpoint = client
+            .resolve_https_endpoint(&tld.to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(endpoint.domain(), "example.com");
+        assert_eq!(endpoint.public_key(), &tld);
     }
 
     #[tokio::test]
@@ -107,14 +152,14 @@ mod tests {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder().testnet(&testnet).build().unwrap();
 
-        let tld = generate(&client, 3, 3, Some("example.com".to_string())).await;
+        let tld = generate(&client, 3, 3, Some("example.com".to_string()), vec![], None).await;
 
         let endpoint = client
             .resolve_https_endpoint(&tld.to_string())
             .await
             .unwrap();
 
-        assert_eq!(endpoint.target(), "example.com");
+        assert_eq!(endpoint.domain(), "example.com");
     }
 
     #[tokio::test]
@@ -134,7 +179,7 @@ mod tests {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder().testnet(&testnet).build().unwrap();
 
-        let tld = generate(&client, 4, 3, Some("example.com".to_string())).await;
+        let tld = generate(&client, 4, 3, Some("example.com".to_string()), vec![], None).await;
 
         let endpoint = client.resolve_https_endpoint(&tld.to_string()).await;
 
@@ -146,15 +191,22 @@ mod tests {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder().testnet(&testnet).build().unwrap();
 
-        let tld = generate(&client, 3, 3, None).await;
+        let tld = generate(
+            &client,
+            3,
+            3,
+            None,
+            vec![IpAddr::from_str("0.0.0.10").unwrap()],
+            Some(3000),
+        )
+        .await;
 
         let endpoint = client
             .resolve_https_endpoint(&tld.to_string())
             .await
             .unwrap();
 
-        assert_eq!(endpoint.target(), ".");
-        assert_eq!(endpoint.port(), Some(3000));
+        assert_eq!(endpoint.domain(), ".");
         assert_eq!(
             endpoint
                 .to_socket_addrs()
@@ -163,6 +215,5 @@ mod tests {
                 .collect::<Vec<String>>(),
             vec!["0.0.0.10:3000"]
         );
-        dbg!(&endpoint);
     }
 }
