@@ -1,7 +1,5 @@
 //! Make an HTTP request over to a Pkarr address using Reqwest
 
-use std::sync::Arc;
-
 use reqwest::Method;
 use tracing::Level;
 use tracing_subscriber;
@@ -18,22 +16,22 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
     let cli = Cli::parse();
     let url = cli.url;
 
-    let client = Client::builder().build().unwrap();
+    let client = Client::builder().build()?;
 
-    let reqwest = reqwest::Client::builder()
-        .dns_resolver(Arc::new(client))
-        .build()
-        .unwrap();
+    let reqwest = reqwest::ClientBuilder::from(client).build()?;
 
-    let response = reqwest.request(Method::GET, &url).send().await.unwrap();
+    println!("GET {url}..");
+    let response = reqwest.request(Method::GET, &url).send().await?;
 
-    let body = response.text().await.unwrap();
+    let body = response.text().await?;
 
-    println!("Resolved {url}\n{body}");
+    println!("{body}");
+
+    Ok(())
 }

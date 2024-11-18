@@ -27,7 +27,7 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
     let cli = Cli::parse();
@@ -35,14 +35,17 @@ async fn main() {
     let app = Router::new().route("/", get(handler));
 
     let addr = format!("{}:{}", cli.ip, cli.port)
-        .to_socket_addrs()
-        .unwrap()
+        .to_socket_addrs()?
         .next()
-        .unwrap();
+        .ok_or(anyhow::anyhow!(
+            "Could not convert IP and port to socket addresses"
+        ))?;
 
     publish_server_pkarr(&addr).await;
 
-    bind(addr).serve(app.into_make_service()).await.unwrap();
+    bind(addr).serve(app.into_make_service()).await?;
+
+    Ok(())
 }
 
 // Simple handler that responds with "Hello, World!"
@@ -80,7 +83,7 @@ async fn publish_server_pkarr(socket_addr: &SocketAddr) {
 
     let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
-    println!("Server running on http://{}", keypair.public_key());
+    println!("Server running on https://{}", keypair.public_key());
 
     client.publish(&signed_packet).await.unwrap();
 }

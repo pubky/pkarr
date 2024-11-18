@@ -28,7 +28,7 @@ struct Cli {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .with_env_filter("pkarr")
@@ -42,7 +42,7 @@ async fn main() {
         .try_into()
         .expect("Invalid zbase32 encoded key");
 
-    let client = Client::builder().build().unwrap();
+    let client = Client::builder().build()?;
 
     println!("Resolving Pkarr: {} ...", cli.public_key);
     println!("\n=== COLD LOOKUP ===");
@@ -51,8 +51,10 @@ async fn main() {
     // loop {
     sleep(Duration::from_secs(1));
     println!("=== SUBSEQUENT LOOKUP ===");
-    resolve(&client, &public_key).await
+    resolve(&client, &public_key).await;
     // }
+
+    Ok(())
 }
 
 async fn resolve(client: &Client, public_key: &PublicKey) {
