@@ -1,5 +1,7 @@
 //! Utility structs for Ed25519 keys.
 
+#[cfg(feature = "tls")]
+use ed25519_dalek::pkcs8::{Document, EncodePublicKey};
 use ed25519_dalek::{
     SecretKey, Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey,
 };
@@ -57,7 +59,7 @@ impl Keypair {
 ///
 /// It can formatted to and parsed from a z-base32 string.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub struct PublicKey(VerifyingKey);
+pub struct PublicKey(pub(crate) VerifyingKey);
 
 impl PublicKey {
     /// Format the public key as z-base32 string.
@@ -88,6 +90,11 @@ impl PublicKey {
     /// Return a reference to the underlying [u8; 32] bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.0.as_bytes()
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn to_public_key_der(&self) -> Document {
+        self.0.to_public_key_der().expect("to_public_key_der")
     }
 }
 
@@ -480,5 +487,24 @@ mod tests {
 
         let public_key: PublicKey = str.try_into().unwrap();
         assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn pkcs8() {
+        let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let public_key: PublicKey = str.try_into().unwrap();
+
+        let der = public_key.to_public_key_der();
+
+        assert_eq!(
+            der.as_bytes(),
+            [
+                // Algorithm and other stuff.
+                48, 42, 48, 5, 6, 3, 43, 101, 112, 3, 33, 0, //
+                // Key
+                1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254,
+                14, 207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+            ]
+        )
     }
 }

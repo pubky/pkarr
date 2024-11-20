@@ -91,7 +91,7 @@ endpoints = ["dep:futures-lite"]
 ## Use [reqwest::dns::Resolve] trait implementation for [Client] and [client::relay::Client]
 reqwest-resolve = ["dep:reqwest", "endpoints"]
 ## Implement 
-tls = ["rustls"]
+tls = ["rustls", "ed25519-dalek/pkcs8"]
 ## Create a [reqwest::ClientBuilder] from [Client] or [client::relay::Client]
 reqwest-builder = ["tls", "reqwest-resolve"]
 

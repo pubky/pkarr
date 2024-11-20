@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
-use rustls::client::danger::ServerCertVerifier;
+use rustls::{
+    client::danger::{ServerCertVerified, ServerCertVerifier},
+    pki_types::SubjectPublicKeyInfoDer,
+    CertificateError,
+};
 
-use crate::Client;
+use crate::{Client, PublicKey};
 
 #[derive(Debug)]
 struct CertVerifier;
@@ -10,13 +14,29 @@ struct CertVerifier;
 impl ServerCertVerifier for CertVerifier {
     fn verify_server_cert(
         &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
+        endpoint_certificate: &rustls::pki_types::CertificateDer<'_>,
+        intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        host_name: &rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
         _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
+        if !intermediates.is_empty() {
+            return Err(rustls::Error::InvalidCertificate(
+                CertificateError::UnknownIssuer,
+            ));
+        }
+        // if self.trusted_spki.is_empty() {
+        //     return Ok(ServerCertVerified::assertion());
+        // }
+        let end_entity_as_spki = SubjectPublicKeyInfoDer::from(endpoint_certificate.as_ref());
+
+        // TODO: confirm that this end_entity is valid for this server_name.
+        match true {
+            true => Ok(ServerCertVerified::assertion()),
+            false => Err(rustls::Error::InvalidCertificate(
+                CertificateError::UnknownIssuer,
+            )),
+        }
     }
 
     fn verify_tls12_signature(
@@ -39,6 +59,11 @@ impl ServerCertVerifier for CertVerifier {
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         vec![]
+    }
+
+    fn requires_raw_public_keys(&self) -> bool {
+        // TODO: can we support x.509 certificates as well?
+        true
     }
 }
 
