@@ -6,61 +6,50 @@
 use tracing::Level;
 use tracing_subscriber;
 
-use axum::{response::Html, routing::get, Router};
-use axum_server::bind;
-use std::net::{SocketAddr, ToSocketAddrs};
+use axum::{routing::get, Router};
+use axum_server::tls_rustls::RustlsConfig;
 
-use clap::Parser;
+use std::net::{SocketAddr, TcpListener};
+use std::sync::Arc;
 
 use pkarr::{
     dns::{rdata::SVCB, Packet},
     Client, Keypair, SignedPacket,
 };
 
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// IP address to listen on
-    ip: String,
-    /// Port number to listen no
-    port: u16,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
-    let cli = Cli::parse();
+    let keypair = Keypair::random();
 
-    let app = Router::new().route("/", get(handler));
+    // Run a server on Pkarr
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
+    let address = listener.local_addr()?;
+    println!("Server listening on {address}");
 
-    let addr = format!("{}:{}", cli.ip, cli.port)
-        .to_socket_addrs()?
-        .next()
-        .ok_or(anyhow::anyhow!(
-            "Could not convert IP and port to socket addresses"
-        ))?;
+    let client = Client::builder().build()?;
+    // You should republish this every time the socket address change
+    // and once an hour otherwise.
+    publish_server_pkarr(&client, &keypair, &address).await;
 
-    publish_server_pkarr(&addr).await;
+    println!("Server running on https://{}", keypair.public_key());
 
-    bind(addr).serve(app.into_make_service()).await?;
+    let server = axum_server::from_tcp_rustls(
+        listener,
+        RustlsConfig::from_config(Arc::new(keypair.to_rpk_rustls_server_config())),
+    );
+
+    let app = Router::new().route("/", get(|| async { "Hello, world!" }));
+    server.serve(app.into_make_service()).await?;
 
     Ok(())
 }
 
-// Simple handler that responds with "Hello, World!"
-async fn handler() -> Html<&'static str> {
-    Html("Hello, World!")
-}
-
-async fn publish_server_pkarr(socket_addr: &SocketAddr) {
-    let client = Client::builder().build().unwrap();
-
-    let keypair = Keypair::random();
-
+async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &SocketAddr) {
     let mut packet = Packet::new_reply(1);
 
-    let mut svcb = SVCB::new(0, ".".try_into().unwrap());
+    let mut svcb = SVCB::new(0, ".".try_into().expect("infallible"));
 
     svcb.set_port(socket_addr.port());
 
@@ -82,8 +71,6 @@ async fn publish_server_pkarr(socket_addr: &SocketAddr) {
     ));
 
     let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
-
-    println!("Server running on https://{}", keypair.public_key());
 
     client.publish(&signed_packet).await.unwrap();
 }

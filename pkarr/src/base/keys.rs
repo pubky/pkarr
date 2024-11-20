@@ -7,7 +7,10 @@ use ed25519_dalek::{
 };
 use rand::rngs::OsRng;
 #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
-use rustls::{crypto::ring::sign::any_eddsa_type, pki_types::CertificateDer, sign::CertifiedKey};
+use rustls::{
+    crypto::ring::sign::any_eddsa_type, pki_types::CertificateDer,
+    server::AlwaysResolvesServerRawPublicKeys, sign::CertifiedKey, ServerConfig,
+};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
@@ -57,7 +60,7 @@ impl Keypair {
     }
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
-    /// Return a Raw PublicKey certified key according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
+    /// Return a RawPublicKey certified key according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
     /// useful to use with [rustls::ConfigBuilder::with_cert_resolver] and [rustls::server::AlwaysResolvesServerRawPublicKeys]
     pub fn to_rpk_certified_key(&self) -> CertifiedKey {
         let client_private_key = any_eddsa_type(
@@ -76,6 +79,35 @@ impl Keypair {
         let client_public_key_as_cert = CertificateDer::from(client_public_key.to_vec());
 
         CertifiedKey::new(vec![client_public_key_as_cert], client_private_key)
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    /// Create a [rustls::ServerConfig] using this keypair as a RawPublicKey certificate according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
+    pub fn to_rpk_rustls_server_config(&self) -> ServerConfig {
+        let cert_resolver =
+            AlwaysResolvesServerRawPublicKeys::new(self.to_rpk_certified_key().into());
+
+        ServerConfig::builder_with_provider(rustls::crypto::ring::default_provider().into())
+            .with_safe_default_protocol_versions()
+            .expect("version supported by ring")
+            .with_no_client_auth()
+            .with_cert_resolver(std::sync::Arc::new(cert_resolver))
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+impl From<Keypair> for ServerConfig {
+    /// calls [Keypair::to_rpk_rustls_server_config]
+    fn from(keypair: Keypair) -> Self {
+        keypair.to_rpk_rustls_server_config()
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+impl From<&Keypair> for ServerConfig {
+    /// calls [Keypair::to_rpk_rustls_server_config]
+    fn from(keypair: &Keypair) -> Self {
+        keypair.to_rpk_rustls_server_config()
     }
 }
 

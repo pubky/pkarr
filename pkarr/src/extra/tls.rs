@@ -12,7 +12,7 @@ use crate::{Client, PublicKey};
 use crate::extra::endpoints::EndpointsResolver;
 
 #[derive(Debug)]
-struct CertVerifier<T: EndpointsResolver + Send + Sync + Debug>(T);
+pub struct CertVerifier<T: EndpointsResolver + Send + Sync + Debug>(T);
 
 static SUPPORTED_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[webpki::ring::ED25519],
@@ -35,7 +35,7 @@ impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVeri
         let end_entity_as_spki = SubjectPublicKeyInfoDer::from(endpoint_certificate.as_ref());
 
         // TODO: confirm that this end_entity is valid for this server_name.
-        dbg!(host_name, end_entity_as_spki);
+        // dbg!(host_name, end_entity_as_spki);
 
         Ok(ServerCertVerified::assertion())
         // match true {
@@ -106,6 +106,10 @@ impl From<crate::client::relay::Client> for CertVerifier<crate::client::relay::C
 }
 
 impl From<Client> for rustls::ClientConfig {
+    /// Creates a [rustls::ClientConfig] that uses [rustls::crypto::ring::default_provider()]
+    /// and no client auth and follows the [tls for pkarr domains](https://pkarr.org/tls) spec.
+    ///
+    /// If you want more control, create a [CertVerifier] from this [Client] to use as a [custom certificate verifier][DangerousClientConfigBuilder::with_custom_certificate_verifier].
     fn from(client: Client) -> Self {
         let verifier: CertVerifier<Client> = client.into();
 
@@ -117,6 +121,10 @@ impl From<Client> for rustls::ClientConfig {
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
 impl From<crate::client::relay::Client> for rustls::ClientConfig {
+    /// Creates a [rustls::ClientConfig] that uses [rustls::crypto::ring::default_provider()]
+    /// and no client auth and follows the [tls for pkarr domains](https://pkarr.org/tls) spec.
+    ///
+    /// If you want more control, create a [CertVerifier] from this [Client] to use as a [custom certificate verifier][DangerousClientConfigBuilder::with_custom_certificate_verifier].
     fn from(client: crate::client::relay::Client) -> Self {
         let verifier: CertVerifier<crate::client::relay::Client> = client.into();
 

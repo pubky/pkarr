@@ -12,6 +12,11 @@ pub mod lmdb_cache;
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "reqwest-builder"))]
 impl From<crate::Client> for ::reqwest::ClientBuilder {
+    /// Create a [reqwest::ClientBuilder][::reqwest::ClientBuilder] from this Pkarr client,
+    /// using it as a [dns_resolver][::reqwest::ClientBuilder::dns_resolver],
+    /// and a [preconfigured_tls][::reqwest::ClientBuilder::use_preconfigured_tls] client
+    /// config that uses [rustls::crypto::ring::default_provider()] and follows the
+    /// [tls for pkarr domains](https://pkarr.org/tls) spec.
     fn from(client: crate::Client) -> Self {
         ::reqwest::ClientBuilder::new()
             .dns_resolver(std::sync::Arc::new(client.clone()))
@@ -21,6 +26,11 @@ impl From<crate::Client> for ::reqwest::ClientBuilder {
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "reqwest-builder"))]
 impl From<crate::client::relay::Client> for ::reqwest::ClientBuilder {
+    /// Create a [reqwest::ClientBuilder][::reqwest::ClientBuilder] from this Pkarr client,
+    /// using it as a [dns_resolver][::reqwest::ClientBuilder::dns_resolver],
+    /// and a [preconfigured_tls][::reqwest::ClientBuilder::use_preconfigured_tls] client
+    /// config that uses [rustls::crypto::ring::default_provider()] and follows the
+    /// [tls for pkarr domains](https://pkarr.org/tls) spec.
     fn from(client: crate::client::relay::Client) -> Self {
         ::reqwest::ClientBuilder::new()
             .dns_resolver(std::sync::Arc::new(client.clone()))
@@ -30,19 +40,13 @@ impl From<crate::client::relay::Client> for ::reqwest::ClientBuilder {
 
 #[cfg(test)]
 mod tests {
-    use axum_server::{
-        tls_rustls::{RustlsAcceptor, RustlsConfig},
-        Server,
-    };
     use mainline::Testnet;
-    use rustls::{server::AlwaysResolvesServerRawPublicKeys, ServerConfig};
+    use std::net::SocketAddr;
     use std::net::TcpListener;
     use std::sync::Arc;
 
-    use tokio_rustls::rustls;
-
     use axum::{routing::get, Router};
-    use std::net::SocketAddr;
+    use axum_server::tls_rustls::RustlsConfig;
 
     use crate::{
         dns::{rdata::SVCB, Packet},
@@ -78,47 +82,30 @@ mod tests {
         client.publish(&signed_packet).await.unwrap();
     }
 
-    fn server_config(keypair: &Keypair) -> ServerConfig {
-        let cert_resolver =
-            AlwaysResolvesServerRawPublicKeys::new(keypair.to_rpk_certified_key().into());
-
-        ServerConfig::builder_with_provider(rustls::crypto::ring::default_provider().into())
-            .with_safe_default_protocol_versions()
-            .expect("version supported by ring")
-            .with_no_client_auth()
-            .with_cert_resolver(Arc::new(cert_resolver))
-    }
-
-    async fn axum_server(testnet: &Testnet, keypair: &Keypair) -> Server<RustlsAcceptor> {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
-        let address = listener.local_addr().unwrap();
-
-        let client = Client::builder().testnet(testnet).build().unwrap();
-        publish_server_pkarr(&client, &keypair, &address).await;
-
-        let server_config = server_config(&keypair);
-
-        println!("Server running on https://{}", keypair.public_key());
-
-        let server = axum_server::from_tcp_rustls(
-            listener,
-            RustlsConfig::from_config(Arc::new(server_config)),
-        );
-
-        server
-    }
-
     #[tokio::test]
     async fn reqwest_pkarr_domain() {
         let testnet = Testnet::new(3).unwrap();
 
         let keypair = Keypair::random();
 
-        let server = axum_server(&testnet, &keypair).await;
+        {
+            // Run a server on Pkarr
+            let app = Router::new().route("/", get(|| async { "Hello, world!" }));
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
+            let address = listener.local_addr().unwrap();
 
-        // Run a server on Pkarr
-        let app = Router::new().route("/", get(|| async { "Hello, world!" }));
-        tokio::spawn(server.serve(app.into_make_service()));
+            let client = Client::builder().testnet(&testnet).build().unwrap();
+            publish_server_pkarr(&client, &keypair, &address).await;
+
+            println!("Server running on https://{}", keypair.public_key());
+
+            let server = axum_server::from_tcp_rustls(
+                listener,
+                RustlsConfig::from_config(Arc::new((&keypair).into())),
+            );
+
+            tokio::spawn(server.serve(app.into_make_service()));
+        }
 
         // Client setup
         let pkarr_client = Client::builder().testnet(&testnet).build().unwrap();
