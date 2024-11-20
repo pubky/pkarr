@@ -1,34 +1,52 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use rustls::{
-    client::danger::{ServerCertVerified, ServerCertVerifier},
+    client::{
+        danger::{ServerCertVerified, ServerCertVerifier},
+        ServerCertVerifierBuilder, WebPkiServerVerifier,
+    },
     pki_types::SubjectPublicKeyInfoDer,
-    CertificateError,
+    CertificateError, SignatureScheme,
 };
 
 use crate::{Client, PublicKey};
 
-#[derive(Debug)]
-struct CertVerifier;
+use crate::extra::endpoints::EndpointsResolver;
 
-impl ServerCertVerifier for CertVerifier {
+#[derive(Debug)]
+struct CertVerifier<T: EndpointsResolver + Send + Sync + Debug> {
+    pkarr_client: T,
+    webpki: Arc<WebPkiServerVerifier>,
+}
+
+impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVerifier<T> {
+    /// Verify Pkarr public keys
     fn verify_server_cert(
         &self,
         endpoint_certificate: &rustls::pki_types::CertificateDer<'_>,
         intermediates: &[rustls::pki_types::CertificateDer<'_>],
         host_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
+        ocsp_response: &[u8],
+        now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        if let Err(_) = PublicKey::try_from(host_name.to_str().as_ref()) {
+            return self.webpki.verify_server_cert(
+                endpoint_certificate,
+                intermediates,
+                host_name,
+                ocsp_response,
+                now,
+            );
+        }
+
         if !intermediates.is_empty() {
             return Err(rustls::Error::InvalidCertificate(
                 CertificateError::UnknownIssuer,
             ));
         }
-        // if self.trusted_spki.is_empty() {
-        //     return Ok(ServerCertVerified::assertion());
-        // }
         let end_entity_as_spki = SubjectPublicKeyInfoDer::from(endpoint_certificate.as_ref());
+
+        dbg!(host_name, end_entity_as_spki);
 
         // TODO: confirm that this end_entity is valid for this server_name.
         match true {
@@ -39,50 +57,63 @@ impl ServerCertVerifier for CertVerifier {
         }
     }
 
+    /// Same as [WebPkiServerVerifier::verify_tls12_signature]
     fn verify_tls12_signature(
         &self,
-        _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        self.webpki.verify_tls12_signature(message, cert, dss)
     }
 
+    /// Same as [WebPkiServerVerifier::verify_tls13_signature]
     fn verify_tls13_signature(
         &self,
-        _message: &[u8],
-        _cert: &rustls::pki_types::CertificateDer<'_>,
-        _dss: &rustls::DigitallySignedStruct,
+        message: &[u8],
+        cert: &rustls::pki_types::CertificateDer<'_>,
+        dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+        self.webpki.verify_tls13_signature(message, cert, dss)
     }
 
+    /// Same as [WebPkiServerVerifier::supported_verify_schemes]
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        vec![]
-    }
-
-    fn requires_raw_public_keys(&self) -> bool {
-        // TODO: can we support x.509 certificates as well?
-        true
+        self.webpki.supported_verify_schemes()
     }
 }
 
-impl From<Client> for CertVerifier {
-    fn from(client: Client) -> Self {
-        CertVerifier
+impl<T: EndpointsResolver + Send + Sync + Debug> CertVerifier<T> {
+    pub(crate) fn new(pkarr_client: T) -> Self {
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let webpki = WebPkiServerVerifier::builder(root_cert_store.into())
+            .build()
+            .expect("WebPkiServerVerifier build");
+
+        CertVerifier {
+            pkarr_client,
+            webpki,
+        }
+    }
+}
+
+impl From<Client> for CertVerifier<Client> {
+    fn from(pkarr_client: Client) -> Self {
+        CertVerifier::new(pkarr_client)
     }
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-impl From<crate::client::relay::Client> for CertVerifier {
-    fn from(client: crate::client::relay::Client) -> Self {
-        CertVerifier
+impl From<crate::client::relay::Client> for CertVerifier<crate::client::relay::Client> {
+    fn from(pkarr_client: crate::client::relay::Client) -> Self {
+        CertVerifier::new(pkarr_client)
     }
 }
 
 impl From<Client> for rustls::ClientConfig {
     fn from(client: Client) -> Self {
-        let verifier: CertVerifier = client.into();
+        let verifier: CertVerifier<Client> = client.into();
 
         rustls::ClientConfig::builder()
             .dangerous()
@@ -94,7 +125,7 @@ impl From<Client> for rustls::ClientConfig {
 #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
 impl From<crate::client::relay::Client> for rustls::ClientConfig {
     fn from(client: crate::client::relay::Client) -> Self {
-        let verifier: CertVerifier = client.into();
+        let verifier: CertVerifier<crate::client::relay::Client> = client.into();
 
         rustls::ClientConfig::builder()
             .dangerous()

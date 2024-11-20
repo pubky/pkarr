@@ -35,8 +35,8 @@ serde = { version = "1.0.209", features = ["derive"], optional = true }
 futures-lite = { version = "2.5.0", default-features = false, optional = true }
 genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"] }
 
-# feat: tls
-rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
+# feat: reqwest-builder
+webpki-roots = { version = "0.26.6", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pubky-timestamp = { version = "0.2.0", default-features = false }
@@ -46,6 +46,9 @@ mainline = { git = "https://github.com/pubky/mainline", optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.7", features = ["rustls-tls"], optional = true }
+
+# feat: tls
+rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
 
 # feat: lmdb-cache defendencies
 heed = { version = "0.20.0", default-features = false, optional = true }
@@ -67,6 +70,7 @@ axum = "0.7.7"
 axum-server = "0.7.1"
 postcard = { version = "1.0.10", features = ["alloc"] }
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
+tokio-rustls = "0.26.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
@@ -90,10 +94,10 @@ lmdb-cache = ["dep:heed", "dep:byteorder", "dep:libc"]
 endpoints = ["dep:futures-lite"]
 ## Use [reqwest::dns::Resolve] trait implementation for [Client] and [client::relay::Client]
 reqwest-resolve = ["dep:reqwest", "endpoints"]
-## Implement 
+## Use [rustls::ClientConfig] from [Client] and [client::relay::Client] for e2ee transport to Pkarr endpoints
 tls = ["rustls", "ed25519-dalek/pkcs8"]
 ## Create a [reqwest::ClientBuilder] from [Client] or [client::relay::Client]
-reqwest-builder = ["tls", "reqwest-resolve"]
+reqwest-builder = ["tls", "reqwest-resolve", "webpki-roots"]
 
 ## Use all features
 full = ["dht", "relay", "serde", "endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
