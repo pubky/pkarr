@@ -6,7 +6,7 @@ use tracing_subscriber;
 
 use clap::Parser;
 
-use pkarr::Client;
+use pkarr::{Client, PublicKey};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -22,9 +22,14 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let url = cli.url;
 
-    let client = Client::builder().build()?;
+    let reqwest = if PublicKey::try_from(url.as_str()).is_err() {
+        // If it is not a Pkarr domain, use normal Reqwest
+        reqwest::Client::new()
+    } else {
+        let client = Client::builder().build()?;
 
-    let reqwest = reqwest::ClientBuilder::from(client).build()?;
+        reqwest::ClientBuilder::from(client).build()?
+    };
 
     println!("GET {url}..");
     let response = reqwest.request(Method::GET, &url).send().await?;

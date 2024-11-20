@@ -49,22 +49,6 @@ mod tests {
         Client, Keypair, SignedPacket,
     };
 
-    // #[tokio::test]
-    async fn reqwest_webpki() {
-        // TODO: get this working
-        tracing_subscriber::fmt()
-            .with_env_filter("rustls=trace")
-            .init();
-
-        // Make sure request can still make request to https://example.com
-        let pkarr_client = Client::builder().build().unwrap();
-        let reqwest = reqwest::ClientBuilder::from(pkarr_client).build().unwrap();
-
-        let response = reqwest.get("https://example.com").send().await.unwrap();
-
-        assert_eq!(response.status(), reqwest::StatusCode::OK);
-    }
-
     async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &SocketAddr) {
         let mut packet = Packet::new_reply(1);
 
