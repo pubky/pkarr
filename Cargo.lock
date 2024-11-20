@@ -1849,6 +1849,7 @@ dependencies = [
  "rand",
  "reqwest",
  "rustls",
+ "rustls-webpki",
  "self_cell",
  "serde",
  "sha1_smol",

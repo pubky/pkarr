@@ -49,6 +49,7 @@ reqwest = { version = "0.12.7", features = ["rustls-tls"], optional = true }
 
 # feat: tls
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
+webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
 # feat: lmdb-cache defendencies
 heed = { version = "0.20.0", default-features = false, optional = true }
@@ -67,7 +68,7 @@ wasm-bindgen-futures = "0.4.45"
 [dev-dependencies]
 anyhow = "1.0.93"
 axum = "0.7.7"
-axum-server = "0.7.1"
+axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 postcard = { version = "1.0.10", features = ["alloc"] }
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
 tokio-rustls = "0.26.0"
@@ -95,7 +96,7 @@ endpoints = ["dep:futures-lite"]
 ## Use [reqwest::dns::Resolve] trait implementation for [Client] and [client::relay::Client]
 reqwest-resolve = ["dep:reqwest", "endpoints"]
 ## Use [rustls::ClientConfig] from [Client] and [client::relay::Client] for e2ee transport to Pkarr endpoints
-tls = ["rustls", "ed25519-dalek/pkcs8"]
+tls = ["rustls", "ed25519-dalek/pkcs8", "dep:webpki"]
 ## Create a [reqwest::ClientBuilder] from [Client] or [client::relay::Client]
 reqwest-builder = ["tls", "reqwest-resolve", "webpki-roots"]
 

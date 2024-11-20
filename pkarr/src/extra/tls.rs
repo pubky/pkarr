@@ -5,8 +5,9 @@ use rustls::{
         danger::{DangerousClientConfigBuilder, ServerCertVerified, ServerCertVerifier},
         WebPkiServerVerifier,
     },
+    crypto::{verify_tls13_signature_with_raw_key, WebPkiSupportedAlgorithms},
     pki_types::SubjectPublicKeyInfoDer,
-    CertificateError,
+    SignatureScheme,
 };
 
 use crate::{Client, PublicKey};
@@ -19,6 +20,11 @@ struct CertVerifier<T: EndpointsResolver + Send + Sync + Debug> {
     webpki: Arc<WebPkiServerVerifier>,
 }
 
+static SUPPORTED_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
+    all: &[webpki::ring::ED25519],
+    mapping: &[(SignatureScheme::ED25519, &[webpki::ring::ED25519])],
+};
+
 impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVerifier<T> {
     /// Verify Pkarr public keys
     fn verify_server_cert(
@@ -29,7 +35,7 @@ impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVeri
         ocsp_response: &[u8],
         now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        if let Err(_) = PublicKey::try_from(host_name.to_str().as_ref()) {
+        if PublicKey::try_from(host_name.to_str().as_ref()).is_err() {
             return self.webpki.verify_server_cert(
                 endpoint_certificate,
                 intermediates,
@@ -38,23 +44,18 @@ impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVeri
                 now,
             );
         }
-
-        if !intermediates.is_empty() {
-            return Err(rustls::Error::InvalidCertificate(
-                CertificateError::UnknownIssuer,
-            ));
-        }
         let end_entity_as_spki = SubjectPublicKeyInfoDer::from(endpoint_certificate.as_ref());
 
+        // TODO: confirm that this end_entity is valid for this server_name.
         dbg!(host_name, end_entity_as_spki);
 
-        // TODO: confirm that this end_entity is valid for this server_name.
-        match true {
-            true => Ok(ServerCertVerified::assertion()),
-            false => Err(rustls::Error::InvalidCertificate(
-                CertificateError::UnknownIssuer,
-            )),
-        }
+        Ok(ServerCertVerified::assertion())
+        // match true {
+        //     true => Ok(ServerCertVerified::assertion()),
+        //     false => Err(rustls::Error::InvalidCertificate(
+        //         CertificateError::UnknownIssuer,
+        //     )),
+        // }
     }
 
     /// Same as [WebPkiServerVerifier::verify_tls12_signature]
@@ -64,7 +65,15 @@ impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVeri
         cert: &rustls::pki_types::CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        self.webpki.verify_tls12_signature(message, cert, dss)
+        // TODO: fallback to webpki
+        // self.webpki.verify_tls12_signature(message, cert, dss)
+
+        verify_tls13_signature_with_raw_key(
+            message,
+            &SubjectPublicKeyInfoDer::from(cert.as_ref()),
+            dss,
+            &SUPPORTED_ALGORITHMS,
+        )
     }
 
     /// Same as [WebPkiServerVerifier::verify_tls13_signature]
@@ -74,12 +83,25 @@ impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVeri
         cert: &rustls::pki_types::CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        self.webpki.verify_tls13_signature(message, cert, dss)
+        // TODO: fallback to webpki
+        // self.webpki.verify_tls13_signature(message, cert, dss)
+
+        verify_tls13_signature_with_raw_key(
+            message,
+            &SubjectPublicKeyInfoDer::from(cert.as_ref()),
+            dss,
+            &SUPPORTED_ALGORITHMS,
+        )
     }
 
     /// Same as [WebPkiServerVerifier::supported_verify_schemes]
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         self.webpki.supported_verify_schemes()
+    }
+
+    fn requires_raw_public_keys(&self) -> bool {
+        // TODO: can we change this to false and still work for pkarr domains?
+        true
     }
 }
 
