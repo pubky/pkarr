@@ -2,11 +2,11 @@ use std::{fmt::Debug, sync::Arc};
 
 use rustls::{
     client::{
-        danger::{ServerCertVerified, ServerCertVerifier},
-        ServerCertVerifierBuilder, WebPkiServerVerifier,
+        danger::{DangerousClientConfigBuilder, ServerCertVerified, ServerCertVerifier},
+        WebPkiServerVerifier,
     },
     pki_types::SubjectPublicKeyInfoDer,
-    CertificateError, SignatureScheme,
+    CertificateError,
 };
 
 use crate::{Client, PublicKey};
@@ -85,11 +85,15 @@ impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVeri
 
 impl<T: EndpointsResolver + Send + Sync + Debug> CertVerifier<T> {
     pub(crate) fn new(pkarr_client: T) -> Self {
-        let mut root_cert_store = rustls::RootCertStore::empty();
-        root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let webpki = WebPkiServerVerifier::builder(root_cert_store.into())
-            .build()
-            .expect("WebPkiServerVerifier build");
+        let webpki = WebPkiServerVerifier::builder_with_provider(
+            rustls::RootCertStore {
+                roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+            }
+            .into(),
+            rustls::crypto::ring::default_provider().into(),
+        )
+        .build()
+        .expect("WebPkiServerVerifier build");
 
         CertVerifier {
             pkarr_client,
@@ -115,8 +119,7 @@ impl From<Client> for rustls::ClientConfig {
     fn from(client: Client) -> Self {
         let verifier: CertVerifier<Client> = client.into();
 
-        rustls::ClientConfig::builder()
-            .dangerous()
+        create_client_config_with_ring()
             .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth()
     }
@@ -127,9 +130,15 @@ impl From<crate::client::relay::Client> for rustls::ClientConfig {
     fn from(client: crate::client::relay::Client) -> Self {
         let verifier: CertVerifier<crate::client::relay::Client> = client.into();
 
-        rustls::ClientConfig::builder()
-            .dangerous()
+        create_client_config_with_ring()
             .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth()
     }
+}
+
+fn create_client_config_with_ring() -> DangerousClientConfigBuilder {
+    rustls::ClientConfig::builder_with_provider(rustls::crypto::ring::default_provider().into())
+        .with_safe_default_protocol_versions()
+        .expect("version supported by ring")
+        .dangerous()
 }

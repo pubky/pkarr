@@ -41,10 +41,6 @@ mod tests {
 
     #[tokio::test]
     async fn reqwest_webpki() {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
-
         // Make sure request can still make request to https://example.com
         let pkarr_client = Client::builder().build().unwrap();
         let reqwest = reqwest::ClientBuilder::from(pkarr_client).build().unwrap();
@@ -56,10 +52,6 @@ mod tests {
 
     // #[tokio::test]
     async fn reqwest_pkarr_domain() {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
-
         // Server setup
         let server_keypair = Keypair::random();
         let cert_resolver =
