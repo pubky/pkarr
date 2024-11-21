@@ -32,8 +32,8 @@ sha1_smol = { version = "1.0.1", optional = true }
 serde = { version = "1.0.209", features = ["derive"], optional = true }
 
 # feat: endpoints dependencies
-futures-lite = { version = "2.5.0", default-features = false, optional = true }
-genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"] }
+futures-lite = { version = "2.5.0", default-features = false, features= ["std"], optional = true }
+genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"], optional = true }
 
 # feat: reqwest-builder
 webpki-roots = { version = "0.26.6", optional = true }
@@ -92,13 +92,13 @@ serde = ["dep:serde", "pubky-timestamp/serde", "pubky-timestamp/httpdate"]
 ## Use [LmdbCache]
 lmdb-cache = ["dep:heed", "dep:byteorder", "dep:libc"]
 ## Use [extra::endpoints::EndpointResolver] trait implementation for [Client] and [client::relay::Client]
-endpoints = ["dep:futures-lite"]
+endpoints = ["dep:futures-lite", "dep:genawaiter"]
 ## Use [reqwest::dns::Resolve] trait implementation for [Client] and [client::relay::Client]
 reqwest-resolve = ["dep:reqwest", "endpoints"]
 ## Use [rustls::ClientConfig] from [Client] and [client::relay::Client] for e2ee transport to Pkarr endpoints
 tls = ["rustls", "ed25519-dalek/pkcs8", "dep:webpki"]
 ## Create a [reqwest::ClientBuilder] from [Client] or [client::relay::Client]
-reqwest-builder = ["tls", "reqwest-resolve", "webpki-roots"]
+reqwest-builder = ["tls", "reqwest-resolve"]
 
 ## Use all features
 full = ["dht", "relay", "serde", "endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]

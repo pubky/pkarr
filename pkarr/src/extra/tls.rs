@@ -1,49 +1,69 @@
 use std::{fmt::Debug, sync::Arc};
 
+use futures_lite::{pin, stream::block_on};
 use rustls::{
     client::danger::{DangerousClientConfigBuilder, ServerCertVerified, ServerCertVerifier},
     crypto::{verify_tls13_signature_with_raw_key, WebPkiSupportedAlgorithms},
     pki_types::SubjectPublicKeyInfoDer,
-    SignatureScheme,
+    CertificateError, SignatureScheme,
 };
 
-use crate::{Client, PublicKey};
+use crate::Client;
 
 use crate::extra::endpoints::EndpointsResolver;
 
 #[derive(Debug)]
-pub struct CertVerifier<T: EndpointsResolver + Send + Sync + Debug>(T);
+pub struct CertVerifier<T: EndpointsResolver + Send + Sync + Debug + Clone>(T);
 
 static SUPPORTED_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[webpki::ring::ED25519],
     mapping: &[(SignatureScheme::ED25519, &[webpki::ring::ED25519])],
 };
 
-impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVerifier<T> {
+impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for CertVerifier<T> {
     /// Verify Pkarr public keys
     fn verify_server_cert(
         &self,
         endpoint_certificate: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        intermediates: &[rustls::pki_types::CertificateDer<'_>],
         host_name: &rustls::pki_types::ServerName<'_>,
         _ocsp_response: &[u8],
         _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        if PublicKey::try_from(host_name.to_str().as_ref()).is_err() {
-            // TODO: appropriate error.
+        if !intermediates.is_empty() {
+            return Err(rustls::Error::InvalidCertificate(
+                CertificateError::UnknownIssuer,
+            ));
         }
+
         let end_entity_as_spki = SubjectPublicKeyInfoDer::from(endpoint_certificate.as_ref());
+        let expected_spki = end_entity_as_spki.as_ref();
 
-        // TODO: confirm that this end_entity is valid for this server_name.
-        // dbg!(host_name, end_entity_as_spki);
+        let qname = host_name.to_str();
 
-        Ok(ServerCertVerified::assertion())
-        // match true {
-        //     true => Ok(ServerCertVerified::assertion()),
-        //     false => Err(rustls::Error::InvalidCertificate(
-        //         CertificateError::UnknownIssuer,
-        //     )),
-        // }
+        // Resolve HTTPS endpoints and hope that the cached SignedPackets didn't chance
+        // since the last time we resolved endpoints to establish the connection in the
+        // first place.
+        let stream = self.0.resolve_https_endpoints(&qname);
+        pin!(stream);
+        for endpoint in block_on(stream) {
+            if endpoint.public_key().to_public_key_der().as_bytes() == expected_spki {
+                return Ok(ServerCertVerified::assertion());
+            }
+        }
+
+        // Repeat for SVCB endpoints
+        let stream = self.0.resolve_svcb_endpoints(&qname);
+        pin!(stream);
+        for endpoint in block_on(stream) {
+            if endpoint.public_key().to_public_key_der().as_bytes() == expected_spki {
+                return Ok(ServerCertVerified::assertion());
+            }
+        }
+
+        Err(rustls::Error::InvalidCertificate(
+            CertificateError::UnknownIssuer,
+        ))
     }
 
     /// Same as [WebPkiServerVerifier::verify_tls12_signature]
@@ -86,7 +106,7 @@ impl<T: EndpointsResolver + Send + Sync + Debug> ServerCertVerifier for CertVeri
     }
 }
 
-impl<T: EndpointsResolver + Send + Sync + Debug> CertVerifier<T> {
+impl<T: EndpointsResolver + Send + Sync + Debug + Clone> CertVerifier<T> {
     pub(crate) fn new(pkarr_client: T) -> Self {
         CertVerifier(pkarr_client)
     }

@@ -10,12 +10,57 @@ use super::Endpoint;
 const DEFAULT_MAX_CHAIN_LENGTH: u8 = 3;
 
 pub trait EndpointsResolver {
-    /// Returns an async stream of HTTPS [Endpoint]s
+    /// Returns an async stream of [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint]s
     fn resolve_https_endpoints(&self, qname: &str) -> impl Stream<Item = Endpoint> {
         self.resolve_endpoints(qname, false)
     }
 
-    /// Returns an async stream of either [HTTPS] or [SVCB] [Endpoint]s
+    /// Returns an async stream of [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint]s
+    fn resolve_svcb_endpoints(&self, qname: &str) -> impl Stream<Item = Endpoint> {
+        self.resolve_endpoints(qname, true)
+    }
+
+    /// Helper method that returns the first [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint] in the Async stream from [EndpointsResolver::resolve_https_endpoints]
+    fn resolve_https_endpoint(
+        &self,
+        qname: &str,
+    ) -> impl std::future::Future<Output = Result<Endpoint, FailedToResolveEndpoint>> {
+        async move {
+            let stream = self.resolve_https_endpoints(qname);
+
+            pin!(stream);
+
+            match stream.next().await {
+                Some(endpoint) => Ok(endpoint),
+                None => Err(FailedToResolveEndpoint),
+            }
+        }
+    }
+
+    /// Helper method that returns the first [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint] in the Async stream from [EndpointsResolver::resolve_svcb_endpoints]
+    fn resolve_svcb_endpoint(
+        &self,
+        qname: &str,
+    ) -> impl std::future::Future<Output = Result<Endpoint, FailedToResolveEndpoint>> {
+        async move {
+            let stream = self.resolve_https_endpoints(qname);
+
+            pin!(stream);
+
+            match stream.next().await {
+                Some(endpoint) => Ok(endpoint),
+                None => Err(FailedToResolveEndpoint),
+            }
+        }
+    }
+
+    /// A wrapper around the specific Pkarr client's resolve method.
+    fn resolve(
+        &self,
+        public_key: &PublicKey,
+    ) -> impl std::future::Future<Output = Result<Option<SignedPacket>, ResolveError>>;
+
+    /// Returns an async stream of either [HTTPS][crate::dns::rdata::RData::HTTPS] or [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint]s
     fn resolve_endpoints(&self, qname: &str, is_svcb: bool) -> impl Stream<Item = Endpoint> {
         Gen::new(|co| async move {
             // TODO: cache the result of this function?
@@ -52,29 +97,6 @@ pub trait EndpointsResolver {
             }
         })
     }
-
-    /// Helper method that returns the first `HTTPS` [Endpoint] in the Async stream from [EndpointResolver::resolve_endpoints]
-    fn resolve_https_endpoint(
-        &self,
-        qname: &str,
-    ) -> impl std::future::Future<Output = Result<Endpoint, FailedToResolveEndpoint>> {
-        async move {
-            let stream = self.resolve_https_endpoints(qname);
-
-            pin!(stream);
-
-            match stream.next().await {
-                Some(endpoint) => Ok(endpoint),
-                None => Err(FailedToResolveEndpoint),
-            }
-        }
-    }
-
-    /// A wrapper around the specific Pkarr client's resolve method.
-    fn resolve(
-        &self,
-        public_key: &PublicKey,
-    ) -> impl std::future::Future<Output = Result<Option<SignedPacket>, ResolveError>>;
 }
 
 #[derive(thiserror::Error, Debug)]
