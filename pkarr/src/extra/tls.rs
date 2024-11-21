@@ -66,7 +66,8 @@ impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for 
         ))
     }
 
-    /// Same as [WebPkiServerVerifier::verify_tls12_signature]
+    /// Verify a message signature using a raw public key and the first TLS 1.3 compatible
+    /// supported scheme.
     fn verify_tls12_signature(
         &self,
         message: &[u8],
@@ -81,7 +82,8 @@ impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for 
         )
     }
 
-    /// Same as [WebPkiServerVerifier::verify_tls13_signature]
+    /// Verify a message signature using a raw public key and the first TLS 1.3 compatible
+    /// supported scheme.
     fn verify_tls13_signature(
         &self,
         message: &[u8],
@@ -96,7 +98,6 @@ impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for 
         )
     }
 
-    /// Same as [WebPkiServerVerifier::supported_verify_schemes]
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
         vec![SignatureScheme::ED25519]
     }

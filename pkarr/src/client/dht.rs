@@ -112,7 +112,7 @@ impl Settings {
         self
     }
 
-    /// Set [Settings::dht]
+    /// Set [Settings::dht_settings]
     pub fn dht_settings(mut self, settings: mainline::Settings) -> Self {
         self.dht_settings = settings;
         self

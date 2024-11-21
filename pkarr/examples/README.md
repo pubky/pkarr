@@ -29,10 +29,10 @@ cargo run --features relay --example resolve <zbase32 public key from Publish st
 Run an HTTP server listening on a Pkarr key
 
 ```sh
-cargo run --features endpoints --example http-serve <ip address> <port number>
+cargo run --features endpoints --example http-serve
 ```
 
-An HTTP url will be printend with the Pkarr key as the TLD, paste in another terminal window:
+An HTTPS url will be printend with the Pkarr key as the TLD, paste in another terminal window:
 
 ```sh
 cargo run --features reqwest-resolve --example http-get <url>

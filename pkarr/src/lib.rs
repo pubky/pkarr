@@ -24,6 +24,8 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 /// Default [resolver](https://pkarr.org/resolvers)s
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+pub use client::dht::Info;
 #[cfg(any(target_arch = "wasm32", feature = "dht"))]
 pub use client::{Client, Settings};
 
