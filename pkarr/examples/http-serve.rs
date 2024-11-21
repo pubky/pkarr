@@ -9,34 +9,53 @@ use tracing_subscriber;
 use axum::{routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
 
-use std::net::{SocketAddr, TcpListener};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
+
+use clap::Parser;
 
 use pkarr::{
     dns::{rdata::SVCB, Packet},
     Client, Keypair, SignedPacket,
 };
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// IP address to listen on
+    ip: String,
+    /// Port number to listen no
+    port: u16,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
+    let cli = Cli::parse();
+
+    let addr = format!("{}:{}", cli.ip, cli.port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or(anyhow::anyhow!(
+            "Could not convert IP and port to socket addresses"
+        ))?;
+
     let keypair = Keypair::random();
 
-    // Run a server on Pkarr
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
-    let address = listener.local_addr()?;
-    println!("Server listening on {address}");
-
     let client = Client::builder().build()?;
+
+    // Run a server on Pkarr
+    println!("Server listening on {addr}");
+
     // You should republish this every time the socket address change
     // and once an hour otherwise.
-    publish_server_pkarr(&client, &keypair, &address).await;
+    publish_server_pkarr(&client, &keypair, &addr).await;
 
     println!("Server running on https://{}", keypair.public_key());
 
-    let server = axum_server::from_tcp_rustls(
-        listener,
+    let server = axum_server::bind_rustls(
+        addr,
         RustlsConfig::from_config(Arc::new(keypair.to_rpk_rustls_server_config())),
     );
 
