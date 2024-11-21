@@ -13,6 +13,10 @@ All notable changes to pkarr client and server will be documented in this file.
 - Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.
 - Add `pkarr::LmdbCache` for persistent cache using lmdb.
 - Add `pkarr.pubky.org` as an extra default Relay and Resolver.
+- Add feature `endpoints` to resolve `HTTPS` and `SVCB` endpoints over Pkarr
+- Add feature `reqwest-resolve` to create a custom `reqwest::dns::Resolve` implementation from `Client` and `relay::client::Client`
+- Add feature `tls` to create `rustls::ClientConfig` from `Client` and `relay::client::Client` and create `rustls::ServerCongif` from `KeyPair`.
+- Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
 
 ### Changed
 

@@ -6,9 +6,11 @@
 use tracing::Level;
 use tracing_subscriber;
 
-use axum::{response::Html, routing::get, Router};
-use axum_server::bind;
+use axum::{routing::get, Router};
+use axum_server::tls_rustls::RustlsConfig;
+
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::Arc;
 
 use clap::Parser;
 
@@ -32,8 +34,6 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    let app = Router::new().route("/", get(handler));
-
     let addr = format!("{}:{}", cli.ip, cli.port)
         .to_socket_addrs()?
         .next()
@@ -41,26 +41,34 @@ async fn main() -> anyhow::Result<()> {
             "Could not convert IP and port to socket addresses"
         ))?;
 
-    publish_server_pkarr(&addr).await;
+    let keypair = Keypair::random();
 
-    bind(addr).serve(app.into_make_service()).await?;
+    let client = Client::builder().build()?;
+
+    // Run a server on Pkarr
+    println!("Server listening on {addr}");
+
+    // You should republish this every time the socket address change
+    // and once an hour otherwise.
+    publish_server_pkarr(&client, &keypair, &addr).await;
+
+    println!("Server running on https://{}", keypair.public_key());
+
+    let server = axum_server::bind_rustls(
+        addr,
+        RustlsConfig::from_config(Arc::new(keypair.to_rpk_rustls_server_config())),
+    );
+
+    let app = Router::new().route("/", get(|| async { "Hello, world!" }));
+    server.serve(app.into_make_service()).await?;
 
     Ok(())
 }
 
-// Simple handler that responds with "Hello, World!"
-async fn handler() -> Html<&'static str> {
-    Html("Hello, World!")
-}
-
-async fn publish_server_pkarr(socket_addr: &SocketAddr) {
-    let client = Client::builder().build().unwrap();
-
-    let keypair = Keypair::random();
-
+async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &SocketAddr) {
     let mut packet = Packet::new_reply(1);
 
-    let mut svcb = SVCB::new(0, ".".try_into().unwrap());
+    let mut svcb = SVCB::new(0, ".".try_into().expect("infallible"));
 
     svcb.set_port(socket_addr.port());
 
@@ -82,8 +90,6 @@ async fn publish_server_pkarr(socket_addr: &SocketAddr) {
     ));
 
     let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
-
-    println!("Server running on https://{}", keypair.public_key());
 
     client.publish(&signed_packet).await.unwrap();
 }

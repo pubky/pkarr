@@ -32,7 +32,7 @@ Run an HTTP server listening on a Pkarr key
 cargo run --features endpoints --example http-serve <ip address> <port number>
 ```
 
-An HTTP url will be printend with the Pkarr key as the TLD, paste in another terminal window:
+An HTTPs url will be printend with the Pkarr key as the TLD, paste in another terminal window:
 
 ```sh
 cargo run --features reqwest-resolve --example http-get <url>
