@@ -33,7 +33,7 @@ pub trait EndpointsResolver {
             match stream.next().await {
                 Some(endpoint) => Ok(endpoint),
                 None => {
-                    tracing::debug!(?qname, "failed to resolve endpoint");
+                    tracing::trace!(?qname, "failed to resolve endpoint");
                     Err(FailedToResolveEndpoint)
                 }
             }

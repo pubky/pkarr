@@ -32,7 +32,7 @@ async fn resolve(
 
         let addrs = endpoint.to_socket_addrs().into_iter();
 
-        tracing::debug!(?name, ?endpoint, ?addrs, "Resolved an endpoint");
+        tracing::trace!(?name, ?endpoint, ?addrs, "Resolved an endpoint");
 
         return Ok(Box::new(addrs.into_iter()));
     };

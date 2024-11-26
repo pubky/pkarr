@@ -22,7 +22,7 @@ static SUPPORTED_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
 };
 
 impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for CertVerifier<T> {
-    #[instrument(ret(level = Level::DEBUG), err(level = Level::DEBUG))]
+    #[instrument(ret(level = Level::TRACE), err(level = Level::TRACE))]
     /// Verify Pkarr public keys
     fn verify_server_cert(
         &self,
