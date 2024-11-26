@@ -7,6 +7,7 @@ use rustls::{
     pki_types::SubjectPublicKeyInfoDer,
     CertificateError, SignatureScheme,
 };
+use tracing::{instrument, Level};
 
 use crate::Client;
 
@@ -21,6 +22,7 @@ static SUPPORTED_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
 };
 
 impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for CertVerifier<T> {
+    #[instrument(ret(level = Level::DEBUG), err(level = Level::DEBUG))]
     /// Verify Pkarr public keys
     fn verify_server_cert(
         &self,
@@ -66,6 +68,7 @@ impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for 
         ))
     }
 
+    #[instrument(ret(level = Level::DEBUG), err(level = Level::DEBUG))]
     /// Verify a message signature using a raw public key and the first TLS 1.3 compatible
     /// supported scheme.
     fn verify_tls12_signature(
@@ -82,6 +85,7 @@ impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for 
         )
     }
 
+    #[instrument(ret(level = Level::DEBUG), err(level = Level::DEBUG))]
     /// Verify a message signature using a raw public key and the first TLS 1.3 compatible
     /// supported scheme.
     fn verify_tls13_signature(
