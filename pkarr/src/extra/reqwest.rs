@@ -30,9 +30,11 @@ async fn resolve(
     if PublicKey::try_from(name).is_ok() {
         let endpoint = client.resolve_https_endpoint(name).await?;
 
-        let addrs: Addrs = Box::new(endpoint.to_socket_addrs().into_iter());
+        let addrs = endpoint.to_socket_addrs().into_iter();
 
-        return Ok(addrs);
+        tracing::debug!(?name, ?endpoint, ?addrs, "Resolved an endpoint");
+
+        return Ok(Box::new(addrs.into_iter()));
     };
 
     Ok(Box::new(format!("{name}:0").to_socket_addrs().unwrap()))

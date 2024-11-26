@@ -32,7 +32,10 @@ pub trait EndpointsResolver {
 
             match stream.next().await {
                 Some(endpoint) => Ok(endpoint),
-                None => Err(FailedToResolveEndpoint),
+                None => {
+                    tracing::debug!(?qname, "failed to resolve endpoint");
+                    Err(FailedToResolveEndpoint)
+                }
             }
         }
     }
@@ -68,13 +71,13 @@ pub trait EndpointsResolver {
             // TODO: test failover
             // TODO: custom max_chain_length
 
-            let mut step = 0;
+            let mut depth = 0;
             let mut stack: Vec<Endpoint> = Vec::new();
 
             // Initialize the stack with endpoints from the starting domain.
             if let Ok(tld) = PublicKey::try_from(qname) {
                 if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
-                    step += 1;
+                    depth += 1;
                     stack.extend(Endpoint::parse(&signed_packet, qname, is_svcb));
                 }
             }
@@ -85,9 +88,13 @@ pub trait EndpointsResolver {
                 // Attempt to resolve the domain as a public key.
                 match PublicKey::try_from(current) {
                     Ok(tld) => match self.resolve(&tld).await {
-                        Ok(Some(signed_packet)) if step < DEFAULT_MAX_CHAIN_LENGTH => {
-                            step += 1;
-                            stack.extend(Endpoint::parse(&signed_packet, current, is_svcb));
+                        Ok(Some(signed_packet)) if depth < DEFAULT_MAX_CHAIN_LENGTH => {
+                            depth += 1;
+                            let endpoints = Endpoint::parse(&signed_packet, current, is_svcb);
+
+                            tracing::trace!(?qname, ?depth, ?endpoints, "resolved endpoints");
+
+                            stack.extend(endpoints);
                         }
                         _ => break, // Stop on resolution failure or chain length exceeded.
                     },
