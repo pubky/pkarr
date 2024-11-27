@@ -98,6 +98,10 @@ impl Endpoint {
         &self.target
     }
 
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     /// Return the [PublicKey] of the [SignedPacket] this endpoint was found at.
     ///
     /// This is useful as the [PublicKey] of the endpoint (server), and could be
