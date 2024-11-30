@@ -11,15 +11,15 @@ use tracing::error;
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
-use crate::error::{Error, Result};
+use crate::error::Error;
 
-use super::http_server::AppState;
+use crate::AppState;
 
 pub async fn put(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
     body: Bytes,
-) -> Result<impl IntoResponse> {
+) -> Result<impl IntoResponse, Error> {
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
@@ -54,7 +54,7 @@ pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
     request_headers: HeaderMap,
-) -> Result<impl IntoResponse> {
+) -> Result<impl IntoResponse, Error> {
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
