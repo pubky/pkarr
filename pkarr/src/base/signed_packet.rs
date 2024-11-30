@@ -635,7 +635,7 @@ mod tests {
         let mut packet = Packet::new_reply(0);
         packet.answers.push(target.clone());
         packet.answers.push(ResourceRecord::new(
-            Name::new("something else").unwrap(),
+            Name::new("something-else").unwrap(),
             simple_dns::CLASS::IN,
             30,
             RData::A(A {
