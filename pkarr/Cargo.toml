@@ -46,7 +46,7 @@ pubky-timestamp = { version = "0.2.0", default-features = false }
 mainline = { version = "4.1.0", optional = true }
 
 # feat: relay dependencies
-reqwest = { version = "0.12.9", features = ["rustls-tls"], optional = true }
+reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls"], optional = true }
 
 # feat: tls
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
@@ -62,7 +62,7 @@ pubky-timestamp = { version = "0.2.0", default-features = false, features = ["ht
 js-sys = "0.3.73"
 futures = "0.3.31"
 getrandom = { version = "0.2", features = ["js"] }
-reqwest = "0.12.9"
+reqwest = { version = "0.12.9", default-features = false }
 sha1_smol = "1.0.1"
 wasm-bindgen-futures = "0.4.46"
 
