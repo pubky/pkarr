@@ -48,36 +48,17 @@ mod tests {
     use axum::{routing::get, Router};
     use axum_server::tls_rustls::RustlsConfig;
 
-    use crate::{
-        dns::{rdata::SVCB, Packet},
-        Client, Keypair, SignedPacket,
-    };
+    use crate::{dns::rdata::SVCB, Client, Keypair, SignedPacket};
 
     async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &SocketAddr) {
-        let mut packet = Packet::new_reply(1);
-
         let mut svcb = SVCB::new(0, ".".try_into().unwrap());
-
         svcb.set_port(socket_addr.port());
 
-        packet.answers.push(crate::dns::ResourceRecord::new(
-            "@".try_into().unwrap(),
-            crate::dns::CLASS::IN,
-            60 * 60,
-            crate::dns::rdata::RData::HTTPS(svcb.into()),
-        ));
-
-        packet.answers.push(crate::dns::ResourceRecord::new(
-            "@".try_into().unwrap(),
-            crate::dns::CLASS::IN,
-            60 * 60,
-            match socket_addr.ip() {
-                std::net::IpAddr::V4(ip) => crate::dns::rdata::RData::A(ip.into()),
-                std::net::IpAddr::V6(ip) => crate::dns::rdata::RData::AAAA(ip.into()),
-            },
-        ));
-
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .https("@".try_into().unwrap(), svcb, 60 * 60)
+            .address("@".try_into().unwrap(), socket_addr.ip(), 60 * 60)
+            .sign(&keypair)
+            .unwrap();
 
         client.publish(&signed_packet).await.unwrap();
     }

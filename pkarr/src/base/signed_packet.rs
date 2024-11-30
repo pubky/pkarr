@@ -5,19 +5,96 @@ use bytes::{Bytes, BytesMut};
 use ed25519_dalek::{Signature, SignatureError};
 use self_cell::self_cell;
 use simple_dns::{
-    rdata::{RData, A, AAAA},
-    Name, Packet, ResourceRecord, SimpleDnsError,
+    rdata::{RData, A, AAAA, HTTPS, SVCB, TXT},
+    Name, Packet, ResourceRecord, SimpleDnsError, CLASS,
 };
 use std::{
     char,
     fmt::{self, Display, Formatter},
-    net::{Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use pubky_timestamp::Timestamp;
+
+#[derive(Debug, Default)]
+pub struct SignedPacketBuilder(Vec<ResourceRecord<'static>>);
+
+impl SignedPacketBuilder {
+    /// Insert a [ResourceRecord]
+    pub fn record(mut self, record: ResourceRecord<'_>) -> Self {
+        self.0.push(record.into_owned());
+        self
+    }
+
+    /// Insert any type of [RData]
+    pub fn rdata(self, name: Name<'_>, rdata: RData, ttl: u32) -> Self {
+        self.record(ResourceRecord::new(name.to_owned(), CLASS::IN, ttl, rdata))
+    }
+
+    /// Insert an `A` record.
+    pub fn a(self, name: Name<'_>, address: Ipv4Addr, ttl: u32) -> Self {
+        self.rdata(
+            name,
+            RData::A(A {
+                address: address.into(),
+            }),
+            ttl,
+        )
+    }
+
+    /// Insert an `AAAA` record.
+    pub fn aaaa(self, name: Name<'_>, address: Ipv6Addr, ttl: u32) -> Self {
+        self.rdata(
+            name,
+            RData::AAAA(AAAA {
+                address: address.into(),
+            }),
+            ttl,
+        )
+    }
+
+    /// Insert an `A` or `AAAA` record.
+    pub fn address(self, name: Name<'_>, address: IpAddr, ttl: u32) -> Self {
+        match address {
+            IpAddr::V4(addr) => self.a(name, addr, ttl),
+            IpAddr::V6(addr) => self.aaaa(name, addr, ttl),
+        }
+    }
+
+    /// Insert a `CNAME` record.
+    pub fn cname(self, name: Name<'_>, cname: Name<'_>, ttl: u32) -> Self {
+        self.rdata(name, RData::CNAME(cname.into()), ttl)
+    }
+
+    /// Insert a `TXT` record.
+    pub fn txt(self, name: Name<'_>, text: TXT<'_>, ttl: u32) -> Self {
+        self.rdata(name, RData::TXT(text), ttl)
+    }
+
+    /// Insert an `HTTPS` record
+    pub fn https(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
+        self.rdata(name, RData::HTTPS(HTTPS(svcb)), ttl)
+    }
+
+    /// Insert an `SVCB record
+    pub fn svcb(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
+        self.rdata(name, RData::SVCB(svcb), ttl)
+    }
+
+    /// Alias to [Self::sign]
+    pub fn build(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketError> {
+        self.sign(keypair)
+    }
+
+    /// Create a [Packet] from the [ResourceRecord]s inserted so far and sign
+    /// it with the given [Keypair].
+    pub fn sign(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketError> {
+        SignedPacket::from_answers(keypair, &self.0)
+    }
+}
 
 const DOT: char = '.';
 
@@ -65,48 +142,8 @@ pub struct SignedPacket {
 impl SignedPacket {
     pub const MAX_BYTES: u64 = 1104;
 
-    /// Creates a [Self] from the serialized representation:
-    /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
-    ///
-    /// Performs the following validations:
-    /// - Bytes minimum length
-    /// - Validates the PublicKey
-    /// - Verifies the Signature
-    /// - Validates the DNS packet encoding
-    ///
-    /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
-    ///
-    /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
-    pub fn from_bytes(bytes: &Bytes) -> Result<SignedPacket, SignedPacketError> {
-        if bytes.len() < 104 {
-            return Err(SignedPacketError::InvalidSignedPacketBytesLength(
-                bytes.len(),
-            ));
-        }
-        if (bytes.len() as u64) > SignedPacket::MAX_BYTES {
-            return Err(SignedPacketError::PacketTooLarge(bytes.len()));
-        }
-        let public_key = PublicKey::try_from(&bytes[..32])?;
-        let signature = Signature::from_bytes(bytes[32..96].try_into().unwrap());
-        let timestamp = u64::from_be_bytes(bytes[96..104].try_into().unwrap());
-
-        let encoded_packet = &bytes.slice(104..);
-
-        public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
-
-        Ok(SignedPacket {
-            inner: Inner::try_from_bytes(bytes.to_owned())?,
-            last_seen: Timestamp::now(),
-        })
-    }
-
-    /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
-    /// like ones stored on disk or in a database.
-    pub fn from_bytes_unchecked(bytes: &Bytes, last_seen: impl Into<Timestamp>) -> SignedPacket {
-        SignedPacket {
-            inner: Inner::try_from_bytes(bytes.to_owned()).unwrap(),
-            last_seen: last_seen.into(),
-        }
+    pub fn builder() -> SignedPacketBuilder {
+        SignedPacketBuilder::default()
     }
 
     /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
@@ -122,42 +159,36 @@ impl SignedPacket {
         SignedPacket::from_bytes(&bytes.into())
     }
 
-    /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
+    /// Creates a new [SignedPacket] from a [Keypair] and [ResourceRecord]s as the `answers`
+    /// section of a DNS [Packet].
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the z-base32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
-    pub fn from_packet(
+    fn from_answers(
         keypair: &Keypair,
-        packet: &Packet,
+        answers: &[ResourceRecord<'_>],
     ) -> Result<SignedPacket, SignedPacketError> {
-        // Normalize names to the origin TLD
-        let mut inner = Packet::new_reply(0);
+        let mut packet = Packet::new_reply(0);
 
         let origin = keypair.public_key().to_z32();
 
-        let normalized_names: Vec<String> = packet
-            .answers
+        // Normalize names to the origin TLD
+        let normalized_names: Vec<String> = answers
             .iter()
             .map(|answer| normalize_name(&origin, answer.name.to_string()))
             .collect();
 
-        packet
-            .answers
-            .iter()
-            .enumerate()
-            .for_each(|(index, answer)| {
-                let new_new_name = Name::new_unchecked(&normalized_names[index]);
-
-                inner.answers.push(ResourceRecord::new(
-                    new_new_name.clone(),
-                    answer.class,
-                    answer.ttl,
-                    answer.rdata.clone(),
-                ))
-            });
+        answers.iter().enumerate().for_each(|(index, answer)| {
+            packet.answers.push(ResourceRecord::new(
+                Name::new_unchecked(&normalized_names[index]).to_owned(),
+                answer.class,
+                answer.ttl,
+                answer.rdata.clone(),
+            ))
+        });
 
         // Encode the packet as `v` and verify its length
-        let encoded_packet: Bytes = inner.build_bytes_vec_compressed()?.into();
+        let encoded_packet: Bytes = packet.build_bytes_vec_compressed()?.into();
 
         if encoded_packet.len() > 1000 {
             return Err(SignedPacketError::PacketTooLarge(encoded_packet.len()));
@@ -253,7 +284,7 @@ impl SignedPacket {
     }
 
     /// Return the DNS [Packet].
-    pub fn packet(&self) -> &Packet {
+    pub(crate) fn packet(&self) -> &Packet {
         self.inner.borrow_dependent()
     }
 
@@ -332,7 +363,7 @@ impl SignedPacket {
         }
     }
 
-    /// Returns the smallest `ttl` in the [Self::packet] resource records,
+    /// Returns the smallest `ttl` in the resource records,
     /// calmped with `min` and `max`.
     ///
     /// # Panics
@@ -358,6 +389,50 @@ impl SignedPacket {
     /// Time since the [Self::last_seen] in seconds
     fn elapsed(&self) -> u32 {
         ((Timestamp::now().as_u64() - self.last_seen.as_u64()) / 1_000_000) as u32
+    }
+
+    /// Creates a [Self] from the serialized representation:
+    /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
+    ///
+    /// Performs the following validations:
+    /// - Bytes minimum length
+    /// - Validates the PublicKey
+    /// - Verifies the Signature
+    /// - Validates the DNS packet encoding
+    ///
+    /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
+    ///
+    /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
+    fn from_bytes(bytes: &Bytes) -> Result<SignedPacket, SignedPacketError> {
+        if bytes.len() < 104 {
+            return Err(SignedPacketError::InvalidSignedPacketBytesLength(
+                bytes.len(),
+            ));
+        }
+        if (bytes.len() as u64) > SignedPacket::MAX_BYTES {
+            return Err(SignedPacketError::PacketTooLarge(bytes.len()));
+        }
+        let public_key = PublicKey::try_from(&bytes[..32])?;
+        let signature = Signature::from_bytes(bytes[32..96].try_into().unwrap());
+        let timestamp = u64::from_be_bytes(bytes[96..104].try_into().unwrap());
+
+        let encoded_packet = &bytes.slice(104..);
+
+        public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
+
+        Ok(SignedPacket {
+            inner: Inner::try_from_bytes(bytes.to_owned())?,
+            last_seen: Timestamp::now(),
+        })
+    }
+
+    /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
+    /// like ones stored on disk or in a database.
+    fn from_bytes_unchecked(bytes: &Bytes, last_seen: impl Into<Timestamp>) -> SignedPacket {
+        SignedPacket {
+            inner: Inner::try_from_bytes(bytes.to_owned()).unwrap(),
+            last_seen: last_seen.into(),
+        }
     }
 }
 
@@ -538,8 +613,9 @@ pub enum SignedPacketError {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use simple_dns::rdata::CNAME;
+
     use super::*;
-    use crate::dns;
 
     use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
@@ -569,17 +645,14 @@ mod tests {
     fn sign_verify() {
         let keypair = Keypair::random();
 
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(ResourceRecord::new(
-            Name::new("_derp_region.iroh.").unwrap(),
-            simple_dns::CLASS::IN,
-            30,
-            RData::A(A {
-                address: Ipv4Addr::new(1, 1, 1, 1).into(),
-            }),
-        ));
-
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .address(
+                "_derp_region.iroh.".try_into().unwrap(),
+                "1.1.1.1".parse().unwrap(),
+                30,
+            )
+            .sign(&keypair)
+            .unwrap();
 
         assert!(SignedPacket::from_relay_payload(
             &signed_packet.public_key(),
@@ -602,19 +675,17 @@ mod tests {
     fn from_too_large_packet() {
         let keypair = Keypair::random();
 
-        let mut packet = Packet::new_reply(0);
+        let mut builder = SignedPacket::builder();
+
         for _ in 0..100 {
-            packet.answers.push(ResourceRecord::new(
-                Name::new("_derp_region.iroh.").unwrap(),
-                simple_dns::CLASS::IN,
+            builder = builder.address(
+                "_derp_region.iroh.".try_into().unwrap(),
+                "1.1.1.1".parse().unwrap(),
                 30,
-                RData::A(A {
-                    address: Ipv4Addr::new(1, 1, 1, 1).into(),
-                }),
-            ));
+            );
         }
 
-        let error = SignedPacket::from_packet(&keypair, &packet);
+        let error = builder.sign(&keypair);
 
         assert!(error.is_err());
     }
@@ -632,18 +703,15 @@ mod tests {
             }),
         );
 
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(target.clone());
-        packet.answers.push(ResourceRecord::new(
-            Name::new("something-else").unwrap(),
-            simple_dns::CLASS::IN,
-            30,
-            RData::A(A {
-                address: Ipv4Addr::new(1, 1, 1, 1).into(),
-            }),
-        ));
-
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .record(target.clone())
+            .address(
+                "something-else".try_into().unwrap(),
+                "1.1.1.1".parse().unwrap(),
+                30,
+            )
+            .sign(&keypair)
+            .unwrap();
 
         let iter = signed_packet.resource_records("_derp_region.iroh");
         assert_eq!(iter.count(), 1);
@@ -658,17 +726,15 @@ mod tests {
     fn to_mutable() {
         let keypair = Keypair::random();
 
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(ResourceRecord::new(
-            Name::new("_derp_region.iroh.").unwrap(),
-            simple_dns::CLASS::IN,
-            30,
-            RData::A(A {
-                address: Ipv4Addr::new(1, 1, 1, 1).into(),
-            }),
-        ));
+        let signed_packet = SignedPacket::builder()
+            .address(
+                "_derp_region.iroh.".try_into().unwrap(),
+                "1.1.1.1".parse().unwrap(),
+                30,
+            )
+            .sign(&keypair)
+            .unwrap();
 
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
         let item: MutableItem = (&signed_packet).into();
         let seq = signed_packet.timestamp().as_u64() as i64;
 
@@ -690,73 +756,54 @@ mod tests {
     fn compressed_names() {
         let keypair = Keypair::random();
 
-        let name = "foobar";
-        let dup = name;
-
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("@").unwrap(),
-            dns::CLASS::IN,
-            30,
-            dns::rdata::RData::CNAME(dns::Name::new(name).unwrap().into()),
-        ));
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("@").unwrap(),
-            dns::CLASS::IN,
-            30,
-            dns::rdata::RData::CNAME(dns::Name::new(dup).unwrap().into()),
-        ));
-
-        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .cname("@".try_into().unwrap(), "foobar".try_into().unwrap(), 30)
+            .cname("@".try_into().unwrap(), "foobar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
 
         assert_eq!(
-            signed
+            signed_packet
                 .resource_records("@")
                 .map(|r| r.rdata.clone())
                 .collect::<Vec<_>>(),
-            packet
-                .answers
-                .iter()
-                .map(|r| r.rdata.clone())
-                .collect::<Vec<_>>()
+            vec![
+                RData::CNAME(CNAME("foobar".try_into().unwrap())),
+                RData::CNAME(CNAME("foobar".try_into().unwrap()))
+            ]
         )
     }
 
     #[test]
     fn to_bytes_from_bytes() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            RData::TXT("hello".try_into().unwrap()),
-        ));
-        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
-        let bytes = signed.as_bytes();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("_foo".try_into().unwrap(), "hello".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        let bytes = signed_packet.as_bytes();
         let from_bytes = SignedPacket::from_bytes(bytes).unwrap();
-        assert_eq!(signed.as_bytes(), from_bytes.as_bytes());
-        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, &signed.last_seen);
-        assert_eq!(signed.as_bytes(), from_bytes2.as_bytes());
+        assert_eq!(signed_packet.as_bytes(), from_bytes.as_bytes());
+        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, &signed_packet.last_seen);
+        assert_eq!(signed_packet.as_bytes(), from_bytes2.as_bytes());
 
         let public_key = keypair.public_key();
-        let payload = signed.to_relay_payload();
+        let payload = signed_packet.to_relay_payload();
         let from_relay_payload = SignedPacket::from_relay_payload(&public_key, &payload).unwrap();
-        assert_eq!(signed.as_bytes(), from_relay_payload.as_bytes());
+        assert_eq!(signed_packet.as_bytes(), from_relay_payload.as_bytes());
     }
 
     #[test]
     fn clone() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            RData::TXT("hello".try_into().unwrap()),
-        ));
 
-        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed = SignedPacket::builder()
+            .txt("_foo".try_into().unwrap(), "hello".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
         let cloned = signed.clone();
 
         assert_eq!(cloned.as_bytes(), signed.as_bytes());
@@ -765,25 +812,21 @@ mod tests {
     #[test]
     fn expires_in_minimum_ttl() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            10,
-            RData::TXT("hello".try_into().unwrap()),
-        ));
 
-        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let mut signed_packet = SignedPacket::builder()
+            .txt("_foo".try_into().unwrap(), "hello".try_into().unwrap(), 10)
+            .sign(&keypair)
+            .unwrap();
 
-        signed.last_seen -= 20 * 1_000_000_u64;
+        signed_packet.last_seen -= 20 * 1_000_000_u64;
 
         assert!(
-            signed.expires_in(30, u32::MAX) > 0,
+            signed_packet.expires_in(30, u32::MAX) > 0,
             "input minimum_ttl is 30 so ttl = 30"
         );
 
         assert!(
-            signed.expires_in(0, u32::MAX) == 0,
+            signed_packet.expires_in(0, u32::MAX) == 0,
             "input minimum_ttl is 0 so ttl = 10 (smallest in resource records)"
         );
     }
@@ -791,25 +834,25 @@ mod tests {
     #[test]
     fn expires_in_maximum_ttl() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            3 * DEFAULT_MAXIMUM_TTL,
-            RData::TXT("hello".try_into().unwrap()),
-        ));
 
-        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let mut signed_packet = SignedPacket::builder()
+            .txt(
+                "_foo".try_into().unwrap(),
+                "hello".try_into().unwrap(),
+                3 * DEFAULT_MAXIMUM_TTL,
+            )
+            .sign(&keypair)
+            .unwrap();
 
-        signed.last_seen -= 2 * (DEFAULT_MAXIMUM_TTL as u64) * 1_000_000;
+        signed_packet.last_seen -= 2 * (DEFAULT_MAXIMUM_TTL as u64) * 1_000_000;
 
         assert!(
-            signed.expires_in(0, DEFAULT_MAXIMUM_TTL) == 0,
+            signed_packet.expires_in(0, DEFAULT_MAXIMUM_TTL) == 0,
             "input maximum_ttl is the dfeault 86400 so maximum ttl = 86400"
         );
 
         assert!(
-            signed.expires_in(0, 7 * DEFAULT_MAXIMUM_TTL) > 0,
+            signed_packet.expires_in(0, 7 * DEFAULT_MAXIMUM_TTL) > 0,
             "input maximum_ttl is 7 * 86400 so ttl = 3 * 86400 (smallest in resource records)"
         );
     }
@@ -817,93 +860,84 @@ mod tests {
     #[test]
     fn fresh_resource_records() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            RData::TXT("hello".try_into().unwrap()),
-        ));
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            60,
-            RData::TXT("world".try_into().unwrap()),
-        ));
 
-        let mut signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let mut signed_packet = SignedPacket::builder()
+            .txt("_foo".try_into().unwrap(), "hello".try_into().unwrap(), 30)
+            .txt("_foo".try_into().unwrap(), "world".try_into().unwrap(), 60)
+            .sign(&keypair)
+            .unwrap();
 
-        signed.last_seen -= 30 * 1_000_000;
+        signed_packet.last_seen -= 30 * 1_000_000;
 
-        assert_eq!(signed.fresh_resource_records("_foo").count(), 1);
+        assert_eq!(signed_packet.fresh_resource_records("_foo").count(), 1);
     }
 
     #[test]
     fn ttl_empty() {
         let keypair = Keypair::random();
-        let packet = Packet::new_reply(0);
 
-        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
 
-        assert_eq!(signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL), 300);
+        assert_eq!(
+            signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
+            300
+        );
     }
 
     #[test]
     fn ttl_with_records_less_than_minimum() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
 
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            DEFAULT_MINIMUM_TTL / 2,
-            RData::TXT("hello".try_into().unwrap()),
-        ));
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            DEFAULT_MINIMUM_TTL / 4,
-            RData::TXT("world".try_into().unwrap()),
-        ));
-
-        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .txt(
+                "_foo".try_into().unwrap(),
+                "hello".try_into().unwrap(),
+                DEFAULT_MINIMUM_TTL / 2,
+            )
+            .txt(
+                "_foo".try_into().unwrap(),
+                "world".try_into().unwrap(),
+                DEFAULT_MINIMUM_TTL / 4,
+            )
+            .sign(&keypair)
+            .unwrap();
 
         assert_eq!(
-            signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
+            signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
             DEFAULT_MINIMUM_TTL
         );
 
-        assert_eq!(signed.ttl(0, DEFAULT_MAXIMUM_TTL), DEFAULT_MINIMUM_TTL / 4);
+        assert_eq!(
+            signed_packet.ttl(0, DEFAULT_MAXIMUM_TTL),
+            DEFAULT_MINIMUM_TTL / 4
+        );
     }
 
     #[test]
     fn ttl_with_records_more_than_maximum() {
         let keypair = Keypair::random();
-        let mut packet = Packet::new_reply(0);
 
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            DEFAULT_MAXIMUM_TTL * 2,
-            RData::TXT("world".try_into().unwrap()),
-        ));
-
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            DEFAULT_MAXIMUM_TTL * 4,
-            RData::TXT("world".try_into().unwrap()),
-        ));
-
-        let signed = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .txt(
+                "_foo".try_into().unwrap(),
+                "hello".try_into().unwrap(),
+                DEFAULT_MAXIMUM_TTL * 2,
+            )
+            .txt(
+                "_foo".try_into().unwrap(),
+                "world".try_into().unwrap(),
+                DEFAULT_MAXIMUM_TTL * 4,
+            )
+            .sign(&keypair)
+            .unwrap();
 
         assert_eq!(
-            signed.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
+            signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL),
             DEFAULT_MAXIMUM_TTL
         );
 
         assert_eq!(
-            signed.ttl(0, DEFAULT_MAXIMUM_TTL * 8),
+            signed_packet.ttl(0, DEFAULT_MAXIMUM_TTL * 8),
             DEFAULT_MAXIMUM_TTL * 2
         );
     }
@@ -915,17 +949,14 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        let mut packet = Packet::new_reply(0);
-        packet.answers.push(ResourceRecord::new(
-            Name::new("_derp_region.iroh.").unwrap(),
-            simple_dns::CLASS::IN,
-            30,
-            RData::A(A {
-                address: Ipv4Addr::new(1, 1, 1, 1).into(),
-            }),
-        ));
-
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .address(
+                "_derp_region.iroh.".try_into().unwrap(),
+                "1.1.1.1".parse().unwrap(),
+                30,
+            )
+            .sign(&keypair)
+            .unwrap();
 
         let serialized = to_allocvec(&signed_packet).unwrap();
         let deserialized: SignedPacket = from_bytes(&serialized).unwrap();
