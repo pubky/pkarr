@@ -6,6 +6,7 @@ All notable changes to pkarr client and server will be documented in this file.
 
 ### Added
 
+- Add `SignedPacket::builder()` and convenient methods to create `A`, `AAAA`, `CNAME`, `TXT`, `SVCB`, and `HTTPS` records.
 - Use `pubky_timestamp::Timestamp` 
 - Impl `PartialEq, Eq` for `SignedPacket`.
 - Impl `From<PublicKey>` for `CacheKey`.
@@ -32,3 +33,5 @@ All notable changes to pkarr client and server will be documented in this file.
 ### Removed
 
 - Remvoed `relay_client_web`, replaced with *(pkarr::relay::Client)*.
+- Removed `SignedPacket::from_packet`.
+- Removed `SignedPacket::packet` getter.

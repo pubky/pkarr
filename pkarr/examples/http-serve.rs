@@ -14,10 +14,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 
-use pkarr::{
-    dns::{rdata::SVCB, Packet},
-    Client, Keypair, SignedPacket,
-};
+use pkarr::{dns::rdata::SVCB, Client, Keypair, SignedPacket};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -66,30 +63,14 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &SocketAddr) {
-    let mut packet = Packet::new_reply(1);
-
     let mut svcb = SVCB::new(0, ".".try_into().expect("infallible"));
-
     svcb.set_port(socket_addr.port());
 
-    packet.answers.push(pkarr::dns::ResourceRecord::new(
-        "@".try_into().unwrap(),
-        pkarr::dns::CLASS::IN,
-        60 * 60,
-        pkarr::dns::rdata::RData::HTTPS(svcb.into()),
-    ));
-
-    packet.answers.push(pkarr::dns::ResourceRecord::new(
-        "@".try_into().unwrap(),
-        pkarr::dns::CLASS::IN,
-        60 * 60,
-        match socket_addr.ip() {
-            std::net::IpAddr::V4(ip) => pkarr::dns::rdata::RData::A(ip.into()),
-            std::net::IpAddr::V6(ip) => pkarr::dns::rdata::RData::AAAA(ip.into()),
-        },
-    ));
-
-    let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+    let signed_packet = SignedPacket::builder()
+        .https("@".try_into().unwrap(), svcb, 60 * 60)
+        .address("@".try_into().unwrap(), socket_addr.ip(), 60 * 60)
+        .sign(&keypair)
+        .unwrap();
 
     client.publish(&signed_packet).await.unwrap();
 }

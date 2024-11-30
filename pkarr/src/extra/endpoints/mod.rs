@@ -29,11 +29,9 @@ impl EndpointsResolver for crate::client::relay::Client {
 
 #[cfg(test)]
 mod tests {
-    use simple_dns::rdata::AAAA;
 
     use super::*;
-    use crate::dns::rdata::{A, SVCB};
-    use crate::dns::{self, rdata::RData};
+    use crate::dns::rdata::SVCB;
     use crate::{mainline::Testnet, Client, Keypair};
     use crate::{PublicKey, SignedPacket};
 
@@ -55,7 +53,7 @@ mod tests {
         Box::pin(async move {
             let keypair = Keypair::random();
 
-            let mut packet = dns::Packet::new_reply(0);
+            let mut builder = SignedPacket::builder();
 
             for _ in 0..branching {
                 let mut svcb = SVCB::new(0, ".".try_into().unwrap());
@@ -73,19 +71,7 @@ mod tests {
                     }
 
                     for ip in ips.clone() {
-                        packet.answers.push(dns::ResourceRecord::new(
-                            dns::Name::new("@").unwrap(),
-                            dns::CLASS::IN,
-                            3600,
-                            match ip {
-                                IpAddr::V4(address) => RData::A(A {
-                                    address: address.into(),
-                                }),
-                                IpAddr::V6(address) => RData::AAAA(AAAA {
-                                    address: address.into(),
-                                }),
-                            },
-                        ));
+                        builder = builder.address("@".try_into().unwrap(), ip, 3600);
                     }
                 } else {
                     let target = generate_subtree(
@@ -102,15 +88,11 @@ mod tests {
                     svcb.target = target.try_into().unwrap();
                 };
 
-                packet.answers.push(dns::ResourceRecord::new(
-                    dns::Name::new("@").unwrap(),
-                    dns::CLASS::IN,
-                    3600,
-                    RData::HTTPS(svcb.into()),
-                ));
+                builder = builder.https("@".try_into().unwrap(), svcb, 3600);
             }
 
-            let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+            let signed_packet = builder.sign(&keypair).unwrap();
+
             client.publish(&signed_packet).await.unwrap();
 
             keypair.public_key()

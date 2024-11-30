@@ -32,6 +32,7 @@ impl Endpoint {
     pub(crate) fn parse(
         signed_packet: &SignedPacket,
         target: &str,
+        // TODO: change is_svcb to a better name
         is_svcb: bool,
     ) -> Vec<Endpoint> {
         let mut records = signed_packet
@@ -157,44 +158,37 @@ fn get_svcb<'a>(record: &'a ResourceRecord, is_svcb: bool) -> Option<&'a SVCB<'a
 
 #[cfg(test)]
 mod tests {
-    use std::net::{Ipv4Addr, Ipv6Addr};
-    use std::str::FromStr;
-
     use super::*;
 
-    use crate::{dns, Keypair};
+    use crate::Keypair;
 
     #[tokio::test]
     async fn endpoint_domain() {
-        let mut packet = dns::Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            3600,
-            RData::HTTPS(SVCB::new(0, "https.example.com".try_into().unwrap()).into()),
-        ));
-        // Make sure HTTPS only follows HTTPs
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            3600,
-            RData::SVCB(SVCB::new(0, "protocol.example.com".try_into().unwrap())),
-        ));
-        // Make sure SVCB only follows SVCB
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            3600,
-            RData::HTTPS(SVCB::new(0, "https.example.com".try_into().unwrap()).into()),
-        ));
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("_foo").unwrap(),
-            dns::CLASS::IN,
-            3600,
-            RData::SVCB(SVCB::new(0, "protocol.example.com".try_into().unwrap())),
-        ));
         let keypair = Keypair::random();
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .https(
+                "foo".try_into().unwrap(),
+                SVCB::new(0, "https.example.com".try_into().unwrap()),
+                3600,
+            )
+            .svcb(
+                "foo".try_into().unwrap(),
+                SVCB::new(0, "protocol.example.com".try_into().unwrap()),
+                3600,
+            )
+            // Make sure SVCB only follows SVCB
+            .https(
+                "foo".try_into().unwrap(),
+                SVCB::new(0, "https.example.com".try_into().unwrap()),
+                3600,
+            )
+            .svcb(
+                "_foo".try_into().unwrap(),
+                SVCB::new(0, "protocol.example.com".try_into().unwrap()),
+                3600,
+            )
+            .sign(&keypair)
+            .unwrap();
 
         let tld = keypair.public_key();
 
@@ -213,31 +207,24 @@ mod tests {
 
     #[test]
     fn endpoint_to_socket_addrs() {
-        let mut packet = dns::Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("@").unwrap(),
-            dns::CLASS::IN,
-            3600,
-            RData::A(Ipv4Addr::from_str("209.151.148.15").unwrap().into()),
-        ));
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("@").unwrap(),
-            dns::CLASS::IN,
-            3600,
-            RData::AAAA(Ipv6Addr::from_str("2a05:d014:275:6201::64").unwrap().into()),
-        ));
-
         let mut svcb = SVCB::new(1, ".".try_into().unwrap());
         svcb.set_port(6881);
 
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("@").unwrap(),
-            dns::CLASS::IN,
-            3600,
-            RData::HTTPS(svcb.into()),
-        ));
         let keypair = Keypair::random();
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .address(
+                "@".try_into().unwrap(),
+                "209.151.148.15".parse().unwrap(),
+                3600,
+            )
+            .address(
+                "@".try_into().unwrap(),
+                "2a05:d014:275:6201::64".parse().unwrap(),
+                3600,
+            )
+            .https("@".try_into().unwrap(), svcb, 3600)
+            .sign(&keypair)
+            .unwrap();
 
         // Follow foo.tld HTTPS records
         let endpoint = Endpoint::parse(

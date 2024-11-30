@@ -11,7 +11,7 @@ use tracing_subscriber;
 
 use std::time::Instant;
 
-use pkarr::{dns, Keypair, SignedPacket};
+use pkarr::{Keypair, SignedPacket};
 
 #[cfg(feature = "relay")]
 use pkarr::client::relay::Client;
@@ -29,15 +29,9 @@ async fn main() -> anyhow::Result<()> {
 
     let keypair = Keypair::random();
 
-    let mut packet = dns::Packet::new_reply(0);
-    packet.answers.push(dns::ResourceRecord::new(
-        dns::Name::new("_foo")?,
-        dns::CLASS::IN,
-        30,
-        dns::rdata::RData::TXT("bar".try_into()?),
-    ));
-
-    let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
+    let signed_packet = SignedPacket::builder()
+        .txt("_foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&keypair)?;
 
     let instant = Instant::now();
 

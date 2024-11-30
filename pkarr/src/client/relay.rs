@@ -463,21 +463,16 @@ impl Display for EmptyListOfRelays {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{dns, Keypair, SignedPacket};
+    use crate::{Keypair, SignedPacket};
 
     #[tokio::test]
     async fn publish_resolve() {
         let keypair = Keypair::random();
 
-        let mut packet = dns::Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            dns::rdata::RData::TXT("bar".try_into().unwrap()),
-        ));
-
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
 
         let mut server = mockito::Server::new_async().await;
 
@@ -542,8 +537,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let packet = dns::Packet::new_reply(0);
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
 
         client
             .cache()
