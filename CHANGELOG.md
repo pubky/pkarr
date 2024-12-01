@@ -7,6 +7,7 @@ All notable changes to pkarr client and server will be documented in this file.
 ### Added
 
 - Add `SignedPacket::builder()` and convenient methods to create `A`, `AAAA`, `CNAME`, `TXT`, `SVCB`, and `HTTPS` records.
+- Add `SignedPacket::all_resource_records()` to access all resource records without accessing the dns packet.
 - Use `pubky_timestamp::Timestamp` 
 - Impl `PartialEq, Eq` for `SignedPacket`.
 - Impl `From<PublicKey>` for `CacheKey`.
@@ -29,6 +30,7 @@ All notable changes to pkarr client and server will be documented in this file.
 - `Client::shutdown` and `Client::shutdown_sync` are now idempotent and return `()`.
 - `Client::resolve`, `Client::resolve_sync` and `relay::Client::resolve` return expired cached `SignedPacket` _before_ making query to the network (Relays/Resolvers/Dht).
 - Export `Settings` as client builder.
+- Update `simple-dns` so you can't use `Name::new("@")`, instead you should use `Name::new(".")`, `SignedPacket::resource_records("@")` still works.
 
 ### Removed
 

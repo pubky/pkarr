@@ -30,11 +30,17 @@ impl SignedPacketBuilder {
     }
 
     /// Insert any type of [RData]
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn rdata(self, name: Name<'_>, rdata: RData, ttl: u32) -> Self {
         self.record(ResourceRecord::new(name.to_owned(), CLASS::IN, ttl, rdata))
     }
 
     /// Insert an `A` record.
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn a(self, name: Name<'_>, address: Ipv4Addr, ttl: u32) -> Self {
         self.rdata(
             name,
@@ -46,6 +52,9 @@ impl SignedPacketBuilder {
     }
 
     /// Insert an `AAAA` record.
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn aaaa(self, name: Name<'_>, address: Ipv6Addr, ttl: u32) -> Self {
         self.rdata(
             name,
@@ -57,6 +66,9 @@ impl SignedPacketBuilder {
     }
 
     /// Insert an `A` or `AAAA` record.
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn address(self, name: Name<'_>, address: IpAddr, ttl: u32) -> Self {
         match address {
             IpAddr::V4(addr) => self.a(name, addr, ttl),
@@ -65,21 +77,33 @@ impl SignedPacketBuilder {
     }
 
     /// Insert a `CNAME` record.
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn cname(self, name: Name<'_>, cname: Name<'_>, ttl: u32) -> Self {
         self.rdata(name, RData::CNAME(cname.into()), ttl)
     }
 
     /// Insert a `TXT` record.
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn txt(self, name: Name<'_>, text: TXT<'_>, ttl: u32) -> Self {
         self.rdata(name, RData::TXT(text), ttl)
     }
 
     /// Insert an `HTTPS` record
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn https(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
         self.rdata(name, RData::HTTPS(HTTPS(svcb)), ttl)
     }
 
     /// Insert an `SVCB record
+    ///
+    /// You can set the name to `.` to point ot the Apex
+    /// (the public key, of the keypair used in [Self::sign])
     pub fn svcb(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
         self.rdata(name, RData::SVCB(svcb), ttl)
     }
@@ -91,6 +115,8 @@ impl SignedPacketBuilder {
 
     /// Create a [Packet] from the [ResourceRecord]s inserted so far and sign
     /// it with the given [Keypair].
+    ///
+    /// Read more about how names will be normalized in [SignedPacket::from_answers].
     pub fn sign(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketError> {
         SignedPacket::from_answers(keypair, &self.0)
     }
@@ -142,6 +168,54 @@ pub struct SignedPacket {
 impl SignedPacket {
     pub const MAX_BYTES: u64 = 1104;
 
+    /// Create a [SignedPacket] using a builder.
+    ///
+    /// ```
+    ///  use pkarr::{SignedPacket, Keypair};
+    ///  
+    ///  let keypair = Keypair::random();
+    ///
+    ///  let signed_packet = SignedPacket::builder()
+    ///     // A record
+    ///     .address(
+    ///         "_derp_region.iroh.".try_into().unwrap(),
+    ///         "1.1.1.1".parse().unwrap(),
+    ///         30,
+    ///     )
+    ///     // AAAA record
+    ///     .address(
+    ///         "_derp_region.iroh.".try_into().unwrap(),
+    ///         "3002:0bd6:0000:0000:0000:ee00:0033:6778".parse().unwrap(),
+    ///         30,
+    ///     )
+    ///     // CNAME record
+    ///     .cname(
+    ///         "subdomain.".try_into().unwrap(),
+    ///         "example.com".try_into().unwrap(),
+    ///         30
+    ///     )
+    ///     // TXT record
+    ///     .txt(
+    ///         "_proto".try_into().unwrap(),
+    ///         "foo=bar".try_into().unwrap(),
+    ///         30
+    ///     )
+    ///     // HTTPS record
+    ///     .https(
+    ///         // You can make a record at the Apex (at the same TLD as your public key)
+    ///         ".".try_into().unwrap(),
+    ///         SVCB::new(0, "https.example.com".try_into().unwrap()),
+    ///         3600,
+    ///     )
+    ///     // SVCB record
+    ///     .https(
+    ///         ".".try_into().unwrap(),
+    ///         SVCB::new(0, "https.example.com".try_into().unwrap()),
+    ///         3600,
+    ///     )
+    ///     .sign(&keypair)
+    ///     .unwrap();
+    /// ```
     pub fn builder() -> SignedPacketBuilder {
         SignedPacketBuilder::default()
     }
@@ -164,6 +238,8 @@ impl SignedPacket {
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the z-base32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
+    ///
+    /// If any name is empty or just a `.`, it will be normalized to the public key of the keypair.
     fn from_answers(
         keypair: &Keypair,
         answers: &[ResourceRecord<'_>],
@@ -330,12 +406,12 @@ impl SignedPacket {
 
     /// Return and iterator over the [ResourceRecord]s in the Answers section of the DNS [Packet]
     /// that matches the given name. The name will be normalized to the origin TLD of this packet.
+    ///
+    /// You can use `@` to filter the resource records at the Apex (the public key).
     pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
-        self.packet()
-            .answers
-            .iter()
+        self.all_resource_records()
             .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
     }
 
@@ -345,9 +421,14 @@ impl SignedPacket {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
 
-        self.packet().answers.iter().filter(move |rr| {
+        self.all_resource_records().filter(move |rr| {
             rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > self.elapsed()
         })
+    }
+
+    /// Returns all resource records in this packet
+    pub fn all_resource_records(&self) -> impl Iterator<Item = &ResourceRecord> {
+        self.packet().answers.iter()
     }
 
     /// calculates the remaining seconds by comparing the [Self::ttl] (clamped by `min` and `max`)
@@ -757,8 +838,8 @@ mod tests {
         let keypair = Keypair::random();
 
         let signed_packet = SignedPacket::builder()
-            .cname("@".try_into().unwrap(), "foobar".try_into().unwrap(), 30)
-            .cname("@".try_into().unwrap(), "foobar".try_into().unwrap(), 30)
+            .cname(".".try_into().unwrap(), "foobar".try_into().unwrap(), 30)
+            .cname(".".try_into().unwrap(), "foobar".try_into().unwrap(), 30)
             .sign(&keypair)
             .unwrap();
 

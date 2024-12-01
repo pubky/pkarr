@@ -71,7 +71,7 @@ mod tests {
                     }
 
                     for ip in ips.clone() {
-                        builder = builder.address("@".try_into().unwrap(), ip, 3600);
+                        builder = builder.address(".".try_into().unwrap(), ip, 3600);
                     }
                 } else {
                     let target = generate_subtree(
@@ -88,7 +88,7 @@ mod tests {
                     svcb.target = target.try_into().unwrap();
                 };
 
-                builder = builder.https("@".try_into().unwrap(), svcb, 3600);
+                builder = builder.https(".".try_into().unwrap(), svcb, 3600);
             }
 
             let signed_packet = builder.sign(&keypair).unwrap();

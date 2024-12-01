@@ -67,6 +67,12 @@ impl Endpoint {
             .map(|s| {
                 let target = s.target.to_string();
 
+                let target = if target == "." || target.is_empty() {
+                    ".".to_string()
+                } else {
+                    target
+                };
+
                 let port = s
                     .get_param(SVCB::PORT)
                     .map(|bytes| {
@@ -78,15 +84,17 @@ impl Endpoint {
                     })
                     .unwrap_or_default();
 
+                let addrs = if &target == "." {
+                    addrs.clone()
+                } else {
+                    Vec::with_capacity(0)
+                };
+
                 Endpoint {
                     target,
                     port,
                     public_key: signed_packet.public_key(),
-                    addrs: if s.target.to_string() == "." {
-                        addrs.clone()
-                    } else {
-                        Vec::with_capacity(0)
-                    },
+                    addrs,
                 }
             })
             .collect::<Vec<_>>()
@@ -213,16 +221,16 @@ mod tests {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder()
             .address(
-                "@".try_into().unwrap(),
+                ".".try_into().unwrap(),
                 "209.151.148.15".parse().unwrap(),
                 3600,
             )
             .address(
-                "@".try_into().unwrap(),
+                ".".try_into().unwrap(),
                 "2a05:d014:275:6201::64".parse().unwrap(),
                 3600,
             )
-            .https("@".try_into().unwrap(), svcb, 3600)
+            .https(".".try_into().unwrap(), svcb, 3600)
             .sign(&keypair)
             .unwrap();
 
