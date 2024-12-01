@@ -42,7 +42,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             relays: DEFAULT_RELAYS.map(|s| s.into()).to_vec(),
-            cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
+            cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
+                .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             http_client: reqwest::Client::new(),
@@ -107,7 +108,7 @@ pub struct Client {
 
 impl Default for Client {
     fn default() -> Self {
-        Self::new(Settings::default()).unwrap()
+        Self::new(Settings::default()).expect("Pkarr Relay client default")
     }
 }
 

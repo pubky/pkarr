@@ -332,13 +332,13 @@ impl SignedPacket {
 
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
     pub fn public_key(&self) -> PublicKey {
-        PublicKey::try_from(&self.inner.borrow_owner()[0..32]).unwrap()
+        PublicKey::try_from(&self.inner.borrow_owner()[0..32]).expect("SignedPacket::public_key()")
     }
 
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
     /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
     pub fn signature(&self) -> Signature {
-        Signature::try_from(&self.inner.borrow_owner()[32..96]).unwrap()
+        Signature::try_from(&self.inner.borrow_owner()[32..96]).expect("SignedPacket::signature()")
     }
 
     /// Returns the timestamp in microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).
@@ -349,7 +349,9 @@ impl SignedPacket {
     /// which is set when you create a new packet.
     pub fn timestamp(&self) -> Timestamp {
         let bytes = self.inner.borrow_owner();
-        let slice: [u8; 8] = bytes[96..104].try_into().unwrap();
+        let slice: [u8; 8] = bytes[96..104]
+            .try_into()
+            .expect("SignedPacket::timestamp()");
 
         u64::from_be_bytes(slice).into()
     }
@@ -412,7 +414,7 @@ impl SignedPacket {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
         self.all_resource_records()
-            .filter(move |rr| rr.name == Name::new(&normalized_name).unwrap())
+            .filter(move |rr| rr.name.to_string() == normalized_name)
     }
 
     /// Similar to [resource_records](SignedPacket::resource_records), but filters out
@@ -421,9 +423,8 @@ impl SignedPacket {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
 
-        self.all_resource_records().filter(move |rr| {
-            rr.name == Name::new(&normalized_name).unwrap() && rr.ttl > self.elapsed()
-        })
+        self.all_resource_records()
+            .filter(move |rr| rr.name.to_string() == normalized_name && rr.ttl > self.elapsed())
     }
 
     /// Returns all resource records in this packet
@@ -494,8 +495,16 @@ impl SignedPacket {
             return Err(SignedPacketError::PacketTooLarge(bytes.len()));
         }
         let public_key = PublicKey::try_from(&bytes[..32])?;
-        let signature = Signature::from_bytes(bytes[32..96].try_into().unwrap());
-        let timestamp = u64::from_be_bytes(bytes[96..104].try_into().unwrap());
+        let signature = Signature::from_bytes(
+            bytes[32..96]
+                .try_into()
+                .expect("SignedPacket::from_bytes(); Signature from 64 bytes"),
+        );
+        let timestamp = u64::from_be_bytes(
+            bytes[96..104]
+                .try_into()
+                .expect("SignedPacket::from_bytes(); Timestamp from 8 bytes"),
+        );
 
         let encoded_packet = &bytes.slice(104..);
 
@@ -511,7 +520,8 @@ impl SignedPacket {
     /// like ones stored on disk or in a database.
     fn from_bytes_unchecked(bytes: &Bytes, last_seen: impl Into<Timestamp>) -> SignedPacket {
         SignedPacket {
-            inner: Inner::try_from_bytes(bytes.to_owned()).unwrap(),
+            inner: Inner::try_from_bytes(bytes.to_owned())
+                .expect("called SignedPacket::from_bytes_unchecked on invalid bytes"),
             last_seen: last_seen.into(),
         }
     }

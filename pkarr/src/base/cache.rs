@@ -83,14 +83,14 @@ impl InMemoryCache {
 
 impl Cache for InMemoryCache {
     fn len(&self) -> usize {
-        self.inner.lock().unwrap().len()
+        self.inner.lock().expect("mutex lock").len()
     }
 
     /// Puts [SignedPacket], if a version of the  packet already exists,
     /// and it has the same [SignedPacket::as_bytes], then only [SignedPacket::last_seen] will be
     /// updated, otherwise the input will be cloned.
     fn put(&self, key: &CacheKey, signed_packet: &SignedPacket) {
-        let mut lock = self.inner.lock().unwrap();
+        let mut lock = self.inner.lock().expect("mutex lock");
 
         match lock.get_mut(key) {
             Some(existing) => {
@@ -108,6 +108,6 @@ impl Cache for InMemoryCache {
     }
 
     fn get(&self, key: &CacheKey) -> Option<SignedPacket> {
-        self.inner.lock().unwrap().get(key).cloned()
+        self.inner.lock().expect("mutex lock").get(key).cloned()
     }
 }

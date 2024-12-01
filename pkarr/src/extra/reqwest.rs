@@ -37,5 +37,9 @@ async fn resolve(
         return Ok(Box::new(addrs.into_iter()));
     };
 
-    Ok(Box::new(format!("{name}:0").to_socket_addrs().unwrap()))
+    Ok(Box::new(
+        format!("{name}:0")
+            .to_socket_addrs()
+            .expect("formatting a name and port to socket address"),
+    ))
 }
