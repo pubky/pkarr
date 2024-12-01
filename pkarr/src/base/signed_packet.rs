@@ -171,7 +171,7 @@ impl SignedPacket {
     /// Create a [SignedPacket] using a builder.
     ///
     /// ```
-    ///  use pkarr::{SignedPacket, Keypair};
+    ///  use pkarr::{SignedPacket, Keypair, dns::rdata::SVCB};
     ///  
     ///  let keypair = Keypair::random();
     ///
