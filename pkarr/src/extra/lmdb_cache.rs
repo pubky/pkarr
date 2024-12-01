@@ -214,12 +214,7 @@ impl LmdbCache {
     ) -> Result<Option<SignedPacket>, heed::Error> {
         let rtxn = self.env.read_txn()?;
 
-        let packets: SignedPacketsTable = self
-            .env
-            .open_database(&rtxn, Some(SIGNED_PACKET_TABLE))?
-            .unwrap();
-
-        if let Some(signed_packet) = packets.get(&rtxn, key)? {
+        if let Some(signed_packet) = self.signed_packets_table.get(&rtxn, key)? {
             return Ok(Some(signed_packet));
         }
 

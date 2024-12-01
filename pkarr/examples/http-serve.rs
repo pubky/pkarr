@@ -67,8 +67,8 @@ async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &
     svcb.set_port(socket_addr.port());
 
     let signed_packet = SignedPacket::builder()
-        .https("@".try_into().unwrap(), svcb, 60 * 60)
-        .address("@".try_into().unwrap(), socket_addr.ip(), 60 * 60)
+        .https(".".try_into().unwrap(), svcb, 60 * 60)
+        .address(".".try_into().unwrap(), socket_addr.ip(), 60 * 60)
         .sign(&keypair)
         .unwrap();
 

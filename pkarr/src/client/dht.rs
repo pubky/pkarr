@@ -52,7 +52,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             dht_settings: mainline::Dht::builder(),
-            cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE).unwrap(),
+            cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
+                .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
             resolvers: Some(
                 DEFAULT_RESOLVERS
                     .iter()
