@@ -81,9 +81,9 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 [features]
 # Clients 
-## Use [client::dht::Client]
+## Use [mainline] inside the [Client] in native environment.
 dht = ["dep:mainline", "dep:flume"]
-## Use [client::relay::Client]
+## Use an HTTP client to talk to relays inside the [Client] in native environment.
 relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:flume"]
 
 ## Derive serde Serialize/Deserialize for PublicKey

@@ -19,7 +19,7 @@ use tracing::debug;
 use pubky_timestamp::Timestamp;
 
 use crate::{
-    base::cache::{Cache, CacheKey},
+    cache::{Cache, CacheKey},
     SignedPacket,
 };
 
