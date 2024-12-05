@@ -92,11 +92,19 @@ serde = ["dep:serde", "pubky-timestamp/serde", "pubky-timestamp/httpdate"]
 # Extra
 ## Use [crate::extra::lmdb-cache::LmdbCache]
 lmdb-cache = ["dep:heed", "dep:byteorder", "dep:page_size"]
+## Use [extra::endpoints::EndpointsResolver] trait implementation for [Client] and [client::relay::Client]
+endpoints = ["dep:futures-lite", "dep:genawaiter"]
+## Use [reqwest::dns::Resolve] trait implementation for [Client] and [client::relay::Client]
+reqwest-resolve = ["dep:reqwest", "endpoints"]
+## Use [rustls::ClientConfig] from [Client] and [client::relay::Client] for e2ee transport to Pkarr endpoints
+tls = ["rustls", "ed25519-dalek/pkcs8", "dep:webpki"]
+## Create a [reqwest::ClientBuilder] from [Client] or [client::relay::Client]
+reqwest-builder = ["tls", "reqwest-resolve"]
 
 ## Use all features
-full = ["dht", "relay", "serde","lmdb-cache"]
+full = ["dht", "relay", "serde", "endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
 
-default = ["dht"]
+default = ["full"]
 
 [package.metadata.docs.rs]
 all-features = true
