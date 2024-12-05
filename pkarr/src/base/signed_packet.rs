@@ -20,12 +20,15 @@ use serde::{Deserialize, Serialize};
 use pubky_timestamp::Timestamp;
 
 #[derive(Debug, Default)]
-pub struct SignedPacketBuilder(Vec<ResourceRecord<'static>>);
+pub struct SignedPacketBuilder {
+    records: Vec<ResourceRecord<'static>>,
+    timestamp: Option<u64>,
+}
 
 impl SignedPacketBuilder {
     /// Insert a [ResourceRecord]
     pub fn record(mut self, record: ResourceRecord<'_>) -> Self {
-        self.0.push(record.into_owned());
+        self.records.push(record.into_owned());
         self
     }
 
@@ -108,6 +111,12 @@ impl SignedPacketBuilder {
         self.rdata(name, RData::SVCB(svcb), ttl)
     }
 
+    pub fn timestamp<T: Into<u64>>(mut self, timestamp: T) -> Self {
+        self.timestamp = Some(timestamp.into());
+
+        self
+    }
+
     /// Alias to [Self::sign]
     pub fn build(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketError> {
         self.sign(keypair)
@@ -116,9 +125,13 @@ impl SignedPacketBuilder {
     /// Create a [Packet] from the [ResourceRecord]s inserted so far and sign
     /// it with the given [Keypair].
     ///
-    /// Read more about how names will be normalized in [SignedPacket::from_answers].
+    /// Read more about how names will be normalized in [SignedPacket::new].
     pub fn sign(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketError> {
-        SignedPacket::from_answers(keypair, &self.0)
+        SignedPacket::new(
+            keypair,
+            &self.records,
+            self.timestamp.unwrap_or(Timestamp::now().as_u64()),
+        )
     }
 }
 
@@ -220,29 +233,17 @@ impl SignedPacket {
         SignedPacketBuilder::default()
     }
 
-    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
-    pub fn from_relay_payload(
-        public_key: &PublicKey,
-        payload: &Bytes,
-    ) -> Result<SignedPacket, SignedPacketError> {
-        let mut bytes = BytesMut::with_capacity(payload.len() + 32);
-
-        bytes.extend_from_slice(public_key.as_bytes());
-        bytes.extend_from_slice(payload);
-
-        SignedPacket::from_bytes(&bytes.into())
-    }
-
     /// Creates a new [SignedPacket] from a [Keypair] and [ResourceRecord]s as the `answers`
-    /// section of a DNS [Packet].
+    /// section of a DNS [Packet], and a Unix timestamp in microseconds.
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the z-base32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
     ///
     /// If any name is empty or just a `.`, it will be normalized to the public key of the keypair.
-    fn from_answers(
+    pub fn new(
         keypair: &Keypair,
         answers: &[ResourceRecord<'_>],
+        timestamp: u64,
     ) -> Result<SignedPacket, SignedPacketError> {
         let mut packet = Packet::new_reply(0);
 
@@ -270,8 +271,6 @@ impl SignedPacket {
             return Err(SignedPacketError::PacketTooLarge(encoded_packet.len()));
         }
 
-        let timestamp = Timestamp::now().into();
-
         let signature = keypair.sign(&signable(timestamp, &encoded_packet));
 
         Ok(SignedPacket {
@@ -283,6 +282,19 @@ impl SignedPacket {
             )?,
             last_seen: Timestamp::now(),
         })
+    }
+
+    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
+    pub fn from_relay_payload(
+        public_key: &PublicKey,
+        payload: &Bytes,
+    ) -> Result<SignedPacket, SignedPacketError> {
+        let mut bytes = BytesMut::with_capacity(payload.len() + 32);
+
+        bytes.extend_from_slice(public_key.as_bytes());
+        bytes.extend_from_slice(payload);
+
+        SignedPacket::from_bytes(&bytes.into())
     }
 
     // === Getters ===
