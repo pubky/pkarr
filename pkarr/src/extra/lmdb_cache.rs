@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use byteorder::LittleEndian;
+use byteorder::BigEndian;
 use heed::{
     types::U64, BoxedError, BytesDecode, BytesEncode, Database, Env, EnvOpenOptions, RwTxn,
 };
@@ -30,8 +30,8 @@ const KEY_TO_TIME_TABLE: &str = "pkarrcache:key_to_time";
 const TIME_TO_KEY_TABLE: &str = "pkarrcache:time_to_key";
 
 type SignedPacketsTable = Database<CacheKeyCodec, SignedPacketCodec>;
-type KeyToTimeTable = Database<CacheKeyCodec, U64<LittleEndian>>;
-type TimeToKeyTable = Database<U64<LittleEndian>, CacheKeyCodec>;
+type KeyToTimeTable = Database<CacheKeyCodec, U64<BigEndian>>;
+type TimeToKeyTable = Database<U64<BigEndian>, CacheKeyCodec>;
 
 pub struct CacheKeyCodec;
 
@@ -169,7 +169,7 @@ impl LmdbCache {
         let key_to_time = self.key_to_time_table;
         let time_to_key = self.time_to_key_table;
 
-        let batch = self.batch.read().expect("LmdbCache::batch.read()");
+        let mut batch = self.batch.write().expect("LmdbCache::batch.write()");
         update_lru(&mut wtxn, packets, key_to_time, time_to_key, &batch)?;
 
         let len = packets.len(&wtxn)? as usize;
@@ -187,6 +187,8 @@ impl LmdbCache {
                 packets.delete(&mut wtxn, &key)?;
             };
         }
+
+        batch.clear();
 
         if let Some(old_time) = key_to_time.get(&wtxn, key)? {
             time_to_key.delete(&mut wtxn, &old_time)?;
@@ -265,7 +267,6 @@ impl Cache for LmdbCache {
 
     fn put(&self, key: &CacheKey, signed_packet: &SignedPacket) {
         if let Err(error) = self.internal_put(key, signed_packet) {
-            dbg!(&error);
             debug!(?error, "Error in LmdbCache::put");
         };
     }
