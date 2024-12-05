@@ -6,6 +6,15 @@ All notable changes to pkarr client and server will be documented in this file.
 
 ### Added
 
+- Add feature `endpoints` to resolve `HTTPS` and `SVCB` endpoints over Pkarr
+- Add feature `reqwest-resolve` to create a custom `reqwest::dns::Resolve` implementation from `Client` and `relay::client::Client`
+- Add feature `tls` to create `rustls::ClientConfig` from `Client` and `relay::client::Client` and create `rustls::ServerCongif` from `KeyPair`.
+- Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
+
+##  [3.0.0](https://github.com/pubky/mainline/compare/v2.2.0...v3.0.0) - 2024-12-05
+
+### Added
+
 - Add `SignedPacket::builder()` and convenient methods to create `A`, `AAAA`, `CNAME`, `TXT`, `SVCB`, and `HTTPS` records.
 - Add `SignedPacket::all_resource_records()` to access all resource records without accessing the dns packet.
 - Use `pubky_timestamp::Timestamp` 
@@ -15,10 +24,6 @@ All notable changes to pkarr client and server will be documented in this file.
 - Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.
 - Add `pkarr::LmdbCache` for persistent cache using lmdb.
 - Add `pkarr.pubky.org` as an extra default Relay and Resolver.
-- Add feature `endpoints` to resolve `HTTPS` and `SVCB` endpoints over Pkarr
-- Add feature `reqwest-resolve` to create a custom `reqwest::dns::Resolve` implementation from `Client` and `relay::client::Client`
-- Add feature `tls` to create `rustls::ClientConfig` from `Client` and `relay::client::Client` and create `rustls::ServerCongif` from `KeyPair`.
-- Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
 
 ### Changed
 
