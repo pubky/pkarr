@@ -22,7 +22,7 @@ use pubky_timestamp::Timestamp;
 #[derive(Debug, Default)]
 pub struct SignedPacketBuilder {
     records: Vec<ResourceRecord<'static>>,
-    timestamp: Option<u64>,
+    timestamp: Option<Timestamp>,
 }
 
 impl SignedPacketBuilder {
@@ -111,8 +111,9 @@ impl SignedPacketBuilder {
         self.rdata(name, RData::SVCB(svcb), ttl)
     }
 
-    pub fn timestamp<T: Into<u64>>(mut self, timestamp: T) -> Self {
-        self.timestamp = Some(timestamp.into());
+    /// Add a custom [Timestamp].
+    pub fn timestamp(mut self, timestamp: Timestamp) -> Self {
+        self.timestamp = Some(timestamp);
 
         self
     }
@@ -130,7 +131,7 @@ impl SignedPacketBuilder {
         SignedPacket::new(
             keypair,
             &self.records,
-            self.timestamp.unwrap_or(Timestamp::now().as_u64()),
+            self.timestamp.unwrap_or(Timestamp::now()),
         )
     }
 }
@@ -234,7 +235,7 @@ impl SignedPacket {
     }
 
     /// Creates a new [SignedPacket] from a [Keypair] and [ResourceRecord]s as the `answers`
-    /// section of a DNS [Packet], and a Unix timestamp in microseconds.
+    /// section of a DNS [Packet], and a [Timestamp].
     ///
     /// It will also normalize the names of the [ResourceRecord]s to be relative to the origin,
     /// which would be the z-base32 encoded [PublicKey] of the [Keypair] used to sign the Packet.
@@ -243,7 +244,7 @@ impl SignedPacket {
     pub fn new(
         keypair: &Keypair,
         answers: &[ResourceRecord<'_>],
-        timestamp: u64,
+        timestamp: Timestamp,
     ) -> Result<SignedPacket, SignedPacketError> {
         let mut packet = Packet::new_reply(0);
 
@@ -271,13 +272,13 @@ impl SignedPacket {
             return Err(SignedPacketError::PacketTooLarge(encoded_packet.len()));
         }
 
-        let signature = keypair.sign(&signable(timestamp, &encoded_packet));
+        let signature = keypair.sign(&signable(timestamp.into(), &encoded_packet));
 
         Ok(SignedPacket {
             inner: Inner::try_from_parts(
                 &keypair.public_key(),
                 &signature,
-                timestamp,
+                timestamp.into(),
                 &encoded_packet,
             )?,
             last_seen: Timestamp::now(),
@@ -721,6 +722,18 @@ mod tests {
     use super::*;
 
     use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
+
+    #[test]
+    fn custom_timestamp() {
+        let timestamp = Timestamp::from(42);
+
+        let signed_packet = SignedPacket::builder()
+            .timestamp(timestamp)
+            .sign(&Keypair::random())
+            .unwrap();
+
+        assert_eq!(signed_packet.timestamp(), timestamp);
+    }
 
     #[test]
     fn normalize_names() {
