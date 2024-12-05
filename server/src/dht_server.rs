@@ -4,7 +4,6 @@ use std::{
 };
 
 use pkarr::{
-    cache::Cache,
     extra::lmdb_cache::LmdbCache,
     mainline::{
         self,
@@ -18,6 +17,7 @@ use pkarr::{
         server::Server,
         MutableItem,
     },
+    Cache,
 };
 
 use tracing::debug;

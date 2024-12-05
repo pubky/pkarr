@@ -12,7 +12,7 @@ use axum_server::Handle;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{extra::lmdb_cache::LmdbCache, Client};
+use pkarr::{extra::lmdb_cache::LmdbCache, mainline, Client};
 
 pub use config::Config;
 
@@ -34,14 +34,17 @@ impl Relay {
         let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
         let client = Client::builder()
-            .dht_port(config.dht_port())
-            .dht_custom_server(Box::new(dht_server::DhtServer::new(
-                cache.clone(),
-                config.resolvers(),
-                config.minimum_ttl(),
-                config.maximum_ttl(),
-                rate_limiter.clone(),
-            )))
+            .dht_settings(
+                mainline::Settings::default()
+                    .port(config.dht_port())
+                    .custom_server(Box::new(dht_server::DhtServer::new(
+                        cache.clone(),
+                        config.resolvers(),
+                        config.minimum_ttl(),
+                        config.maximum_ttl(),
+                        rate_limiter.clone(),
+                    ))),
+            )
             .resolvers(config.resolvers())
             .minimum_ttl(config.minimum_ttl())
             .maximum_ttl(config.maximum_ttl())
@@ -50,7 +53,7 @@ impl Relay {
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.relay_port())))?;
 
-        let resolver_address = *client.info()?.local_addr()?;
+        let resolver_address = client.info()?.local_addr()?.clone();
         let relay_address = listener.local_addr()?;
 
         info!("Running as a resolver on UDP socket {resolver_address}");

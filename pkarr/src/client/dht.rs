@@ -14,13 +14,11 @@ use std::{
     net::{SocketAddr, ToSocketAddrs},
     num::NonZeroUsize,
     thread,
-    time::Duration,
 };
 use tracing::{debug, trace};
 
 use crate::{
-    cache::{Cache, InMemoryCache},
-    DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS,
+    Cache, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
     DEFAULT_RESOLVERS,
 };
 use crate::{PublicKey, SignedPacket};
@@ -28,6 +26,14 @@ use crate::{PublicKey, SignedPacket};
 #[derive(Debug)]
 /// [Client]'s settings
 pub struct Settings {
+    pub(crate) dht_settings: mainline::Settings,
+    /// A set of [resolver](https://pkarr.org/resolvers)s
+    /// to be queried alongside the Dht routing table, to
+    /// lower the latency on cold starts, and help if the
+    /// Dht is missing values not't republished often enough.
+    ///
+    /// Defaults to [DEFAULT_RESOLVERS]
+    pub(crate) resolvers: Option<Vec<SocketAddr>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub(crate) cache_size: NonZeroUsize,
     /// Used in the `min` parameter in [SignedPacket::expires_in].
@@ -40,30 +46,14 @@ pub struct Settings {
     pub(crate) maximum_ttl: u32,
     /// Custom [Cache] implementation, defaults to [InMemoryCache]
     pub(crate) cache: Option<Box<dyn Cache>>,
-
-    #[cfg(feature = "dht")]
-    pub(crate) dht_settings: mainline::Settings,
-
-    #[cfg(feature = "dht")]
-    /// A set of [resolver](https://pkarr.org/resolvers)s
-    /// to be queried alongside the Dht routing table, to
-    /// lower the latency on cold starts, and help if the
-    /// Dht is missing values not't republished often enough.
-    ///
-    /// Defaults to [DEFAULT_RESOLVERS]
-    pub(crate) resolvers: Option<Vec<SocketAddr>>,
-    // #[cfg(feature = "relay")]
-    // /// Relays to use over HTTP(s), defaults to [DEFAULT_RELAYS]
-    // pub(crate) relays: Vec<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            // relays: DEFAULT_RELAYS.map(|s| s.to_string()).to_vec(),
             dht_settings: mainline::Dht::builder(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
-                .expect("DEFAULT_CACHE_SIZE is NonZeroUsize"),
+                .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
             resolvers: Some(
                 DEFAULT_RESOLVERS
                     .iter()
@@ -79,6 +69,18 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Set custom set of [resolvers](Settings::resolvers).
+    pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
+        self.resolvers = resolvers.map(|resolvers| {
+            resolvers
+                .iter()
+                .flat_map(|resolver| resolver.to_socket_addrs())
+                .flatten()
+                .collect::<Vec<_>>()
+        });
+        self
+    }
+
     /// Set the [Settings::cache_size].
     ///
     /// Controls the capacity of [Cache].
@@ -111,54 +113,18 @@ impl Settings {
         self
     }
 
-    pub fn request_timeout(mut self, request_timeout: Duration) -> Self {
-        self.dht_settings = self.dht_settings.request_timeout(request_timeout);
-
+    /// Set [Settings::dht_settings]
+    pub fn dht_settings(mut self, settings: mainline::Settings) -> Self {
+        self.dht_settings = settings;
         self
     }
 
-    #[cfg(feature = "dht")]
-    pub fn dht_port(mut self, port: u16) -> Self {
-        self.dht_settings = self.dht_settings.port(port);
-
-        self
-    }
-
-    #[cfg(feature = "dht")]
-    pub fn dht_custom_server(mut self, custom_server: Box<dyn mainline::server::Server>) -> Self {
-        self.dht_settings = self.dht_settings.custom_server(custom_server);
-
-        self
-    }
-
-    #[cfg(feature = "dht")]
-    /// Set custom set of [resolvers](Settings::resolvers).
-    pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
-        self.resolvers = resolvers.map(|resolvers| {
-            resolvers
-                .iter()
-                .flat_map(|resolver| resolver.to_socket_addrs())
-                .flatten()
-                .collect::<Vec<_>>()
-        });
-        self
-    }
-
-    // TODO: make testnet work with relays?
-    #[cfg(feature = "dht")]
     /// Convienent methot to set the [mainline::Settings::bootstrap] from [mainline::Testnet::bootstrap]
     pub fn testnet(mut self, testnet: &Testnet) -> Self {
         self.dht_settings = self.dht_settings.bootstrap(&testnet.bootstrap);
 
         self
     }
-
-    // #[cfg(feature = "relay")]
-    // /// Set the relays to publish and resolve [SignedPacket]s to and from.
-    // pub fn relays(mut self, relays: Vec<String>) -> Self {
-    //     self.relays = relays;
-    //     self
-    // }
 
     pub fn build(self) -> Result<Client, std::io::Error> {
         Client::new(self)
@@ -168,8 +134,6 @@ impl Settings {
 #[derive(Clone, Debug)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
 pub struct Client {
-    // pub(crate) relays: Vec<String>,
-    // http_client: reqwest::Client,
     sender: Sender<ActorMessage>,
     cache: Box<dyn Cache>,
     minimum_ttl: u32,
@@ -187,8 +151,6 @@ impl Client {
         let cache_clone = cache.clone();
 
         let client = Client {
-            // relays: settings.relays.clone(),
-            // http_client: reqwest::Client::new(),
             sender,
             cache,
             minimum_ttl: settings.minimum_ttl,
@@ -339,28 +301,6 @@ impl Client {
         self.sender
             .send(ActorMessage::Publish(mutable_item, sender))
             .map_err(|_| PublishError::ClientWasShutdown)?;
-
-        // {
-        //     let public_key = signed_packet.public_key();
-        //
-        //     for relay in &self.relays {
-        //         let relay_payload = signed_packet.to_relay_payload();
-        //         let http_client = self.http_client.clone();
-        //         let public_key = public_key.clone();
-        //         let url = format!("{relay}/{}", public_key);
-        //
-        //         tokio::spawn(async move {
-        //             match http_client.put(&url).body(relay_payload).send().await {
-        //                 Ok(response) => {}
-        //                 Err(error) => {
-        //                     debug!(?public_key, ?error, "Relay Error response");
-        //
-        //                     // TODO: send error!
-        //                 }
-        //             };
-        //         });
-        //     }
-        // }
 
         Ok(receiver)
     }
@@ -640,7 +580,7 @@ impl Info {
 }
 
 #[cfg(test)]
-mod native_tests {
+mod tests {
     use std::time::Duration;
 
     use mainline::Testnet;
@@ -792,7 +732,9 @@ mod native_tests {
 
         let client = Client::builder()
             .testnet(&testnet)
-            .request_timeout(Duration::from_millis(10))
+            .dht_settings(
+                mainline::Settings::default().request_timeout(Duration::from_millis(10).into()),
+            )
             // Everything is expired
             .maximum_ttl(0)
             .build()

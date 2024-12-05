@@ -21,7 +21,7 @@ impl From<&crate::PublicKey> for CacheKey {
     }
 }
 
-#[cfg(any(target_arch = "wasm32", not(feature = "dht")))]
+#[cfg(any(target_arch = "wasm32", all(not(feature = "dht"), feature = "relay")))]
 impl From<&crate::PublicKey> for CacheKey {
     fn from(public_key: &crate::PublicKey) -> CacheKey {
         let mut encoded = vec![];
