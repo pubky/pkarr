@@ -2,8 +2,6 @@ use reqwest::dns::{Addrs, Resolve};
 
 use crate::{Client, PublicKey};
 
-use super::endpoints::EndpointsResolver;
-
 use std::net::ToSocketAddrs;
 
 impl Resolve for Client {
@@ -13,16 +11,8 @@ impl Resolve for Client {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-impl Resolve for crate::client::relay::Client {
-    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
-        let client = self.clone();
-        Box::pin(resolve(client, name))
-    }
-}
-
 async fn resolve(
-    client: impl EndpointsResolver,
+    client: Client,
     name: reqwest::dns::Name,
 ) -> Result<Addrs, Box<dyn std::error::Error + Send + Sync>> {
     let name = name.as_str();

@@ -12,7 +12,7 @@ use axum_server::Handle;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{extra::lmdb_cache::LmdbCache, mainline, Client};
+use pkarr::{extra::lmdb_cache::LmdbCache, Client};
 
 pub use config::Config;
 
@@ -34,17 +34,14 @@ impl Relay {
         let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
         let client = Client::builder()
-            .dht_settings(
-                mainline::Settings::default()
-                    .port(config.dht_port())
-                    .custom_server(Box::new(dht_server::DhtServer::new(
-                        cache.clone(),
-                        config.resolvers(),
-                        config.minimum_ttl(),
-                        config.maximum_ttl(),
-                        rate_limiter.clone(),
-                    ))),
-            )
+            .dht_port(config.dht_port())
+            .dht_custom_server(Box::new(dht_server::DhtServer::new(
+                cache.clone(),
+                config.resolvers(),
+                config.minimum_ttl(),
+                config.maximum_ttl(),
+                rate_limiter.clone(),
+            )))
             .resolvers(config.resolvers())
             .minimum_ttl(config.minimum_ttl())
             .maximum_ttl(config.maximum_ttl())

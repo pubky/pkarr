@@ -13,12 +13,7 @@ use std::{
 
 use clap::Parser;
 
-use pkarr::PublicKey;
-
-#[cfg(feature = "relay")]
-use pkarr::client::relay::Client;
-#[cfg(not(feature = "relay"))]
-use pkarr::Client;
+use pkarr::{Client, PublicKey};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
