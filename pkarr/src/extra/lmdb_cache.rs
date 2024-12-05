@@ -265,6 +265,7 @@ impl Cache for LmdbCache {
 
     fn put(&self, key: &CacheKey, signed_packet: &SignedPacket) {
         if let Err(error) = self.internal_put(key, signed_packet) {
+            dbg!(&error);
             debug!(?error, "Error in LmdbCache::put");
         };
     }
