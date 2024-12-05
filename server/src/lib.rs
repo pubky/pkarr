@@ -53,7 +53,7 @@ impl Relay {
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.relay_port())))?;
 
-        let resolver_address = client.info()?.local_addr()?.clone();
+        let resolver_address = *client.info()?.local_addr()?;
         let relay_address = listener.local_addr()?;
 
         info!("Running as a resolver on UDP socket {resolver_address}");
@@ -80,7 +80,7 @@ impl Relay {
     ///
     /// Make sure to read the safety section in [Self::new]
     pub async fn new_unsafe(config: Config) -> anyhow::Result<Self> {
-        unsafe { Ok(Self::new(config).await?) }
+        unsafe { Self::new(config).await }
     }
 
     pub fn resolver_address(&self) -> SocketAddr {

@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
 
     debug!(?config, "Pkarr server config");
 
-    let relay = Relay::new(config).await?;
+    let relay = unsafe { Relay::new(config).await? };
 
     tokio::signal::ctrl_c().await?;
 
