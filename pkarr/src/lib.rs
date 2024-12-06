@@ -35,12 +35,9 @@ pub mod errors {
     #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
     pub use super::client::native::{ClientWasShutdown, PublishError};
 
-    // TODO: wasm
-    #[cfg(any(target_arch = "wasm32", feature = "relay"))]
-    // pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
-    //
     pub use super::keys::PublicKeyError;
-    pub use super::signed_packet::SignedPacketError;
+    pub use super::signed_packet::SignedPacketBuildError;
+    pub use super::signed_packet::SignedPacketVerifyError;
 }
 
 // Rexports
