@@ -339,10 +339,6 @@ pub enum PublicKeyError {
 
     #[error("Invalid PublicKey encoding")]
     InvalidPublicKeyEncoding,
-
-    #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
-    // DNS packet endocded and compressed is larger than 1000 bytes
-    PacketTooLarge(usize),
 }
 
 #[cfg(test)]

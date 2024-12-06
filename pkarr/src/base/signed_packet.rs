@@ -119,7 +119,7 @@ impl SignedPacketBuilder {
     }
 
     /// Alias to [Self::sign]
-    pub fn build(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketError> {
+    pub fn build(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketBuildError> {
         self.sign(keypair)
     }
 
@@ -127,7 +127,7 @@ impl SignedPacketBuilder {
     /// it with the given [Keypair].
     ///
     /// Read more about how names will be normalized in [SignedPacket::new].
-    pub fn sign(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketError> {
+    pub fn sign(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketBuildError> {
         SignedPacket::new(
             keypair,
             &self.records,
@@ -245,7 +245,7 @@ impl SignedPacket {
         keypair: &Keypair,
         answers: &[ResourceRecord<'_>],
         timestamp: Timestamp,
-    ) -> Result<SignedPacket, SignedPacketError> {
+    ) -> Result<SignedPacket, SignedPacketBuildError> {
         let mut packet = Packet::new_reply(0);
 
         let origin = keypair.public_key().to_z32();
@@ -269,7 +269,7 @@ impl SignedPacket {
         let encoded_packet: Bytes = packet.build_bytes_vec_compressed()?.into();
 
         if encoded_packet.len() > 1000 {
-            return Err(SignedPacketError::PacketTooLarge(encoded_packet.len()));
+            return Err(SignedPacketBuildError::PacketTooLarge(encoded_packet.len()));
         }
 
         let signature = keypair.sign(&signable(timestamp.into(), &encoded_packet));
@@ -280,7 +280,8 @@ impl SignedPacket {
                 &signature,
                 timestamp.into(),
                 &encoded_packet,
-            )?,
+            )
+            .expect("SignedPacket::new() try_from_parts should not fail"),
             last_seen: Timestamp::now(),
         })
     }
@@ -289,7 +290,7 @@ impl SignedPacket {
     pub fn from_relay_payload(
         public_key: &PublicKey,
         payload: &Bytes,
-    ) -> Result<SignedPacket, SignedPacketError> {
+    ) -> Result<SignedPacket, SignedPacketVerifyError> {
         let mut bytes = BytesMut::with_capacity(payload.len() + 32);
 
         bytes.extend_from_slice(public_key.as_bytes());
@@ -498,14 +499,14 @@ impl SignedPacket {
     /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
     ///
     /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
-    fn from_bytes(bytes: &Bytes) -> Result<SignedPacket, SignedPacketError> {
+    fn from_bytes(bytes: &Bytes) -> Result<SignedPacket, SignedPacketVerifyError> {
         if bytes.len() < 104 {
-            return Err(SignedPacketError::InvalidSignedPacketBytesLength(
+            return Err(SignedPacketVerifyError::InvalidSignedPacketBytesLength(
                 bytes.len(),
             ));
         }
         if (bytes.len() as u64) > SignedPacket::MAX_BYTES {
-            return Err(SignedPacketError::PacketTooLarge(bytes.len()));
+            return Err(SignedPacketVerifyError::PacketTooLarge(bytes.len()));
         }
         let public_key = PublicKey::try_from(&bytes[..32])?;
         let signature = Signature::from_bytes(
@@ -592,9 +593,9 @@ impl From<&SignedPacket> for MutableItem {
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 impl TryFrom<&MutableItem> for SignedPacket {
-    type Error = SignedPacketError;
+    type Error = SignedPacketVerifyError;
 
-    fn try_from(i: &MutableItem) -> Result<Self, SignedPacketError> {
+    fn try_from(i: &MutableItem) -> Result<Self, SignedPacketVerifyError> {
         let public_key = PublicKey::try_from(i.key())?;
         let seq = *i.seq() as u64;
         let signature: Signature = i.signature().into();
@@ -689,12 +690,9 @@ impl<'de> Deserialize<'de> for SignedPacket {
 
 #[derive(thiserror::Error, Debug)]
 /// Errors trying to parse or create a [SignedPacket]
-pub enum SignedPacketError {
+pub enum SignedPacketVerifyError {
     #[error(transparent)]
     SignatureError(#[from] SignatureError),
-
-    #[error(transparent)]
-    PublicKeyError(#[from] PublicKeyError),
 
     #[error(transparent)]
     /// Transparent [simple_dns::SimpleDnsError]
@@ -705,14 +703,24 @@ pub enum SignedPacketError {
     /// timestamp><less than or equal to 1000 bytes encoded dns packet>`.
     InvalidSignedPacketBytesLength(usize),
 
-    #[error("Invalid relay payload size, expected at least 72 bytes but got: {0}")]
-    /// Relay api http-body should be `<64 bytes signature><8 bytes timestamp>
-    /// <less than or equal to 1000 bytes encoded dns packet>`.
-    InvalidRelayPayloadSize(usize),
-
     #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
     // DNS packet endocded and compressed is larger than 1000 bytes
     PacketTooLarge(usize),
+
+    #[error(transparent)]
+    PublicKeyError(#[from] PublicKeyError),
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Errors trying to create a new [SignedPacket]
+pub enum SignedPacketBuildError {
+    #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
+    // DNS packet endocded and compressed is larger than 1000 bytes
+    PacketTooLarge(usize),
+
+    #[error("Failed to write encoded DNS packet due to I/O error: {0}")]
+    // Failed to write encoded DNS packet due to I/O error
+    FailedToWrite(#[from] SimpleDnsError),
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

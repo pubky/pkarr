@@ -46,5 +46,6 @@ pub mod errors {
     pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
 
     pub use super::base::keys::PublicKeyError;
-    pub use super::base::signed_packet::SignedPacketError;
+    pub use super::base::signed_packet::SignedPacketBuildError;
+    pub use super::base::signed_packet::SignedPacketVerifyError;
 }
