@@ -23,13 +23,13 @@ pub struct Relay {
 }
 
 impl Relay {
-    /// Create a Pkarr [relay](https://pkarr.org/relays) http server as well as dht [resolver](https://pkarr.org/resolvers).
+    /// Start a Pkarr [relay](https://pkarr.org/relays) http server as well as dht [resolver](https://pkarr.org/resolvers).
     ///
     /// # Safety
-    /// Relay uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
+    /// Relay uses LmdbCache, [opening][pkarr::extra::lmdb_cache::LmdbCache::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async unsafe fn new(config: Config) -> anyhow::Result<Self> {
-        let cache = Box::new(LmdbCache::new(&config.cache_path()?, config.cache_size())?);
+    pub async unsafe fn start(config: Config) -> anyhow::Result<Self> {
+        let cache = Box::new(LmdbCache::open(&config.cache_path()?, config.cache_size())?);
 
         let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
 
@@ -76,11 +76,11 @@ impl Relay {
         })
     }
 
-    /// Convenient wrapper around [Self::new].
+    /// Convenient wrapper around [Self::start].
     ///
-    /// Make sure to read the safety section in [Self::new]
-    pub async fn new_unsafe(config: Config) -> anyhow::Result<Self> {
-        unsafe { Self::new(config).await }
+    /// Make sure to read the safety section in [Self::start]
+    pub async fn start_unsafe(config: Config) -> anyhow::Result<Self> {
+        unsafe { Self::start(config).await }
     }
 
     pub fn resolver_address(&self) -> SocketAddr {
