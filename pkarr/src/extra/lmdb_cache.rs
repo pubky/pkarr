@@ -68,7 +68,7 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
 }
 
 #[derive(Debug, Clone)]
-/// Persistent [crate::base::cache::Cache] implementation using LMDB's bindings [heed]
+/// Persistent [crate::Cache] implementation using LMDB's bindings [heed]
 pub struct LmdbCache {
     capacity: usize,
     env: Env,

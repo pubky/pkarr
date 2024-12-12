@@ -17,9 +17,9 @@ struct ConfigToml {
     mainline: Option<MainlineConfig>,
     cache_path: Option<String>,
     cache_size: Option<usize>,
-    /// See [pkarr::Settings::minimum_ttl]
+    /// See [pkarr::Config::minimum_ttl]
     minimum_ttl: Option<u32>,
-    /// See [pkarr::Settings::maximum_ttl]
+    /// See [pkarr::Config::maximum_ttl]
     maximum_ttl: Option<u32>,
     rate_limiter: RateLimiterConfig,
 }
@@ -49,7 +49,7 @@ pub struct Config {
     ///
     /// Defaults to a directory in the OS data directory
     pub cache_path: Option<PathBuf>,
-    /// See [pkarr::client::Settings::cache_size]
+    /// See [pkarr::client::Config::cache_size]
     ///
     /// Defaults to 1000_000
     pub cache_size: usize,

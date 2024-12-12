@@ -122,7 +122,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Convienent methot to set the [mainline::Settings::bootstrap] from [mainline::Testnet::bootstrap]
+    /// Convienent methot to set the [mainline::Config::bootstrap] from [mainline::Testnet::bootstrap]
     pub fn testnet(mut self, testnet: &Testnet) -> Self {
         self.0.dht_config.bootstrap = testnet.bootstrap.clone();
 
