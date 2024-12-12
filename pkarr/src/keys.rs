@@ -1,10 +1,16 @@
 //! Utility structs for Ed25519 keys.
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+use ed25519_dalek::pkcs8::{Document, EncodePrivateKey, EncodePublicKey};
 use ed25519_dalek::{
     SecretKey, Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey,
 };
 use rand::rngs::OsRng;
-
+#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+use rustls::{
+    crypto::ring::sign::any_eddsa_type, pki_types::CertificateDer,
+    server::AlwaysResolvesServerRawPublicKeys, sign::CertifiedKey, ServerConfig,
+};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
@@ -52,6 +58,57 @@ impl Keypair {
     pub fn to_uri_string(&self) -> String {
         self.public_key().to_uri_string()
     }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    /// Return a RawPublicKey certified key according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
+    /// useful to use with [rustls::ConfigBuilder::with_cert_resolver] and [rustls::server::AlwaysResolvesServerRawPublicKeys]
+    pub fn to_rpk_certified_key(&self) -> CertifiedKey {
+        let client_private_key = any_eddsa_type(
+            &self
+                .0
+                .to_pkcs8_der()
+                .expect("Keypair::to_rpk_certificate: convert secret key to pkcs8 der")
+                .as_bytes()
+                .into(),
+        )
+        .expect("Keypair::to_rpk_certificate: convert KeyPair to rustls SigningKey");
+
+        let client_public_key = client_private_key
+            .public_key()
+            .expect("Keypair::to_rpk_certificate: load SPKI");
+        let client_public_key_as_cert = CertificateDer::from(client_public_key.to_vec());
+
+        CertifiedKey::new(vec![client_public_key_as_cert], client_private_key)
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    /// Create a [rustls::ServerConfig] using this keypair as a RawPublicKey certificate according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
+    pub fn to_rpk_rustls_server_config(&self) -> ServerConfig {
+        let cert_resolver =
+            AlwaysResolvesServerRawPublicKeys::new(self.to_rpk_certified_key().into());
+
+        ServerConfig::builder_with_provider(rustls::crypto::ring::default_provider().into())
+            .with_safe_default_protocol_versions()
+            .expect("version supported by ring")
+            .with_no_client_auth()
+            .with_cert_resolver(std::sync::Arc::new(cert_resolver))
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+impl From<Keypair> for ServerConfig {
+    /// calls [Keypair::to_rpk_rustls_server_config]
+    fn from(keypair: Keypair) -> Self {
+        keypair.to_rpk_rustls_server_config()
+    }
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+impl From<&Keypair> for ServerConfig {
+    /// calls [Keypair::to_rpk_rustls_server_config]
+    fn from(keypair: &Keypair) -> Self {
+        keypair.to_rpk_rustls_server_config()
+    }
 }
 
 /// Ed25519 public key to verify a signature over dns [Packet](crate::SignedPacket)s.
@@ -89,6 +146,11 @@ impl PublicKey {
     /// Return a reference to the underlying [u8; 32] bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.0.as_bytes()
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    pub fn to_public_key_der(&self) -> Document {
+        self.0.to_public_key_der().expect("to_public_key_der")
     }
 }
 
@@ -477,5 +539,46 @@ mod tests {
 
         let public_key: PublicKey = str.try_into().unwrap();
         assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    #[test]
+    fn pkcs8() {
+        let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let public_key: PublicKey = str.try_into().unwrap();
+
+        let der = public_key.to_public_key_der();
+
+        assert_eq!(
+            der.as_bytes(),
+            [
+                // Algorithm and other stuff.
+                48, 42, 48, 5, 6, 3, 43, 101, 112, 3, 33, 0, //
+                // Key
+                1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254,
+                14, 207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+            ]
+        )
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    #[test]
+    fn certificate() {
+        use rustls::SignatureAlgorithm;
+
+        let keypair = Keypair::from_secret_key(&[0; 32]);
+
+        let certified_key = keypair.to_rpk_certified_key();
+
+        assert_eq!(certified_key.key.algorithm(), SignatureAlgorithm::ED25519);
+
+        assert_eq!(
+            certified_key.end_entity_cert().unwrap().as_ref(),
+            [
+                48, 42, 48, 5, 6, 3, 43, 101, 112, 3, 33, 0, 59, 106, 39, 188, 206, 182, 164, 45,
+                98, 163, 168, 208, 42, 111, 13, 115, 101, 50, 21, 119, 29, 226, 67, 166, 58, 192,
+                72, 161, 139, 89, 218, 41,
+            ]
+        )
     }
 }

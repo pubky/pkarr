@@ -1417,8 +1417,7 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 [[package]]
 name = "mainline"
 version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e18c8b0210572062a02c4de8c448865f4ca89824c4ac7da64a0c2669ea2c405"
+source = "git+https://github.com/pubky/mainline?branch=v5#2948896ac074cd5bf9728966dcd076de35e7e763"
 dependencies = [
  "bytes",
  "crc",
@@ -1758,7 +1757,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pkarr-server"
+name = "pkarr-relay"
 version = "0.1.0"
 dependencies = [
  "anyhow",

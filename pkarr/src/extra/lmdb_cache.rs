@@ -1,4 +1,4 @@
-//! Persistent [crate::base::cache::Cache] implementation using LMDB's bindings [heed]
+//! Persistent [crate::Cache] implementation using LMDB's bindings [heed]
 
 use std::{
     borrow::Cow,
@@ -17,10 +17,7 @@ use tracing::debug;
 
 use pubky_timestamp::Timestamp;
 
-use crate::{
-    base::cache::{Cache, CacheKey},
-    SignedPacket,
-};
+use crate::{Cache, CacheKey, SignedPacket};
 
 const MAX_MAP_SIZE: usize = 10995116277760; // 10 TB
 const MIN_MAP_SIZE: usize = 10 * 1024 * 1024; // 10 mb
@@ -71,7 +68,7 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
 }
 
 #[derive(Debug, Clone)]
-/// Persistent [crate::base::cache::Cache] implementation using LMDB's bindings [heed]
+/// Persistent [crate::Cache] implementation using LMDB's bindings [heed]
 pub struct LmdbCache {
     capacity: usize,
     env: Env,
@@ -89,7 +86,7 @@ impl LmdbCache {
     /// # Safety
     /// LmdbCache uses LMDB, [opening][heed::EnvOpenOptions::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub unsafe fn new(env_path: &Path, capacity: usize) -> Result<Self, Error> {
+    pub unsafe fn open(env_path: &Path, capacity: usize) -> Result<Self, Error> {
         let page_size = page_size::get();
 
         // Page aligned but more than enough bytes for `capacity` many SignedPacket
@@ -139,11 +136,11 @@ impl LmdbCache {
         Ok(instance)
     }
 
-    /// Convenient wrapper around [Self::new].
+    /// Convenient wrapper around [Self::open].
     ///
-    /// Make sure to read the safety section in [Self::new]
-    pub fn new_unsafe(env_path: &Path, capacity: usize) -> Result<Self, Error> {
-        unsafe { Self::new(env_path, capacity) }
+    /// Make sure to read the safety section in [Self::open]
+    pub fn open_unsafe(env_path: &Path, capacity: usize) -> Result<Self, Error> {
+        unsafe { Self::open(env_path, capacity) }
     }
 
     pub fn internal_len(&self) -> Result<usize, heed::Error> {
@@ -316,14 +313,14 @@ mod tests {
     fn max_map_size() {
         let env_path = std::env::temp_dir().join(Timestamp::now().to_string());
 
-        LmdbCache::new_unsafe(&env_path, usize::MAX).unwrap();
+        LmdbCache::open_unsafe(&env_path, usize::MAX).unwrap();
     }
 
     #[test]
     fn lru_capacity() {
         let env_path = std::env::temp_dir().join(Timestamp::now().to_string());
 
-        let cache = LmdbCache::new_unsafe(&env_path, 2).unwrap();
+        let cache = LmdbCache::open_unsafe(&env_path, 2).unwrap();
 
         let mut keys = vec![];
 
@@ -382,7 +379,7 @@ mod tests {
     fn lru_capacity_refresh_oldest() {
         let env_path = std::env::temp_dir().join(Timestamp::now().to_string());
 
-        let cache = LmdbCache::new_unsafe(&env_path, 2).unwrap();
+        let cache = LmdbCache::open_unsafe(&env_path, 2).unwrap();
 
         let mut keys = vec![];
 

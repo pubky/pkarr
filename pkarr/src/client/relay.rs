@@ -19,8 +19,8 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-/// [Client]'s settings
-pub struct Settings {
+/// [Client]'s Config
+pub struct Config {
     pub(crate) relays: Vec<String>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub(crate) cache_size: NonZeroUsize,
@@ -38,7 +38,7 @@ pub struct Settings {
     pub(crate) cache: Option<Box<dyn Cache>>,
 }
 
-impl Default for Settings {
+impl Default for Config {
     fn default() -> Self {
         Self {
             relays: DEFAULT_RELAYS.map(|s| s.into()).to_vec(),
@@ -52,14 +52,14 @@ impl Default for Settings {
     }
 }
 
-impl Settings {
+impl Config {
     /// Set the relays to publish and resolve [SignedPacket]s to and from.
     pub fn relays(mut self, relays: Vec<String>) -> Self {
         self.relays = relays;
         self
     }
 
-    /// Set the [Settings::cache_size].
+    /// Set the [Config::cache_size].
     ///
     /// Controls the capacity of [Cache].
     pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
@@ -67,7 +67,7 @@ impl Settings {
         self
     }
 
-    /// Set the [Settings::minimum_ttl] value.
+    /// Set the [Config::minimum_ttl] value.
     ///
     /// Limits how soon a [SignedPacket] is considered expired.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
@@ -76,7 +76,7 @@ impl Settings {
         self
     }
 
-    /// Set the [Settings::maximum_ttl] value.
+    /// Set the [Config::maximum_ttl] value.
     ///
     /// Limits how long it takes before a [SignedPacket] is considered expired.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
@@ -108,33 +108,33 @@ pub struct Client {
 
 impl Default for Client {
     fn default() -> Self {
-        Self::new(Settings::default()).expect("Pkarr Relay client default")
+        Self::new(Config::default()).expect("Pkarr Relay client default")
     }
 }
 
 impl Client {
-    pub fn new(settings: Settings) -> Result<Self, EmptyListOfRelays> {
-        if settings.relays.is_empty() {
+    pub fn new(config: Config) -> Result<Self, EmptyListOfRelays> {
+        if config.relays.is_empty() {
             return Err(EmptyListOfRelays);
         }
 
-        let cache = settings
+        let cache = config
             .cache
             .clone()
-            .unwrap_or(Box::new(InMemoryCache::new(settings.cache_size)));
+            .unwrap_or(Box::new(InMemoryCache::new(config.cache_size)));
 
         Ok(Self {
-            http_client: settings.http_client,
-            relays: settings.relays,
+            http_client: config.http_client,
+            relays: config.relays,
             cache,
-            minimum_ttl: settings.minimum_ttl,
-            maximum_ttl: settings.maximum_ttl,
+            minimum_ttl: config.minimum_ttl,
+            maximum_ttl: config.maximum_ttl,
         })
     }
 
-    /// Returns a builder to edit settings before creating Client.
-    pub fn builder() -> Settings {
-        Settings::default()
+    /// Returns a builder to edit config before creating Client.
+    pub fn builder() -> Config {
+        Config::default()
     }
 
     /// Returns a reference to the internal cache.

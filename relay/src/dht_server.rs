@@ -43,7 +43,7 @@ impl Debug for DhtServer {
 impl DhtServer {
     pub fn new(
         cache: Box<LmdbCache>,
-        resolvers: Option<Vec<String>>,
+        resolvers: Option<Vec<SocketAddr>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
         rate_limiter: IpRateLimiter,

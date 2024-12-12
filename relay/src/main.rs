@@ -3,7 +3,7 @@ use clap::Parser;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
-use pkarr_server::{Config, Relay};
+use pkarr_relay::{Config, Relay};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
 
     debug!(?config, "Pkarr server config");
 
-    let relay = unsafe { Relay::new(config).await? };
+    let relay = unsafe { Relay::start(config).await? };
 
     tokio::signal::ctrl_c().await?;
 
