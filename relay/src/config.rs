@@ -1,4 +1,4 @@
-//! Configuration for the server
+//! Configuration for Pkarr relay
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

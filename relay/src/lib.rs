@@ -101,7 +101,7 @@ impl Relay {
                         "operating environment provides no directory for application data"
                     )
                 })?;
-                path.join("pkarr-server")
+                path.join("pkarr-relay")
             }
         };
 
