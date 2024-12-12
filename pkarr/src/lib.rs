@@ -4,14 +4,11 @@
 //!
 
 // Modules
-mod base;
+#[cfg(all(not(target_arch = "wasm32"), any(feature = "relay", feature = "dht")))]
 pub mod client;
 pub mod extra;
-
-// Exports
-pub use base::cache::{Cache, CacheKey, InMemoryCache};
-pub use base::keys::{Keypair, PublicKey};
-pub use base::signed_packet::SignedPacket;
+mod keys;
+mod signed_packet;
 
 /// Default minimum TTL: 5 minutes
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -24,10 +21,16 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 /// Default [resolver](https://pkarr.org/resolvers)s
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
 
+// Exports
+#[cfg(any(feature = "relay", feature = "dht"))]
+pub use client::cache::{Cache, CacheKey, InMemoryCache};
+pub use keys::{Keypair, PublicKey};
+pub use signed_packet::SignedPacket;
+
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 pub use client::dht::Info;
 #[cfg(any(target_arch = "wasm32", feature = "dht"))]
-pub use client::{Client, Settings};
+pub use client::{Client, Config};
 
 // Rexports
 pub use bytes;
@@ -45,7 +48,7 @@ pub mod errors {
     #[cfg(any(target_arch = "wasm32", feature = "relay"))]
     pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
 
-    pub use super::base::keys::PublicKeyError;
-    pub use super::base::signed_packet::SignedPacketBuildError;
-    pub use super::base::signed_packet::SignedPacketVerifyError;
+    pub use super::keys::PublicKeyError;
+    pub use super::signed_packet::SignedPacketBuildError;
+    pub use super::signed_packet::SignedPacketVerifyError;
 }

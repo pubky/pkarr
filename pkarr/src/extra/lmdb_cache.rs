@@ -1,4 +1,4 @@
-//! Persistent [crate::base::cache::Cache] implementation using LMDB's bindings [heed]
+//! Persistent [crate::Cache] implementation using LMDB's bindings [heed]
 
 use std::{
     borrow::Cow,
@@ -17,10 +17,7 @@ use tracing::debug;
 
 use pubky_timestamp::Timestamp;
 
-use crate::{
-    base::cache::{Cache, CacheKey},
-    SignedPacket,
-};
+use crate::{Cache, CacheKey, SignedPacket};
 
 const MAX_MAP_SIZE: usize = 10995116277760; // 10 TB
 const MIN_MAP_SIZE: usize = 10 * 1024 * 1024; // 10 mb

@@ -3,7 +3,7 @@ use clap::Parser;
 use std::path::PathBuf;
 use tracing::{debug, info};
 
-use pkarr_server::{Config, Relay};
+use pkarr_relay::{Config, Relay};
 
 #[derive(Parser, Debug)]
 struct Cli {

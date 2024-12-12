@@ -43,7 +43,7 @@ webpki-roots = { version = "0.26.7", optional = true }
 pubky-timestamp = { version = "0.2.0", default-features = false }
 
 # feat: dht dependencies
-mainline = { version = "4.1.0", optional = true }
+mainline = { git = "https://github.com/pubky/mainline", branch="v5", optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls"], optional = true }

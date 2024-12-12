@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to pkarr client and server will be documented in this file.
+All notable changes to pkarr will be documented in this file.
 
 ## [Unreleased]
 
@@ -10,6 +10,10 @@ All notable changes to pkarr client and server will be documented in this file.
 - Add feature `reqwest-resolve` to create a custom `reqwest::dns::Resolve` implementation from `Client` and `relay::client::Client`
 - Add feature `tls` to create `rustls::ClientConfig` from `Client` and `relay::client::Client` and create `rustls::ServerCongif` from `KeyPair`.
 - Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
+
+### Changed
+
+- Replace `Settings` with `Config` with public fields.
 
 ##  [3.0.0](https://github.com/pubky/mainline/compare/v2.2.0...v3.0.0) - 2024-12-05
 

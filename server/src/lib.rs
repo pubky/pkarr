@@ -4,17 +4,75 @@ mod error;
 mod handlers;
 mod rate_limiting;
 
-use std::net::{SocketAddr, TcpListener};
+use std::{
+    net::{SocketAddr, TcpListener},
+    path::PathBuf,
+};
 
 use axum::{extract::DefaultBodyLimit, Router};
 use axum_server::Handle;
 
+use dht_server::DhtServer;
+use rate_limiting::RateLimiterConfig;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{extra::lmdb_cache::LmdbCache, mainline, Client};
+use pkarr::{extra::lmdb_cache::LmdbCache, Client};
 
 pub use config::Config;
+
+#[derive(Debug, Default)]
+pub struct RelayBuilder(Config);
+
+impl RelayBuilder {
+    // Configure the port for the HTTP server to listen on
+    pub fn http_port(mut self, port: u16) -> Self {
+        self.0.http_port = port;
+
+        self
+    }
+
+    // Configure the port for the internal Mainline DHT node to listen on
+    pub fn dht_port(mut self, port: u16) -> Self {
+        self.0.pkarr_config.dht_config.port = Some(port);
+
+        self
+    }
+
+    // Configure the path to store the persistent cache at.
+    pub fn cache_path(mut self, path: PathBuf) -> Self {
+        self.0.cache_path = Some(path);
+
+        self
+    }
+
+    // Configure the maximum number of SignedPackets in the LRU cache
+    pub fn cache_size(mut self, size: usize) -> Self {
+        self.0.cache_size = size;
+
+        self
+    }
+
+    /// Disable rate limiting by setting the configuration as generous as possible
+    pub fn disable_rate_limiting(mut self) -> Self {
+        self.0.rate_limiter = RateLimiterConfig {
+            per_second: 1,
+            burst_size: u32::MAX,
+            behind_proxy: false,
+        };
+
+        self
+    }
+
+    /// Start a Pkarr [relay](https://pkarr.org/relays) http server as well as dht [resolver](https://pkarr.org/resolvers).
+    ///
+    /// # Safety
+    /// Relay uses LmdbCache, [opening][pkarr::extra::lmdb_cache::LmdbCache::open] which is marked unsafe,
+    /// because the possible Undefined Behavior (UB) if the lock file is broken.
+    pub async unsafe fn start(self) -> anyhow::Result<Relay> {
+        Ok(unsafe { Relay::start(self.0).await? })
+    }
+}
 
 pub struct Relay {
     handle: Handle,
@@ -23,35 +81,48 @@ pub struct Relay {
 }
 
 impl Relay {
+    pub fn builder() -> RelayBuilder {
+        RelayBuilder::default()
+    }
+
     /// Start a Pkarr [relay](https://pkarr.org/relays) http server as well as dht [resolver](https://pkarr.org/resolvers).
     ///
     /// # Safety
     /// Relay uses LmdbCache, [opening][pkarr::extra::lmdb_cache::LmdbCache::open] which is marked unsafe,
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async unsafe fn start(config: Config) -> anyhow::Result<Self> {
-        let cache = Box::new(LmdbCache::open(&config.cache_path()?, config.cache_size())?);
+        let mut config = config;
 
-        let rate_limiter = rate_limiting::IpRateLimiter::new(config.rate_limiter());
+        let cache_path = match config.cache_path {
+            Some(path) => path,
+            None => {
+                let path = dirs_next::data_dir().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "operating environment provides no directory for application data"
+                    )
+                })?;
+                path.join("pkarr-server")
+            }
+        };
 
-        let client = Client::builder()
-            .dht_settings(
-                mainline::Settings::default()
-                    .port(config.dht_port())
-                    .custom_server(Box::new(dht_server::DhtServer::new(
-                        cache.clone(),
-                        config.resolvers(),
-                        config.minimum_ttl(),
-                        config.maximum_ttl(),
-                        rate_limiter.clone(),
-                    ))),
-            )
-            .resolvers(config.resolvers())
-            .minimum_ttl(config.minimum_ttl())
-            .maximum_ttl(config.maximum_ttl())
-            .cache(cache)
-            .build()?;
+        let cache = Box::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
-        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.relay_port())))?;
+        let rate_limiter = rate_limiting::IpRateLimiter::new(&config.rate_limiter);
+
+        let server = Box::new(DhtServer::new(
+            cache.clone(),
+            config.pkarr_config.resolvers.clone(),
+            config.pkarr_config.minimum_ttl,
+            config.pkarr_config.maximum_ttl,
+            rate_limiter.clone(),
+        ));
+
+        config.pkarr_config.dht_config.server = Some(server);
+        config.pkarr_config.cache = Some(cache);
+
+        let client = Client::new(config.pkarr_config)?;
+
+        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
 
         let resolver_address = *client.info()?.local_addr()?;
         let relay_address = listener.local_addr()?;
