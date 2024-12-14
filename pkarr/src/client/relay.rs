@@ -7,6 +7,8 @@ use reqwest::header::HeaderValue;
 use reqwest::{header, Response, StatusCode};
 use tracing::debug;
 
+use url::Url;
+
 #[cfg(target_arch = "wasm32")]
 use futures::future::select_ok;
 
@@ -21,27 +23,31 @@ use crate::{
 #[derive(Debug, Clone)]
 /// [Client]'s Config
 pub struct Config {
-    pub(crate) relays: Vec<String>,
+    // Relays base URLs
+    pub relays: Vec<Url>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
-    pub(crate) cache_size: NonZeroUsize,
+    pub cache_size: NonZeroUsize,
     /// Used in the `min` parameter in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MINIMUM_TTL]
-    pub(crate) minimum_ttl: u32,
+    pub minimum_ttl: u32,
     /// Used in the `max` parametere in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
-    pub(crate) maximum_ttl: u32,
+    pub maximum_ttl: u32,
     /// Custom [reqwest::Client]
-    pub(crate) http_client: reqwest::Client,
+    pub http_client: reqwest::Client,
     /// Custom [Cache] implementation, defaults to [InMemoryCache]
-    pub(crate) cache: Option<Box<dyn Cache>>,
+    pub cache: Option<Box<dyn Cache>>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            relays: DEFAULT_RELAYS.map(|s| s.into()).to_vec(),
+            relays: DEFAULT_RELAYS
+                .map(|s| Url::parse(s).expect("DEFAULT_RELAYS should be parsed correctly"))
+                .to_vec(),
+
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
                 .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
@@ -52,10 +58,14 @@ impl Default for Config {
     }
 }
 
-impl Config {
+#[derive(Debug, Default)]
+pub struct ClientBuilder(Config);
+
+impl ClientBuilder {
     /// Set the relays to publish and resolve [SignedPacket]s to and from.
-    pub fn relays(mut self, relays: Vec<String>) -> Self {
-        self.relays = relays;
+    pub fn relays(mut self, relays: Vec<Url>) -> Self {
+        self.0.relays = relays;
+
         self
     }
 
@@ -63,7 +73,8 @@ impl Config {
     ///
     /// Controls the capacity of [Cache].
     pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
-        self.cache_size = cache_size;
+        self.0.cache_size = cache_size;
+
         self
     }
 
@@ -71,8 +82,8 @@ impl Config {
     ///
     /// Limits how soon a [SignedPacket] is considered expired.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
-        self.minimum_ttl = ttl;
-        self.maximum_ttl = self.maximum_ttl.clamp(ttl, u32::MAX);
+        self.0.minimum_ttl = ttl;
+
         self
     }
 
@@ -80,19 +91,20 @@ impl Config {
     ///
     /// Limits how long it takes before a [SignedPacket] is considered expired.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
-        self.maximum_ttl = ttl;
-        self.minimum_ttl = self.minimum_ttl.clamp(0, ttl);
+        self.0.maximum_ttl = ttl;
+
         self
     }
 
     /// Set a custom implementation of [Cache].
     pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
-        self.cache = Some(cache);
+        self.0.cache = Some(cache);
+
         self
     }
 
     pub fn build(self) -> Result<Client, EmptyListOfRelays> {
-        Client::new(self)
+        Client::new(self.0)
     }
 }
 
@@ -100,7 +112,7 @@ impl Config {
 /// Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 pub struct Client {
     http_client: reqwest::Client,
-    relays: Vec<String>,
+    relays: Vec<Url>,
     cache: Box<dyn Cache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
@@ -127,14 +139,14 @@ impl Client {
             http_client: config.http_client,
             relays: config.relays,
             cache,
-            minimum_ttl: config.minimum_ttl,
-            maximum_ttl: config.maximum_ttl,
+            minimum_ttl: config.minimum_ttl.min(config.maximum_ttl),
+            maximum_ttl: config.maximum_ttl.max(config.minimum_ttl),
         })
     }
 
     /// Returns a builder to edit config before creating Client.
-    pub fn builder() -> Config {
-        Config::default()
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::default()
     }
 
     /// Returns a reference to the internal cache.
@@ -337,13 +349,13 @@ impl Client {
 
     async fn publish_to_relay(
         &self,
-        relay: &str,
+        relay: &Url,
         signed_packet: SignedPacket,
     ) -> Result<Response, reqwest::Error> {
-        let url = format!("{relay}/{}", signed_packet.public_key());
+        let url = format_url(relay, &signed_packet.public_key());
 
         self.http_client
-            .put(&url)
+            .put(url.clone())
             .body(signed_packet.to_relay_payload())
             .send()
             .await
@@ -356,13 +368,13 @@ impl Client {
 
     async fn resolve_from_relay(
         &self,
-        relay: &str,
+        relay: &Url,
         public_key: PublicKey,
         cached_packet: Option<SignedPacket>,
     ) -> Result<Option<SignedPacket>, reqwest::Error> {
-        let url = format!("{relay}/{public_key}");
+        let url = format_url(relay, &public_key);
 
-        let mut request = self.http_client.get(&url);
+        let mut request = self.http_client.get(url.clone());
 
         if let Some(httpdate) = cached_packet
             .as_ref()
@@ -408,6 +420,20 @@ impl Client {
             }
         }
     }
+}
+
+fn format_url(url: &Url, public_key: &PublicKey) -> Url {
+    let mut url = url.clone();
+
+    let mut segments = url
+        .path_segments_mut()
+        .expect("Relay url cannot be base, is it http(s)?");
+
+    segments.push(&public_key.to_string());
+
+    drop(segments);
+
+    url
 }
 
 fn choose_most_recent(
@@ -489,7 +515,8 @@ mod tests {
             .with_body(signed_packet.to_relay_payload())
             .create();
 
-        let relays = vec![server.url()];
+        let relays = vec![Url::parse(&server.url()).unwrap()];
+
         let a = Client::builder().relays(relays.clone()).build().unwrap();
         let b = Client::builder().relays(relays).build().unwrap();
 
@@ -513,7 +540,8 @@ mod tests {
 
         server.mock("GET", path.as_str()).with_status(404).create();
 
-        let relays = vec![server.url()];
+        let relays = vec![Url::parse(&server.url()).unwrap()];
+
         let client = Client::builder().relays(relays).build().unwrap();
 
         let resolved = client.resolve(&keypair.public_key()).await.unwrap();
@@ -531,7 +559,8 @@ mod tests {
 
         server.mock("GET", path.as_str()).with_status(404).create();
 
-        let relays = vec![server.url()];
+        let relays = vec![Url::parse(&server.url()).unwrap()];
+
         let client = Client::builder()
             .relays(relays)
             .maximum_ttl(0)

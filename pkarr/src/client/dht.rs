@@ -81,6 +81,7 @@ impl ClientBuilder {
                 .flatten()
                 .collect::<Vec<_>>()
         });
+
         self
     }
 
@@ -89,6 +90,7 @@ impl ClientBuilder {
     /// Controls the capacity of [Cache].
     pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
         self.0.cache_size = cache_size;
+
         self
     }
 
@@ -97,7 +99,7 @@ impl ClientBuilder {
     /// Limits how soon a [SignedPacket] is considered expired.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
         self.0.minimum_ttl = ttl;
-        self.0.maximum_ttl = self.0.maximum_ttl.max(ttl);
+
         self
     }
 
@@ -106,19 +108,21 @@ impl ClientBuilder {
     /// Limits how long it takes before a [SignedPacket] is considered expired.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
         self.0.maximum_ttl = ttl;
-        self.0.minimum_ttl = self.0.minimum_ttl.min(ttl);
+
         self
     }
 
     /// Set a custom implementation of [Cache].
     pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
         self.0.cache = Some(cache);
+
         self
     }
 
     /// Set [Config::dht_config]
     pub fn dht_config(mut self, settings: mainline::Config) -> Self {
         self.0.dht_config = settings;
+
         self
     }
 

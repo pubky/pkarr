@@ -38,6 +38,7 @@ genawaiter = { version = "0.99.1", default-features = false, features = ["future
 
 # feat: reqwest-builder
 webpki-roots = { version = "0.26.7", optional = true }
+url = { version = "2.5.4", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pubky-timestamp = { version = "0.2.0", features = ["full"] }
@@ -84,7 +85,7 @@ tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 ## Use [client::dht::Client]
 dht = ["dep:mainline", "dep:flume"]
 ## Use [client::relay::Client]
-relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:flume"]
+relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:flume", "dep:url"]
 
 # Extra
 ## Use [crate::extra::lmdb-cache::LmdbCache]
