@@ -3,6 +3,8 @@
 #![doc = document_features::document_features!()]
 //!
 
+// TODO: once we merge udp and relay clients, we should have a "client" feature
+
 // Modules
 #[cfg(any(target_arch = "wasm32", feature = "relay", feature = "dht"))]
 pub mod client;

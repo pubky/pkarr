@@ -14,7 +14,6 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use pubky_timestamp::Timestamp;
@@ -664,7 +663,6 @@ impl Display for SignedPacket {
 
 // === Serialization ===
 
-#[cfg(feature = "serde")]
 impl Serialize for SignedPacket {
     /// Serialize a [SignedPacket] for persistent storage.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -675,7 +673,6 @@ impl Serialize for SignedPacket {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for SignedPacket {
     /// Deserialize a [SignedPacket] from persistent storage.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -1066,7 +1063,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn serde() {
         use postcard::{from_bytes, to_allocvec};

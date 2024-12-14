@@ -16,7 +16,6 @@ use std::{
     hash::Hash,
 };
 
-#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq)]
@@ -305,7 +304,6 @@ impl Debug for PublicKey {
     }
 }
 
-#[cfg(feature = "serde")]
 impl Serialize for PublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -316,7 +314,6 @@ impl Serialize for PublicKey {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for PublicKey {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -510,7 +507,6 @@ mod tests {
         assert_eq!(public_key.verifying_key().as_bytes(), &expected);
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn serde() {
         let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
