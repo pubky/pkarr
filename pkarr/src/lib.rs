@@ -4,7 +4,7 @@
 //!
 
 // Modules
-#[cfg(all(not(target_arch = "wasm32"), any(feature = "relay", feature = "dht")))]
+#[cfg(any(target_arch = "wasm32", feature = "relay", feature = "dht"))]
 pub mod client;
 pub mod extra;
 mod keys;
@@ -22,7 +22,7 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
 
 // Exports
-#[cfg(any(feature = "relay", feature = "dht"))]
+#[cfg(any(target_arch = "wasm32", feature = "relay", feature = "dht"))]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 pub use keys::{Keypair, PublicKey};
 pub use signed_packet::SignedPacket;
