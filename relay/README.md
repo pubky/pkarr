@@ -1,4 +1,4 @@
-# Pkarr Server
+# Pkarr Relay
 
 A server that functions as a [pkarr](https://github.com/Nuhvi/pkarr/) [relay](https://pkarr.org/relays) and
 [resolver](https://pkarr.org/resolvers).
@@ -20,17 +20,17 @@ cp src/config.example.toml config.toml
 Run with an optional config file
 
 ```bash
-../target/release/pkarr-server --config=./config.toml
+../target/release/pkarr-relay --config=./config.toml
 ```
 
 You can customize logging levels
 
 ```bash
-../target/release/pkarr-server --config=./config.toml -t=pkarr=debug,tower_http=debug
+../target/release/pkarr-relay --config=./config.toml -t=pkarr=debug,tower_http=debug
 ```
 
 ## Using Docker
-To build and run the Pkarr server using Docker, this repository has a `Dockerfile` in the top level. You could use a small `docker-compose.yml` such as:
+To build and run the Pkarr relay using Docker, this repository has a `Dockerfile` in the top level. You could use a small `docker-compose.yml` such as:
 
 ```
 services:
@@ -40,23 +40,10 @@ services:
     volumes: 
       - ./config.toml:/config.toml
       - .pkarr_cache:/cache
-    command: pkarr-server --config=/config.toml
+    command: pkarr-relay --config=/config.toml
 ```
 Alternatively, lunch docker correctly attaching the `config.toml` as a volume in the right location. In the example above `.pkarr_cache` relative directory is used to permanently store pkarr cached keys.
 
-An example `./config.toml` here (we are mounting it on the container)
-```
-relay_port = 6881
-dht_port = 6881
-cache_path = "/cache"
-cache_size = 1_000_000
-resolvers = []
-minimum_ttl = 300
-maximum_ttl = 86400
-[rate_limiter]
-behind_proxy = false
-per_second = 2
-burst_size = 10
-```
+An example `./config.toml` can be copied from `./src/config.example.toml` and customized as needed.
 
-This will make the Pkarr server accessible at http://localhost:6881.
+This will make the Pkarr relay accessible at http://localhost:6881.
