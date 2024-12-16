@@ -235,7 +235,7 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        Ok(self.resolve_inner(public_key)?.recv_async().await.ok())
+        Ok(self.resolve_rx(public_key)?.recv_async().await.ok())
     }
 
     /// Shutdown the actor thread loop.
@@ -275,44 +275,18 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        Ok(self.resolve_inner(public_key)?.recv().ok())
+        Ok(self.resolve_rx(public_key)?.recv().ok())
     }
 
-    /// Shutdown the actor thread loop.
-    pub fn shutdown_sync(&self) {
-        let (sender, receiver) = flume::bounded(1);
-
-        let _ = self.sender.send(ActorMessage::Shutdown(sender));
-        let _ = receiver.recv();
-    }
-
-    // === Private Methods ===
-
-    pub(crate) fn publish_inner(
-        &self,
-        signed_packet: &SignedPacket,
-    ) -> Result<Receiver<Result<Id, PutError>>, PublishError> {
-        let mutable_item: MutableItem = (signed_packet).into();
-
-        if let Some(current) = self.cache.get(mutable_item.target().as_bytes()) {
-            if current.timestamp() > signed_packet.timestamp() {
-                return Err(PublishError::NotMostRecent);
-            }
-        };
-
-        self.cache
-            .put(mutable_item.target().as_bytes(), signed_packet);
-
-        let (sender, receiver) = flume::bounded::<Result<Id, PutError>>(1);
-
-        self.sender
-            .send(ActorMessage::Publish(mutable_item, sender))
-            .map_err(|_| PublishError::ClientWasShutdown)?;
-
-        Ok(receiver)
-    }
-
-    pub(crate) fn resolve_inner(
+    /// Returns a [flume::Receiver<SignedPacket>] that allows iterating over or
+    /// streaming incoming [SignedPacket]s, in case you need more control over
+    /// your caching strategy and when resolution should terminate, as well as
+    /// filtering [SignedPacket]s according to a custom criteria.
+    ///
+    /// # Errors
+    /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
+    ///   the loop in the actor thread is stopped for any reason (like thread panic).
+    pub fn resolve_rx(
         &self,
         public_key: &PublicKey,
     ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
@@ -359,6 +333,40 @@ impl Client {
         }
 
         Ok(rx)
+    }
+
+    /// Shutdown the actor thread loop.
+    pub fn shutdown_sync(&self) {
+        let (sender, receiver) = flume::bounded(1);
+
+        let _ = self.sender.send(ActorMessage::Shutdown(sender));
+        let _ = receiver.recv();
+    }
+
+    // === Private Methods ===
+
+    pub(crate) fn publish_inner(
+        &self,
+        signed_packet: &SignedPacket,
+    ) -> Result<Receiver<Result<Id, PutError>>, PublishError> {
+        let mutable_item: MutableItem = (signed_packet).into();
+
+        if let Some(current) = self.cache.get(mutable_item.target().as_bytes()) {
+            if current.timestamp() > signed_packet.timestamp() {
+                return Err(PublishError::NotMostRecent);
+            }
+        };
+
+        self.cache
+            .put(mutable_item.target().as_bytes(), signed_packet);
+
+        let (sender, receiver) = flume::bounded::<Result<Id, PutError>>(1);
+
+        self.sender
+            .send(ActorMessage::Publish(mutable_item, sender))
+            .map_err(|_| PublishError::ClientWasShutdown)?;
+
+        Ok(receiver)
     }
 }
 
