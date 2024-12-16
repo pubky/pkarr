@@ -15,6 +15,7 @@ All notable changes to pkarr client and server will be documented in this file.
 - Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.
 - Add `pkarr::LmdbCache` for persistent cache using lmdb.
 - Add `pkarr.pubky.org` as an extra default Relay and Resolver.
+- Make `Client::resolve_rx` public to be able to stream or iterate over incoming `SignedPacket`s
 
 ### Changed
 
