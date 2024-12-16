@@ -772,4 +772,38 @@ mod tests {
 
         assert_eq!(resolved, Some(signed_packet));
     }
+
+    #[tokio::test]
+    async fn ttl_0_test() {
+        let testnet = Testnet::new(10).unwrap();
+
+        let client = Client::builder()
+            .testnet(&testnet)
+            .maximum_ttl(0)
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+
+        client.publish(&signed_packet).await.unwrap();
+
+        // First Call
+        let resolved = client
+            .resolve(&signed_packet.public_key())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
+
+        thread::sleep(Duration::from_secs(1));
+
+        let second = client
+            .resolve(&signed_packet.public_key())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
+    }
 }
