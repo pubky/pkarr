@@ -13,7 +13,6 @@ use axum::{extract::DefaultBodyLimit, Router};
 use axum_server::Handle;
 
 use dht_server::DhtServer;
-use rate_limiting::RateLimiterConfig;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
@@ -53,13 +52,9 @@ impl RelayBuilder {
         self
     }
 
-    /// Disable rate limiting by setting the configuration as generous as possible
+    /// Disable rate limiting
     pub fn disable_rate_limiting(mut self) -> Self {
-        self.0.rate_limiter = RateLimiterConfig {
-            per_second: 1,
-            burst_size: u32::MAX,
-            behind_proxy: false,
-        };
+        self.0.rate_limiter = None;
 
         self
     }
@@ -107,7 +102,9 @@ impl Relay {
 
         let cache = Box::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
-        let rate_limiter = rate_limiting::IpRateLimiter::new(&config.rate_limiter);
+        let rate_limiter = config
+            .rate_limiter
+            .map(|rate_limiter| rate_limiting::IpRateLimiter::new(&rate_limiter));
 
         let server = Box::new(DhtServer::new(
             cache.clone(),
@@ -167,8 +164,8 @@ impl Relay {
     }
 }
 
-pub fn create_app(state: AppState, rate_limiter: rate_limiting::IpRateLimiter) -> Router {
-    let router = Router::new()
+pub fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
+    let mut router = Router::new()
         .route(
             "/:key",
             axum::routing::get(crate::handlers::get).put(crate::handlers::put),
@@ -182,7 +179,11 @@ pub fn create_app(state: AppState, rate_limiter: rate_limiting::IpRateLimiter) -
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http());
 
-    rate_limiter.layer(router)
+    if let Some(rate_limiter) = rate_limiter {
+        router = rate_limiter.layer(router);
+    }
+
+    router
 }
 
 #[derive(Debug, Clone)]

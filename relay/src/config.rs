@@ -21,7 +21,7 @@ struct ConfigToml {
     minimum_ttl: Option<u32>,
     /// See [pkarr::Config::maximum_ttl]
     maximum_ttl: Option<u32>,
-    rate_limiter: RateLimiterConfig,
+    rate_limiter: Option<RateLimiterConfig>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -54,7 +54,7 @@ pub struct Config {
     /// Defaults to 1000_000
     pub cache_size: usize,
     /// IP rete limiter configuration
-    pub rate_limiter: RateLimiterConfig,
+    pub rate_limiter: Option<RateLimiterConfig>,
 }
 
 impl Default for Config {
@@ -64,7 +64,7 @@ impl Default for Config {
             pkarr_config: pkarr::Config::default(),
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
-            rate_limiter: RateLimiterConfig::default(),
+            rate_limiter: Some(RateLimiterConfig::default()),
         }
     }
 }

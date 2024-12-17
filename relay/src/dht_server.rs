@@ -31,7 +31,7 @@ pub struct DhtServer {
     cache: Box<LmdbCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
-    rate_limiter: IpRateLimiter,
+    rate_limiter: Option<IpRateLimiter>,
 }
 
 impl Debug for DhtServer {
@@ -46,7 +46,7 @@ impl DhtServer {
         resolvers: Option<Vec<SocketAddr>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
-        rate_limiter: IpRateLimiter,
+        rate_limiter: Option<IpRateLimiter>,
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
@@ -91,22 +91,24 @@ impl Server for DhtServer {
             {
                 debug!(?target, "querying the DHT to hydrate our cache for later.");
 
-                // Rate limit nodes that are making too many request forcing us to making too
-                // many queries, either by querying the same non-existent key, or many unique keys.
-                if self.rate_limiter.is_limited(&from.ip()) {
-                    debug!(?from, "Resolver rate limiting");
-                } else {
-                    rpc.get(
-                        *target,
-                        RequestTypeSpecific::GetValue(GetValueRequestArguments {
-                            target: *target,
-                            seq: None,
-                            salt: None,
-                        }),
-                        None,
-                        self.resolvers.to_owned(),
-                    );
-                };
+                if let Some(ref rate_limiter) = self.rate_limiter {
+                    // Rate limit nodes that are making too many request forcing us to making too
+                    // many queries, either by querying the same non-existent key, or many unique keys.
+                    if rate_limiter.is_limited(&from.ip()) {
+                        debug!(?from, "Resolver rate limiting");
+                    } else {
+                        rpc.get(
+                            *target,
+                            RequestTypeSpecific::GetValue(GetValueRequestArguments {
+                                target: *target,
+                                seq: None,
+                                salt: None,
+                            }),
+                            None,
+                            self.resolvers.to_owned(),
+                        );
+                    };
+                }
             }
 
             // Respond with what we have, even if expired.

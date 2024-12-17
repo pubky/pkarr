@@ -20,6 +20,8 @@ minimum_ttl =  300
 # Maximum TTL before attempting to lookup a more recent version of a SignedPacket 
 maximum_ttl =  86400
 
+# Ip rate limiting configurations.
+# If not included, rate limiting will be disabled.
 [rate_limiter]
 # Set to true if you are running this relay
 # behind a reverse proxy, to use smart IP address
