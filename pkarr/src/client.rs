@@ -286,7 +286,7 @@ impl PkarrClient {
 
             debug!(expires_in, "Have expired signed_packet in cache.");
         } else {
-            debug!("Cache mess");
+            debug!("Cache miss");
         }
 
         self.sender
@@ -368,6 +368,16 @@ fn run(
 
         // === Drop senders to done queries ===
         for id in &report.done_get_queries {
+            // Send cached signed packet one more time in case none of the incoming
+            // packets were more recent than cache.
+            if let Some(senders) = senders.get(id) {
+                if let Some(signed_packet) = cache.get_read_only(id) {
+                    for sender in senders {
+                        let _ = sender.send(signed_packet.clone());
+                    }
+                }
+            }
+
             senders.remove(id);
         }
 
@@ -459,6 +469,8 @@ pub enum ActorMessage {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use mainline::Testnet;
 
     use super::*;
@@ -579,5 +591,50 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    #[test]
+    fn ttl_0_test() {
+        let testnet = Testnet::new(10);
+
+        let client = PkarrClient::builder()
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap),
+                request_timeout: Some(Duration::from_millis(50)),
+                server: None,
+                port: None,
+            })
+            .maximum_ttl(0)
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+        let mut packet = dns::Packet::new_reply(0);
+        packet.answers.push(dns::ResourceRecord::new(
+            dns::Name::new("foo").unwrap(),
+            dns::CLASS::IN,
+            30,
+            dns::rdata::RData::TXT("bar".try_into().unwrap()),
+        ));
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+
+        client.publish(&signed_packet).unwrap();
+
+        // First Call
+        let resolved = client
+            .resolve(&signed_packet.public_key())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
+
+        thread::sleep(Duration::from_millis(10));
+
+        let second = client
+            .resolve(&signed_packet.public_key())
+            .unwrap()
+            .unwrap();
+        assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
     }
 }
