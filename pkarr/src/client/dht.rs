@@ -221,12 +221,13 @@ impl Client {
         Ok(())
     }
 
-    /// Returns a [SignedPacket] from cache if it is not expired, otherwise,
-    /// it will query the Dht, and return the first valid response, which may
-    /// or may not be expired itself.
+    /// Returns a [SignedPacket] from the cache even if it is expired.
+    /// If there is no packet in the cache, or if the cached packet is expired,
+    /// it will make a DHT in the background query and caches any more recent packets it receieves.
     ///
-    /// If the Dht was called, in the background, it continues receiving responses
-    /// and updating the cache with any more recent valid packets it receives.
+    /// If you want to have more control, you can call [Self::resolve_rx] directly,
+    /// and then [iterate](flume::Receiver::recv) over or [stream](flume::Receiver::recv_async)
+    /// incoming [SignedPacket]s until your lookup criteria is satisfied.
     ///
     /// # Errors
     /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
@@ -261,12 +262,13 @@ impl Client {
         Ok(())
     }
 
-    /// Returns a [SignedPacket] from cache if it is not expired, otherwise,
-    /// it will query the Dht, and return the first valid response, which may
-    /// or may not be expired itself.
+    /// Returns a [SignedPacket] from the cache even if it is expired.
+    /// If there is no packet in the cache, or if the cached packet is expired,
+    /// it will make a DHT in the background query and caches any more recent packets it receieves.
     ///
-    /// If the Dht was called, in the background, it continues receiving responses
-    /// and updating the cache with any more recent valid packets it receives.
+    /// If you want to have more control, you can call [Self::resolve_rx] directly,
+    /// and then [iterate](flume::Receiver::recv) over or [stream](flume::Receiver::recv_async)
+    /// incoming [SignedPacket]s until your lookup criteria is satisfied.
     ///
     /// # Errors
     /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
