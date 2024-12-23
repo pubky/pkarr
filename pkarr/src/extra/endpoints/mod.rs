@@ -39,6 +39,7 @@ mod tests {
     use std::net::IpAddr;
     use std::pin::Pin;
     use std::str::FromStr;
+    use std::time::Duration;
 
     // TODO: test SVCB too.
 
@@ -147,7 +148,14 @@ mod tests {
     #[tokio::test]
     async fn empty() {
         let testnet = Testnet::new(3).unwrap();
-        let client = Client::builder().testnet(&testnet).build().unwrap();
+        let client = Client::builder()
+            .testnet(&testnet)
+            .dht_config(mainline::Config {
+                request_timeout: Duration::from_millis(20),
+                ..Default::default()
+            })
+            .build()
+            .unwrap();
 
         let pubky = Keypair::random().public_key();
 

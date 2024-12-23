@@ -120,8 +120,8 @@ impl ClientBuilder {
     }
 
     /// Set [Config::dht_config]
-    pub fn dht_config(mut self, settings: mainline::Config) -> Self {
-        self.0.dht_config = settings;
+    pub fn dht_config(mut self, config: mainline::Config) -> Self {
+        self.0.dht_config = config;
 
         self
     }
@@ -280,10 +280,9 @@ impl Client {
         Ok(self.resolve_rx(public_key)?.recv().ok())
     }
 
-    /// Returns a [flume::Receiver<SignedPacket>] that allows iterating over or
-    /// streaming incoming [SignedPacket]s, in case you need more control over
-    /// your caching strategy and when resolution should terminate, as well as
-    /// filtering [SignedPacket]s according to a custom criteria.
+    /// Returns a [flume::Receiver<SignedPacket>] that allows [iterating](flume::Receiver::recv) over or
+    /// [streaming](flume::Receiver::recv_async) incoming [SignedPacket]s, in case you need more control over your
+    /// caching strategy and when resolution should terminate, as well as filtering [SignedPacket]s according to a custom criteria.
     ///
     /// # Errors
     /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
@@ -497,15 +496,7 @@ fn actor_thread(
 
         // === Drop senders to done queries ===
         for id in &report.done_get_queries {
-            if let Some(senders) = senders.remove(id) {
-                if let Some(cached) = cache.get(id.as_bytes()) {
-                    debug!(public_key = ?cached.public_key(), "Returning expired cache as a fallback");
-                    // Send cached packets if available
-                    for sender in senders {
-                        let _ = sender.send(cached.clone());
-                    }
-                }
-            };
+            senders.remove(id);
         }
 
         // === Receive and handle incoming messages ===
@@ -807,7 +798,7 @@ mod tests {
 
         assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
 
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(10));
 
         let second = client
             .resolve(&signed_packet.public_key())
