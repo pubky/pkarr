@@ -14,6 +14,7 @@ use rustls::{
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
@@ -191,8 +192,8 @@ impl TryFrom<&[u8; 32]> for PublicKey {
     }
 }
 
-impl TryFrom<&str> for PublicKey {
-    type Error = PublicKeyError;
+impl FromStr for PublicKey {
+    type Err = PublicKeyError;
 
     /// Convert the TLD in a `&str` to a [PublicKey].
     ///
@@ -208,7 +209,7 @@ impl TryFrom<&str> for PublicKey {
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.?q=v`
     /// - `https://foo@bar.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.:8888?q=v`
     /// - `https://yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy`
-    fn try_from(s: &str) -> Result<PublicKey, PublicKeyError> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut s = s;
 
         if s.len() > 52 {
@@ -265,6 +266,14 @@ impl TryFrom<&str> for PublicKey {
             .map_err(|_| PublicKeyError::InvalidPublicKeyLength(bytes.len()))?;
 
         Ok(PublicKey(verifying_key))
+    }
+}
+
+impl TryFrom<&str> for PublicKey {
+    type Error = PublicKeyError;
+
+    fn try_from(s: &str) -> Result<PublicKey, PublicKeyError> {
+        PublicKey::from_str(s)
     }
 }
 

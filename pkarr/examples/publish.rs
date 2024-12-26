@@ -13,9 +13,6 @@ use std::time::Instant;
 
 use pkarr::{Keypair, SignedPacket};
 
-#[cfg(feature = "relay")]
-use pkarr::client::relay::Client;
-#[cfg(not(feature = "relay"))]
 use pkarr::Client;
 
 #[tokio::main]
