@@ -32,7 +32,7 @@ mod tests {
 
     use super::*;
     use crate::dns::rdata::SVCB;
-    use crate::{mainline::Testnet, Client, Keypair};
+    use crate::{Client, Keypair};
     use crate::{PublicKey, SignedPacket};
 
     use std::future::Future;
@@ -40,6 +40,8 @@ mod tests {
     use std::pin::Pin;
     use std::str::FromStr;
     use std::time::Duration;
+
+    use mainline::Testnet;
 
     // TODO: test SVCB too.
 
@@ -117,7 +119,10 @@ mod tests {
     #[tokio::test]
     async fn direct_endpoint_resolution() {
         let testnet = Testnet::new(3).unwrap();
-        let client = Client::builder().testnet(&testnet).build().unwrap();
+        let client = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let tld = generate(&client, 1, 1, Some("example.com".to_string()), vec![], None).await;
 
@@ -133,7 +138,10 @@ mod tests {
     #[tokio::test]
     async fn resolve_endpoints() {
         let testnet = Testnet::new(3).unwrap();
-        let client = Client::builder().testnet(&testnet).build().unwrap();
+        let client = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let tld = generate(&client, 3, 3, Some("example.com".to_string()), vec![], None).await;
 
@@ -149,7 +157,7 @@ mod tests {
     async fn empty() {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
-            .testnet(&testnet)
+            .bootstrap(&testnet.bootstrap)
             .dht_config(mainline::Config {
                 request_timeout: Duration::from_millis(20),
                 ..Default::default()
@@ -167,7 +175,10 @@ mod tests {
     #[tokio::test]
     async fn max_chain_exceeded() {
         let testnet = Testnet::new(3).unwrap();
-        let client = Client::builder().testnet(&testnet).build().unwrap();
+        let client = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let tld = generate(&client, 4, 3, Some("example.com".to_string()), vec![], None).await;
 
@@ -179,7 +190,10 @@ mod tests {
     #[tokio::test]
     async fn resolve_addresses() {
         let testnet = Testnet::new(3).unwrap();
-        let client = Client::builder().testnet(&testnet).build().unwrap();
+        let client = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let tld = generate(
             &client,

@@ -38,9 +38,6 @@ pub use client::{Client, Config};
 pub use bytes;
 pub use simple_dns as dns;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-pub use mainline;
-
 pub mod errors {
     //! Exported errors
 

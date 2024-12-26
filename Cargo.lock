@@ -326,6 +326,9 @@ name = "bytes"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "cc"
@@ -1416,8 +1419,8 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 
 [[package]]
 name = "mainline"
-version = "4.1.0"
-source = "git+https://github.com/pubky/mainline?branch=v5#2948896ac074cd5bf9728966dcd076de35e7e763"
+version = "4.2.0"
+source = "git+https://github.com/pubky/mainline?branch=v5#0789d2418fd27962746024263e68b32fb6b8b51e"
 dependencies = [
  "bytes",
  "crc",

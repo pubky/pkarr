@@ -606,6 +606,15 @@ impl TryFrom<&MutableItem> for SignedPacket {
     }
 }
 
+#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+impl TryFrom<MutableItem> for SignedPacket {
+    type Error = SignedPacketVerifyError;
+
+    fn try_from(i: MutableItem) -> Result<Self, SignedPacketVerifyError> {
+        SignedPacket::try_from(&i)
+    }
+}
+
 impl AsRef<[u8]> for SignedPacket {
     /// Returns the SignedPacket as a bytes slice with the format:
     /// `<public_key><signature><6 bytes timestamp in microseconds><compressed dns packet>`

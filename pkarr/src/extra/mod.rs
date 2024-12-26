@@ -75,7 +75,10 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
             let address = listener.local_addr().unwrap();
 
-            let client = Client::builder().testnet(&testnet).build().unwrap();
+            let client = Client::builder()
+                .bootstrap(&testnet.bootstrap)
+                .build()
+                .unwrap();
             publish_server_pkarr(&client, &keypair, &address).await;
 
             println!("Server running on https://{}", keypair.public_key());
@@ -89,7 +92,10 @@ mod tests {
         }
 
         // Client setup
-        let pkarr_client = Client::builder().testnet(&testnet).build().unwrap();
+        let pkarr_client = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
         let reqwest = reqwest::ClientBuilder::from(pkarr_client).build().unwrap();
 
         // Make a request

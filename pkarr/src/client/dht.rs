@@ -3,11 +3,8 @@
 use flume::{Receiver, Sender};
 use mainline::{
     errors::PutError,
-    rpc::{
-        messages, QueryResponse, QueryResponseSpecific, ReceivedFrom, ReceivedMessage, Response,
-        Rpc,
-    },
-    Id, MutableItem, Testnet,
+    rpc::{messages, Response, Rpc},
+    Id, MutableItem,
 };
 use std::{
     collections::HashMap,
@@ -15,7 +12,7 @@ use std::{
     num::NonZeroUsize,
     thread,
 };
-use tracing::{debug, trace};
+use tracing::debug;
 
 use crate::{
     Cache, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
@@ -26,7 +23,7 @@ use crate::{PublicKey, SignedPacket};
 #[derive(Debug)]
 /// [Client]'s Config
 pub struct Config {
-    pub dht_config: mainline::Config,
+    pub dht_config: mainline::rpc::Config,
     /// A set of [resolver](https://pkarr.org/resolvers)s
     /// to be queried alongside the Dht routing table, to
     /// lower the latency on cold starts, and help if the
@@ -51,7 +48,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            dht_config: mainline::Config::default(),
+            dht_config: mainline::rpc::Config::default(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
                 .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
             resolvers: Some(
@@ -120,15 +117,15 @@ impl ClientBuilder {
     }
 
     /// Set [Config::dht_config]
-    pub fn dht_config(mut self, config: mainline::Config) -> Self {
+    pub fn dht_config(mut self, config: mainline::rpc::Config) -> Self {
         self.0.dht_config = config;
 
         self
     }
 
-    /// Convienent methot to set the [mainline::Config::bootstrap] from [mainline::Testnet::bootstrap]
-    pub fn testnet(mut self, testnet: &Testnet) -> Self {
-        self.0.dht_config.bootstrap = testnet.bootstrap.clone();
+    /// Convienent method to set the [mainline::Config::bootstrap].
+    pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
+        self.0.dht_config.bootstrap = bootstrap.to_vec();
 
         self
     }
@@ -401,23 +398,8 @@ pub enum PublishError {
 }
 
 fn run(cache: Box<dyn Cache>, config: Config, receiver: Receiver<ActorMessage>) {
-    match Rpc::new(
-        config
-            .dht_config
-            .bootstrap
-            .to_owned()
-            .iter()
-            .flat_map(|s| s.to_socket_addrs().map(|addrs| addrs.collect::<Vec<_>>()))
-            .flatten()
-            .collect::<Vec<_>>(),
-        config.dht_config.server.is_none(),
-        config.dht_config.request_timeout,
-        config.dht_config.port,
-    ) {
-        Ok(mut rpc) => {
-            let mut server = config.dht_config.server;
-            actor_thread(&mut rpc, &mut server, cache, receiver, config.resolvers)
-        }
+    match Rpc::new(config.dht_config) {
+        Ok(mut rpc) => actor_thread(&mut rpc, cache, receiver, config.resolvers),
         Err(err) => {
             if let Ok(ActorMessage::Check(sender)) = receiver.try_recv() {
                 let _ = sender.send(Err(err));
@@ -428,12 +410,12 @@ fn run(cache: Box<dyn Cache>, config: Config, receiver: Receiver<ActorMessage>) 
 
 fn actor_thread(
     rpc: &mut Rpc,
-    server: &mut Option<Box<dyn mainline::server::Server>>,
     cache: Box<dyn Cache>,
     receiver: Receiver<ActorMessage>,
     resolvers: Option<Vec<SocketAddr>>,
 ) {
-    let mut senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
+    let mut resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
+    let mut publish_senders: HashMap<Id, Sender<Result<Id, PutError>>> = HashMap::new();
 
     loop {
         // === Receive actor messages ===
@@ -459,25 +441,42 @@ fn actor_thread(
                         },
                     );
 
-                    rpc.put(*target, request, Some(sender))
+                    if let Err(put_error) = rpc.put(*target, request) {
+                        let _ = sender.send(Err(put_error));
+                    } else {
+                        publish_senders.insert(*target, sender);
+                    };
                 }
                 ActorMessage::Resolve(target, sender, most_recent_known_timestamp) => {
-                    if let Some(set) = senders.get_mut(&target) {
-                        set.push(sender);
+                    if let Some(senders) = resolve_senders.get_mut(&target) {
+                        senders.push(sender);
                     } else {
-                        senders.insert(target, vec![sender]);
+                        resolve_senders.insert(target, vec![sender]);
                     };
 
-                    let request = messages::RequestTypeSpecific::GetValue(
-                        messages::GetValueRequestArguments {
-                            target,
-                            seq: most_recent_known_timestamp.map(|t| t as i64),
-                            // seq: None,
-                            salt: None,
-                        },
-                    );
-
-                    rpc.get(target, request, None, resolvers.clone())
+                    if let Some(responses) = rpc.get(
+                        target,
+                        messages::RequestTypeSpecific::GetValue(
+                            messages::GetValueRequestArguments {
+                                target,
+                                seq: most_recent_known_timestamp.map(|t| t as i64),
+                                salt: None,
+                            },
+                        ),
+                        resolvers.clone(),
+                    ) {
+                        for response in responses {
+                            if let Response::Mutable(mutable_item) = response {
+                                if let Ok(signed_packet) = SignedPacket::try_from(mutable_item) {
+                                    if let Some(senders) = resolve_senders.get(&target) {
+                                        for sender in senders {
+                                            let _ = sender.send(signed_packet.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
                 }
                 ActorMessage::Info(sender) => {
                     let local_addr = rpc.local_addr();
@@ -494,83 +493,49 @@ fn actor_thread(
 
         let report = rpc.tick();
 
-        // === Drop senders to done queries ===
-        for id in &report.done_get_queries {
-            senders.remove(id);
-        }
+        // === Receive and handle incoming mutable item from the DHT ===
 
-        // === Receive and handle incoming messages ===
-        if let Some(ReceivedFrom { from, message }) = &report.received_from {
-            match message {
-                // === Responses ===
-                ReceivedMessage::QueryResponse(response) => {
-                    match response {
-                        // === Got Mutable Value ===
-                        QueryResponse {
-                            target,
-                            response: QueryResponseSpecific::Value(Response::Mutable(mutable_item)),
-                        } => {
-                            if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
-                                let new_packet = if let Some(ref cached) =
-                                    cache.get_read_only(target.as_bytes())
-                                {
-                                    if signed_packet.more_recent_than(cached) {
-                                        debug!(
-                                            ?target,
-                                            "Received more recent packet than in cache"
-                                        );
-                                        Some(signed_packet)
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    debug!(?target, "Received new packet after cache miss");
-                                    Some(signed_packet)
-                                };
+        if let Some((target, Response::Mutable(mutable_item))) = &report.query_response {
+            if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
+                let new_packet = if let Some(ref cached) = cache.get_read_only(target.as_bytes()) {
+                    if signed_packet.more_recent_than(cached) {
+                        debug!(?target, "Received more recent packet than in cache");
 
-                                if let Some(packet) = new_packet {
-                                    cache.put(target.as_bytes(), packet);
+                        Some(signed_packet)
+                    } else {
+                        None
+                    }
+                } else {
+                    debug!(?target, "Received new packet after cache miss");
+                    Some(signed_packet)
+                };
 
-                                    if let Some(set) = senders.get(target) {
-                                        for sender in set {
-                                            let _ = sender.send(packet.clone());
-                                        }
-                                    }
-                                }
-                            }
+                if let Some(packet) = new_packet {
+                    cache.put(target.as_bytes(), packet);
+
+                    if let Some(senders) = resolve_senders.get(target) {
+                        for sender in senders {
+                            let _ = sender.send(packet.clone());
                         }
-                        // === Got NoMoreRecentValue ===
-                        QueryResponse {
-                            target,
-                            response: QueryResponseSpecific::Value(Response::NoMoreRecentValue(seq)),
-                        } => {
-                            if let Some(mut cached) = cache.get_read_only(target.as_bytes()) {
-                                if (*seq as u64) == cached.timestamp().as_u64() {
-                                    trace!("Remote node has the a packet with same timestamp, refreshing cached packet.");
-
-                                    cached.refresh();
-                                    cache.put(target.as_bytes(), &cached);
-
-                                    // Send the found sequence as a timestamp to the caller to decide what to do
-                                    // with it.
-                                    if let Some(set) = senders.get(target) {
-                                        for sender in set {
-                                            let _ = sender.send(cached.clone());
-                                        }
-                                    }
-                                }
-                            };
-                        }
-                        // Ignoring errors, as they are logged in `mainline` crate already.
-                        _ => {}
-                    };
-                }
-                // === Requests ===
-                ReceivedMessage::Request((transaction_id, request)) => {
-                    if let Some(server) = server.as_mut() {
-                        server.handle_request(rpc, *from, *transaction_id, request);
                     }
                 }
+            };
+        }
+
+        // TODO: Handle relay messages before removing the senders.
+
+        // === Drop senders to done queries ===
+        for id in &report.done_get_queries {
+            resolve_senders.remove(id);
+        }
+
+        for (id, error) in &report.done_put_queries {
+            if let Some(sender) = publish_senders.remove(id) {
+                let _ = sender.send(if let Some(error) = error.to_owned() {
+                    Err(error)
+                } else {
+                    Ok(*id)
+                });
             };
         }
     }
@@ -590,6 +555,7 @@ pub struct Info {
     local_addr: Result<SocketAddr, std::io::Error>,
 }
 
+// TODO: add more infor like Mainline
 impl Info {
     /// Local UDP Ipv4 socket address that this node is listening on.
     pub fn local_addr(&self) -> Result<&SocketAddr, std::io::Error> {
@@ -612,7 +578,10 @@ mod tests {
     fn shutdown_sync() {
         let testnet = Testnet::new(3).unwrap();
 
-        let client = Client::builder().testnet(&testnet).build().unwrap();
+        let client = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let local_addr = client.info().unwrap().local_addr().unwrap().to_string();
 
@@ -629,7 +598,10 @@ mod tests {
     fn publish_resolve_sync() {
         let testnet = Testnet::new(10).unwrap();
 
-        let a = Client::builder().testnet(&testnet).build().unwrap();
+        let a = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let keypair = Keypair::random();
 
@@ -640,7 +612,10 @@ mod tests {
 
         a.publish_sync(&signed_packet).unwrap();
 
-        let b = Client::builder().testnet(&testnet).build().unwrap();
+        let b = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -654,7 +629,10 @@ mod tests {
     fn thread_safe_sync() {
         let testnet = Testnet::new(10).unwrap();
 
-        let a = Client::builder().testnet(&testnet).build().unwrap();
+        let a = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let keypair = Keypair::random();
 
@@ -665,7 +643,10 @@ mod tests {
 
         a.publish_sync(&signed_packet).unwrap();
 
-        let b = Client::builder().testnet(&testnet).build().unwrap();
+        let b = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         thread::spawn(move || {
             let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
@@ -683,7 +664,10 @@ mod tests {
     async fn shutdown() {
         let testnet = Testnet::new(3).unwrap();
 
-        let mut a = Client::builder().testnet(&testnet).build().unwrap();
+        let mut a = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         assert!(a.info().unwrap().local_addr().is_ok());
 
@@ -696,7 +680,10 @@ mod tests {
     async fn publish_resolve() {
         let testnet = Testnet::new(10).unwrap();
 
-        let a = Client::builder().testnet(&testnet).build().unwrap();
+        let a = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let keypair = Keypair::random();
 
@@ -707,7 +694,10 @@ mod tests {
 
         a.publish(&signed_packet).await.unwrap();
 
-        let b = Client::builder().testnet(&testnet).build().unwrap();
+        let b = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -721,7 +711,10 @@ mod tests {
     async fn thread_safe() {
         let testnet = Testnet::new(10).unwrap();
 
-        let a = Client::builder().testnet(&testnet).build().unwrap();
+        let a = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         let keypair = Keypair::random();
 
@@ -732,7 +725,10 @@ mod tests {
 
         a.publish(&signed_packet).await.unwrap();
 
-        let b = Client::builder().testnet(&testnet).build().unwrap();
+        let b = Client::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
 
         tokio::spawn(async move {
             let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
@@ -751,7 +747,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let client = Client::builder()
-            .testnet(&testnet)
+            .bootstrap(&testnet.bootstrap)
             .dht_config(mainline::Config {
                 request_timeout: Duration::from_millis(10),
                 ..Default::default()
@@ -779,7 +775,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let client = Client::builder()
-            .testnet(&testnet)
+            .bootstrap(&testnet.bootstrap)
             .maximum_ttl(0)
             .build()
             .unwrap();
