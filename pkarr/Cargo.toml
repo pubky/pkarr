@@ -11,7 +11,6 @@ categories = ["network-programming"]
 
 [dependencies]
 base32 = "0.5.1"
-bytes = "1.9.0"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 self_cell = "1.0.4"
 simple-dns = "0.9.1"

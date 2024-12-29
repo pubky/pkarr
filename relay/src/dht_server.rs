@@ -1,23 +1,17 @@
 use std::{
     fmt::Debug,
-    net::{SocketAddr, ToSocketAddrs},
+    net::{IpAddr, SocketAddrV4},
 };
 
-use pkarr::{
-    extra::lmdb_cache::LmdbCache,
-    mainline::{
-        self,
-        rpc::{
-            messages::{
-                GetMutableResponseArguments, GetValueRequestArguments, RequestSpecific,
-                RequestTypeSpecific, ResponseSpecific,
-            },
-            Rpc,
-        },
-        server::Server,
-        MutableItem,
+use pkarr::{extra::lmdb_cache::LmdbCache, Cache};
+
+use mainline::{
+    rpc::messages::{
+        GetMutableResponseArguments, GetValueRequestArguments, MessageType, RequestSpecific,
+        RequestTypeSpecific, ResponseSpecific,
     },
-    Cache,
+    server::{DefaultServer, Server},
+    MutableItem, RoutingTable,
 };
 
 use tracing::debug;
@@ -26,8 +20,8 @@ use crate::rate_limiting::IpRateLimiter;
 
 /// DhtServer with Rate limiting
 pub struct DhtServer {
-    inner: mainline::server::DefaultServer,
-    resolvers: Option<Vec<SocketAddr>>,
+    default_server: DefaultServer,
+    resolvers: Option<Box<[SocketAddrV4]>>,
     cache: Box<LmdbCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
@@ -43,22 +37,17 @@ impl Debug for DhtServer {
 impl DhtServer {
     pub fn new(
         cache: Box<LmdbCache>,
-        resolvers: Option<Vec<SocketAddr>>,
+        resolvers: Option<Box<[SocketAddrV4]>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
         rate_limiter: Option<IpRateLimiter>,
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
-            inner: mainline::server::DefaultServer::default(),
+            default_server: DefaultServer::default(),
             cache,
-            resolvers: resolvers.map(|resolvers| {
-                resolvers
-                    .iter()
-                    .flat_map(|resolver| resolver.to_socket_addrs())
-                    .flatten()
-                    .collect::<Vec<_>>()
-            }),
+            resolvers: resolvers
+                .map(|resolvers| pkarr::client::resolvres_to_socket_addrs(&resolvers)),
             minimum_ttl,
             maximum_ttl,
             rate_limiter,
@@ -69,13 +58,18 @@ impl DhtServer {
 impl Server for DhtServer {
     fn handle_request(
         &mut self,
-        rpc: &mut Rpc,
-        from: SocketAddr,
-        transaction_id: u16,
-        request: &RequestSpecific,
-    ) {
+        routing_table: &RoutingTable,
+        from: SocketAddrV4,
+        request: RequestSpecific,
+    ) -> (MessageType, Option<Box<[SocketAddrV4]>>) {
         if let RequestSpecific {
-            request_type: RequestTypeSpecific::GetValue(GetValueRequestArguments { target, .. }),
+            request_type:
+                RequestTypeSpecific::GetValue(GetValueRequestArguments {
+                    target,
+                    seq,
+                    // If there is a salt, we should leave that query to the default server.
+                    salt: None,
+                }),
             ..
         } = request
         {
@@ -83,32 +77,36 @@ impl Server for DhtServer {
 
             let as_ref = cached_packet.as_ref();
 
-            // Should query?
+            // Make a background query to the DHT to find and cache packets for subsequent lookups.
             if as_ref
                 .as_ref()
                 .map(|c| c.is_expired(self.minimum_ttl, self.maximum_ttl))
                 .unwrap_or(true)
             {
-                debug!(?target, "querying the DHT to hydrate our cache for later.");
+                // Rate limit nodes that are making too many request forcing us to making too
+                // many queries, either by querying the same non-existent key, or many unique keys.
+                if self
+                    .rate_limiter
+                    .clone()
+                    .map(|rate_limiter| !rate_limiter.is_limited(&IpAddr::from(*from.ip())))
+                    .unwrap_or(true)
+                {
+                    debug!(?target, "querying the DHT to hydrate our cache for later.");
 
-                if let Some(ref rate_limiter) = self.rate_limiter {
-                    // Rate limit nodes that are making too many request forcing us to making too
-                    // many queries, either by querying the same non-existent key, or many unique keys.
-                    if rate_limiter.is_limited(&from.ip()) {
-                        debug!(?from, "Resolver rate limiting");
-                    } else {
-                        rpc.get(
-                            *target,
-                            RequestTypeSpecific::GetValue(GetValueRequestArguments {
-                                target: *target,
-                                seq: None,
+                    return (
+                        MessageType::Request(RequestSpecific {
+                            requester_id: *routing_table.id(),
+                            request_type: RequestTypeSpecific::GetValue(GetValueRequestArguments {
+                                target,
+                                seq,
                                 salt: None,
                             }),
-                            None,
-                            self.resolvers.to_owned(),
-                        );
-                    };
+                        }),
+                        self.resolvers.clone(),
+                    );
                 }
+
+                debug!(?from, "Resolver rate limiting");
             }
 
             // Respond with what we have, even if expired.
@@ -120,27 +118,25 @@ impl Server for DhtServer {
 
                 let mutable_item = MutableItem::from(&cached_packet);
 
-                rpc.response(
-                    from,
-                    transaction_id,
-                    ResponseSpecific::GetMutable(GetMutableResponseArguments {
-                        responder_id: *rpc.id(),
-                        // Token doesn't matter much, as we are most likely _not_ the
-                        // closest nodes, so we shouldn't expect a PUT requests based on
-                        // this response.
-                        token: vec![0, 0, 0, 0],
-                        nodes: None,
-                        v: mutable_item.value().to_vec(),
-                        k: mutable_item.key().to_vec(),
-                        seq: *mutable_item.seq(),
-                        sig: mutable_item.signature().to_vec(),
-                    }),
+                return (
+                    MessageType::Response(ResponseSpecific::GetMutable(
+                        GetMutableResponseArguments {
+                            responder_id: *routing_table.id(),
+                            token: self.default_server.tokens.generate_token(from).into(),
+                            nodes: Some(routing_table.closest(target)),
+                            v: mutable_item.value().into(),
+                            k: *mutable_item.key(),
+                            seq: mutable_item.seq(),
+                            sig: *mutable_item.signature(),
+                        },
+                    )),
+                    None,
                 );
             }
         };
 
         // Do normal Dht request handling (peers, mutable, immutable, and routing).
-        self.inner
-            .handle_request(rpc, from, transaction_id, request)
+        self.default_server
+            .handle_request(routing_table, from, request)
     }
 }

@@ -5,7 +5,7 @@ mod handlers;
 mod rate_limiting;
 
 use std::{
-    net::{SocketAddr, TcpListener},
+    net::{SocketAddr, SocketAddrV4, TcpListener},
     path::PathBuf,
 };
 
@@ -71,7 +71,7 @@ impl RelayBuilder {
 
 pub struct Relay {
     handle: Handle,
-    resolver_address: SocketAddr,
+    resolver_address: SocketAddrV4,
     relay_address: SocketAddr,
 }
 
@@ -121,7 +121,7 @@ impl Relay {
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
 
-        let resolver_address = *client.info()?.local_addr()?;
+        let resolver_address = client.info()?.dht_info().local_addr();
         let relay_address = listener.local_addr()?;
 
         info!("Running as a resolver on UDP socket {resolver_address}");
@@ -151,7 +151,7 @@ impl Relay {
         unsafe { Self::start(config).await }
     }
 
-    pub fn resolver_address(&self) -> SocketAddr {
+    pub fn resolver_address(&self) -> SocketAddrV4 {
         self.resolver_address
     }
 

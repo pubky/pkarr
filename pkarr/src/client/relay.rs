@@ -356,7 +356,7 @@ impl Client {
 
         self.http_client
             .put(url.clone())
-            .body(signed_packet.to_relay_payload())
+            .body(signed_packet.as_relay_payload().to_vec())
             .send()
             .await
             .map_err(|error| {
@@ -512,7 +512,7 @@ mod tests {
             .create();
         server
             .mock("GET", path.as_str())
-            .with_body(signed_packet.to_relay_payload())
+            .with_body(signed_packet.as_relay_payload())
             .create();
 
         let relays = vec![Url::parse(&server.url()).unwrap()];

@@ -17,7 +17,7 @@ pub type CacheKey = [u8; 20];
 #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
 impl From<&crate::PublicKey> for CacheKey {
     fn from(public_key: &crate::PublicKey) -> CacheKey {
-        MutableItem::target_from_key(public_key.as_bytes(), &None).into()
+        MutableItem::target_from_key(public_key.as_bytes(), None).into()
     }
 }
 

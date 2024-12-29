@@ -35,7 +35,6 @@ pub use client::dht::Info;
 pub use client::{Client, Config};
 
 // Rexports
-pub use bytes;
 pub use simple_dns as dns;
 
 pub mod errors {

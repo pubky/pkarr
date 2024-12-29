@@ -8,7 +8,7 @@ use mainline::{
 };
 use std::{
     collections::HashMap,
-    net::{SocketAddr, ToSocketAddrs},
+    net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     num::NonZeroUsize,
     thread,
 };
@@ -30,7 +30,7 @@ pub struct Config {
     /// Dht is missing values not't republished often enough.
     ///
     /// Defaults to [DEFAULT_RESOLVERS]
-    pub resolvers: Option<Vec<SocketAddr>>,
+    pub resolvers: Option<Box<[SocketAddrV4]>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: NonZeroUsize,
     /// Used in the `min` parameter in [SignedPacket::expires_in].
@@ -51,13 +51,7 @@ impl Default for Config {
             dht_config: mainline::rpc::Config::default(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
                 .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
-            resolvers: Some(
-                DEFAULT_RESOLVERS
-                    .iter()
-                    .flat_map(|resolver| resolver.to_socket_addrs())
-                    .flatten()
-                    .collect::<Vec<_>>(),
-            ),
+            resolvers: Some(resolvres_to_socket_addrs(&DEFAULT_RESOLVERS)),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
@@ -71,13 +65,7 @@ pub struct ClientBuilder(Config);
 impl ClientBuilder {
     /// Set custom set of [resolvers](Config::resolvers).
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
-        self.0.resolvers = resolvers.map(|resolvers| {
-            resolvers
-                .iter()
-                .flat_map(|resolver| resolver.to_socket_addrs())
-                .flatten()
-                .collect::<Vec<_>>()
-        });
+        self.0.resolvers = resolvers.map(|resolvers| resolvres_to_socket_addrs(&resolvers));
 
         self
     }
@@ -288,7 +276,7 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
-        let target = MutableItem::target_from_key(public_key.as_bytes(), &None);
+        let target = MutableItem::target_from_key(public_key.as_bytes(), None);
 
         let cached_packet = self.cache.get(target.as_bytes());
 
@@ -412,7 +400,7 @@ fn actor_thread(
     rpc: &mut Rpc,
     cache: Box<dyn Cache>,
     receiver: Receiver<ActorMessage>,
-    resolvers: Option<Vec<SocketAddr>>,
+    resolvers: Option<Box<[SocketAddrV4]>>,
 ) {
     let mut resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
     let mut publish_senders: HashMap<Id, Sender<Result<Id, PutError>>> = HashMap::new();
@@ -427,24 +415,14 @@ fn actor_thread(
                     break;
                 }
                 ActorMessage::Publish(mutable_item, sender) => {
-                    let target = mutable_item.target();
+                    let target = *mutable_item.target();
 
-                    let request = messages::PutRequestSpecific::PutMutable(
-                        messages::PutMutableRequestArguments {
-                            target: *target,
-                            v: mutable_item.value().to_vec(),
-                            k: mutable_item.key().to_vec(),
-                            seq: *mutable_item.seq(),
-                            sig: mutable_item.signature().to_vec(),
-                            salt: None,
-                            cas: None,
-                        },
-                    );
-
-                    if let Err(put_error) = rpc.put(*target, request) {
+                    if let Err(put_error) = rpc.put(messages::PutRequestSpecific::PutMutable(
+                        mutable_item.into(),
+                    )) {
                         let _ = sender.send(Err(put_error));
                     } else {
-                        publish_senders.insert(*target, sender);
+                        publish_senders.insert(target, sender);
                     };
                 }
                 ActorMessage::Resolve(target, sender, most_recent_known_timestamp) => {
@@ -455,7 +433,6 @@ fn actor_thread(
                     };
 
                     if let Some(responses) = rpc.get(
-                        target,
                         messages::RequestTypeSpecific::GetValue(
                             messages::GetValueRequestArguments {
                                 target,
@@ -479,9 +456,9 @@ fn actor_thread(
                     };
                 }
                 ActorMessage::Info(sender) => {
-                    let local_addr = rpc.local_addr();
-
-                    let _ = sender.send(Info { local_addr });
+                    let _ = sender.send(Info {
+                        dht_info: rpc.info(),
+                    });
                 }
                 ActorMessage::Check(sender) => {
                     let _ = sender.send(Ok(()));
@@ -552,17 +529,31 @@ enum ActorMessage {
 }
 
 pub struct Info {
-    local_addr: Result<SocketAddr, std::io::Error>,
+    dht_info: mainline::rpc::Info,
 }
 
 // TODO: add more infor like Mainline
 impl Info {
-    /// Local UDP Ipv4 socket address that this node is listening on.
-    pub fn local_addr(&self) -> Result<&SocketAddr, std::io::Error> {
-        self.local_addr
-            .as_ref()
-            .map_err(|e| std::io::Error::new(e.kind(), e.to_string()))
+    //
+    pub fn dht_info(&self) -> &mainline::rpc::Info {
+        &self.dht_info
     }
+}
+
+pub fn resolvres_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Box<[SocketAddrV4]> {
+    resolvers
+        .iter()
+        .flat_map(|resolver| {
+            resolver.to_socket_addrs().map(|iter| {
+                iter.filter_map(|a| match a {
+                    SocketAddr::V4(a) => Some(a),
+                    _ => None,
+                })
+            })
+        })
+        .flatten()
+        .collect::<Vec<_>>()
+        .into()
 }
 
 #[cfg(test)]
@@ -582,12 +573,6 @@ mod tests {
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
-
-        let local_addr = client.info().unwrap().local_addr().unwrap().to_string();
-
-        println!("{}", local_addr);
-
-        assert!(client.info().unwrap().local_addr().is_ok());
 
         client.shutdown_sync();
 
@@ -668,8 +653,6 @@ mod tests {
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
-
-        assert!(a.info().unwrap().local_addr().is_ok());
 
         a.shutdown().await;
 

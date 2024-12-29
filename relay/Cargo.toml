@@ -32,3 +32,4 @@ dirs-next = "2.0.0"
 pkarr = { version = "3.0.0", path = "../pkarr", features = ["dht", "lmdb-cache"] }
 httpdate = "1.0.3"
 pubky-timestamp = { version = "0.2.0", features = ["httpdate"] }
+mainline = { git = "https://github.com/pubky/mainline", branch="v5", default-features = false }
