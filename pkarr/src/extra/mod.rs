@@ -57,7 +57,7 @@ mod tests {
         let signed_packet = SignedPacket::builder()
             .https(".".try_into().unwrap(), svcb, 60 * 60)
             .address(".".try_into().unwrap(), socket_addr.ip(), 60 * 60)
-            .sign(&keypair)
+            .sign(keypair)
             .unwrap();
 
         client.publish(&signed_packet).await.unwrap();

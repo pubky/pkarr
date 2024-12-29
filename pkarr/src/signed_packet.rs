@@ -783,7 +783,7 @@ mod tests {
 
         assert!(SignedPacket::from_relay_payload(
             &signed_packet.public_key(),
-            &signed_packet.as_relay_payload()
+            signed_packet.as_relay_payload()
         )
         .is_ok());
     }
@@ -909,12 +909,12 @@ mod tests {
         let bytes = signed_packet.as_bytes();
         let from_bytes = SignedPacket::from_bytes(bytes).unwrap();
         assert_eq!(signed_packet.as_bytes(), from_bytes.as_bytes());
-        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, &signed_packet.last_seen);
+        let from_bytes2 = SignedPacket::from_bytes_unchecked(bytes, signed_packet.last_seen);
         assert_eq!(signed_packet.as_bytes(), from_bytes2.as_bytes());
 
         let public_key = keypair.public_key();
         let payload = signed_packet.as_relay_payload();
-        let from_relay_payload = SignedPacket::from_relay_payload(&public_key, &payload).unwrap();
+        let from_relay_payload = SignedPacket::from_relay_payload(&public_key, payload).unwrap();
         assert_eq!(signed_packet.as_bytes(), from_relay_payload.as_bytes());
     }
 
