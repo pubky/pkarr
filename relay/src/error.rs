@@ -6,8 +6,6 @@ use axum::{
     response::IntoResponse,
 };
 
-pub type Result<T, E = Error> = core::result::Result<T, E>;
-
 #[derive(Debug, Clone)]
 pub struct Error {
     // #[serde(with = "serde_status_code")]
@@ -65,6 +63,12 @@ impl From<ExtensionRejection> for Error {
 
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
+    }
+}
+
+impl From<pkarr::errors::ClientWasShutdown> for Error {
+    fn from(value: pkarr::errors::ClientWasShutdown) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
     }
 }

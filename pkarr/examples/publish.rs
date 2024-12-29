@@ -11,32 +11,30 @@ use tracing_subscriber;
 
 use std::time::Instant;
 
-use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
+use pkarr::{Keypair, SignedPacket};
 
-fn main() -> Result<()> {
+use pkarr::Client;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
+        .with_env_filter("pkarr")
         .init();
 
-    let client = PkarrClient::builder().build().unwrap();
+    let client = Client::builder().build()?;
 
     let keypair = Keypair::random();
 
-    let mut packet = dns::Packet::new_reply(0);
-    packet.answers.push(dns::ResourceRecord::new(
-        dns::Name::new("_foo").unwrap(),
-        dns::CLASS::IN,
-        30,
-        dns::rdata::RData::TXT("bar".try_into()?),
-    ));
-
-    let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
+    let signed_packet = SignedPacket::builder()
+        .txt("_foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&keypair)?;
 
     let instant = Instant::now();
 
     println!("\nPublishing {} ...", keypair.public_key());
 
-    match client.publish(&signed_packet) {
+    match client.publish(&signed_packet).await {
         Ok(()) => {
             println!(
                 "\nSuccessfully published {} in {:?}",

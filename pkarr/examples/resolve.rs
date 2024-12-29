@@ -11,9 +11,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use pkarr::{PkarrClient, PublicKey};
-
 use clap::Parser;
+
+use pkarr::PublicKey;
+
+use pkarr::Client;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -22,7 +24,8 @@ struct Cli {
     public_key: String,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .with_env_filter("pkarr")
@@ -36,23 +39,25 @@ fn main() {
         .try_into()
         .expect("Invalid zbase32 encoded key");
 
-    let client = PkarrClient::builder().build().unwrap();
+    let client = Client::builder().build()?;
 
     println!("Resolving Pkarr: {} ...", cli.public_key);
     println!("\n=== COLD LOOKUP ===");
-    resolve(&client, &public_key);
+    resolve(&client, &public_key).await;
 
     // loop {
     sleep(Duration::from_secs(1));
     println!("=== SUBSEQUENT LOOKUP ===");
-    resolve(&client, &public_key)
+    resolve(&client, &public_key).await;
     // }
+
+    Ok(())
 }
 
-fn resolve(client: &PkarrClient, public_key: &PublicKey) {
+async fn resolve(client: &Client, public_key: &PublicKey) {
     let start = Instant::now();
 
-    match client.resolve(public_key) {
+    match client.resolve(public_key).await {
         Ok(Some(signed_packet)) => {
             println!(
                 "\nResolved in {:?} milliseconds {}",

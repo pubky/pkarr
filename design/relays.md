@@ -38,6 +38,7 @@ On receiving a PUT request, the relay server should:
 
 ```
 GET /:z-base32-encoded-key HTTP/2
+If-Modified-Since: Fri, 18 Oct 2024 13:24:21 GMT
 ```
 
 #### Response
@@ -48,11 +49,13 @@ Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, PUT, OPTIONS
 Content-Type: application/pkarr.org/relays#payload
 Cache-Control: public, max-age=300
+Last-Modified: Fri, 18 Oct 2024 13:24:21 GMT
 
 <body>
 ```
 
 `Cache-Control` header would help browsers reduce their reliance on the relay, the `max-age` should be set to be the minimum `ttl` in the resource records in the packet or some minimum ttl chosen by the relay.
+`If-Modified-Since` can be sent by the client to avoid downloading packets they already have, when the relay responds with `304 Not Modified`.
 
 Body is described at [Payload](#Payload) encoding section.
 
