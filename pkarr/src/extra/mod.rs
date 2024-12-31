@@ -24,21 +24,7 @@ impl From<crate::Client> for ::reqwest::ClientBuilder {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "reqwest-builder"))]
-impl From<crate::client::relay::Client> for ::reqwest::ClientBuilder {
-    /// Create a [reqwest::ClientBuilder][::reqwest::ClientBuilder] from this Pkarr client,
-    /// using it as a [dns_resolver][::reqwest::ClientBuilder::dns_resolver],
-    /// and a [preconfigured_tls][::reqwest::ClientBuilder::use_preconfigured_tls] client
-    /// config that uses [rustls::crypto::ring::default_provider()] and follows the
-    /// [tls for pkarr domains](https://pkarr.org/tls) spec.
-    fn from(client: crate::client::relay::Client) -> Self {
-        ::reqwest::ClientBuilder::new()
-            .dns_resolver(std::sync::Arc::new(client.clone()))
-            .use_preconfigured_tls(rustls::ClientConfig::from(client))
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use mainline::Testnet;
     use std::net::SocketAddr;

@@ -65,7 +65,9 @@ pub async fn get(
 
         response_headers.insert(
             header::CONTENT_TYPE,
-            "application/pkarr.org/relays#payload".try_into().unwrap(),
+            "application/pkarr.org/relays#payload"
+                .try_into()
+                .expect("pkarr payload content-type header should be valid"),
         );
         response_headers.insert(
             header::CACHE_CONTROL,
@@ -74,7 +76,7 @@ pub async fn get(
                 signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL)
             )
             .try_into()
-            .unwrap(),
+            .expect("pkarr cache-control header should be valid."),
         );
         response_headers.insert(
             header::LAST_MODIFIED,

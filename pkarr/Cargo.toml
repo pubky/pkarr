@@ -15,31 +15,27 @@ ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 self_cell = "1.0.4"
 simple-dns = "0.9.1"
 thiserror = "2.0.3"
-tracing = "0.1.41"
 dyn-clone = "1.0.17"
-document-features = "0.2.10"
-rand = "0.8.5"
 once_cell = {version = "1.20.2", default-features = false }
 lru = { version = "0.12.5", default-features = false }
-flume = { version = "0.11.1", features = ["select", "eventual-fairness", "async"], default-features = false , optional = true }
-
-# feat: relay dependencies
-tokio = { version = "1.41.1", optional = true, default-features = false }
-# inherited from feat:dht as well.
-sha1_smol = { version = "1.0.1", optional = true }
-
-# feat: serde dependencies
 serde = { version = "1.0.215", features = ["derive"] }
+rand = "0.8.5"
+
+document-features = "0.2.10"
+
+#feat: client dependencies
+flume = { version = "0.11.1", features = ["select", "eventual-fairness", "async"], default-features = false , optional = true }
 
 # feat: endpoints dependencies
 futures-lite = { version = "2.5.0", default-features = false, features= ["std"], optional = true }
 genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"], optional = true }
 
-# feat: reqwest-builder
-webpki-roots = { version = "0.26.7", optional = true }
-url = { version = "2.5.4", optional = true }
-
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tracing = "0.1.41"
+
+# feat: client dependencies
+sha1_smol = { version = "1.0.1", optional = true }
+
 pubky-timestamp = { version = "0.2.0", features = ["full"] }
 
 # feat: dht dependencies
@@ -47,6 +43,7 @@ mainline = { git = "https://github.com/pubky/mainline", branch="v5", optional = 
 
 # feat: relay dependencies
 reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls"], optional = true }
+tokio = { version = "1.41.1", optional = true, default-features = false }
 
 # feat: tls
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
@@ -57,6 +54,10 @@ heed = { version = "0.20.5", default-features = false, optional = true }
 byteorder = { version = "1.5.0", default-features = false, optional = true }
 page_size = { version = "0.6.0", optional = true }
 
+# feat: reqwest-builder
+webpki-roots = { version = "0.26.7", optional = true }
+url = { version = "2.5.4", optional = true }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pubky-timestamp = { version = "0.2.0", default-features = false, features = ["httpdate"] }
 js-sys = "0.3.74"
@@ -65,27 +66,35 @@ getrandom = { version = "0.2", features = ["js"] }
 reqwest = { version = "0.12.9", default-features = false }
 sha1_smol = "1.0.1"
 wasm-bindgen-futures = "0.4.47"
+url = "2.5.4"
+log = "0.4.22"
 
 [dev-dependencies]
 anyhow = "1.0.93"
-axum = "0.7.9"
-axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 postcard = { version = "1.1.1", features = ["alloc"] }
-tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread"] }
-tokio-rustls = "0.26.0"
-mainline = { git = "https://github.com/pubky/mainline", branch="v5" }
+tokio = { version = "1.41.1", features = ["macros"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 clap = { version = "4.5.21", features = ["derive"] }
-mockito = "1.6.1"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+mainline = { git = "https://github.com/pubky/mainline", branch="v5" }
+tokio-rustls = "0.26.0"
+axum = "0.7.9"
+axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen = { version = "0.2.89", features = ["serde-serialize"] }
+wasm-bindgen-test = "0.3"
+console_log = { version = "1.0.0", features = ["color"] }
 
 [features]
 # Clients 
+## Use [client::dht::Client] with both/either dht/relay features.
+client = ["dep:flume"]
 ## Use [client::dht::Client]
-dht = ["dep:mainline", "dep:flume"]
+dht = ["client", "dep:mainline"]
 ## Use [client::relay::Client]
-relay = ["dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:flume", "dep:url"]
+relay = ["client", "dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:url"]
 
 # Extra
 ## Use [crate::extra::lmdb-cache::LmdbCache]
@@ -97,7 +106,7 @@ reqwest-resolve = ["dep:reqwest", "endpoints"]
 ## Use [rustls::ClientConfig] from [Client] and [client::relay::Client] for e2ee transport to Pkarr endpoints
 tls = ["rustls", "ed25519-dalek/pkcs8", "dep:webpki"]
 ## Create a [reqwest::ClientBuilder] from [Client] or [client::relay::Client]
-reqwest-builder = ["tls", "reqwest-resolve"]
+reqwest-builder = ["client", "tls", "reqwest-resolve"]
 
 ## Use all features
 full = ["dht", "relay", "endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]

@@ -1,36 +1,137 @@
 //! implementation of EndpointResolver trait for different clients
 
 mod endpoint;
-mod resolver;
 
 pub use endpoint::Endpoint;
-pub use resolver::EndpointsResolver;
-use resolver::ResolveError;
 
-use crate::{PublicKey, SignedPacket};
+use futures_lite::{pin, Stream, StreamExt};
+use genawaiter::sync::Gen;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-impl EndpointsResolver for crate::client::dht::Client {
-    async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>, ResolveError> {
-        self.resolve(public_key).await.map_err(|error| match error {
-            crate::client::dht::ClientWasShutdown => ResolveError::ClientWasShutdown,
+use crate::PublicKey;
+
+const DEFAULT_MAX_CHAIN_LENGTH: u8 = 3;
+
+impl crate::Client {
+    /// Returns an async stream of [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint]s
+    pub fn resolve_https_endpoints<'a>(
+        &'a self,
+        qname: &'a str,
+    ) -> impl Stream<Item = Endpoint> + 'a {
+        self.resolve_endpoints(qname, false)
+    }
+
+    /// Returns an async stream of [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint]s
+    pub fn resolve_svcb_endpoints<'a>(
+        &'a self,
+        qname: &'a str,
+    ) -> impl Stream<Item = Endpoint> + 'a {
+        self.resolve_endpoints(qname, true)
+    }
+
+    /// Helper method that returns the first [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint] in the Async stream from [EndpointsResolver::resolve_https_endpoints]
+    pub async fn resolve_https_endpoint(
+        &self,
+        qname: &str,
+    ) -> Result<Endpoint, FailedToResolveEndpoint> {
+        let stream = self.resolve_https_endpoints(qname);
+
+        pin!(stream);
+
+        match stream.next().await {
+            Some(endpoint) => Ok(endpoint),
+            None => {
+                #[cfg(not(target_arch = "wasm32"))]
+                tracing::trace!(?qname, "failed to resolve endpoint");
+                #[cfg(target_arch = "wasm32")]
+                log::trace!("failed to resolve endpoint {qname}");
+
+                Err(FailedToResolveEndpoint)
+            }
+        }
+    }
+
+    /// Helper method that returns the first [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint] in the Async stream from [EndpointsResolver::resolve_svcb_endpoints]
+    pub async fn resolve_svcb_endpoint(
+        &self,
+        qname: &str,
+    ) -> Result<Endpoint, FailedToResolveEndpoint> {
+        let stream = self.resolve_https_endpoints(qname);
+
+        pin!(stream);
+
+        match stream.next().await {
+            Some(endpoint) => Ok(endpoint),
+            None => Err(FailedToResolveEndpoint),
+        }
+    }
+
+    /// Returns an async stream of either [HTTPS][crate::dns::rdata::RData::HTTPS] or [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint]s
+    pub fn resolve_endpoints<'a>(
+        &'a self,
+        qname: &'a str,
+        is_svcb: bool,
+    ) -> impl Stream<Item = Endpoint> + 'a {
+        Gen::new(|co| async move {
+            // TODO: cache the result of this function?
+            // TODO: test load balancing
+            // TODO: test failover
+            // TODO: custom max_chain_length
+
+            let mut depth = 0;
+            let mut stack: Vec<Endpoint> = Vec::new();
+
+            // Initialize the stack with endpoints from the starting domain.
+            if let Ok(tld) = PublicKey::try_from(qname) {
+                if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
+                    depth += 1;
+                    stack.extend(Endpoint::parse(&signed_packet, qname, is_svcb));
+                }
+            }
+
+            while let Some(next) = stack.pop() {
+                let current = next.domain();
+
+                // Attempt to resolve the domain as a public key.
+                match PublicKey::try_from(current) {
+                    Ok(tld) => match self.resolve(&tld).await {
+                        Ok(Some(signed_packet)) if depth < DEFAULT_MAX_CHAIN_LENGTH => {
+                            depth += 1;
+                            let endpoints = Endpoint::parse(&signed_packet, current, is_svcb);
+
+                            #[cfg(not(target_arch = "wasm32"))]
+                            tracing::trace!(?qname, ?depth, ?endpoints, "resolved endpoints");
+                            #[cfg(target_arch = "wasm32")]
+                            log::trace!("resolved endpoints qname: {qname}, depth: {depth}, endpoints: {:?}", endpoints);
+
+                            stack.extend(endpoints);
+                        }
+                        _ => break, // Stop on resolution failure or chain length exceeded.
+                    },
+                    // Yield if the domain is not pointing to another Pkarr TLD domain.
+                    Err(_) => co.yield_(next).await,
+                }
+            }
         })
     }
 }
 
-#[cfg(any(target_arch = "wasm32", feature = "relay"))]
-impl EndpointsResolver for crate::client::relay::Client {
-    async fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>, ResolveError> {
-        self.resolve(public_key)
-            .await
-            .map_err(ResolveError::Reqwest)
+#[derive(Debug)]
+pub struct FailedToResolveEndpoint;
+
+impl std::error::Error for FailedToResolveEndpoint {}
+
+impl std::fmt::Display for FailedToResolveEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Could not resolve clear net endpoint for the Pkarr domain"
+        )
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
 
-    use super::*;
     use crate::dns::rdata::SVCB;
     use crate::{Client, Keypair};
     use crate::{PublicKey, SignedPacket};

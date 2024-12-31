@@ -37,7 +37,7 @@ impl Debug for DhtServer {
 impl DhtServer {
     pub fn new(
         cache: Box<LmdbCache>,
-        resolvers: Option<Box<[SocketAddrV4]>>,
+        resolvers: Option<Vec<SocketAddrV4>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
         rate_limiter: Option<IpRateLimiter>,
@@ -46,8 +46,7 @@ impl DhtServer {
             // Default DhtServer used to stay a good citizen servicing the Dht.
             default_server: DefaultServer::default(),
             cache,
-            resolvers: resolvers
-                .map(|resolvers| pkarr::client::resolvres_to_socket_addrs(&resolvers)),
+            resolvers: resolvers.map(|r| r.into()),
             minimum_ttl,
             maximum_ttl,
             rate_limiter,

@@ -44,7 +44,7 @@ pub struct Config {
     /// Defaults to `6881`
     pub http_port: u16,
     /// Pkarr client configuration
-    pub pkarr_config: pkarr::Config,
+    pub pkarr_config: pkarr::client::Config,
     /// Path to cache database
     ///
     /// Defaults to a directory in the OS data directory
@@ -61,7 +61,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             http_port: 6881,
-            pkarr_config: pkarr::Config::default(),
+            pkarr_config: pkarr::client::Config::default(),
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: Some(RateLimiterConfig::default()),

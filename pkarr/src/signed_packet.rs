@@ -726,7 +726,7 @@ pub enum SignedPacketBuildError {
     FailedToWrite(#[from] SimpleDnsError),
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use simple_dns::rdata::CNAME;
 
@@ -848,7 +848,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "dht")]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
     #[test]
     fn to_mutable() {
         let keypair = Keypair::random();

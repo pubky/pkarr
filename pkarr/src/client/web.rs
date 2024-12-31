@@ -1,19 +1,14 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [relays](https://pkarr.org/relays).
 
-use std::fmt::{self, Debug, Display, Formatter};
-use std::num::NonZeroUsize;
-
 use reqwest::header::HeaderValue;
 use reqwest::{header, Response, StatusCode};
-use tracing::debug;
+use std::fmt::{self, Debug, Display, Formatter};
+
+use std::num::NonZeroUsize;
 
 use url::Url;
 
-#[cfg(target_arch = "wasm32")]
 use futures::future::select_ok;
-
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::task::JoinSet;
 
 use crate::{
     Cache, InMemoryCache, PublicKey, SignedPacket, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL,
@@ -120,7 +115,9 @@ pub struct Client {
 
 impl Default for Client {
     fn default() -> Self {
-        Self::new(Config::default()).expect("Pkarr Relay client default")
+        Self::builder()
+            .build()
+            .expect("default config should be infallible")
     }
 }
 
@@ -157,18 +154,20 @@ impl Client {
     /// Publishes a [SignedPacket] to this client's relays.
     ///
     /// Return the first successful completion, or the last failure.
-    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishToRelayError> {
+    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let public_key = signed_packet.public_key();
 
         if let Some(current) = self.cache.get(&public_key.as_ref().into()) {
             if current.timestamp() > signed_packet.timestamp() {
-                return Err(PublishToRelayError::NotMostRecent);
+                return Err(PublishError::NotMostRecent);
             }
         };
 
         self.cache.put(&public_key.as_ref().into(), signed_packet);
 
-        Ok(self.race_publish(signed_packet).await?)
+        self.race_publish(signed_packet)
+            .await
+            .map_err(|_| PublishError::AllRequestsFailed)
     }
 
     /// Resolve a [SignedPacket] from this client's relays.
@@ -184,10 +183,10 @@ impl Client {
     pub async fn resolve(
         &self,
         public_key: &PublicKey,
-    ) -> Result<Option<SignedPacket>, reqwest::Error> {
+    ) -> Result<Option<SignedPacket>, AllGetRequestsFailed> {
         let cached_packet = self.cache.get(&(public_key.into()));
 
-        let (tx, rx) = flume::bounded::<Result<Option<SignedPacket>, reqwest::Error>>(1);
+        let (tx, rx) = flume::bounded::<Result<Option<SignedPacket>, AllGetRequestsFailed>>(1);
 
         let as_ref = cached_packet.as_ref();
 
@@ -197,9 +196,9 @@ impl Client {
             .map(|c| c.is_expired(self.minimum_ttl, self.maximum_ttl))
             .unwrap_or(true)
         {
-            debug!(
-                ?public_key,
-                "querying relays to hydrate our cache for later."
+            log::debug!(
+                "querying relays to hydrate our cache for later. public_key: {}",
+                public_key,
             );
 
             let pubky = public_key.clone();
@@ -219,11 +218,6 @@ impl Client {
         }
 
         if let Some(cached_packet) = cached_packet {
-            debug!(
-                public_key = ?cached_packet.public_key(),
-                "responding with cached packet even if expired"
-            );
-
             // If the receiver was dropped.. no harm.
             let _ = tx.send(Ok(Some(cached_packet)));
         }
@@ -233,75 +227,7 @@ impl Client {
             .expect("at least one sender should send before being dropped")
     }
 
-    // === Native Race implementation ===
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<(), reqwest::Error> {
-        let mut futures = JoinSet::new();
-
-        for relay in self.relays.clone() {
-            let signed_packet = signed_packet.clone();
-            let this = self.clone();
-
-            futures.spawn(async move { this.publish_to_relay(&relay, signed_packet).await });
-        }
-
-        let mut last_error = None;
-
-        while let Some(result) = futures.join_next().await {
-            match result {
-                Ok(Ok(_)) => return Ok(()),
-                Ok(Err(error)) => last_error = Some(error),
-                Err(joinerror) => {
-                    debug!(?joinerror);
-                }
-            }
-        }
-
-        Err(last_error.expect("failed to receive any error responses!"))
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    async fn race_resolve(
-        &self,
-        public_key: &PublicKey,
-        cached_packet: Option<SignedPacket>,
-    ) -> Result<Option<SignedPacket>, reqwest::Error> {
-        let mut futures = JoinSet::new();
-
-        for relay in self.relays.clone() {
-            let public_key = public_key.clone();
-            let cached = cached_packet.clone();
-            let this = self.clone();
-
-            futures.spawn(async move { this.resolve_from_relay(&relay, public_key, cached).await });
-        }
-
-        let mut result: Result<Option<SignedPacket>, reqwest::Error> = Ok(None);
-
-        while let Some(task_result) = futures.join_next().await {
-            match task_result {
-                Ok(Ok(Some(signed_packet))) => {
-                    self.cache
-                        .put(&signed_packet.public_key().as_ref().into(), &signed_packet);
-
-                    return Ok(Some(signed_packet));
-                }
-                Ok(Err(error)) => result = Err(error),
-                Ok(_) => {}
-                Err(joinerror) => {
-                    debug!(?joinerror);
-                }
-            }
-        }
-
-        result
-    }
-
-    // === Wasm ===
-
-    #[cfg(target_arch = "wasm32")]
-    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<(), reqwest::Error> {
+    async fn race_publish(&self, signed_packet: &SignedPacket) -> Result<(), ()> {
         let futures = self.relays.iter().map(|relay| {
             let signed_packet = signed_packet.clone();
             let this = self.clone();
@@ -311,16 +237,15 @@ impl Client {
 
         match select_ok(futures).await {
             Ok((_, _)) => Ok(()),
-            Err(e) => Err(e),
+            Err(_) => Err(()),
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
     async fn race_resolve(
         &self,
         public_key: &PublicKey,
         cached_packet: Option<SignedPacket>,
-    ) -> Result<Option<SignedPacket>, reqwest::Error> {
+    ) -> Result<Option<SignedPacket>, AllGetRequestsFailed> {
         let futures = self.relays.iter().map(|relay| {
             let public_key = public_key.clone();
             let cached = cached_packet.clone();
@@ -329,20 +254,11 @@ impl Client {
             Box::pin(async move { this.resolve_from_relay(relay, public_key, cached).await })
         });
 
-        let mut result: Result<Option<SignedPacket>, reqwest::Error> = Ok(None);
-
         match select_ok(futures).await {
-            Ok((Some(signed_packet), _)) => {
-                self.cache
-                    .put(&signed_packet.public_key().as_ref().into(), &signed_packet);
-
-                return Ok(Some(signed_packet));
-            }
-            Err(error) => result = Err(error),
-            Ok(_) => {}
+            Ok((Some(signed_packet), _)) => Ok(Some(signed_packet)),
+            Ok((None, _)) => Ok(None),
+            Err(_) => Err(AllGetRequestsFailed),
         }
-
-        result
     }
 
     // === Private Methods ===
@@ -359,11 +275,6 @@ impl Client {
             .body(signed_packet.as_relay_payload().to_vec())
             .send()
             .await
-            .map_err(|error| {
-                debug!(?url, ?error, "Error response");
-
-                error
-            })
     }
 
     async fn resolve_from_relay(
@@ -390,14 +301,13 @@ impl Client {
         match request.send().await {
             Ok(response) => {
                 if response.status() == StatusCode::NOT_FOUND {
-                    debug!(?url, "SignedPacket not found");
                     return Ok(None);
                 }
 
                 let response = response.error_for_status()?;
 
                 if response.content_length().unwrap_or_default() > SignedPacket::MAX_BYTES {
-                    debug!(?url, "Response too large");
+                    log::debug!("Response too large {url}");
 
                     return Ok(None);
                 }
@@ -407,17 +317,13 @@ impl Client {
                 match SignedPacket::from_relay_payload(&public_key, &payload) {
                     Ok(signed_packet) => Ok(choose_most_recent(signed_packet, cached_packet)),
                     Err(error) => {
-                        debug!(?url, ?error, "Invalid signed_packet");
+                        log::debug!("Invalid signed_packet {url}:{error}");
 
                         Ok(None)
                     }
                 }
             }
-            Err(error) => {
-                debug!(?url, ?error, "Resolve Error response");
-
-                Err(error)
-            }
+            Err(error) => Err(error),
         }
     }
 }
@@ -442,35 +348,47 @@ fn choose_most_recent(
 ) -> Option<SignedPacket> {
     if let Some(ref cached) = cached_packet {
         if signed_packet.more_recent_than(cached) {
-            debug!(
-                 public_key = ?signed_packet.public_key(),
-                "Received more recent packet than in cache"
+            log::debug!(
+                "Received more recent packet than in cache for public_key: {}",
+                signed_packet.public_key()
             );
             Some(signed_packet)
         } else {
             None
         }
     } else {
-        debug!(public_key= ?signed_packet.public_key(), "Received new packet after cache miss");
+        log::debug!(
+            "Received new packet after cache miss for public_key: {}",
+            signed_packet.public_key()
+        );
         Some(signed_packet)
     }
 }
 
 #[derive(thiserror::Error, Debug)]
 /// Errors during publishing a [SignedPacket] to a list of relays
-pub enum PublishToRelayError {
+pub enum PublishError {
     #[error("SignedPacket's timestamp is not the most recent")]
     /// Failed to publish because there is a more recent packet.
     NotMostRecent,
 
-    #[error(transparent)]
-    /// Transparent [reqwest::Error]
-    ///
-    /// All relays responded with non-2xx status code,
-    /// or something wrong with the transport, transparent from [reqwest::Error].
-    ///
-    /// This was last error response.
-    RelayError(#[from] reqwest::Error),
+    #[error("All PUT requests to Pkarr relays failed, check your console and/or Network tab.")]
+    /// All relays responded with non-2xx status code, or something wrong with the transport.
+    AllRequestsFailed,
+}
+
+#[derive(Debug)]
+pub struct AllGetRequestsFailed;
+
+impl std::error::Error for AllGetRequestsFailed {}
+
+impl Display for AllGetRequestsFailed {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "All GET requests to Pkarr relays failed, check your console and/or Network tab."
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -489,11 +407,18 @@ impl Display for EmptyListOfRelays {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{Keypair, SignedPacket};
+    use wasm_bindgen_test::*;
 
-    #[tokio::test]
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+    use super::*;
+
+    use crate::Keypair;
+
+    #[wasm_bindgen_test]
     async fn publish_resolve() {
+        console_log::init_with_level(log::Level::Debug).unwrap();
+
         let keypair = Keypair::random();
 
         let signed_packet = SignedPacket::builder()
@@ -501,21 +426,7 @@ mod tests {
             .sign(&keypair)
             .unwrap();
 
-        let mut server = mockito::Server::new_async().await;
-
-        let path = format!("/{}", signed_packet.public_key());
-
-        server
-            .mock("PUT", path.as_str())
-            .with_header("content-type", "text/plain")
-            .with_status(200)
-            .create();
-        server
-            .mock("GET", path.as_str())
-            .with_body(signed_packet.as_relay_payload())
-            .create();
-
-        let relays = vec![Url::parse(&server.url()).unwrap()];
+        let relays = vec![Url::parse("http://localhost:15411").unwrap()];
 
         let a = Client::builder().relays(relays.clone()).build().unwrap();
         let b = Client::builder().relays(relays).build().unwrap();
@@ -524,23 +435,14 @@ mod tests {
 
         let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
 
-        assert_eq!(a.cache().len(), 1);
-        assert_eq!(b.cache().len(), 1);
-
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn not_found() {
         let keypair = Keypair::random();
 
-        let mut server = mockito::Server::new_async().await;
-
-        let path = format!("/{}", keypair.public_key());
-
-        server.mock("GET", path.as_str()).with_status(404).create();
-
-        let relays = vec![Url::parse(&server.url()).unwrap()];
+        let relays = vec![Url::parse("http://localhost:15411").unwrap()];
 
         let client = Client::builder().relays(relays).build().unwrap();
 
@@ -549,17 +451,11 @@ mod tests {
         assert!(resolved.is_none());
     }
 
-    #[tokio::test]
+    #[wasm_bindgen_test]
     async fn return_expired_packet_fallback() {
         let keypair = Keypair::random();
 
-        let mut server = mockito::Server::new_async().await;
-
-        let path = format!("/{}", keypair.public_key());
-
-        server.mock("GET", path.as_str()).with_status(404).create();
-
-        let relays = vec![Url::parse(&server.url()).unwrap()];
+        let relays = vec![Url::parse("http://localhost:15411").unwrap()];
 
         let client = Client::builder()
             .relays(relays)

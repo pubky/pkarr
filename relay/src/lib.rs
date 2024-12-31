@@ -88,6 +88,8 @@ impl Relay {
     pub async unsafe fn start(config: Config) -> anyhow::Result<Self> {
         let mut config = config;
 
+        tracing::debug!(?config, "Pkarr server config");
+
         let cache_path = match config.cache_path {
             Some(path) => path,
             None => {
@@ -148,6 +150,28 @@ impl Relay {
     ///
     /// Make sure to read the safety section in [Self::start]
     pub async fn start_unsafe(config: Config) -> anyhow::Result<Self> {
+        unsafe { Self::start(config).await }
+    }
+
+    /// Run a Pkarr relay in a Testnet mode (on port 15411).
+    ///
+    /// # Safety
+    /// See [Self::start]
+    pub async fn start_testnet() -> anyhow::Result<Self> {
+        let testnet = mainline::Testnet::new(10)?;
+
+        let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
+
+        let mut config = Config {
+            http_port: 15411,
+            cache_path: Some(storage.join("pkarr-relay")),
+            rate_limiter: None,
+            ..Default::default()
+        };
+
+        config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
+        config.pkarr_config.resolvers = Some(vec![]);
+
         unsafe { Self::start(config).await }
     }
 

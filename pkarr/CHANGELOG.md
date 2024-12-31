@@ -22,7 +22,6 @@ All notable changes to pkarr will be documented in this file.
 - Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
 - Implement `FromStr` for `PublicKey`
 - Implement `TryFrom<MutableItem>` for `SignedPacket`
-- Add `resolvres_to_socket_addrs()` function.
 
 ### Changed
 
@@ -41,7 +40,7 @@ All notable changes to pkarr will be documented in this file.
 
 ### Removed
 
-- Remvoed `relay_client_web`, replaced with *(pkarr::relay::Client)*.
+- Remvoed `relay_client_web`, replaced with *(pkarr::Client)*.
 - Removed `SignedPacket::from_packet`.
 - Removed `SignedPacket::packet` getter.
 - Removed rexported `mainline`

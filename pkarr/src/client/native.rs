@@ -30,7 +30,7 @@ pub struct Config {
     /// Dht is missing values not't republished often enough.
     ///
     /// Defaults to [DEFAULT_RESOLVERS]
-    pub resolvers: Option<Box<[SocketAddrV4]>>,
+    pub resolvers: Option<Vec<SocketAddrV4>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: NonZeroUsize,
     /// Used in the `min` parameter in [SignedPacket::expires_in].
@@ -51,7 +51,7 @@ impl Default for Config {
             dht_config: mainline::rpc::Config::default(),
             cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
                 .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
-            resolvers: Some(resolvres_to_socket_addrs(&DEFAULT_RESOLVERS)),
+            resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
@@ -65,7 +65,7 @@ pub struct ClientBuilder(Config);
 impl ClientBuilder {
     /// Set custom set of [resolvers](Config::resolvers).
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
-        self.0.resolvers = resolvers.map(|resolvers| resolvres_to_socket_addrs(&resolvers));
+        self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
 
         self
     }
@@ -387,7 +387,12 @@ pub enum PublishError {
 
 fn run(cache: Box<dyn Cache>, config: Config, receiver: Receiver<ActorMessage>) {
     match Rpc::new(config.dht_config) {
-        Ok(mut rpc) => actor_thread(&mut rpc, cache, receiver, config.resolvers),
+        Ok(mut rpc) => actor_thread(
+            &mut rpc,
+            cache,
+            receiver,
+            config.resolvers.map(|r| r.into()),
+        ),
         Err(err) => {
             if let Ok(ActorMessage::Check(sender)) = receiver.try_recv() {
                 let _ = sender.send(Err(err));
@@ -440,7 +445,7 @@ fn actor_thread(
                                 salt: None,
                             },
                         ),
-                        resolvers.clone(),
+                        resolvers.as_deref(),
                     ) {
                         for response in responses {
                             if let Response::Mutable(mutable_item) = response {
@@ -540,7 +545,7 @@ impl Info {
     }
 }
 
-pub fn resolvres_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Box<[SocketAddrV4]> {
+pub fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<SocketAddrV4> {
     resolvers
         .iter()
         .flat_map(|resolver| {
@@ -553,7 +558,6 @@ pub fn resolvres_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Box<[Sock
         })
         .flatten()
         .collect::<Vec<_>>()
-        .into()
 }
 
 #[cfg(test)]

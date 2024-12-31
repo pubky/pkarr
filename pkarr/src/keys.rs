@@ -285,6 +285,14 @@ impl TryFrom<String> for PublicKey {
     }
 }
 
+impl TryFrom<&String> for PublicKey {
+    type Error = PublicKeyError;
+
+    fn try_from(s: &String) -> Result<PublicKey, PublicKeyError> {
+        s.try_into()
+    }
+}
+
 impl Display for PublicKey {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(

@@ -3,10 +3,8 @@
 #![doc = document_features::document_features!()]
 //!
 
-// TODO: once we merge udp and relay clients, we should have a "client" feature
-
 // Modules
-#[cfg(any(target_arch = "wasm32", feature = "relay", feature = "dht"))]
+#[cfg(feature = "client")]
 pub mod client;
 pub mod extra;
 mod keys;
@@ -24,14 +22,12 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
 
 // Exports
-#[cfg(any(target_arch = "wasm32", feature = "relay", feature = "dht"))]
+#[cfg(feature = "client")]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 pub use keys::{Keypair, PublicKey};
 pub use signed_packet::SignedPacket;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-pub use client::dht::Info;
-#[cfg(any(target_arch = "wasm32", feature = "dht"))]
+#[cfg(feature = "client")]
 pub use client::{Client, Config};
 
 // Rexports
@@ -40,11 +36,11 @@ pub use simple_dns as dns;
 pub mod errors {
     //! Exported errors
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-    pub use super::client::dht::{ClientWasShutdown, PublishError};
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
+    pub use super::client::native::{ClientWasShutdown, PublishError};
 
-    #[cfg(any(target_arch = "wasm32", feature = "relay"))]
-    pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
+    #[cfg(all(feature = "client", target_arch = "wasm32"))]
+    pub use super::client::web::{AllGetRequestsFailed, EmptyListOfRelays, PublishError};
 
     pub use super::keys::PublicKeyError;
     pub use super::signed_packet::SignedPacketBuildError;

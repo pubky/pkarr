@@ -31,5 +31,11 @@ clap = { version = "4.5.21", features = ["derive"] }
 dirs-next = "2.0.0"
 pkarr = { version = "3.0.0", path = "../pkarr", features = ["dht", "lmdb-cache"] }
 httpdate = "1.0.3"
-pubky-timestamp = { version = "0.2.0", features = ["httpdate"] }
-mainline = { git = "https://github.com/pubky/mainline", branch="v5", default-features = false }
+pubky-timestamp = { version = "0.2.0" }
+mainline = { git = "https://github.com/pubky/mainline", branch="v5" }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints.clippy]
+unwrap_used = "deny"
