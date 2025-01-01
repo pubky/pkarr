@@ -262,10 +262,7 @@ impl FromStr for PublicKey {
             Err(PublicKeyError::InvalidPublicKeyEncoding)
         }?;
 
-        let verifying_key = VerifyingKey::try_from(bytes.as_slice())
-            .map_err(|_| PublicKeyError::InvalidPublicKeyLength(bytes.len()))?;
-
-        Ok(PublicKey(verifying_key))
+        bytes.as_slice().try_into()
     }
 }
 
@@ -342,7 +339,7 @@ impl<'de> Deserialize<'de> for PublicKey {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 /// Errors while trying to create a [PublicKey]
 pub enum PublicKeyError {
     #[error("Invalid PublicKey length, expected 32 bytes but got: {0}")]
@@ -593,5 +590,15 @@ mod tests {
                 72, 161, 139, 89, 218, 41,
             ]
         )
+    }
+
+    #[test]
+    fn invalid_key() {
+        let key = "c1bkg8tfsyy8wcedtmw4fwhdmm7bbzhgg3z58tf43m5ow8w9mbus";
+
+        assert_eq!(
+            PublicKey::try_from(key),
+            Err(PublicKeyError::InvalidEd25519PublicKey)
+        );
     }
 }

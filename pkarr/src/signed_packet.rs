@@ -714,7 +714,7 @@ pub enum SignedPacketVerifyError {
     PublicKeyError(#[from] PublicKeyError),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 /// Errors trying to create a new [SignedPacket]
 pub enum SignedPacketBuildError {
     #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
