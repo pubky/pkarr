@@ -1682,6 +1682,7 @@ dependencies = [
  "axum-server",
  "base32",
  "byteorder",
+ "bytes",
  "clap",
  "console_log",
  "document-features",

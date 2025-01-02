@@ -101,7 +101,7 @@ pub async fn get(
                 *response.status_mut() = StatusCode::NOT_MODIFIED;
             }
         } else {
-            *response.body_mut() = signed_packet.as_relay_payload().to_vec().into();
+            *response.body_mut() = signed_packet.to_relay_payload().into();
         };
 
         Ok(response)
