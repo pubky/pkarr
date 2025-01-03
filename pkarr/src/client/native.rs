@@ -10,15 +10,21 @@ use std::{
     collections::HashMap,
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     num::NonZeroUsize,
-    thread,
+    thread, u32,
 };
 use tracing::debug;
+use url::Url;
 
 use crate::{
-    Cache, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
-    DEFAULT_RESOLVERS,
+    Cache, CacheKey, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
+    DEFAULT_RELAYS, DEFAULT_RESOLVERS,
 };
 use crate::{PublicKey, SignedPacket};
+
+use super::relays::RelaysClient;
+
+// TODO: recognize when the cache is updated since `publish` was called,
+// and return an error ... a CAS error maybe.
 
 #[derive(Debug)]
 /// [Client]'s Config
@@ -32,7 +38,7 @@ pub struct Config {
     /// Defaults to [DEFAULT_RESOLVERS]
     pub resolvers: Option<Vec<SocketAddrV4>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
-    pub cache_size: NonZeroUsize,
+    pub cache_size: usize,
     /// Used in the `min` parameter in [SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MINIMUM_TTL]
@@ -43,18 +49,30 @@ pub struct Config {
     pub maximum_ttl: u32,
     /// Custom [Cache] implementation, defaults to [InMemoryCache]
     pub cache: Option<Box<dyn Cache>>,
+
+    /// Pkarr [Relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) Urls
+    #[cfg(feature = "relay")]
+    pub relays: Option<Vec<Url>>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             dht_config: mainline::rpc::Config::default(),
-            cache_size: NonZeroUsize::new(DEFAULT_CACHE_SIZE)
-                .expect("NonZeroUsize from DEFAULT_CACHE_SIZE"),
+            cache_size: DEFAULT_CACHE_SIZE,
             resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
+            #[cfg(feature = "relay")]
+            relays: Some(
+                DEFAULT_RELAYS
+                    .iter()
+                    .map(|s| {
+                        Url::parse(s).expect("DEFAULT_RELAYS should be parsed to Url successfully.")
+                    })
+                    .collect(),
+            ),
         }
     }
 }
@@ -63,6 +81,16 @@ impl Default for Config {
 pub struct ClientBuilder(Config);
 
 impl ClientBuilder {
+    /// Similar to crates `no-default-features`, this method will remove the default
+    /// [mainline::Config::bootstrap], [Config::resolvers], and [Config::relays].
+    ///
+    /// You will have to add one or more for this client to function.
+    pub fn no_default_network(mut self) -> Self {
+        self.0.relays = None;
+
+        self
+    }
+
     /// Set custom set of [resolvers](Config::resolvers).
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
         self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
@@ -73,7 +101,9 @@ impl ClientBuilder {
     /// Set the [Config::cache_size].
     ///
     /// Controls the capacity of [Cache].
-    pub fn cache_size(mut self, cache_size: NonZeroUsize) -> Self {
+    ///
+    /// If set to `0` cache will be disabled.
+    pub fn cache_size(mut self, cache_size: usize) -> Self {
         self.0.cache_size = cache_size;
 
         self
@@ -127,7 +157,7 @@ impl ClientBuilder {
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
 pub struct Client {
     sender: Sender<ActorMessage>,
-    cache: Box<dyn Cache>,
+    cache: Option<Box<dyn Cache>>,
     minimum_ttl: u32,
     maximum_ttl: u32,
 }
@@ -136,10 +166,17 @@ impl Client {
     pub fn new(config: Config) -> Result<Client, std::io::Error> {
         let (sender, receiver) = flume::bounded(32);
 
-        let cache = config
-            .cache
-            .clone()
-            .unwrap_or(Box::new(InMemoryCache::new(config.cache_size)));
+        let cache = if config.cache_size == 0 {
+            None
+        } else {
+            Some(
+                config.cache.clone().unwrap_or(Box::new(InMemoryCache::new(
+                    NonZeroUsize::new(config.cache_size)
+                        .expect("if cache size is zero cache should be disabled."),
+                ))),
+            )
+        };
+
         let cache_clone = cache.clone();
 
         let client = Client {
@@ -186,7 +223,7 @@ impl Client {
     }
 
     /// Returns a reference to the internal cache.
-    pub fn cache(&self) -> &dyn Cache {
+    pub fn cache(&self) -> Option<&Box<dyn Cache>> {
         self.cache.as_ref()
     }
 
@@ -198,9 +235,22 @@ impl Client {
             .recv_async()
             .await
             .expect("Query was dropped before sending a response, please open an issue.")
-            .map_err(|error| match error {
-                PutError::PutQueryIsInflight(_) => PublishError::PublishInflight,
-                _ => PublishError::MainlinePutError(error),
+            .map_err(|_error| {
+                // TODO: do better.
+                PublishError::PublishInflight
+            })?;
+
+        Ok(())
+    }
+
+    /// Publishes a [SignedPacket] to the Dht.
+    pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
+        self.publish_inner(signed_packet)?
+            .recv()
+            .expect("Query was dropped before sending a response, please open an issue.")
+            .map_err(|_error| {
+                // TODO: do better.
+                PublishError::PublishInflight
             })?;
 
         Ok(())
@@ -208,15 +258,11 @@ impl Client {
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
     /// If there is no packet in the cache, or if the cached packet is expired,
-    /// it will make a DHT in the background query and caches any more recent packets it receieves.
+    /// it will make a DHT query in a background query and caches any more recent packets it receieves.
     ///
     /// If you want to have more control, you can call [Self::resolve_rx] directly,
     /// and then [iterate](flume::Receiver::recv) over or [stream](flume::Receiver::recv_async)
     /// incoming [SignedPacket]s until your lookup criteria is satisfied.
-    ///
-    /// # Errors
-    /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
-    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     pub async fn resolve(
         &self,
         public_key: &PublicKey,
@@ -224,40 +270,13 @@ impl Client {
         Ok(self.resolve_rx(public_key)?.recv_async().await.ok())
     }
 
-    /// Shutdown the actor thread loop.
-    pub async fn shutdown(&mut self) {
-        let (sender, receiver) = flume::bounded(1);
-
-        let _ = self.sender.send(ActorMessage::Shutdown(sender));
-        let _ = receiver.recv_async().await;
-    }
-
-    // === Sync ===
-
-    /// Publishes a [SignedPacket] to the Dht.
-    pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
-        self.publish_inner(signed_packet)?
-            .recv()
-            .expect("Query was dropped before sending a response, please open an issue.")
-            .map_err(|error| match error {
-                PutError::PutQueryIsInflight(_) => PublishError::PublishInflight,
-                _ => PublishError::MainlinePutError(error),
-            })?;
-
-        Ok(())
-    }
-
     /// Returns a [SignedPacket] from the cache even if it is expired.
     /// If there is no packet in the cache, or if the cached packet is expired,
-    /// it will make a DHT in the background query and caches any more recent packets it receieves.
+    /// it will make a DHT query in a background query and caches any more recent packets it receieves.
     ///
     /// If you want to have more control, you can call [Self::resolve_rx] directly,
     /// and then [iterate](flume::Receiver::recv) over or [stream](flume::Receiver::recv_async)
     /// incoming [SignedPacket]s until your lookup criteria is satisfied.
-    ///
-    /// # Errors
-    /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
-    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     pub fn resolve_sync(
         &self,
         public_key: &PublicKey,
@@ -268,17 +287,16 @@ impl Client {
     /// Returns a [flume::Receiver<SignedPacket>] that allows [iterating](flume::Receiver::recv) over or
     /// [streaming](flume::Receiver::recv_async) incoming [SignedPacket]s, in case you need more control over your
     /// caching strategy and when resolution should terminate, as well as filtering [SignedPacket]s according to a custom criteria.
-    ///
-    /// # Errors
-    /// - Returns a [ClientWasShutdown] if [Client::shutdown] was called, or
-    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     pub fn resolve_rx(
         &self,
         public_key: &PublicKey,
     ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
         let target = MutableItem::target_from_key(public_key.as_bytes(), None);
 
-        let cached_packet = self.cache.get(target.as_bytes());
+        let cached_packet = self
+            .cache
+            .as_ref()
+            .and_then(|cache| cache.get(target.as_bytes()));
 
         let (tx, rx) = flume::bounded::<SignedPacket>(1);
 
@@ -322,6 +340,14 @@ impl Client {
     }
 
     /// Shutdown the actor thread loop.
+    pub async fn shutdown(&mut self) {
+        let (sender, receiver) = flume::bounded(1);
+
+        let _ = self.sender.send(ActorMessage::Shutdown(sender));
+        let _ = receiver.recv_async().await;
+    }
+
+    /// Shutdown the actor thread loop.
     pub fn shutdown_sync(&self) {
         let (sender, receiver) = flume::bounded(1);
 
@@ -334,29 +360,30 @@ impl Client {
     pub(crate) fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
-    ) -> Result<Receiver<Result<Id, PutError>>, PublishError> {
-        let mutable_item: MutableItem = (signed_packet).into();
+    ) -> Result<Receiver<Result<(), ()>>, PublishError> {
+        let cache_key = CacheKey::from(signed_packet.public_key());
 
-        if let Some(current) = self.cache.get(mutable_item.target().as_bytes()) {
-            if current.timestamp() > signed_packet.timestamp() {
-                return Err(PublishError::NotMostRecent);
-            }
-        };
+        if let Some(cache) = &self.cache {
+            if let Some(current) = cache.get(&cache_key) {
+                if current.timestamp() > signed_packet.timestamp() {
+                    return Err(PublishError::NotMostRecent);
+                }
+            };
 
-        self.cache
-            .put(mutable_item.target().as_bytes(), signed_packet);
+            cache.put(&cache_key, signed_packet);
+        }
 
-        let (sender, receiver) = flume::bounded::<Result<Id, PutError>>(1);
+        let (sender, receiver) = flume::bounded::<Result<(), ()>>(1);
 
         self.sender
-            .send(ActorMessage::Publish(mutable_item, sender))
+            .send(ActorMessage::Publish(signed_packet.clone(), sender))
             .map_err(|_| PublishError::ClientWasShutdown)?;
 
         Ok(receiver)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ClientWasShutdown;
 
 impl std::error::Error for ClientWasShutdown {}
@@ -385,13 +412,18 @@ pub enum PublishError {
     MainlinePutError(#[from] PutError),
 }
 
-fn run(cache: Box<dyn Cache>, config: Config, receiver: Receiver<ActorMessage>) {
+fn run(cache: Option<Box<dyn Cache>>, config: Config, receiver: Receiver<ActorMessage>) {
+    let cache_clone = cache.clone();
+
     match Rpc::new(config.dht_config) {
         Ok(mut rpc) => actor_thread(
             &mut rpc,
             cache,
             receiver,
             config.resolvers.map(|r| r.into()),
+            config
+                .relays
+                .map(|r| RelaysClient::new(r.into(), cache_clone)),
         ),
         Err(err) => {
             if let Ok(ActorMessage::Check(sender)) = receiver.try_recv() {
@@ -403,12 +435,13 @@ fn run(cache: Box<dyn Cache>, config: Config, receiver: Receiver<ActorMessage>) 
 
 fn actor_thread(
     rpc: &mut Rpc,
-    cache: Box<dyn Cache>,
+    cache: Option<Box<dyn Cache>>,
     receiver: Receiver<ActorMessage>,
     resolvers: Option<Box<[SocketAddrV4]>>,
+    relays: Option<RelaysClient>,
 ) {
     let mut resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
-    let mut publish_senders: HashMap<Id, Sender<Result<Id, PutError>>> = HashMap::new();
+    let mut publish_senders: HashMap<Id, Sender<Result<(), ()>>> = HashMap::new();
 
     loop {
         // === Receive actor messages ===
@@ -419,16 +452,30 @@ fn actor_thread(
                     let _ = sender.send(());
                     break;
                 }
-                ActorMessage::Publish(mutable_item, sender) => {
-                    let target = *mutable_item.target();
+                ActorMessage::Publish(signed_packet, sender) => {
+                    // TODO: rename feature relay to relays.
+                    #[cfg(feature = "relay")]
+                    {
+                        if let Some(relays) = &relays {
+                            dbg!("CALLING RELAYS");
+                            relays.publish(&signed_packet, sender.clone());
+                        }
+                    }
 
-                    if let Err(put_error) = rpc.put(messages::PutRequestSpecific::PutMutable(
-                        mutable_item.into(),
-                    )) {
-                        let _ = sender.send(Err(put_error));
-                    } else {
-                        publish_senders.insert(target, sender);
-                    };
+                    #[cfg(feature = "dht")]
+                    {
+                        let mutable_item = mainline::MutableItem::from(&signed_packet);
+                        let target = *mutable_item.target();
+
+                        if let Err(put_error) = rpc.put(messages::PutRequestSpecific::PutMutable(
+                            mutable_item.into(),
+                        )) {
+                            // TODO: do better
+                            let _ = sender.send(Err(()));
+                        } else {
+                            publish_senders.insert(target, sender);
+                        };
+                    }
                 }
                 ActorMessage::Resolve(target, sender, most_recent_known_timestamp) => {
                     if let Some(senders) = resolve_senders.get_mut(&target) {
@@ -479,7 +526,10 @@ fn actor_thread(
 
         if let Some((target, Response::Mutable(mutable_item))) = &report.query_response {
             if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
-                let new_packet = if let Some(ref cached) = cache.get_read_only(target.as_bytes()) {
+                let new_packet = if let Some(ref cached) = cache
+                    .as_ref()
+                    .and_then(|cache| cache.get_read_only(target.as_bytes()))
+                {
                     if signed_packet.more_recent_than(cached) {
                         debug!(?target, "Received more recent packet than in cache");
 
@@ -493,7 +543,9 @@ fn actor_thread(
                 };
 
                 if let Some(packet) = new_packet {
-                    cache.put(target.as_bytes(), packet);
+                    if let Some(cache) = &cache {
+                        cache.put(target.as_bytes(), packet)
+                    };
 
                     if let Some(senders) = resolve_senders.get(target) {
                         for sender in senders {
@@ -514,9 +566,9 @@ fn actor_thread(
         for (id, error) in &report.done_put_queries {
             if let Some(sender) = publish_senders.remove(id) {
                 let _ = sender.send(if let Some(error) = error.to_owned() {
-                    Err(error)
+                    Err(())
                 } else {
-                    Ok(*id)
+                    Ok(())
                 });
             };
         }
@@ -526,7 +578,7 @@ fn actor_thread(
 }
 
 enum ActorMessage {
-    Publish(MutableItem, Sender<Result<Id, PutError>>),
+    Publish(SignedPacket, Sender<Result<(), ()>>),
     Resolve(Id, Sender<SignedPacket>, Option<u64>),
     Shutdown(Sender<()>),
     Info(Sender<Info>),
@@ -574,6 +626,7 @@ mod tests {
         let testnet = Testnet::new(3).unwrap();
 
         let client = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -588,6 +641,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -602,6 +656,7 @@ mod tests {
         a.publish_sync(&signed_packet).unwrap();
 
         let b = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -619,6 +674,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -633,6 +689,7 @@ mod tests {
         a.publish_sync(&signed_packet).unwrap();
 
         let b = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -654,6 +711,7 @@ mod tests {
         let testnet = Testnet::new(3).unwrap();
 
         let mut a = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -668,6 +726,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -682,6 +741,7 @@ mod tests {
         a.publish(&signed_packet).await.unwrap();
 
         let b = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -699,6 +759,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let a = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -713,6 +774,7 @@ mod tests {
         a.publish(&signed_packet).await.unwrap();
 
         let b = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -734,6 +796,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let client = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .dht_config(mainline::Config {
                 request_timeout: Duration::from_millis(10),
@@ -750,6 +813,7 @@ mod tests {
 
         client
             .cache()
+            .unwrap()
             .put(&keypair.public_key().into(), &signed_packet);
 
         let resolved = client.resolve(&keypair.public_key()).await.unwrap();
@@ -762,6 +826,7 @@ mod tests {
         let testnet = Testnet::new(10).unwrap();
 
         let client = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .maximum_ttl(0)
             .build()

@@ -35,6 +35,7 @@ All notable changes to pkarr will be documented in this file.
 - `Client::resolve`, `Client::resolve_sync` and `relay::Client::resolve` return expired cached `SignedPacket` _before_ making query to the network (Relays/Resolvers/Dht).
 - Update `simple-dns` so you can't use `Name::new("@")`, instead you should use `Name::new(".")`, `SignedPacket::resource_records("@")` still works.
 - Replace `ClientBuilder::testnet()` with `ClientBuilder::bootstrap()`.
+- `Client::cache()` returns an option, in case the cache size is set to zero.
 
 ### Removed
 
