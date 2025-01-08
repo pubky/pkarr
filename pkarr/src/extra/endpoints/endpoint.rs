@@ -6,7 +6,7 @@ use crate::{
     PublicKey, SignedPacket,
 };
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
@@ -20,6 +20,7 @@ pub struct Endpoint {
     port: u16,
     /// SocketAddrs from the [SignedPacket]
     addrs: Vec<IpAddr>,
+    params: BTreeMap<u16, Box<[u8]>>,
 }
 
 impl Endpoint {
@@ -95,10 +96,16 @@ impl Endpoint {
                     port,
                     public_key: signed_packet.public_key(),
                     addrs,
+                    params: s
+                        .iter_params()
+                        .map(|(key, value)| (key, value.into()))
+                        .collect(),
                 }
             })
             .collect::<Vec<_>>()
     }
+
+    // === Getters ===
 
     /// Returns the [SVCB] record's `target` value.
     ///
@@ -118,6 +125,8 @@ impl Endpoint {
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
+
+    // === Public Methods ===
 
     /// Return an iterator of [SocketAddr], either by resolving the [Endpoint::domain] using normal DNS,
     /// or, if the target is ".", return the [RData::A] or [RData::AAAA] records
@@ -140,6 +149,11 @@ impl Endpoint {
                 .to_socket_addrs()
                 .map_or(vec![], |v| v.collect::<Vec<_>>())
         }
+    }
+
+    // Returns a service parameter.
+    pub fn get_param(&self, key: u16) -> Option<&[u8]> {
+        self.params.get(&key).map(|v| v.as_ref())
     }
 }
 
