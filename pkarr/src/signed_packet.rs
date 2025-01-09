@@ -189,21 +189,23 @@ impl SignedPacket {
         bytes
     }
 
-    /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
+    /// Writes the serialized [SignedPacket], omitting the leading public_key, to the
+    /// given vector.
+    pub fn to_relay_payload_writer(&self, bytes: &mut Vec<u8>) -> Result<()> {
+        let mut encoder = BinEncoder::new(bytes);
+
+        encoder.emit_vec(&self.inner.signature.to_bytes())?;
+        encoder.emit_vec(&self.inner.timestamp.to_be_bytes())?;
+        self.inner.message.emit(&mut encoder)?;
+        Ok(())
+    }
+
+    /// Returns the serialized [SignedPacket] omitting the leading public_key,
     /// to be sent as a request/response body to or from [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub fn to_relay_payload(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1000);
-        {
-            let mut encoder = BinEncoder::new(&mut bytes);
-
-            encoder
-                .emit_vec(&self.inner.signature.to_bytes())
-                .expect("valid");
-            encoder
-                .emit_vec(&self.inner.timestamp.to_be_bytes())
-                .expect("valid");
-            self.inner.message.emit(&mut encoder).expect("valid");
-        }
+        self.to_relay_payload_writer(&mut bytes)
+            .expect("valid message");
 
         bytes
     }
