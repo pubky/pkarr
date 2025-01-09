@@ -33,7 +33,6 @@ pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
 
 // Rexports
 pub use bytes;
-pub use simple_dns as dns;
 
 #[cfg(not(target_arch = "wasm32"))]
 macro_rules! if_async {

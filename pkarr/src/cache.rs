@@ -65,7 +65,7 @@ impl PkarrCache for InMemoryPkarrCache {
 
         match lock.get_mut(target) {
             Some(existing) => {
-                if existing.as_bytes() == signed_packet.as_bytes() {
+                if existing == signed_packet {
                     // just refresh the last_seen
                     existing.set_last_seen(signed_packet.last_seen())
                 } else {

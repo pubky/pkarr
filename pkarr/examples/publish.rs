@@ -6,12 +6,14 @@
 //! run this example from the project root:
 //!     $ cargo run --example publish
 
+use hickory_proto::op::Message;
+use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
 use tracing::Level;
 use tracing_subscriber;
 
 use std::time::Instant;
 
-use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
+use pkarr::{Keypair, PkarrClient, Result, SignedPacket};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -22,13 +24,11 @@ fn main() -> Result<()> {
 
     let keypair = Keypair::random();
 
-    let mut packet = dns::Packet::new_reply(0);
-    packet.answers.push(dns::ResourceRecord::new(
-        dns::Name::new("_foo").unwrap(),
-        dns::CLASS::IN,
-        30,
-        dns::rdata::RData::TXT("bar".try_into()?),
-    ));
+    let mut packet = Message::new();
+    let mut record = Record::with(Name::from_ascii("_foo").unwrap(), RecordType::A, 30);
+    record.set_dns_class(DNSClass::IN);
+    record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+    packet.add_answer(record);
 
     let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
 
