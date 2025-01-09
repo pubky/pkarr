@@ -40,11 +40,9 @@ impl BytesEncode<'_> for SignedPacketCodec {
     type EItem = SignedPacket;
 
     fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
-        let bytes = signed_packet.to_vec();
-        let mut vec = Vec::with_capacity(bytes.len() + 8);
-
+        let mut vec = Vec::new();
         vec.extend(<U64<LittleEndian>>::bytes_encode(signed_packet.last_seen())?.as_ref());
-        vec.extend(bytes);
+        signed_packet.to_writer(&mut vec)?;
 
         Ok(Cow::Owned(vec))
     }

@@ -214,7 +214,7 @@ impl PkarrRelayClient {
                     if let Err(err) = reader.read_to_end(&mut payload) {
                         let _ = sender.send(Err(err.into()));
                     } else {
-                        match SignedPacket::from_relay_payload(&public_key, &payload) {
+                        match SignedPacket::from_relay_payload(public_key.clone(), &payload) {
                             Ok(signed_packet) => {
                                 let new_packet = if let Some(ref cached) = cached_packet {
                                     if signed_packet.more_recent_than(cached) {

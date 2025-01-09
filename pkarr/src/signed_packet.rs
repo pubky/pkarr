@@ -5,6 +5,7 @@ use ed25519_dalek::Signature;
 use hickory_proto::{
     op::{header::MessageType, Message},
     rr::{Name, RData, Record},
+    serialize::binary::{BinEncodable, BinEncoder},
 };
 use std::{
     char,
@@ -92,13 +93,30 @@ impl SignedPacket {
     /// - Returns [crate::Error::PacketTooLarge] if the payload is too large.
     /// - Returns [crate::Error::InvalidEd25519Signature] if the signature in the payload is invalid
     /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet
-    pub fn from_relay_payload(public_key: &PublicKey, payload: &[u8]) -> Result<SignedPacket> {
-        let mut bytes = Vec::with_capacity(payload.len() + 32);
+    pub fn from_relay_payload(public_key: PublicKey, bytes: &[u8]) -> Result<SignedPacket> {
+        if bytes.len() < 72 {
+            return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
+        }
+        if bytes.len() > 1104 - 32 {
+            return Err(Error::PacketTooLarge(bytes.len()));
+        }
 
-        bytes.extend_from_slice(public_key.as_bytes());
-        bytes.extend_from_slice(payload);
+        let signature = Signature::from_bytes(bytes[..64].try_into().unwrap());
+        let timestamp = u64::from_be_bytes(bytes[64..72].try_into().unwrap());
 
-        SignedPacket::from_bytes(&bytes)
+        let raw_message = &bytes[72..];
+        public_key.verify(&signable(timestamp, raw_message), &signature)?;
+        let message = Message::from_vec(raw_message)?;
+
+        Ok(SignedPacket {
+            inner: Arc::new(Inner {
+                public_key,
+                signature,
+                timestamp,
+                message,
+            }),
+            last_seen: system_time(),
+        })
     }
 
     /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
@@ -147,16 +165,26 @@ impl SignedPacket {
         })
     }
 
-    // === Getters ===
+    // === Encoding ===
+
+    /// Writes the serialized signed packet to the given vector.
+    /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
+    pub fn to_writer(&self, writer: &mut Vec<u8>) -> Result<()> {
+        let mut encoder = BinEncoder::new(writer);
+
+        encoder.emit_vec(self.inner.public_key.as_bytes())?;
+        encoder.emit_vec(&self.inner.signature.to_bytes())?;
+        encoder.emit_vec(&self.inner.timestamp.to_be_bytes())?;
+        self.inner.message.emit(&mut encoder)?;
+
+        Ok(())
+    }
 
     /// Returns the serialized signed packet:
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
     pub fn to_vec(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1104);
-        bytes.extend_from_slice(self.inner.public_key.as_bytes());
-        bytes.extend_from_slice(&self.inner.signature.to_bytes());
-        bytes.extend_from_slice(&self.inner.timestamp.to_be_bytes());
-        bytes.extend(self.inner.message.to_vec().expect("valid message"));
+        self.to_writer(&mut bytes).expect("vec");
 
         bytes
     }
@@ -165,12 +193,22 @@ impl SignedPacket {
     /// to be sent as a request/response body to or from [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub fn to_relay_payload(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1000);
-        bytes.extend_from_slice(&self.inner.signature.to_bytes());
-        bytes.extend_from_slice(&self.inner.timestamp.to_be_bytes());
-        bytes.extend(self.inner.message.to_vec().expect("valid message"));
+        {
+            let mut encoder = BinEncoder::new(&mut bytes);
+
+            encoder
+                .emit_vec(&self.inner.signature.to_bytes())
+                .expect("valid");
+            encoder
+                .emit_vec(&self.inner.timestamp.to_be_bytes())
+                .expect("valid");
+            self.inner.message.emit(&mut encoder).expect("valid");
+        }
 
         bytes
     }
+
+    // === Getters ===
 
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
     pub fn public_key(&self) -> &PublicKey {
@@ -473,7 +511,7 @@ mod tests {
         let signed_packet = SignedPacket::from_packet(&keypair, &message).unwrap();
 
         assert!(SignedPacket::from_relay_payload(
-            signed_packet.public_key(),
+            signed_packet.public_key().clone(),
             &signed_packet.to_relay_payload()
         )
         .is_ok());
@@ -484,7 +522,7 @@ mod tests {
         let keypair = Keypair::random();
 
         let bytes = vec![0; 1073];
-        let error = SignedPacket::from_relay_payload(&keypair.public_key(), &bytes);
+        let error = SignedPacket::from_relay_payload(keypair.public_key(), &bytes);
 
         assert!(error.is_err());
     }
@@ -633,7 +671,7 @@ mod tests {
 
         let public_key = keypair.public_key();
         let payload = signed.to_relay_payload();
-        let from_relay_payload = SignedPacket::from_relay_payload(&public_key, &payload).unwrap();
+        let from_relay_payload = SignedPacket::from_relay_payload(public_key, &payload).unwrap();
         assert_eq!(signed.to_vec(), from_relay_payload.to_vec());
     }
 
