@@ -221,6 +221,7 @@ mod tests {
     async fn direct_endpoint_resolution() {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -240,6 +241,7 @@ mod tests {
     async fn resolve_endpoints() {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -259,6 +261,7 @@ mod tests {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
             .bootstrap(&testnet.bootstrap)
+            .no_default_network()
             .dht_config(mainline::Config {
                 request_timeout: Duration::from_millis(20),
                 ..Default::default()
@@ -277,6 +280,7 @@ mod tests {
     async fn max_chain_exceeded() {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();
@@ -292,6 +296,7 @@ mod tests {
     async fn resolve_addresses() {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
+            .no_default_network()
             .bootstrap(&testnet.bootstrap)
             .build()
             .unwrap();

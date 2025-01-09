@@ -293,7 +293,7 @@ impl SignedPacket {
         let mut bytes = BytesMut::with_capacity(payload.len() + 32);
 
         bytes.extend_from_slice(public_key.as_bytes());
-        bytes.extend_from_slice(&payload);
+        bytes.extend_from_slice(payload);
 
         SignedPacket::from_bytes(&bytes.into())
     }

@@ -1698,8 +1698,8 @@ dependencies = [
  "log",
  "lru",
  "mainline",
- "once_cell",
  "page_size",
+ "pkarr-relay",
  "postcard",
  "pubky-timestamp",
  "rand",
@@ -1747,6 +1747,7 @@ dependencies = [
  "tower_governor",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

@@ -1,23 +1,19 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
 
 use flume::{Receiver, Sender};
-use mainline::{
-    errors::PutError,
-    rpc::{messages, Response, Rpc},
-    Id, MutableItem,
-};
+use mainline::{errors::PutError, rpc::Rpc, Id, MutableItem};
 use std::{
     collections::HashMap,
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     num::NonZeroUsize,
-    thread, u32,
+    thread,
 };
 use tracing::debug;
 use url::Url;
 
 use crate::{
-    Cache, CacheKey, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
-    DEFAULT_RELAYS, DEFAULT_RESOLVERS,
+    client::dht::DhtClient, Cache, CacheKey, InMemoryCache, DEFAULT_CACHE_SIZE,
+    DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS, DEFAULT_RESOLVERS,
 };
 use crate::{PublicKey, SignedPacket};
 
@@ -94,6 +90,12 @@ impl ClientBuilder {
     /// Set custom set of [resolvers](Config::resolvers).
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
         self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
+
+        self
+    }
+
+    pub fn relays(mut self, relays: Option<Vec<Url>>) -> Self {
+        self.0.relays = relays;
 
         self
     }
@@ -190,7 +192,7 @@ impl Client {
 
         thread::Builder::new()
             .name("Pkarr Dht actor thread".to_string())
-            .spawn(move || run(cache_clone, config, receiver))?;
+            .spawn(move || run(receiver, cache_clone, config))?;
 
         let (tx, rx) = flume::bounded(1);
 
@@ -223,8 +225,8 @@ impl Client {
     }
 
     /// Returns a reference to the internal cache.
-    pub fn cache(&self) -> Option<&Box<dyn Cache>> {
-        self.cache.as_ref()
+    pub fn cache(&self) -> Option<&dyn Cache> {
+        self.cache.as_deref()
     }
 
     // === Public Methods ===
@@ -412,37 +414,50 @@ pub enum PublishError {
     MainlinePutError(#[from] PutError),
 }
 
-fn run(cache: Option<Box<dyn Cache>>, config: Config, receiver: Receiver<ActorMessage>) {
+fn run(receiver: Receiver<ActorMessage>, cache: Option<Box<dyn Cache>>, config: Config) {
     let cache_clone = cache.clone();
 
-    match Rpc::new(config.dht_config) {
-        Ok(mut rpc) => actor_thread(
-            &mut rpc,
-            cache,
-            receiver,
-            config.resolvers.map(|r| r.into()),
-            config
-                .relays
-                .map(|r| RelaysClient::new(r.into(), cache_clone)),
-        ),
+    #[cfg(feature = "dht")]
+    let dht_client = match Rpc::new(config.dht_config) {
+        Ok(rpc) => {
+            let resolvers = config.resolvers.map(|r| r.into());
+
+            Some(DhtClient {
+                rpc,
+                cache,
+                resolvers,
+                resolve_senders: HashMap::new(),
+                publish_senders: HashMap::new(),
+            })
+        }
         Err(err) => {
             if let Ok(ActorMessage::Check(sender)) = receiver.try_recv() {
                 let _ = sender.send(Err(err));
             }
+
+            None
         }
-    }
+    };
+
+    #[cfg(not(feature = "dht"))]
+    let mut dht_client = None;
+
+    #[cfg(feature = "relay")]
+    let relays_client = config
+        .relays
+        .map(|r| RelaysClient::new(r.into(), cache_clone));
+
+    #[cfg(not(feature = "relay"))]
+    let mut relays_client = None;
+
+    actor_thread(receiver, dht_client, relays_client);
 }
 
 fn actor_thread(
-    rpc: &mut Rpc,
-    cache: Option<Box<dyn Cache>>,
     receiver: Receiver<ActorMessage>,
-    resolvers: Option<Box<[SocketAddrV4]>>,
-    relays: Option<RelaysClient>,
+    mut dht_client: Option<DhtClient>,
+    relays_client: Option<RelaysClient>,
 ) {
-    let mut resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>> = HashMap::new();
-    let mut publish_senders: HashMap<Id, Sender<Result<(), ()>>> = HashMap::new();
-
     loop {
         // === Receive actor messages ===
         if let Ok(actor_message) = receiver.try_recv() {
@@ -456,60 +471,31 @@ fn actor_thread(
                     // TODO: rename feature relay to relays.
                     #[cfg(feature = "relay")]
                     {
-                        if let Some(relays) = &relays {
-                            dbg!("CALLING RELAYS");
+                        if let Some(relays) = &relays_client {
                             relays.publish(&signed_packet, sender.clone());
                         }
                     }
 
                     #[cfg(feature = "dht")]
                     {
-                        let mutable_item = mainline::MutableItem::from(&signed_packet);
-                        let target = *mutable_item.target();
-
-                        if let Err(put_error) = rpc.put(messages::PutRequestSpecific::PutMutable(
-                            mutable_item.into(),
-                        )) {
-                            // TODO: do better
-                            let _ = sender.send(Err(()));
-                        } else {
-                            publish_senders.insert(target, sender);
-                        };
+                        if let Some(ref mut dht_client) = dht_client {
+                            // TODO: add an if condition in case dht is disabled.
+                            dht_client.publish(&signed_packet, sender);
+                        }
                     }
                 }
                 ActorMessage::Resolve(target, sender, most_recent_known_timestamp) => {
-                    if let Some(senders) = resolve_senders.get_mut(&target) {
-                        senders.push(sender);
-                    } else {
-                        resolve_senders.insert(target, vec![sender]);
-                    };
-
-                    if let Some(responses) = rpc.get(
-                        messages::RequestTypeSpecific::GetValue(
-                            messages::GetValueRequestArguments {
-                                target,
-                                seq: most_recent_known_timestamp.map(|t| t as i64),
-                                salt: None,
-                            },
-                        ),
-                        resolvers.as_deref(),
-                    ) {
-                        for response in responses {
-                            if let Response::Mutable(mutable_item) = response {
-                                if let Ok(signed_packet) = SignedPacket::try_from(mutable_item) {
-                                    if let Some(senders) = resolve_senders.get(&target) {
-                                        for sender in senders {
-                                            let _ = sender.send(signed_packet.clone());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    };
+                    #[cfg(feature = "dht")]
+                    if let Some(ref mut dht_client) = dht_client {
+                        dht_client.resolve(target, most_recent_known_timestamp, sender);
+                    }
                 }
                 ActorMessage::Info(sender) => {
+                    let dht_info = dht_client.as_ref().map(|dht_client| dht_client.rpc.info());
+
                     let _ = sender.send(Info {
-                        dht_info: rpc.info(),
+                        // TODO: figure out Info with or without dht and or relay.
+                        dht_info: dht_info.unwrap(),
                     });
                 }
                 ActorMessage::Check(sender) => {
@@ -518,59 +504,9 @@ fn actor_thread(
             }
         }
 
-        // === Dht Tick ===
-
-        let report = rpc.tick();
-
-        // === Receive and handle incoming mutable item from the DHT ===
-
-        if let Some((target, Response::Mutable(mutable_item))) = &report.query_response {
-            if let Ok(signed_packet) = &SignedPacket::try_from(mutable_item) {
-                let new_packet = if let Some(ref cached) = cache
-                    .as_ref()
-                    .and_then(|cache| cache.get_read_only(target.as_bytes()))
-                {
-                    if signed_packet.more_recent_than(cached) {
-                        debug!(?target, "Received more recent packet than in cache");
-
-                        Some(signed_packet)
-                    } else {
-                        None
-                    }
-                } else {
-                    debug!(?target, "Received new packet after cache miss");
-                    Some(signed_packet)
-                };
-
-                if let Some(packet) = new_packet {
-                    if let Some(cache) = &cache {
-                        cache.put(target.as_bytes(), packet)
-                    };
-
-                    if let Some(senders) = resolve_senders.get(target) {
-                        for sender in senders {
-                            let _ = sender.send(packet.clone());
-                        }
-                    }
-                }
-            };
-        }
-
-        // TODO: Handle relay messages before removing the senders.
-
-        // === Drop senders to done queries ===
-        for id in &report.done_get_queries {
-            resolve_senders.remove(id);
-        }
-
-        for (id, error) in &report.done_put_queries {
-            if let Some(sender) = publish_senders.remove(id) {
-                let _ = sender.send(if let Some(error) = error.to_owned() {
-                    Err(())
-                } else {
-                    Ok(())
-                });
-            };
+        #[cfg(feature = "dht")]
+        if let Some(ref mut dht_client) = dht_client {
+            dht_client.tick();
         }
     }
 
@@ -586,12 +522,13 @@ enum ActorMessage {
 }
 
 pub struct Info {
+    #[cfg(feature = "dht")]
     dht_info: mainline::rpc::Info,
 }
 
 // TODO: add more infor like Mainline
 impl Info {
-    //
+    #[cfg(feature = "dht")]
     pub fn dht_info(&self) -> &mainline::rpc::Info {
         &self.dht_info
     }
@@ -746,10 +683,10 @@ mod tests {
             .build()
             .unwrap();
 
-        let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+        let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-        let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+        let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     }
