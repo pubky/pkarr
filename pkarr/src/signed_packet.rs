@@ -9,6 +9,7 @@ use hickory_proto::{
 use std::{
     char,
     fmt::{self, Display, Formatter},
+    sync::Arc,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,11 +22,16 @@ const OFFSET: usize = 104;
 #[derive(Debug, PartialEq, Eq, Clone)]
 /// Signed DNS packet
 pub struct SignedPacket {
+    inner: Arc<Inner>,
+    last_seen: u64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Inner {
     message: Message,
     public_key: PublicKey,
     signature: Signature,
     timestamp: u64,
-    last_seen: u64,
 }
 
 impl SignedPacket {
@@ -69,10 +75,12 @@ impl SignedPacket {
         let message = Message::from_vec(raw_message)?;
 
         Ok(SignedPacket {
-            public_key,
-            signature,
-            timestamp,
-            message,
+            inner: Arc::new(Inner {
+                public_key,
+                signature,
+                timestamp,
+                message,
+            }),
             last_seen,
         })
     }
@@ -129,10 +137,12 @@ impl SignedPacket {
         let signature = keypair.sign(&signable(timestamp, &encoded_packet));
 
         Ok(SignedPacket {
-            public_key: keypair.public_key(),
-            signature,
-            timestamp,
-            message,
+            inner: Arc::new(Inner {
+                public_key: keypair.public_key(),
+                signature,
+                timestamp,
+                message,
+            }),
             last_seen: system_time(),
         })
     }
@@ -143,10 +153,10 @@ impl SignedPacket {
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
     pub fn to_vec(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1104);
-        bytes.extend_from_slice(self.public_key.as_bytes());
-        bytes.extend_from_slice(&self.signature.to_bytes());
-        bytes.extend_from_slice(&self.timestamp.to_be_bytes());
-        bytes.extend(self.message.to_vec().expect("valid message"));
+        bytes.extend_from_slice(self.inner.public_key.as_bytes());
+        bytes.extend_from_slice(&self.inner.signature.to_bytes());
+        bytes.extend_from_slice(&self.inner.timestamp.to_be_bytes());
+        bytes.extend(self.inner.message.to_vec().expect("valid message"));
 
         bytes
     }
@@ -155,22 +165,22 @@ impl SignedPacket {
     /// to be sent as a request/response body to or from [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
     pub fn to_relay_payload(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(1000);
-        bytes.extend_from_slice(&self.signature.to_bytes());
-        bytes.extend_from_slice(&self.timestamp.to_be_bytes());
-        bytes.extend(self.message.to_vec().expect("valid message"));
+        bytes.extend_from_slice(&self.inner.signature.to_bytes());
+        bytes.extend_from_slice(&self.inner.timestamp.to_be_bytes());
+        bytes.extend(self.inner.message.to_vec().expect("valid message"));
 
         bytes
     }
 
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
     pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
+        &self.inner.public_key
     }
 
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
     /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
     pub fn signature(&self) -> &Signature {
-        &self.signature
+        &self.inner.signature
     }
 
     /// Returns the timestamp in microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).
@@ -180,17 +190,17 @@ impl SignedPacket {
     /// but it shouldn't be used for caching for example, instead, use [Self::last_seen]
     /// which is set when you create a new packet.
     pub fn timestamp(&self) -> u64 {
-        self.timestamp
+        self.inner.timestamp
     }
 
     /// Returns the DNS [Message] compressed and encoded.
     pub fn encoded_message(&self) -> Vec<u8> {
-        self.message.to_vec().expect("valid message")
+        self.inner.message.to_vec().expect("valid message")
     }
 
     /// Return the DNS [Message].
     pub fn message(&self) -> &Message {
-        &self.message
+        &self.inner.message
     }
 
     /// Unix last_seen time in microseconds
@@ -238,7 +248,8 @@ impl SignedPacket {
     pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &Record> {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
-        self.message
+        self.inner
+            .message
             .answers()
             .iter()
             .filter(move |rr| rr.name().to_string() == normalized_name)
@@ -250,7 +261,8 @@ impl SignedPacket {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
 
-        self.message
+        self.inner
+            .message
             .answers()
             .iter()
             .filter(move |rr| rr.name().to_string() == normalized_name && rr.ttl() > self.elapsed())
@@ -276,7 +288,8 @@ impl SignedPacket {
     ///
     /// Panics if `min` < `max`
     pub fn ttl(&self, min: u32, max: u32) -> u32 {
-        self.message
+        self.inner
+            .message
             .answers()
             .iter()
             .map(|rr| rr.ttl())
@@ -349,10 +362,12 @@ if_dht! {
             let message = Message::from_vec(raw_message)?;
 
             Ok(Self {
-                public_key,
-                signature,
-                message,
-                timestamp,
+                inner: Arc::new(Inner {
+                    public_key,
+                    signature,
+                    message,
+                    timestamp,
+                }),
                 last_seen: system_time(),
             })
         }
@@ -363,13 +378,13 @@ impl Display for SignedPacket {
         write!(
             f,
             "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {},\n    signature: {}\n    records:\n",
-            self.public_key,
+            self.inner.public_key,
             self.elapsed(),
-            self.timestamp,
-            self.signature,
+            self.inner.timestamp,
+            self.inner.signature,
         )?;
 
-        for answer in self.message.answers() {
+        for answer in self.inner.message.answers() {
             writeln!(
                 f,
                 "        {}  IN  {}  {}\n",
