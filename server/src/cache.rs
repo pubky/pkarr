@@ -40,8 +40,7 @@ impl<'a> BytesEncode<'a> for SignedPacketCodec {
     type EItem = SignedPacket;
 
     fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
-        let bytes = signed_packet.as_bytes();
-
+        let bytes = signed_packet.to_vec();
         let mut vec = Vec::with_capacity(bytes.len() + 8);
 
         vec.extend(<U64<LittleEndian>>::bytes_encode(signed_packet.last_seen())?.as_ref());
@@ -57,10 +56,8 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
     fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
         let last_seen = <U64<LittleEndian>>::bytes_decode(bytes)?;
 
-        Ok(SignedPacket::from_bytes_unchecked(
-            &bytes[8..].to_vec().into(),
-            last_seen,
-        ))
+        let packet = SignedPacket::from_bytes_with_last_seen(&bytes[8..], last_seen)?;
+        Ok(packet)
     }
 }
 

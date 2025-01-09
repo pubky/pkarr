@@ -1,7 +1,6 @@
 //! Signed DNS packet
 
 use crate::{Error, Keypair, PublicKey, Result};
-use bytes::Bytes;
 use ed25519_dalek::Signature;
 use hickory_proto::{
     op::Message,
@@ -49,7 +48,12 @@ impl SignedPacket {
     /// - Returns [crate::Error::InvalidEd25519PublicKey] if the first 32 bytes are invalid `ed25519` public key
     /// - Returns [crate::Error::InvalidEd25519Signature] if the following 64 bytes are invalid `ed25519` signature
     /// - Returns [crate::Error::DnsError] if it failed to parse the DNS Packet after the first 104 bytes
-    pub fn from_bytes(bytes: &Bytes) -> Result<SignedPacket> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<SignedPacket> {
+        Self::from_bytes_with_last_seen(bytes, system_time())
+    }
+
+    /// Document ME
+    pub fn from_bytes_with_last_seen(bytes: &[u8], last_seen: u64) -> Result<SignedPacket> {
         if bytes.len() < OFFSET {
             return Err(Error::InvalidSignedPacketBytesLength(bytes.len()));
         }
@@ -60,7 +64,7 @@ impl SignedPacket {
         let signature = Signature::from_bytes(bytes[32..96].try_into().unwrap());
         let timestamp = u64::from_be_bytes(bytes[96..104].try_into().unwrap());
 
-        let raw_message = &bytes.slice(104..);
+        let raw_message = &bytes[OFFSET..];
         public_key.verify(&signable(timestamp, raw_message), &signature)?;
         let message = Message::from_vec(raw_message)?;
 
@@ -69,7 +73,7 @@ impl SignedPacket {
             signature,
             timestamp,
             message,
-            last_seen: system_time(),
+            last_seen,
         })
     }
 
@@ -86,7 +90,7 @@ impl SignedPacket {
         bytes.extend_from_slice(public_key.as_bytes());
         bytes.extend_from_slice(payload);
 
-        SignedPacket::from_bytes(&bytes.into())
+        SignedPacket::from_bytes(&bytes)
     }
 
     /// Creates a new [SignedPacket] from a [Keypair] and a DNS [Packet].
@@ -471,7 +475,7 @@ mod tests {
     fn from_too_large_bytes() {
         let keypair = Keypair::random();
 
-        let bytes = Bytes::from(vec![0; 1073]);
+        let bytes = vec![0; 1073];
         let error = SignedPacket::from_relay_payload(&keypair.public_key(), &bytes);
 
         assert!(error.is_err());
