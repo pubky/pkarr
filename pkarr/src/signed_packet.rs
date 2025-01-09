@@ -567,7 +567,7 @@ mod tests {
         let mut packet = Packet::new_reply(0);
         packet.answers.push(target.clone());
         packet.answers.push(ResourceRecord::new(
-            Name::new("something else").unwrap(),
+            Name::new("something_else").unwrap(),
             simple_dns::CLASS::IN,
             30,
             RData::A(A {
@@ -626,13 +626,13 @@ mod tests {
 
         let mut packet = Packet::new_reply(0);
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("@").unwrap(),
+            dns::Name::new(".").unwrap(),
             dns::CLASS::IN,
             30,
             dns::rdata::RData::CNAME(dns::Name::new(name).unwrap().into()),
         ));
         packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("@").unwrap(),
+            dns::Name::new(".").unwrap(),
             dns::CLASS::IN,
             30,
             dns::rdata::RData::CNAME(dns::Name::new(dup).unwrap().into()),
