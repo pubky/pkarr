@@ -6,7 +6,7 @@
 //! run this example from the project root:
 //!     $ cargo run --example publish
 
-use hickory_proto::op::Message;
+use hickory_proto::op::{Message, MessageType};
 use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
 use tracing::Level;
 use tracing_subscriber;
@@ -25,6 +25,7 @@ fn main() -> Result<()> {
     let keypair = Keypair::random();
 
     let mut packet = Message::new();
+    packet.set_message_type(MessageType::Response);
     let mut record = Record::with(Name::from_ascii("_foo").unwrap(), RecordType::TXT, 30);
     record.set_dns_class(DNSClass::IN);
     record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));

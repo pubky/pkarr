@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(a.cache().lock().unwrap().len(), 1);
         assert_eq!(b.cache().lock().unwrap().len(), 1);
 
-        assert_eq!(resolved, signed_packet);
+        assert_eq!(resolved.to_vec(), signed_packet.to_vec());
     }
 
     #[test]

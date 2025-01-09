@@ -471,6 +471,8 @@ pub enum ActorMessage {
 mod tests {
     use std::time::Duration;
 
+    use hickory_proto::op::{header::MessageType, Message};
+    use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
     use mainline::Testnet;
 
     use super::*;
@@ -497,144 +499,136 @@ mod tests {
         assert_eq!(a.local_addr(), None);
     }
 
-    // #[test]
-    // fn publish_resolve() {
-    //     let testnet = Testnet::new(10);
+    #[test]
+    fn publish_resolve() {
+        let testnet = Testnet::new(10);
 
-    //     let a = PkarrClient::builder()
-    //         .dht_settings(DhtSettings {
-    //             bootstrap: Some(testnet.bootstrap.clone()),
-    //             request_timeout: None,
-    //             server: None,
-    //             port: None,
-    //         })
-    //         .build()
-    //         .unwrap();
+        let a = PkarrClient::builder()
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap.clone()),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
+            .build()
+            .unwrap();
 
-    //     let keypair = Keypair::random();
+        let keypair = Keypair::random();
 
-    //     let mut packet = dns::Packet::new_reply(0);
-    //     packet.answers.push(dns::ResourceRecord::new(
-    //         dns::Name::new("foo").unwrap(),
-    //         dns::CLASS::IN,
-    //         30,
-    //         dns::rdata::RData::TXT("bar".try_into().unwrap()),
-    //     ));
+        let mut message = Message::new();
+        message.set_message_type(MessageType::Response);
+        let mut record = Record::with(Name::from_ascii("foo").unwrap(), RecordType::TXT, 30);
+        record.set_dns_class(DNSClass::IN);
+        record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+        message.add_answer(record);
 
-    //     let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::from_packet(&keypair, &message).unwrap();
 
-    //     let _ = a.publish(&signed_packet);
+        let _ = a.publish(&signed_packet);
 
-    //     let b = PkarrClient::builder()
-    //         .dht_settings(DhtSettings {
-    //             bootstrap: Some(testnet.bootstrap),
-    //             request_timeout: None,
-    //             server: None,
-    //             port: None,
-    //         })
-    //         .build()
-    //         .unwrap();
+        let b = PkarrClient::builder()
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
+            .build()
+            .unwrap();
 
-    //     let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
-    //     assert_eq!(resolved.to_vec(), signed_packet.to_vec());
+        let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(resolved.to_vec(), signed_packet.to_vec());
 
-    //     let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
-    //     assert_eq!(from_cache.to_vec(), signed_packet.to_vec());
-    //     assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    // }
+        let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(from_cache.to_vec(), signed_packet.to_vec());
+        assert_eq!(from_cache.last_seen(), resolved.last_seen());
+    }
 
-    // #[test]
-    // fn thread_safe() {
-    //     let testnet = Testnet::new(10);
+    #[test]
+    fn thread_safe() {
+        let testnet = Testnet::new(10);
 
-    //     let a = PkarrClient::builder()
-    //         .dht_settings(DhtSettings {
-    //             bootstrap: Some(testnet.bootstrap.clone()),
-    //             request_timeout: None,
-    //             server: None,
-    //             port: None,
-    //         })
-    //         .build()
-    //         .unwrap();
+        let a = PkarrClient::builder()
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap.clone()),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
+            .build()
+            .unwrap();
 
-    //     let keypair = Keypair::random();
+        let keypair = Keypair::random();
 
-    //     let mut packet = dns::Packet::new_reply(0);
-    //     packet.answers.push(dns::ResourceRecord::new(
-    //         dns::Name::new("foo").unwrap(),
-    //         dns::CLASS::IN,
-    //         30,
-    //         dns::rdata::RData::TXT("bar".try_into().unwrap()),
-    //     ));
+        let mut message = Message::new();
+        message.set_message_type(MessageType::Response);
+        let mut record = Record::with(Name::from_ascii("foo").unwrap(), RecordType::TXT, 30);
+        record.set_dns_class(DNSClass::IN);
+        record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+        message.add_answer(record);
 
-    //     let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::from_packet(&keypair, &message).unwrap();
 
-    //     let _ = a.publish(&signed_packet);
+        let _ = a.publish(&signed_packet);
 
-    //     let b = PkarrClient::builder()
-    //         .dht_settings(DhtSettings {
-    //             bootstrap: Some(testnet.bootstrap),
-    //             request_timeout: None,
-    //             server: None,
-    //             port: None,
-    //         })
-    //         .build()
-    //         .unwrap();
+        let b = PkarrClient::builder()
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap),
+                request_timeout: None,
+                server: None,
+                port: None,
+            })
+            .build()
+            .unwrap();
 
-    //     thread::spawn(move || {
-    //         let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
-    //         assert_eq!(resolved.to_vec(), signed_packet.to_vec());
+        thread::spawn(move || {
+            let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
+            assert_eq!(resolved.to_vec(), signed_packet.to_vec());
 
-    //         let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
-    //         assert_eq!(from_cache.to_vec(), signed_packet.to_vec());
-    //         assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    //     })
-    //     .join()
-    //     .unwrap();
-    // }
+            let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
+            assert_eq!(from_cache.to_vec(), signed_packet.to_vec());
+            assert_eq!(from_cache.last_seen(), resolved.last_seen());
+        })
+        .join()
+        .unwrap();
+    }
 
-    // #[test]
-    // fn ttl_0_test() {
-    //     let testnet = Testnet::new(10);
+    #[test]
+    fn ttl_0_test() {
+        let testnet = Testnet::new(10);
 
-    //     let client = PkarrClient::builder()
-    //         .dht_settings(DhtSettings {
-    //             bootstrap: Some(testnet.bootstrap),
-    //             request_timeout: Some(Duration::from_millis(50)),
-    //             server: None,
-    //             port: None,
-    //         })
-    //         .maximum_ttl(0)
-    //         .build()
-    //         .unwrap();
+        let client = PkarrClient::builder()
+            .dht_settings(DhtSettings {
+                bootstrap: Some(testnet.bootstrap),
+                request_timeout: Some(Duration::from_millis(50)),
+                server: None,
+                port: None,
+            })
+            .maximum_ttl(0)
+            .build()
+            .unwrap();
 
-    //     let keypair = Keypair::random();
-    //     let mut packet = dns::Packet::new_reply(0);
-    //     packet.answers.push(dns::ResourceRecord::new(
-    //         dns::Name::new("foo").unwrap(),
-    //         dns::CLASS::IN,
-    //         30,
-    //         dns::rdata::RData::TXT("bar".try_into().unwrap()),
-    //     ));
+        let keypair = Keypair::random();
 
-    //     let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let mut message = Message::new();
+        message.set_message_type(MessageType::Response);
+        let mut record = Record::with(Name::from_ascii("foo").unwrap(), RecordType::TXT, 30);
+        record.set_dns_class(DNSClass::IN);
+        record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+        message.add_answer(record);
 
-    //     client.publish(&signed_packet).unwrap();
+        let signed_packet = SignedPacket::from_packet(&keypair, &message).unwrap();
 
-    //     // First Call
-    //     let resolved = client
-    //         .resolve(&signed_packet.public_key())
-    //         .unwrap()
-    //         .unwrap();
+        client.publish(&signed_packet).unwrap();
 
-    //     assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
+        // First Call
+        let resolved = client.resolve(signed_packet.public_key()).unwrap().unwrap();
 
-    //     thread::sleep(Duration::from_millis(10));
+        assert_eq!(resolved.encoded_message(), signed_packet.encoded_message());
 
-    //     let second = client
-    //         .resolve(&signed_packet.public_key())
-    //         .unwrap()
-    //         .unwrap();
-    //     assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
-    // }
+        thread::sleep(Duration::from_millis(10));
+
+        let second = client.resolve(signed_packet.public_key()).unwrap().unwrap();
+        assert_eq!(second.encoded_message(), signed_packet.encoded_message());
+    }
 }
