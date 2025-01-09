@@ -465,7 +465,7 @@ mod tests {
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
         assert!(SignedPacket::from_relay_payload(
-            &signed_packet.public_key(),
+            signed_packet.public_key(),
             &signed_packet.to_relay_payload()
         )
         .is_ok());

@@ -90,7 +90,7 @@ impl PkarrRelayClient {
     /// # Errors
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::RelayError] from the last responding relay, if all relays
-    /// responded with non-2xx status codes.
+    ///   responded with non-2xx status codes.
     pub fn publish(&self, signed_packet: &SignedPacket) -> Result<()> {
         let mut last_error = Error::EmptyListOfRelays;
 
@@ -113,8 +113,8 @@ impl PkarrRelayClient {
     /// # Errors
     ///
     /// - Returns [Error::RelayError] if the relay responded with a status >= 400
-    /// (except 404 in which case you should receive Ok(None)) or something wrong
-    /// with the transport, transparent from [ureq::Error].
+    ///   (except 404 in which case you should receive Ok(None)) or something wrong
+    ///   with the transport, transparent from [ureq::Error].
     /// - Returns [Error::IO] if something went wrong while reading the payload.
     pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         if let Some(signed_packet) = self.resolve_inner(public_key).recv()?? {
@@ -138,7 +138,7 @@ impl PkarrRelayClient {
         let public_key = signed_packet.public_key();
         let mut cache = self.cache.lock().unwrap();
 
-        if let Some(current) = cache.get(&public_key) {
+        if let Some(current) = cache.get(public_key) {
             if current.timestamp() > signed_packet.timestamp() {
                 return Err(Error::NotMostRecent);
             }
@@ -214,7 +214,7 @@ impl PkarrRelayClient {
                     if let Err(err) = reader.read_to_end(&mut payload) {
                         let _ = sender.send(Err(err.into()));
                     } else {
-                        match SignedPacket::from_relay_payload(&public_key, &payload.into()) {
+                        match SignedPacket::from_relay_payload(&public_key, &payload) {
                             Ok(signed_packet) => {
                                 let new_packet = if let Some(ref cached) = cached_packet {
                                     if signed_packet.more_recent_than(cached) {
@@ -257,20 +257,21 @@ impl PkarrRelayClient {
 
 #[cfg(test)]
 mod tests {
+    use hickory_proto::op::Message;
+    use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
+
     use super::*;
-    use crate::{dns, Keypair, SignedPacket};
+    use crate::{Keypair, SignedPacket};
 
     #[test]
     fn publish_resolve() {
         let keypair = Keypair::random();
 
-        let mut packet = dns::Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            dns::rdata::RData::TXT("bar".try_into().unwrap()),
-        ));
+        let mut packet = Message::new();
+        let mut record = Record::with(Name::from_ascii("foo").unwrap(), RecordType::TXT, 30);
+        record.set_dns_class(DNSClass::IN);
+        record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+        packet.add_answer(record);
 
         let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
 
@@ -304,7 +305,7 @@ mod tests {
         assert_eq!(a.cache().lock().unwrap().len(), 1);
         assert_eq!(b.cache().lock().unwrap().len(), 1);
 
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(resolved, signed_packet);
     }
 
     #[test]

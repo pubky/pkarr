@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     let keypair = Keypair::random();
 
     let mut packet = Message::new();
-    let mut record = Record::with(Name::from_ascii("_foo").unwrap(), RecordType::A, 30);
+    let mut record = Record::with(Name::from_ascii("_foo").unwrap(), RecordType::TXT, 30);
     record.set_dns_class(DNSClass::IN);
     record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
     packet.add_answer(record);
