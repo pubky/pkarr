@@ -193,7 +193,7 @@ impl PkarrClient {
     ///
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
-    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     /// - Returns a [Error::PublishInflight] if the client is currently publishing the same public_key.
     /// - Returns a [Error::NotMostRecent] if the provided signed packet is older than most recent.
     /// - Returns a [Error::MainlineError] if the Dht received an unexpected error otherwise.
@@ -219,7 +219,7 @@ impl PkarrClient {
     ///
     /// # Errors
     /// - Returns a [Error::DhtIsShutdown] if [PkarrClient::shutdown] was called, or
-    /// the loop in the actor thread is stopped for any reason (like thread panic).
+    ///   the loop in the actor thread is stopped for any reason (like thread panic).
     pub fn resolve(&self, public_key: &PublicKey) -> Result<Option<SignedPacket>> {
         Ok(self.resolve_inner(public_key)?.recv().ok())
     }
@@ -471,10 +471,12 @@ pub enum ActorMessage {
 mod tests {
     use std::time::Duration;
 
+    use hickory_proto::op::{header::MessageType, Message};
+    use hickory_proto::rr::{rdata, DNSClass, Name, RData, Record, RecordType};
     use mainline::Testnet;
 
     use super::*;
-    use crate::{dns, Keypair, SignedPacket};
+    use crate::{Keypair, SignedPacket};
 
     #[test]
     fn shutdown() {
@@ -513,15 +515,14 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        let mut packet = dns::Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            dns::rdata::RData::TXT("bar".try_into().unwrap()),
-        ));
+        let mut message = Message::new();
+        message.set_message_type(MessageType::Response);
+        let mut record = Record::with(Name::from_ascii("foo").unwrap(), RecordType::TXT, 30);
+        record.set_dns_class(DNSClass::IN);
+        record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+        message.add_answer(record);
 
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::from_packet(&keypair, &message).unwrap();
 
         let _ = a.publish(&signed_packet);
 
@@ -536,10 +537,10 @@ mod tests {
             .unwrap();
 
         let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(resolved.to_vec(), signed_packet.to_vec());
 
         let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(from_cache.to_vec(), signed_packet.to_vec());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     }
 
@@ -559,15 +560,14 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        let mut packet = dns::Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            dns::rdata::RData::TXT("bar".try_into().unwrap()),
-        ));
+        let mut message = Message::new();
+        message.set_message_type(MessageType::Response);
+        let mut record = Record::with(Name::from_ascii("foo").unwrap(), RecordType::TXT, 30);
+        record.set_dns_class(DNSClass::IN);
+        record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+        message.add_answer(record);
 
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let signed_packet = SignedPacket::from_packet(&keypair, &message).unwrap();
 
         let _ = a.publish(&signed_packet);
 
@@ -583,10 +583,10 @@ mod tests {
 
         thread::spawn(move || {
             let resolved = b.resolve(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+            assert_eq!(resolved.to_vec(), signed_packet.to_vec());
 
             let from_cache = b.resolve(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+            assert_eq!(from_cache.to_vec(), signed_packet.to_vec());
             assert_eq!(from_cache.last_seen(), resolved.last_seen());
         })
         .join()
@@ -609,32 +609,26 @@ mod tests {
             .unwrap();
 
         let keypair = Keypair::random();
-        let mut packet = dns::Packet::new_reply(0);
-        packet.answers.push(dns::ResourceRecord::new(
-            dns::Name::new("foo").unwrap(),
-            dns::CLASS::IN,
-            30,
-            dns::rdata::RData::TXT("bar".try_into().unwrap()),
-        ));
 
-        let signed_packet = SignedPacket::from_packet(&keypair, &packet).unwrap();
+        let mut message = Message::new();
+        message.set_message_type(MessageType::Response);
+        let mut record = Record::with(Name::from_ascii("foo").unwrap(), RecordType::TXT, 30);
+        record.set_dns_class(DNSClass::IN);
+        record.set_data(Some(RData::TXT(rdata::TXT::new(vec!["bar".to_string()]))));
+        message.add_answer(record);
+
+        let signed_packet = SignedPacket::from_packet(&keypair, &message).unwrap();
 
         client.publish(&signed_packet).unwrap();
 
         // First Call
-        let resolved = client
-            .resolve(&signed_packet.public_key())
-            .unwrap()
-            .unwrap();
+        let resolved = client.resolve(signed_packet.public_key()).unwrap().unwrap();
 
-        assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
+        assert_eq!(resolved.encoded_message(), signed_packet.encoded_message());
 
         thread::sleep(Duration::from_millis(10));
 
-        let second = client
-            .resolve(&signed_packet.public_key())
-            .unwrap()
-            .unwrap();
-        assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
+        let second = client.resolve(signed_packet.public_key()).unwrap().unwrap();
+        assert_eq!(second.encoded_message(), signed_packet.encoded_message());
     }
 }

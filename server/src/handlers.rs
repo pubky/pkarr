@@ -21,7 +21,7 @@ pub async fn put(
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
+    let signed_packet = pkarr::SignedPacket::from_relay_payload(public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
     state

@@ -18,7 +18,7 @@ type PkarrCacheTimeToKeyTable = Database<U64<LittleEndian>, PkarrCacheKeyCodec>;
 
 pub struct PkarrCacheKeyCodec;
 
-impl<'a> BytesEncode<'a> for PkarrCacheKeyCodec {
+impl BytesEncode<'_> for PkarrCacheKeyCodec {
     type EItem = PkarrCacheKey;
 
     fn bytes_encode(key: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
@@ -26,41 +26,36 @@ impl<'a> BytesEncode<'a> for PkarrCacheKeyCodec {
     }
 }
 
-impl<'a> BytesDecode<'a> for PkarrCacheKeyCodec {
+impl BytesDecode<'_> for PkarrCacheKeyCodec {
     type DItem = PkarrCacheKey;
 
-    fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
+    fn bytes_decode(bytes: &[u8]) -> Result<Self::DItem, BoxedError> {
         Ok(PkarrCacheKey::from_bytes(bytes)?)
     }
 }
 
 pub struct SignedPacketCodec;
 
-impl<'a> BytesEncode<'a> for SignedPacketCodec {
+impl BytesEncode<'_> for SignedPacketCodec {
     type EItem = SignedPacket;
 
     fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
-        let bytes = signed_packet.as_bytes();
-
-        let mut vec = Vec::with_capacity(bytes.len() + 8);
-
+        let mut vec = Vec::new();
         vec.extend(<U64<LittleEndian>>::bytes_encode(signed_packet.last_seen())?.as_ref());
-        vec.extend(bytes);
+        signed_packet.to_writer(&mut vec)?;
 
         Ok(Cow::Owned(vec))
     }
 }
 
-impl<'a> BytesDecode<'a> for SignedPacketCodec {
+impl BytesDecode<'_> for SignedPacketCodec {
     type DItem = SignedPacket;
 
-    fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
+    fn bytes_decode(bytes: &[u8]) -> Result<Self::DItem, BoxedError> {
         let last_seen = <U64<LittleEndian>>::bytes_decode(bytes)?;
 
-        Ok(SignedPacket::from_bytes_unchecked(
-            &bytes[8..].to_vec().into(),
-            last_seen,
-        ))
+        let packet = SignedPacket::from_bytes_with_last_seen(&bytes[8..], last_seen)?;
+        Ok(packet)
     }
 }
 

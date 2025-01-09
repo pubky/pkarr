@@ -30,8 +30,7 @@ pub enum Error {
 
     // === Packets errors ===
     #[error(transparent)]
-    /// Transparent [simple_dns::SimpleDnsError]
-    DnsError(#[from] simple_dns::SimpleDnsError),
+    DnsError(#[from] hickory_proto::error::ProtoError),
 
     #[error("Invalid SignedPacket bytes length, expected at least 104 bytes but got: {0}")]
     /// Serialized signed packets are `<32 bytes publickey><64 bytes signature><8 bytes
