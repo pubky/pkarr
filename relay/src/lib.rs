@@ -165,6 +165,7 @@ impl Relay {
 
         let mut config = Config {
             cache_path: Some(storage.join("pkarr-relay")),
+            http_port: 0,
             ..Default::default()
         };
 
