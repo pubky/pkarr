@@ -1,14 +1,14 @@
-//! Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
+//! Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://pkarr.org/relays).
 
 use flume::{Receiver, Sender};
-use mainline::errors::PutError;
+use mainline::{errors::PutError, rpc::DEFAULT_BOOTSTRAP_NODES};
 use std::{
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     num::NonZeroUsize,
     thread,
 };
 use tracing::debug;
-#[cfg(feature = "relay")]
+#[cfg(feature = "relays")]
 use url::Url;
 
 use crate::{
@@ -20,10 +20,11 @@ use crate::{PublicKey, SignedPacket};
 mod actor_thread;
 #[cfg(feature = "dht")]
 mod dht;
-#[cfg(feature = "relay")]
+#[cfg(feature = "relays")]
 mod relays;
 
-use actor_thread::{actor_thread, ActorMessage, Info};
+pub use actor_thread::Info;
+use actor_thread::{actor_thread, ActorMessage};
 
 // TODO: recognize when the cache is updated since `publish` was called,
 // and return an error ... a CAS error maybe.
@@ -52,8 +53,8 @@ pub struct Config {
     /// Custom [Cache] implementation, defaults to [InMemoryCache]
     pub cache: Option<Box<dyn Cache>>,
 
-    /// Pkarr [Relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) Urls
-    #[cfg(feature = "relay")]
+    /// Pkarr [Relays](https://pkarr.org/relays) Urls
+    #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
 }
 
@@ -66,7 +67,7 @@ impl Default for Config {
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
-            #[cfg(feature = "relay")]
+            #[cfg(feature = "relays")]
             relays: Some(
                 crate::DEFAULT_RELAYS
                     .iter()
@@ -84,16 +85,23 @@ pub struct ClientBuilder(Config);
 
 impl ClientBuilder {
     /// Similar to crates `no-default-features`, this method will remove the default
-    /// [mainline::Config::bootstrap], [Config::resolvers], and [Config::relays].
+    /// [mainline::Config::bootstrap], [Config::resolvers], and [Config::relays],
+    /// effectively disabling the use of both [mainline] and [Relays](https://pkarr.org/relays).
     ///
-    /// You will have to add one or more for this client to function.
+    /// You can [Self::use_mainline] or [Self::use_relays] to add both or either
+    /// back with the default configurations for each.
+    ///
+    /// Or you can use [Self::relays] to use custom [Relays](https://pkarr.org/relays).
+    ///
+    /// Similarly you can use [Self::resolvers] and / or [Self::bootstrap] to use [mainline]
+    /// with custom configurations.
     pub fn no_default_network(mut self) -> Self {
         #[cfg(feature = "dht")]
         {
             self.0.resolvers = None;
             self.0.dht_config.bootstrap = vec![];
         }
-        #[cfg(feature = "relay")]
+        #[cfg(feature = "relays")]
         {
             self.0.relays = None;
         }
@@ -101,7 +109,49 @@ impl ClientBuilder {
         self
     }
 
+    /// Reenable using [mainline] with [DEFAULT_RESOLVERS] and [DEFAULT_BOOTSTRAP_NODES].
+    #[cfg(feature = "dht")]
+    pub fn use_mainline(mut self) -> Self {
+        self.0.resolvers = Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS));
+        self.0.dht_config.bootstrap = DEFAULT_BOOTSTRAP_NODES.map(|s| s.to_string()).to_vec();
+
+        self
+    }
+
+    /// Convienent method to set the [mainline::Config::bootstrap].
+    ///
+    /// You can start a separate Dht network by setting this to an empty array.
+    ///
+    /// If you want to extend [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes with more nodes, you can
+    /// use [Self::extra_bootstrap].
+    #[cfg(feature = "dht")]
+    pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
+        self.0.dht_config.bootstrap = bootstrap.to_vec();
+
+        self
+    }
+
+    #[cfg(feature = "dht")]
+    /// Extend the [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes.
+    ///
+    /// If you want to set (override) the [Config::dht_config::bootsrtap][mainline::Config::bootstrap],
+    /// use [Self::bootstrap]
+    pub fn extra_resolvers(mut self, resolvers: Vec<String>) -> Self {
+        let resolvers = resolvers_to_socket_addrs(&resolvers);
+
+        if let Some(ref mut existing) = self.0.resolvers {
+            existing.extend_from_slice(&resolvers);
+        };
+
+        self
+    }
+
     /// Set custom set of [resolvers](Config::resolvers).
+    ///
+    /// You can disable using resolvers by passing `None`.
+    ///
+    /// If you want to extend the [Config::resolvers] with more nodes, you can
+    /// use [Self::extra_resolvers].
     #[cfg(feature = "dht")]
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
         self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
@@ -109,10 +159,55 @@ impl ClientBuilder {
         self
     }
 
+    #[cfg(feature = "dht")]
+    /// Extend the current [Config::resolvers] with extra resolvers.
+    ///
+    /// If you want to set (override) the [Config::resolvers], use [Self::resolvers]
+    pub fn extra_bootstrap(mut self, bootstrap: &[String]) -> Self {
+        for node in bootstrap {
+            if !self.0.dht_config.bootstrap.contains(node) {
+                self.0.dht_config.bootstrap.push(node.clone())
+            }
+        }
+
+        self
+    }
+
+    #[cfg(feature = "relays")]
+    /// Reenable using [Config::relays] with [crate::DEFAULT_RELAYS].
+    pub fn use_relays(mut self) -> Self {
+        self.0.relays = Some(
+            crate::DEFAULT_RELAYS
+                .iter()
+                .map(|s| {
+                    Url::parse(s).expect("DEFAULT_RELAYS should be parsed to Url successfully.")
+                })
+                .collect(),
+        );
+
+        self
+    }
+
     /// Set custom set of [relays](Config::relays)
-    #[cfg(feature = "relay")]
+    #[cfg(feature = "relays")]
     pub fn relays(mut self, relays: Option<Vec<Url>>) -> Self {
         self.0.relays = relays;
+
+        self
+    }
+
+    #[cfg(feature = "dht")]
+    /// Extend the current [Config::relays] with extra relays.
+    ///
+    /// If you want to set (override) the [Config::relays], use [Self::relays]
+    pub fn extra_relays(mut self, relays: Vec<Url>) -> Self {
+        if let Some(ref mut existing) = self.0.relays {
+            for relay in relays {
+                if !existing.contains(&relay) {
+                    existing.push(relay)
+                }
+            }
+        }
 
         self
     }
@@ -161,21 +256,14 @@ impl ClientBuilder {
         self
     }
 
-    /// Convienent method to set the [mainline::Config::bootstrap].
-    #[cfg(feature = "dht")]
-    pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
-        self.0.dht_config.bootstrap = bootstrap.to_vec();
-
-        self
-    }
-
     pub fn build(self) -> Result<Client, std::io::Error> {
         Client::new(self.0)
     }
 }
 
 #[derive(Clone, Debug)]
-/// Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
+/// Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or
+/// [Relays](https://pkarr.org/relays).
 pub struct Client {
     sender: Sender<ActorMessage>,
     cache: Option<Box<dyn Cache>>,
@@ -219,6 +307,9 @@ impl Client {
     }
 
     /// Returns a builder to edit config before creating Client.
+    ///
+    /// You can use [ClientBuilder::no_default_network] to start from a clean slate and
+    /// decide which networks to use.
     pub fn builder() -> ClientBuilder {
         ClientBuilder::default()
     }
@@ -298,7 +389,7 @@ impl Client {
         Ok(self.resolve_rx(public_key)?.recv().ok())
     }
 
-    /// Returns a [flume::Receiver<SignedPacket>] that allows [iterating](flume::Receiver::recv) over or
+    /// Returns a `flume::Receiver<SignedPacket>` that allows [iterating](flume::Receiver::recv) over or
     /// [streaming](flume::Receiver::recv_async) incoming [SignedPacket]s, in case you need more control over your
     /// caching strategy and when resolution should terminate, as well as filtering [SignedPacket]s according to a custom criteria.
     pub fn resolve_rx(

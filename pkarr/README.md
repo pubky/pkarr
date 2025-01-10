@@ -8,7 +8,7 @@ Publish and resolve DNS packets over Mainline DHT.
 
 ## Get started
 
-Check the [Examples](https://github.com/Nuhvi/pkarr/tree/main/pkarr/examples).
+Check the [Examples](https://github.com/Pubky/pkarr/tree/main/pkarr/examples).
 
 ## WebAssembly support
 

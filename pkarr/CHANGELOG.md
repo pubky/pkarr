@@ -22,6 +22,13 @@ All notable changes to pkarr will be documented in this file.
 - Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
 - Implement `FromStr` for `PublicKey`
 - Implement `TryFrom<MutableItem>` for `SignedPacket`
+- Add `client::native::ClientBuilder::no_default_network` to disable both the `Dht` and `relays` settings, and allow you to choose what to add back.
+- Add `client::native::ClientBuilder::use_mainline` to use default bootstrap nodes and resolvers and use the Mainline Dht. 
+- Add `client::native::ClientBuilder::extra_resolvers` to use extra resolvers nodes to the default resolvers.
+- Add `client::native::ClientBuilder::extra_bootstrap` to add extra nodes to the default bootstrap nodes.
+- Add client::native::`ClientBuilder::use_relays` to cuse default relays and use relays to publish and resolve packets.
+- Add client::native::`ClientBuilder::relays` to set (override) the relays to be used.
+- Add client::native::`ClientBuilder::extend_relays` to add extra relay servers to the list of relays used.
 
 ### Changed
 
@@ -36,6 +43,8 @@ All notable changes to pkarr will be documented in this file.
 - Update `simple-dns` so you can't use `Name::new("@")`, instead you should use `Name::new(".")`, `SignedPacket::resource_records("@")` still works.
 - Replace `ClientBuilder::testnet()` with `ClientBuilder::bootstrap()`.
 - `Client::cache()` returns an option, in case the cache size is set to zero.
+- Rename feature `relay` to `relays`.
+- Default client uses both `mainline` and `relays`, and each can be disabled with feature flags or the builder methods.
 
 ### Removed
 

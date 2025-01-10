@@ -6,7 +6,7 @@ use tracing::debug;
 
 use crate::{client::native::dht::DhtClient, Cache, CacheKey, Config, PublicKey, SignedPacket};
 
-#[cfg(feature = "relay")]
+#[cfg(feature = "relays")]
 use super::relays::RelaysClient;
 
 pub fn actor_thread(
@@ -46,12 +46,12 @@ pub fn actor_thread(
     #[cfg(not(feature = "dht"))]
     let mut dht_client: Option<()> = None;
 
-    #[cfg(feature = "relay")]
+    #[cfg(feature = "relays")]
     let mut relays_client = config
         .relays
         .map(|r| RelaysClient::new(r.into(), cache.clone()));
 
-    #[cfg(not(feature = "relay"))]
+    #[cfg(not(feature = "relays"))]
     let mut relays_client: Option<()> = None;
 
     loop {
@@ -64,8 +64,7 @@ pub fn actor_thread(
                     break;
                 }
                 ActorMessage::Publish(signed_packet, sender) => {
-                    // TODO: rename feature relay to relays.
-                    #[cfg(feature = "relay")]
+                    #[cfg(feature = "relays")]
                     {
                         if let Some(relays) = &relays_client {
                             relays.publish(&signed_packet, sender.clone());
@@ -103,7 +102,7 @@ pub fn actor_thread(
                             "querying the DHT to hydrate our cache for later."
                         );
 
-                        #[cfg(feature = "relay")]
+                        #[cfg(feature = "relays")]
                         if let Some(ref mut relays_client) = relays_client {
                             relays_client.resolve(&public_key, &cache_key, sender.clone());
                         }

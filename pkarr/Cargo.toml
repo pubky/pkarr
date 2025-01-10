@@ -86,27 +86,29 @@ console_log = { version = "1.0.0", features = ["color"] }
 
 [features]
 # Clients 
-## Use [client::dht::Client] with both/either dht/relay features.
+## Use [client::Client] with, you have to enable `dht` and / or `relays` features as well.
 client = ["dep:flume"]
-## Use [client::dht::Client]
+## Use [client::Client] with [mainline] support.
 dht = ["client", "dep:mainline"]
-## Use [client::relay::Client]
-relay = ["client", "dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:url"]
+## Use [client::Client] with [Relays](https://pkarr.org/relays).
+relays = ["client", "dep:reqwest", "dep:tokio", "dep:sha1_smol", "dep:url"]
 
 # Extra
 ## Use [crate::extra::lmdb-cache::LmdbCache]
 lmdb-cache = ["dep:heed", "dep:byteorder", "dep:page_size"]
-## Use [extra::endpoints::EndpointsResolver] trait implementation for [Client] and [client::relay::Client]
-endpoints = ["dep:futures-lite", "dep:genawaiter"]
-## Use [reqwest::dns::Resolve] trait implementation for [Client] and [client::relay::Client]
-reqwest-resolve = ["dep:reqwest", "endpoints"]
-## Use [rustls::ClientConfig] from [Client] and [client::relay::Client] for e2ee transport to Pkarr endpoints
+
+## Use [crate::extra::endpoints] methods according to [endpoints](https://pkarr.org/endpoints) spec.
+endpoints = ["client", "dep:futures-lite", "dep:genawaiter"]
+## Use [rustls::ClientConfig] from [Client] according to [tls](https://pkarr.org/tls) spec.
 tls = ["rustls", "ed25519-dalek/pkcs8", "dep:webpki"]
-## Create a [reqwest::ClientBuilder] from [Client] or [client::relay::Client]
+
+## Use [reqwest::dns::Resolve] trait implementation for [Client].
+reqwest-resolve = ["dep:reqwest", "endpoints"]
+## Create a [reqwest::ClientBuilder] from [Client].
 reqwest-builder = ["client", "tls", "reqwest-resolve"]
 
 ## Use all features
-full = ["dht", "relay", "endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
+full = ["dht", "relays", "endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
 
 default = ["full"]
 

@@ -28,7 +28,7 @@ pub use keys::{Keypair, PublicKey};
 pub use signed_packet::SignedPacket;
 
 #[cfg(feature = "client")]
-pub use client::{Client, Config};
+pub use client::{Client, ClientBuilder, Config};
 
 // Rexports
 pub use simple_dns as dns;

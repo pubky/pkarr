@@ -28,7 +28,7 @@ impl crate::Client {
         self.resolve_endpoints(qname, true)
     }
 
-    /// Helper method that returns the first [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint] in the Async stream from [EndpointsResolver::resolve_https_endpoints]
+    /// Helper method that returns the first [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint] in the Async stream from [Self::resolve_https_endpoints]
     pub async fn resolve_https_endpoint(
         &self,
         qname: &str,
@@ -50,7 +50,7 @@ impl crate::Client {
         }
     }
 
-    /// Helper method that returns the first [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint] in the Async stream from [EndpointsResolver::resolve_svcb_endpoints]
+    /// Helper method that returns the first [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint] in the Async stream from [Self::resolve_svcb_endpoints]
     pub async fn resolve_svcb_endpoint(
         &self,
         qname: &str,
