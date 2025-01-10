@@ -67,6 +67,7 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
     }
 }
 
+// TODO: implement a custom Debug.
 #[derive(Debug, Clone)]
 /// Persistent [crate::Cache] implementation using LMDB's bindings [heed]
 pub struct LmdbCache {

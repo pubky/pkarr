@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             args.tracing_env_filter
-                .unwrap_or("pkarr=info,tower_http=debug".to_string()),
+                .unwrap_or("pkarr_relay=debug,pkarr=info,tower_http=debug".to_string()),
         )
         .init();
 

@@ -1,23 +1,29 @@
-//! Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
+//! Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
 
 use flume::{Receiver, Sender};
-use mainline::{errors::PutError, rpc::Rpc, Id, MutableItem};
+use mainline::errors::PutError;
 use std::{
-    collections::HashMap,
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     num::NonZeroUsize,
     thread,
 };
 use tracing::debug;
+#[cfg(feature = "relay")]
 use url::Url;
 
 use crate::{
-    client::dht::DhtClient, Cache, CacheKey, InMemoryCache, DEFAULT_CACHE_SIZE,
-    DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RELAYS, DEFAULT_RESOLVERS,
+    Cache, CacheKey, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
+    DEFAULT_RESOLVERS,
 };
 use crate::{PublicKey, SignedPacket};
 
-use super::relays::RelaysClient;
+mod actor_thread;
+#[cfg(feature = "dht")]
+mod dht;
+#[cfg(feature = "relay")]
+mod relays;
+
+use actor_thread::{actor_thread, ActorMessage, Info};
 
 // TODO: recognize when the cache is updated since `publish` was called,
 // and return an error ... a CAS error maybe.
@@ -62,7 +68,7 @@ impl Default for Config {
             cache: None,
             #[cfg(feature = "relay")]
             relays: Some(
-                DEFAULT_RELAYS
+                crate::DEFAULT_RELAYS
                     .iter()
                     .map(|s| {
                         Url::parse(s).expect("DEFAULT_RELAYS should be parsed to Url successfully.")
@@ -82,18 +88,29 @@ impl ClientBuilder {
     ///
     /// You will have to add one or more for this client to function.
     pub fn no_default_network(mut self) -> Self {
-        self.0.relays = None;
+        #[cfg(feature = "dht")]
+        {
+            self.0.resolvers = None;
+            self.0.dht_config.bootstrap = vec![];
+        }
+        #[cfg(feature = "relay")]
+        {
+            self.0.relays = None;
+        }
 
         self
     }
 
     /// Set custom set of [resolvers](Config::resolvers).
+    #[cfg(feature = "dht")]
     pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
         self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
 
         self
     }
 
+    /// Set custom set of [relays](Config::relays)
+    #[cfg(feature = "relay")]
     pub fn relays(mut self, relays: Option<Vec<Url>>) -> Self {
         self.0.relays = relays;
 
@@ -137,6 +154,7 @@ impl ClientBuilder {
     }
 
     /// Set [Config::dht_config]
+    #[cfg(feature = "dht")]
     pub fn dht_config(mut self, config: mainline::rpc::Config) -> Self {
         self.0.dht_config = config;
 
@@ -144,6 +162,7 @@ impl ClientBuilder {
     }
 
     /// Convienent method to set the [mainline::Config::bootstrap].
+    #[cfg(feature = "dht")]
     pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
         self.0.dht_config.bootstrap = bootstrap.to_vec();
 
@@ -156,12 +175,10 @@ impl ClientBuilder {
 }
 
 #[derive(Clone, Debug)]
-/// Pkarr client for publishing and resolving [SignedPacket]s over [mainline].
+/// Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
 pub struct Client {
     sender: Sender<ActorMessage>,
     cache: Option<Box<dyn Cache>>,
-    minimum_ttl: u32,
-    maximum_ttl: u32,
 }
 
 impl Client {
@@ -181,18 +198,13 @@ impl Client {
 
         let cache_clone = cache.clone();
 
-        let client = Client {
-            sender,
-            cache,
-            minimum_ttl: config.minimum_ttl.min(config.maximum_ttl),
-            maximum_ttl: config.maximum_ttl.max(config.minimum_ttl),
-        };
+        let client = Client { sender, cache };
 
         debug!(?config, "Starting Client main loop..");
 
         thread::Builder::new()
             .name("Pkarr Dht actor thread".to_string())
-            .spawn(move || run(receiver, cache_clone, config))?;
+            .spawn(move || actor_thread(receiver, cache_clone, config))?;
 
         let (tx, rx) = flume::bounded(1);
 
@@ -293,50 +305,11 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
-        let target = MutableItem::target_from_key(public_key.as_bytes(), None);
-
-        let cached_packet = self
-            .cache
-            .as_ref()
-            .and_then(|cache| cache.get(target.as_bytes()));
-
         let (tx, rx) = flume::bounded::<SignedPacket>(1);
 
-        let as_ref = cached_packet.as_ref();
-
-        // Should query?
-        if as_ref
-            .as_ref()
-            .map(|c| c.is_expired(self.minimum_ttl, self.maximum_ttl))
-            .unwrap_or(true)
-        {
-            debug!(
-                ?public_key,
-                "querying the DHT to hydrate our cache for later."
-            );
-
-            self.sender
-                .send(ActorMessage::Resolve(
-                    target,
-                    tx.clone(),
-                    // Sending the `timestamp` of the known cache, help save some bandwith,
-                    // since remote nodes will not send the encoded packet if they don't know
-                    // any more recent versions.
-                    // most_recent_known_timestamp,
-                    as_ref.map(|cached| cached.timestamp().as_u64()),
-                ))
-                .map_err(|_| ClientWasShutdown)?;
-        }
-
-        if let Some(cached_packet) = cached_packet {
-            debug!(
-                public_key = ?cached_packet.public_key(),
-                "responding with cached packet even if expired"
-            );
-
-            // If the receiver was dropped.. no harm.
-            let _ = tx.send(cached_packet);
-        }
+        self.sender
+            .send(ActorMessage::Resolve(public_key.clone(), tx.clone()))
+            .map_err(|_| ClientWasShutdown)?;
 
         Ok(rx)
     }
@@ -414,126 +387,6 @@ pub enum PublishError {
     MainlinePutError(#[from] PutError),
 }
 
-fn run(receiver: Receiver<ActorMessage>, cache: Option<Box<dyn Cache>>, config: Config) {
-    let cache_clone = cache.clone();
-
-    #[cfg(feature = "dht")]
-    let dht_client = match Rpc::new(config.dht_config) {
-        Ok(rpc) => {
-            let resolvers = config.resolvers.map(|r| r.into());
-
-            Some(DhtClient {
-                rpc,
-                cache,
-                resolvers,
-                resolve_senders: HashMap::new(),
-                publish_senders: HashMap::new(),
-            })
-        }
-        Err(err) => {
-            if let Ok(ActorMessage::Check(sender)) = receiver.try_recv() {
-                let _ = sender.send(Err(err));
-            }
-
-            None
-        }
-    };
-
-    #[cfg(not(feature = "dht"))]
-    let mut dht_client = None;
-
-    #[cfg(feature = "relay")]
-    let relays_client = config
-        .relays
-        .map(|r| RelaysClient::new(r.into(), cache_clone));
-
-    #[cfg(not(feature = "relay"))]
-    let mut relays_client = None;
-
-    actor_thread(receiver, dht_client, relays_client);
-}
-
-fn actor_thread(
-    receiver: Receiver<ActorMessage>,
-    mut dht_client: Option<DhtClient>,
-    relays_client: Option<RelaysClient>,
-) {
-    loop {
-        // === Receive actor messages ===
-        if let Ok(actor_message) = receiver.try_recv() {
-            match actor_message {
-                ActorMessage::Shutdown(sender) => {
-                    drop(receiver);
-                    let _ = sender.send(());
-                    break;
-                }
-                ActorMessage::Publish(signed_packet, sender) => {
-                    // TODO: rename feature relay to relays.
-                    #[cfg(feature = "relay")]
-                    {
-                        if let Some(relays) = &relays_client {
-                            relays.publish(&signed_packet, sender.clone());
-                        }
-                    }
-
-                    #[cfg(feature = "dht")]
-                    {
-                        if let Some(ref mut dht_client) = dht_client {
-                            // TODO: add an if condition in case dht is disabled.
-                            dht_client.publish(&signed_packet, sender);
-                        }
-                    }
-                }
-                ActorMessage::Resolve(target, sender, most_recent_known_timestamp) => {
-                    #[cfg(feature = "dht")]
-                    if let Some(ref mut dht_client) = dht_client {
-                        dht_client.resolve(target, most_recent_known_timestamp, sender);
-                    }
-                }
-                ActorMessage::Info(sender) => {
-                    let dht_info = dht_client.as_ref().map(|dht_client| dht_client.rpc.info());
-
-                    let _ = sender.send(Info {
-                        // TODO: figure out Info with or without dht and or relay.
-                        dht_info: dht_info.unwrap(),
-                    });
-                }
-                ActorMessage::Check(sender) => {
-                    let _ = sender.send(Ok(()));
-                }
-            }
-        }
-
-        #[cfg(feature = "dht")]
-        if let Some(ref mut dht_client) = dht_client {
-            dht_client.tick();
-        }
-    }
-
-    debug!("Client main loop terminated");
-}
-
-enum ActorMessage {
-    Publish(SignedPacket, Sender<Result<(), ()>>),
-    Resolve(Id, Sender<SignedPacket>, Option<u64>),
-    Shutdown(Sender<()>),
-    Info(Sender<Info>),
-    Check(Sender<Result<(), std::io::Error>>),
-}
-
-pub struct Info {
-    #[cfg(feature = "dht")]
-    dht_info: mainline::rpc::Info,
-}
-
-// TODO: add more infor like Mainline
-impl Info {
-    #[cfg(feature = "dht")]
-    pub fn dht_info(&self) -> &mainline::rpc::Info {
-        &self.dht_info
-    }
-}
-
 pub fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<SocketAddrV4> {
     resolvers
         .iter()
@@ -547,249 +400,4 @@ pub fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<Socke
         })
         .flatten()
         .collect::<Vec<_>>()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use mainline::Testnet;
-
-    use super::*;
-    use crate::{Keypair, SignedPacket};
-
-    #[test]
-    fn shutdown_sync() {
-        let testnet = Testnet::new(3).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        client.shutdown_sync();
-
-        assert!(client.info().is_err());
-    }
-
-    #[test]
-    fn publish_resolve_sync() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish_sync(&signed_packet).unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-        let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    }
-
-    #[test]
-    fn thread_safe_sync() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish_sync(&signed_packet).unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        thread::spawn(move || {
-            let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-            let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-            assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        })
-        .join()
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn shutdown() {
-        let testnet = Testnet::new(3).unwrap();
-
-        let mut a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        a.shutdown().await;
-
-        assert!(a.info().is_err());
-    }
-
-    #[tokio::test]
-    async fn publish_resolve() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish(&signed_packet).await.unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-        let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    }
-
-    #[tokio::test]
-    async fn thread_safe() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish(&signed_packet).await.unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        tokio::spawn(async move {
-            let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-            let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-            assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        })
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn return_expired_packet_fallback() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .dht_config(mainline::Config {
-                request_timeout: Duration::from_millis(10),
-                ..Default::default()
-            })
-            // Everything is expired
-            .maximum_ttl(0)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-
-        client
-            .cache()
-            .unwrap()
-            .put(&keypair.public_key().into(), &signed_packet);
-
-        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
-
-        assert_eq!(resolved, Some(signed_packet));
-    }
-
-    #[tokio::test]
-    async fn ttl_0_test() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .maximum_ttl(0)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-
-        client.publish(&signed_packet).await.unwrap();
-
-        // First Call
-        let resolved = client
-            .resolve(&signed_packet.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
-
-        thread::sleep(Duration::from_millis(10));
-
-        let second = client
-            .resolve(&signed_packet.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
-    }
 }

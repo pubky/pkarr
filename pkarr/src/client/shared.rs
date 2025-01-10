@@ -1,8 +1,10 @@
+//! shared logic between the native and web relay logic.
+
 use reqwest::header::HeaderValue;
 use reqwest::{header, StatusCode};
 use url::Url;
 
-use crate::{Cache, PublicKey, SignedPacket};
+use crate::{Cache, CacheKey, PublicKey, SignedPacket};
 
 macro_rules! cross_debug {
     ($($arg:tt)*) => {
@@ -18,8 +20,9 @@ pub async fn resolve_from_relay(
     relay: Url,
     public_key: &PublicKey,
     cache: Option<Box<dyn Cache>>,
+    cache_key: &CacheKey,
 ) -> Result<Option<SignedPacket>, reqwest::Error> {
-    let url = format_url(&relay, &public_key);
+    let url = format_url(&relay, public_key);
 
     let mut request = http_client.get(url);
 
@@ -50,9 +53,14 @@ pub async fn resolve_from_relay(
 
     let payload = response.bytes().await?;
 
-    match SignedPacket::from_relay_payload(&public_key, &payload) {
-        // TODO: read from cache.
-        Ok(signed_packet) => Ok(Some(signed_packet)),
+    match SignedPacket::from_relay_payload(public_key, &payload) {
+        Ok(signed_packet) => {
+            if let Some(cache) = cache {
+                cache.put(cache_key, &signed_packet);
+            }
+
+            Ok(Some(signed_packet))
+        }
         Err(error) => {
             cross_debug!("Invalid signed_packet {relay}:{error}");
 

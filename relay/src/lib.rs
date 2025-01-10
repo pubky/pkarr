@@ -19,6 +19,7 @@ use tracing::info;
 use pkarr::{extra::lmdb_cache::LmdbCache, Client};
 
 pub use config::Config;
+use url::Url;
 
 #[derive(Debug, Default)]
 pub struct RelayBuilder(Config);
@@ -153,6 +154,26 @@ impl Relay {
         unsafe { Self::start(config).await }
     }
 
+    /// Start an ephemeral Pkarr relay on a random port number.
+    ///
+    /// # Safety
+    /// See [Self::start]
+    pub async fn start_test() -> anyhow::Result<Self> {
+        let testnet = mainline::Testnet::new(10)?;
+
+        let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
+
+        let mut config = Config {
+            cache_path: Some(storage.join("pkarr-relay")),
+            ..Default::default()
+        };
+
+        config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
+        config.pkarr_config.resolvers = None;
+
+        unsafe { Self::start(config).await }
+    }
+
     /// Run a Pkarr relay in a Testnet mode (on port 15411).
     ///
     /// # Safety
@@ -170,7 +191,7 @@ impl Relay {
         };
 
         config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
-        config.pkarr_config.resolvers = Some(vec![]);
+        config.pkarr_config.resolvers = None;
 
         unsafe { Self::start(config).await }
     }
@@ -181,6 +202,12 @@ impl Relay {
 
     pub fn relay_address(&self) -> SocketAddr {
         self.relay_address
+    }
+
+    /// Returns the localhost Url of this http server.
+    pub fn local_url(&self) -> Url {
+        Url::parse(&format!("http://localhost:{}", self.relay_address.port()))
+            .expect("local_url should be formatted fine")
     }
 
     pub fn shutdown(&self) {

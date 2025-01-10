@@ -59,9 +59,15 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let pkarr_config = pkarr::client::Config {
+            resolvers: None,
+            relays: None,
+            ..Default::default()
+        };
+
         Self {
             http_port: 6881,
-            pkarr_config: pkarr::client::Config::default(),
+            pkarr_config,
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: Some(RateLimiterConfig::default()),
