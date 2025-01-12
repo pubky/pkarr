@@ -600,7 +600,7 @@ mod tests {
         let client = PkarrClient::builder()
             .dht_settings(DhtSettings {
                 bootstrap: Some(testnet.bootstrap),
-                request_timeout: Some(Duration::from_millis(50)),
+                request_timeout: Some(Duration::from_millis(100)),
                 server: None,
                 port: None,
             })
