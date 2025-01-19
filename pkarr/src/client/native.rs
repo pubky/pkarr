@@ -1,7 +1,10 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://pkarr.org/relays).
 
 use flume::{Receiver, Sender};
+use futures_lite::{Future, Stream};
 use mainline::{errors::PutError, rpc::DEFAULT_BOOTSTRAP_NODES};
+use std::pin::Pin;
+use std::task::Poll;
 use std::{
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     num::NonZeroUsize,
@@ -365,9 +368,8 @@ impl Client {
     /// If there is no packet in the cache, or if the cached packet is expired,
     /// it will make a DHT query in a background query and caches any more recent packets it receieves.
     ///
-    /// If you want to have more control, you can call [Self::resolve_rx] directly,
-    /// and then [iterate](flume::Receiver::recv) over or [stream](flume::Receiver::recv_async)
-    /// incoming [SignedPacket]s until your lookup criteria is satisfied.
+    /// If you want to have more control, you can call [Self::resolve_iter], or [Self::resolve_stream]
+    /// to iterate over incoming [SignedPacket]s until your lookup criteria is satisfied.
     pub async fn resolve(
         &self,
         public_key: &PublicKey,
@@ -379,9 +381,8 @@ impl Client {
     /// If there is no packet in the cache, or if the cached packet is expired,
     /// it will make a DHT query in a background query and caches any more recent packets it receieves.
     ///
-    /// If you want to have more control, you can call [Self::resolve_rx] directly,
-    /// and then [iterate](flume::Receiver::recv) over or [stream](flume::Receiver::recv_async)
-    /// incoming [SignedPacket]s until your lookup criteria is satisfied.
+    /// If you want to have more control, you can call [Self::resolve_iter], or [Self::resolve_stream]
+    /// to iterate over incoming [SignedPacket]s until your lookup criteria is satisfied.
     pub fn resolve_sync(
         &self,
         public_key: &PublicKey,
@@ -389,20 +390,18 @@ impl Client {
         Ok(self.resolve_rx(public_key)?.recv().ok())
     }
 
-    /// Returns a `flume::Receiver<SignedPacket>` that allows [iterating](flume::Receiver::recv) over or
-    /// [streaming](flume::Receiver::recv_async) incoming [SignedPacket]s, in case you need more control over your
-    /// caching strategy and when resolution should terminate, as well as filtering [SignedPacket]s according to a custom criteria.
-    pub fn resolve_rx(
+    pub fn resolve_iter(
         &self,
         public_key: &PublicKey,
-    ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
-        let (tx, rx) = flume::bounded::<SignedPacket>(1);
+    ) -> Result<SignedPacketIterator, ClientWasShutdown> {
+        Ok(SignedPacketIterator(self.resolve_rx(public_key)?))
+    }
 
-        self.sender
-            .send(ActorMessage::Resolve(public_key.clone(), tx.clone()))
-            .map_err(|_| ClientWasShutdown)?;
-
-        Ok(rx)
+    pub fn resolve_stream(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<SignedPacketStream, ClientWasShutdown> {
+        Ok(SignedPacketStream(self.resolve_rx(public_key)?))
     }
 
     /// Shutdown the actor thread loop.
@@ -422,6 +421,22 @@ impl Client {
     }
 
     // === Private Methods ===
+
+    /// Returns a `flume::Receiver<SignedPacket>` that allows [iterating](flume::Receiver::recv) over or
+    /// [streaming](flume::Receiver::recv_async) incoming [SignedPacket]s, in case you need more control over your
+    /// caching strategy and when resolution should terminate, as well as filtering [SignedPacket]s according to a custom criteria.
+    pub(crate) fn resolve_rx(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
+        let (tx, rx) = flume::bounded::<SignedPacket>(1);
+
+        self.sender
+            .send(ActorMessage::Resolve(public_key.clone(), tx.clone()))
+            .map_err(|_| ClientWasShutdown)?;
+
+        Ok(rx)
+    }
 
     pub(crate) fn publish_inner(
         &self,
@@ -491,6 +506,33 @@ pub fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<Socke
         })
         .flatten()
         .collect::<Vec<_>>()
+}
+
+pub struct SignedPacketIterator(flume::Receiver<SignedPacket>);
+
+impl Iterator for SignedPacketIterator {
+    type Item = SignedPacket;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.recv().ok()
+    }
+}
+
+pub struct SignedPacketStream(flume::Receiver<SignedPacket>);
+
+impl Stream for SignedPacketStream {
+    type Item = SignedPacket;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.0.recv_async()).poll(cx) {
+            Poll::Ready(Ok(item)) => Poll::Ready(Some(item)), // Successfully received an item
+            Poll::Ready(Err(_)) => Poll::Ready(None),         // Channel is closed
+            Poll::Pending => Poll::Pending,                   // No item available yet
+        }
+    }
 }
 
 #[cfg(test)]
