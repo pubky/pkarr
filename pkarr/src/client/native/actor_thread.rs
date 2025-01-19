@@ -49,7 +49,7 @@ pub fn actor_thread(
     #[cfg(feature = "relays")]
     let mut relays_client = config
         .relays
-        .map(|r| RelaysClient::new(r.into(), cache.clone()));
+        .map(|r| RelaysClient::new(r.into(), cache.clone(), config.request_timeout));
 
     #[cfg(not(feature = "relays"))]
     let mut relays_client: Option<()> = None;
@@ -74,7 +74,6 @@ pub fn actor_thread(
                     #[cfg(feature = "dht")]
                     {
                         if let Some(ref mut dht_client) = dht_client {
-                            // TODO: add an if condition in case dht is disabled.
                             dht_client.publish(&signed_packet, sender);
                         }
                     }

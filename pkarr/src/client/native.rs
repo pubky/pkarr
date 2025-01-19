@@ -2,9 +2,11 @@
 
 use flume::{Receiver, Sender};
 use futures_lite::{Future, Stream};
+use mainline::rpc::DEFAULT_REQUEST_TIMEOUT;
 use mainline::{errors::PutError, rpc::DEFAULT_BOOTSTRAP_NODES};
 use std::pin::Pin;
 use std::task::Poll;
+use std::time::Duration;
 use std::{
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
     num::NonZeroUsize,
@@ -59,6 +61,13 @@ pub struct Config {
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
     #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
+
+    /// Timeout for both Dht and Relays requests.
+    ///
+    /// The longer this timeout the longer resolve queries will take before consider failed.
+    ///
+    /// Defaults to [mainline::rpc::DEFAULT_REQUEST_TIMEOUT]
+    pub request_timeout: Duration,
 }
 
 impl Default for Config {
@@ -79,6 +88,7 @@ impl Default for Config {
                     })
                     .collect(),
             ),
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
         }
     }
 }
@@ -255,6 +265,17 @@ impl ClientBuilder {
     #[cfg(feature = "dht")]
     pub fn dht_config(mut self, config: mainline::rpc::Config) -> Self {
         self.0.dht_config = config;
+
+        self
+    }
+
+    /// Set the maximum [Config::request_timeout] for both Dht and relays client.
+    ///
+    /// Useful for testing NOT FOUND responses, where you want to reach the timeout
+    /// sooner than the default of [mainline::rpc::DEFAULT_REQUEST_TIMEOUT].
+    pub fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.0.dht_config.request_timeout = timeout;
+        self.0.request_timeout = timeout;
 
         self
     }
@@ -528,9 +549,9 @@ impl Stream for SignedPacketStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         match Pin::new(&mut self.0.recv_async()).poll(cx) {
-            Poll::Ready(Ok(item)) => Poll::Ready(Some(item)), // Successfully received an item
-            Poll::Ready(Err(_)) => Poll::Ready(None),         // Channel is closed
-            Poll::Pending => Poll::Pending,                   // No item available yet
+            Poll::Ready(Ok(item)) => Poll::Ready(Some(item)),
+            Poll::Ready(Err(_)) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -679,5 +700,23 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
+    }
+
+    #[tokio::test]
+    async fn not_found() {
+        let relay = Relay::start_test().await.unwrap();
+
+        let client = Client::builder()
+            .bootstrap(&[relay.resolver_address().to_string()])
+            .relays(Some(vec![relay.local_url()]))
+            .request_timeout(Duration::from_millis(20))
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+
+        assert_eq!(resolved, None);
     }
 }

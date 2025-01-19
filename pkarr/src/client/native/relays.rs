@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use reqwest::Client;
 use tokio::runtime::{Builder, Runtime};
 use url::Url;
 
 use crate::{Cache, CacheKey, PublicKey, SignedPacket};
 
-use crate::client::shared::resolve_from_relay;
+use crate::client::shared::{publish_to_relay, resolve_from_relay};
 
 pub struct RelaysClient {
     relays: Box<[Url]>,
@@ -13,55 +15,41 @@ pub struct RelaysClient {
     runtime: Runtime,
 }
 
-// TODO: add reqwest client timeout from the ClientBulider timeout settings.
 impl RelaysClient {
-    pub fn new(relays: Box<[Url]>, cache: Option<Box<dyn Cache>>) -> Self {
+    pub fn new(relays: Box<[Url]>, cache: Option<Box<dyn Cache>>, timeout: Duration) -> Self {
         Self {
             relays,
             // TODO: allow passing a runtime.
             runtime: Builder::new_multi_thread()
-                .worker_threads(4) // Adjust the number of threads as needed
+                .worker_threads(4)
                 .enable_all()
                 .build()
                 .expect("Failed to create Tokio runtime"),
-            http_client: Client::default(),
+            http_client: Client::builder()
+                .timeout(timeout)
+                .build()
+                .expect("Client building should be infallible"),
             cache,
         }
     }
 
     pub fn publish(&self, signed_packet: &SignedPacket, sender: flume::Sender<Result<(), ()>>) {
         let public_key = signed_packet.public_key();
-        let path = public_key.to_string();
         let body = signed_packet.to_relay_payload();
 
         for relay in &self.relays {
-            let mut url = relay.clone();
-            let mut segments = url.path_segments_mut().unwrap();
-            segments.push(&path);
-            drop(segments);
-
             let http_client = self.http_client.clone();
+            let relay = relay.clone();
+            let public_key = public_key.clone();
             let body = body.clone();
             let sender = sender.clone();
 
             self.runtime.spawn(async move {
-                let response = http_client.put(url).body(body).send().await;
-
-                match response {
-                    Ok(response) => {
-                        match response.error_for_status() {
-                            Ok(_response) => {
-                                // TODO: handle success
-                                let _ = sender.send(Ok(()));
-                            }
-                            Err(_error) => {
-                                // TODO: handle error response from a relay.
-                            }
-                        }
-                    }
-                    Err(_error) => {
-                        // TODO: handle error sending a request to a relay.
-                    }
+                if publish_to_relay(http_client, relay, &public_key, body)
+                    .await
+                    .is_ok()
+                {
+                    let _ = sender.send(Ok(()));
                 }
             });
         }
@@ -82,13 +70,11 @@ impl RelaysClient {
             let public_key = public_key.clone();
 
             self.runtime.spawn(async move {
-                match resolve_from_relay(http_client, relay, &public_key, cache, &cache_key).await {
-                    Ok(Some(signed_packet)) => {
-                        let _ = sender.send(signed_packet);
-                    }
-                    Ok(None) => {}
-                    Err(_err) => {}
-                };
+                if let Ok(Some(signed_packet)) =
+                    resolve_from_relay(http_client, relay, &public_key, cache, &cache_key).await
+                {
+                    let _ = sender.send(signed_packet);
+                }
             });
         }
     }
@@ -238,5 +224,23 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
+    }
+
+    #[tokio::test]
+    async fn not_found() {
+        let relay = Relay::start_test().await.unwrap();
+
+        let client = Client::builder()
+            .no_default_network()
+            .relays(Some(vec![relay.local_url()]))
+            .request_timeout(Duration::from_millis(20))
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+
+        assert_eq!(resolved, None);
     }
 }

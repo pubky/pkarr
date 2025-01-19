@@ -106,8 +106,6 @@ impl DhtClient {
             };
         }
 
-        // TODO: Handle relay messages before removing the senders.
-
         // === Drop senders to done queries ===
         for id in &report.done_get_queries {
             self.resolve_senders.remove(id);
@@ -369,5 +367,22 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
+    }
+
+    #[tokio::test]
+    async fn not_found() {
+        let testnet = Testnet::new(10).unwrap();
+
+        let client = Client::builder()
+            .no_default_network()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+
+        assert_eq!(resolved, None);
     }
 }
