@@ -108,14 +108,30 @@ impl Endpoint {
     // === Getters ===
 
     /// Returns the [SVCB] record's `target` value.
-    ///
-    /// Useful in web browsers where we can't use [Self::to_socket_addrs]
-    pub fn domain(&self) -> &str {
+    pub fn target(&self) -> &str {
         &self.target
     }
 
-    pub fn port(&self) -> u16 {
-        self.port
+    /// Returns the [SVCB] record's `target` value, if it is an ICANN domain.
+    ///
+    /// Returns `None` if the target was `.` or a z32 encoded public key.
+    ///
+    /// Useful in web browsers where we can't use [Self::to_socket_addrs]
+    pub fn domain(&self) -> Option<&str> {
+        if self.target != "." && self.target.parse::<PublicKey>().is_err() {
+            Some(&self.target)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the port number of this endpoint if set to non-zero value.
+    pub fn port(&self) -> Option<u16> {
+        if self.port > 0 {
+            Some(self.port)
+        } else {
+            None
+        }
     }
 
     /// Return the [PublicKey] of the [SignedPacket] this endpoint was found at.
@@ -218,13 +234,13 @@ mod tests {
         let endpoint = Endpoint::parse(&signed_packet, &format!("foo.{tld}"), false)
             .pop()
             .unwrap();
-        assert_eq!(endpoint.domain(), "https.example.com");
+        assert_eq!(endpoint.domain(), Some("https.example.com"));
 
         // Follow _foo.tld SVCB records
         let endpoint = Endpoint::parse(&signed_packet, &format!("_foo.{tld}"), true)
             .pop()
             .unwrap();
-        assert_eq!(endpoint.domain(), "protocol.example.com");
+        assert_eq!(endpoint.domain(), Some("protocol.example.com"));
     }
 
     #[test]
@@ -257,7 +273,8 @@ mod tests {
         .pop()
         .unwrap();
 
-        assert_eq!(endpoint.domain(), ".");
+        assert_eq!(endpoint.target(), ".");
+        assert_eq!(endpoint.domain(), None);
 
         let mut addrs = endpoint.to_socket_addrs();
         addrs.sort();

@@ -89,7 +89,7 @@ impl crate::Client {
             }
 
             while let Some(next) = stack.pop() {
-                let current = next.domain();
+                let current = next.target();
 
                 // Attempt to resolve the domain as a public key.
                 match PublicKey::try_from(current) {
@@ -233,7 +233,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(endpoint.domain(), "example.com");
+        assert_eq!(endpoint.domain(), Some("example.com"));
         assert_eq!(endpoint.public_key(), &tld);
     }
 
@@ -253,7 +253,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(endpoint.domain(), "example.com");
+        assert_eq!(endpoint.domain(), Some("example.com"));
     }
 
     #[tokio::test]
@@ -316,7 +316,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(endpoint.domain(), ".");
+        assert_eq!(endpoint.target(), ".");
+        assert_eq!(endpoint.domain(), None);
         assert_eq!(
             endpoint
                 .to_socket_addrs()
