@@ -6,7 +6,6 @@
 //! run this example from the project root:
 //!     $ cargo run --example publish
 
-use tracing::Level;
 use tracing_subscriber;
 
 use std::time::Instant;
@@ -18,8 +17,7 @@ use pkarr::Client;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .with_env_filter("pkarr")
+        .with_env_filter("pkarr=info")
         .init();
 
     let client = Client::builder().build()?;

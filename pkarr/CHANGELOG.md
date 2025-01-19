@@ -45,6 +45,7 @@ All notable changes to pkarr will be documented in this file.
 - `Client::cache()` returns an option, in case the cache size is set to zero.
 - Rename feature `relay` to `relays`.
 - Default client uses both `mainline` and `relays`, and each can be disabled with feature flags or the builder methods.
+- Improve `Debug` and `Display` implementations for `SignedPacket`.
 
 ### Removed
 

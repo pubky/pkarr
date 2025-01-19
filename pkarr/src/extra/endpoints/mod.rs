@@ -17,7 +17,7 @@ impl crate::Client {
         &'a self,
         qname: &'a str,
     ) -> impl Stream<Item = Endpoint> + 'a {
-        self.resolve_endpoints(qname, false)
+        self.resolve_endpoints(qname, true)
     }
 
     /// Returns an async stream of [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint]s
@@ -25,7 +25,7 @@ impl crate::Client {
         &'a self,
         qname: &'a str,
     ) -> impl Stream<Item = Endpoint> + 'a {
-        self.resolve_endpoints(qname, true)
+        self.resolve_endpoints(qname, false)
     }
 
     /// Helper method that returns the first [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint] in the Async stream from [Self::resolve_https_endpoints]
@@ -69,7 +69,7 @@ impl crate::Client {
     pub fn resolve_endpoints<'a>(
         &'a self,
         qname: &'a str,
-        is_svcb: bool,
+        https: bool,
     ) -> impl Stream<Item = Endpoint> + 'a {
         Gen::new(|co| async move {
             // TODO: cache the result of this function?
@@ -84,7 +84,7 @@ impl crate::Client {
             if let Ok(tld) = PublicKey::try_from(qname) {
                 if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
                     depth += 1;
-                    stack.extend(Endpoint::parse(&signed_packet, qname, is_svcb));
+                    stack.extend(Endpoint::parse(&signed_packet, qname, https));
                 }
             }
 
@@ -96,7 +96,7 @@ impl crate::Client {
                     Ok(tld) => match self.resolve(&tld).await {
                         Ok(Some(signed_packet)) if depth < DEFAULT_MAX_CHAIN_LENGTH => {
                             depth += 1;
-                            let endpoints = Endpoint::parse(&signed_packet, current, is_svcb);
+                            let endpoints = Endpoint::parse(&signed_packet, current, https);
 
                             #[cfg(not(target_arch = "wasm32"))]
                             tracing::trace!(?qname, ?depth, ?endpoints, "resolved endpoints");

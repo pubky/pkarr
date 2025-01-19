@@ -10,7 +10,7 @@ use simple_dns::{
 };
 use std::{
     char,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
@@ -145,7 +145,7 @@ self_cell!(
         dependent: Packet,
     }
 
-    impl{Debug, PartialEq, Eq}
+    impl{PartialEq, Eq}
 );
 
 impl Inner {
@@ -171,7 +171,7 @@ impl Inner {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
@@ -627,21 +627,34 @@ impl Clone for SignedPacket {
     }
 }
 
+impl Debug for SignedPacket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignedPacket")
+            .field("timestamp", &self.timestamp())
+            .field("last_seen", &self.last_seen())
+            .field("public_key", &self.public_key())
+            .field("signature", &self.signature())
+            .field("packet", &self.packet())
+            .finish()
+    }
+}
+
 impl Display for SignedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {},\n    signature: {}\n    records:\n",
+            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {} {},\n    signature: {}\n    records:\n",
             &self.public_key(),
             &self.elapsed(),
             &self.timestamp(),
+            &self.timestamp().format_http_date(),
             &self.signature(),
         )?;
 
         for answer in &self.packet().answers {
             writeln!(
                 f,
-                "        {}  IN  {}  {}\n",
+                "        {}  IN  {}  {}",
                 &answer.name,
                 &answer.ttl,
                 match &answer.rdata {

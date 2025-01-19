@@ -30,15 +30,10 @@ impl Endpoint {
     /// 2. Sort them by priority (reverse)
     /// 3. Shuffle records within each priority
     /// 3. If the target is `.`, keep track of A and AAAA records see [rfc9460](https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
-    pub(crate) fn parse(
-        signed_packet: &SignedPacket,
-        target: &str,
-        // TODO: change is_svcb to a better name
-        is_svcb: bool,
-    ) -> Vec<Endpoint> {
+    pub(crate) fn parse(signed_packet: &SignedPacket, target: &str, https: bool) -> Vec<Endpoint> {
         let mut records = signed_packet
             .resource_records(target)
-            .filter_map(|record| get_svcb(record, is_svcb))
+            .filter_map(|record| get_svcb(record, https))
             .collect::<Vec<_>>();
 
         // TODO: support wildcard?
@@ -173,21 +168,21 @@ impl Endpoint {
     }
 }
 
-fn get_svcb<'a>(record: &'a ResourceRecord, is_svcb: bool) -> Option<&'a SVCB<'a>> {
+fn get_svcb<'a>(record: &'a ResourceRecord, get_https: bool) -> Option<&'a SVCB<'a>> {
     match &record.rdata {
         RData::SVCB(svcb) => {
-            if is_svcb {
-                Some(svcb)
-            } else {
+            if get_https {
                 None
+            } else {
+                Some(svcb)
             }
         }
 
         RData::HTTPS(curr) => {
-            if is_svcb {
-                None
-            } else {
+            if get_https {
                 Some(&curr.0)
+            } else {
+                None
             }
         }
         _ => None,
@@ -231,13 +226,13 @@ mod tests {
         let tld = keypair.public_key();
 
         // Follow foo.tld HTTPS records
-        let endpoint = Endpoint::parse(&signed_packet, &format!("foo.{tld}"), false)
+        let endpoint = Endpoint::parse(&signed_packet, &format!("foo.{tld}"), true)
             .pop()
             .unwrap();
         assert_eq!(endpoint.domain(), Some("https.example.com"));
 
         // Follow _foo.tld SVCB records
-        let endpoint = Endpoint::parse(&signed_packet, &format!("_foo.{tld}"), true)
+        let endpoint = Endpoint::parse(&signed_packet, &format!("_foo.{tld}"), false)
             .pop()
             .unwrap();
         assert_eq!(endpoint.domain(), Some("protocol.example.com"));
@@ -268,7 +263,7 @@ mod tests {
         let endpoint = Endpoint::parse(
             &signed_packet,
             &signed_packet.public_key().to_string(),
-            false,
+            true,
         )
         .pop()
         .unwrap();
