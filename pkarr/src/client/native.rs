@@ -23,9 +23,6 @@ pub use actor_thread::Info;
 use actor_thread::{actor_thread, ActorMessage};
 pub use builder::{ClientBuilder, Config};
 
-// TODO: recognize when the cache is updated since `publish` was called,
-// and return an error ... a CAS error maybe.
-
 #[derive(Clone, Debug)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or
 /// [Relays](https://pkarr.org/relays).
@@ -35,7 +32,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(config: Config) -> Result<Client, std::io::Error> {
+    pub fn new(config: Config) -> Result<Client, BuildError> {
         let (sender, receiver) = flume::bounded(32);
 
         let cache = if config.cache_size == 0 {
@@ -57,7 +54,8 @@ impl Client {
 
         thread::Builder::new()
             .name("Pkarr Dht actor thread".to_string())
-            .spawn(move || actor_thread(receiver, cache_clone, config))?;
+            .spawn(move || actor_thread(receiver, cache_clone, config))
+            .map_err(BuildError::ActorThreadSpawn)?;
 
         let (tx, rx) = flume::bounded(1);
 
@@ -220,7 +218,7 @@ impl Client {
         let (sender, receiver) = flume::bounded::<Result<(), PublishError>>(1);
 
         self.sender
-            .send(ActorMessage::Publish(signed_packet.clone(), sender))
+            .send(ActorMessage::Publish(signed_packet.clone(), sender, cas))
             .map_err(|_| PublishError::ClientWasShutdown)?;
 
         Ok(receiver)
@@ -240,43 +238,6 @@ impl Client {
         }
 
         Ok(None)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ClientWasShutdown;
-
-impl std::error::Error for ClientWasShutdown {}
-
-impl std::fmt::Display for ClientWasShutdown {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Pkarr Client was shutdown")
-    }
-}
-
-#[derive(thiserror::Error, Debug, PartialEq, Eq)]
-/// Errors occuring during publishing a [SignedPacket]
-pub enum PublishError {
-    #[error("Found a more recent SignedPacket in the client's cache")]
-    /// Found a more recent SignedPacket in the client's cache
-    NotMostRecent,
-
-    #[error("Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing")]
-    /// Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing
-    CasFailed,
-
-    #[error("Pkarr Client was shutdown")]
-    ClientWasShutdown,
-
-    // TODO: should we remove this when there is no dht or support it for relays?
-    #[error("Publish query is already inflight for the same public_key")]
-    /// [crate::Client::publish] is already inflight to the same public_key
-    PublishInflight,
-}
-
-impl From<ClientWasShutdown> for PublishError {
-    fn from(_: ClientWasShutdown) -> Self {
-        Self::ClientWasShutdown
     }
 }
 
@@ -306,13 +267,66 @@ impl Stream for SignedPacketStream {
     }
 }
 
+#[derive(thiserror::Error, Debug)]
+/// Errors occuring during building a [Client]
+pub enum BuildError {
+    #[error("Failed to spawn the actor thread.")]
+    /// Failed to spawn the actor thread.
+    ActorThreadSpawn(std::io::Error),
+
+    #[error("Failed to bind mainline UdpSocket (and Relays are disabled).")]
+    /// Failed to bind mainline UdpSocket (and Relays are disabled).
+    MainlineUdpSocket(std::io::Error),
+
+    #[error("Client configured without Mainline node or relays.")]
+    /// Client configured without Mainline node or relays.
+    NoNetwork,
+}
+
+#[derive(Debug)]
+pub struct ClientWasShutdown;
+
+impl std::error::Error for ClientWasShutdown {}
+
+impl std::fmt::Display for ClientWasShutdown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Pkarr Client was shutdown")
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+/// Errors occuring during publishing a [SignedPacket]
+pub enum PublishError {
+    #[error("Found a more recent SignedPacket in the client's cache")]
+    /// Found a more recent SignedPacket in the client's cache
+    NotMostRecent,
+
+    #[error("Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing")]
+    /// Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing
+    CasFailed,
+
+    #[error("Pkarr Client was shutdown")]
+    ClientWasShutdown,
+
+    // TODO: should we remove this when there is no dht or support it for relays?
+    #[error("Publish query is already inflight for the same public_key")]
+    /// [crate::Client::publish] is already inflight to the same public_key
+    PublishInflight,
+}
+
+impl From<ClientWasShutdown> for PublishError {
+    fn from(_: ClientWasShutdown) -> Self {
+        Self::ClientWasShutdown
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Combined client tests
 
     use std::{thread, time::Duration};
 
-    use native::PublishError;
+    use native::{BuildError, PublishError};
     use pkarr_relay::Relay;
 
     use super::super::*;
@@ -495,11 +509,19 @@ mod tests {
         let handle = tokio::spawn(async move {
             let result = clone.publish(&packet).await;
 
-            assert_eq!(result, Err(PublishError::PublishInflight));
+            assert!(matches!(result, Err(PublishError::PublishInflight)));
         });
 
         client.publish(&signed_packet).await.unwrap();
 
         handle.await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn no_network() {
+        assert!(matches!(
+            Client::builder().no_default_network().build(),
+            Err(BuildError::NoNetwork)
+        ));
     }
 }

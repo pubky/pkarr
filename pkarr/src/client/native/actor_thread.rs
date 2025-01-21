@@ -2,9 +2,13 @@ use std::collections::HashMap;
 
 use flume::{Receiver, Sender};
 use mainline::rpc::Rpc;
+use pubky_timestamp::Timestamp;
 use tracing::debug;
 
-use crate::{client::native::dht::DhtClient, Cache, CacheKey, Config, PublicKey, SignedPacket};
+use crate::{
+    client::native::{dht::DhtClient, BuildError},
+    Cache, CacheKey, Config, PublicKey, SignedPacket,
+};
 
 #[cfg(feature = "relays")]
 use super::relays::RelaysClient;
@@ -34,7 +38,14 @@ pub fn actor_thread(
             }
             Err(err) => {
                 if let Ok(ActorMessage::Check(sender)) = receiver.try_recv() {
-                    let _ = sender.send(Err(err));
+                    #[cfg(not(feature = "relays"))]
+                    {
+                        let _ = sender.send(Err(BuildError::MainlineUdpSocket(err)));
+                    }
+                    #[cfg(feature = "relays")]
+                    if config.relays.as_ref().map(|r| r.is_empty()).unwrap_or(true) {
+                        let _ = sender.send(Err(BuildError::MainlineUdpSocket(err)));
+                    }
                 }
 
                 None
@@ -64,18 +75,18 @@ pub fn actor_thread(
                     let _ = sender.send(());
                     break;
                 }
-                ActorMessage::Publish(signed_packet, sender) => {
+                ActorMessage::Publish(signed_packet, sender, cas) => {
                     #[cfg(feature = "relays")]
                     {
                         if let Some(relays) = &relays_client {
-                            relays.publish(&signed_packet, sender.clone());
+                            relays.publish(&signed_packet, sender.clone(), cas);
                         }
                     }
 
                     #[cfg(feature = "dht")]
                     {
                         if let Some(ref mut dht_client) = dht_client {
-                            dht_client.publish(&signed_packet, sender);
+                            dht_client.publish(&signed_packet, sender, cas);
                         }
                     }
                 }
@@ -136,7 +147,11 @@ pub fn actor_thread(
                     });
                 }
                 ActorMessage::Check(sender) => {
-                    let _ = sender.send(Ok(()));
+                    let _ = sender.send(if dht_client.is_none() && relays_client.is_none() {
+                        Err(BuildError::NoNetwork)
+                    } else {
+                        Ok(())
+                    });
                 }
             }
         }
@@ -151,11 +166,15 @@ pub fn actor_thread(
 }
 
 pub enum ActorMessage {
-    Publish(SignedPacket, Sender<Result<(), PublishError>>),
+    Publish(
+        SignedPacket,
+        Sender<Result<(), PublishError>>,
+        Option<Timestamp>,
+    ),
     Resolve(PublicKey, Sender<SignedPacket>),
     Shutdown(Sender<()>),
     Info(Sender<Info>),
-    Check(Sender<Result<(), std::io::Error>>),
+    Check(Sender<Result<(), BuildError>>),
 }
 
 pub struct Info {

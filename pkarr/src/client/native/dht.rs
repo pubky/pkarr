@@ -4,9 +4,13 @@ use std::{collections::HashMap, net::SocketAddrV4};
 
 use flume::Sender;
 use mainline::{
-    rpc::{messages, PutError, Response, Rpc},
+    rpc::{
+        messages::{self, PutMutableRequestArguments},
+        PutError, Response, Rpc,
+    },
     Id,
 };
+use pubky_timestamp::Timestamp;
 use tracing::debug;
 
 use crate::{Cache, SignedPacket};
@@ -26,12 +30,17 @@ impl DhtClient {
         &mut self,
         signed_packet: &SignedPacket,
         sender: Sender<Result<(), PublishError>>,
+        cas: Option<Timestamp>,
     ) {
         let mutable_item = mainline::MutableItem::from(signed_packet);
         let target = *mutable_item.target();
 
+        let mut put_mutable_request: PutMutableRequestArguments = mutable_item.into();
+
+        put_mutable_request.cas = cas.map(|cas| cas.as_u64() as i64);
+
         if let Err(put_error) = self.rpc.put(messages::PutRequestSpecific::PutMutable(
-            mutable_item.into(),
+            put_mutable_request,
         )) {
             if let PutError::PutQueryIsInflight(_) = put_error {
                 let _ = sender.send(Err(PublishError::PublishInflight));
@@ -435,7 +444,7 @@ mod tests {
         let handle = tokio::spawn(async move {
             let result = clone.publish(&packet).await;
 
-            assert_eq!(result, Err(PublishError::PublishInflight));
+            assert!(matches!(result, Err(PublishError::PublishInflight)));
         });
 
         client.publish(&signed_packet).await.unwrap();

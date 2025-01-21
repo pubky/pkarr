@@ -13,7 +13,7 @@ use crate::{
     Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
 };
 
-use super::Client;
+use super::{BuildError, Client};
 
 #[derive(Debug)]
 /// [Client]'s Config
@@ -261,7 +261,7 @@ impl ClientBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Client, std::io::Error> {
+    pub fn build(self) -> Result<Client, BuildError> {
         Client::new(self.0)
     }
 }

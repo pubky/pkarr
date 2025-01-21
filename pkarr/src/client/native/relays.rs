@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use pubky_timestamp::Timestamp;
 use reqwest::Client;
 use tokio::runtime::{Builder, Runtime};
 use url::Url;
@@ -18,6 +19,7 @@ pub struct RelaysClient {
 }
 
 impl RelaysClient {
+    // TODO: allow custom http client?
     pub fn new(relays: Box<[Url]>, cache: Option<Box<dyn Cache>>, timeout: Duration) -> Self {
         Self {
             relays,
@@ -39,7 +41,10 @@ impl RelaysClient {
         &self,
         signed_packet: &SignedPacket,
         sender: flume::Sender<Result<(), PublishError>>,
+        _cas: Option<Timestamp>,
     ) {
+        // TODO: support cas for relays.
+
         let public_key = signed_packet.public_key();
         let body = signed_packet.to_relay_payload();
 
