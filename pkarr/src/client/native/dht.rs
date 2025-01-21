@@ -132,8 +132,13 @@ impl DhtClient {
         }
 
         for (id, error) in &report.done_put_queries {
+            // TODO: should not return an error unless relays also failed?
             if let Some(sender) = self.publish_senders.remove(id) {
                 if let Some(put_error) = error.to_owned() {
+                    if let PutError::NoClosestNodes = put_error {
+                        let _ = sender.send(Err(PublishError::NoClosestNodes));
+                    }
+
                     handle_put_error(put_error);
                 } else {
                     let _ = sender.send(Ok(()));
@@ -450,5 +455,29 @@ mod tests {
         client.publish(&signed_packet).await.unwrap();
 
         handle.await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn no_closest_nodes() {
+        let testnet = Testnet::new(10).unwrap();
+
+        let client = Client::builder()
+            .no_default_network()
+            .bootstrap(&testnet.bootstrap)
+            .request_timeout(Duration::from_millis(0))
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        assert!(matches!(
+            client.publish(&signed_packet).await,
+            Err(PublishError::NoClosestNodes)
+        ));
     }
 }

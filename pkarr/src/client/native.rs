@@ -312,6 +312,11 @@ pub enum PublishError {
     #[error("Publish query is already inflight for the same public_key")]
     /// [crate::Client::publish] is already inflight to the same public_key
     PublishInflight,
+
+    #[cfg(feature = "dht")]
+    #[error("Publishing SignedPacket to Mainline failed.")]
+    ///Publishing SignedPacket to Mainline failed.
+    NoClosestNodes,
 }
 
 impl From<ClientWasShutdown> for PublishError {
