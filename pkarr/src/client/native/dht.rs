@@ -4,31 +4,42 @@ use std::{collections::HashMap, net::SocketAddrV4};
 
 use flume::Sender;
 use mainline::{
-    rpc::{messages, Response, Rpc},
+    rpc::{messages, PutError, Response, Rpc},
     Id,
 };
 use tracing::debug;
 
 use crate::{Cache, SignedPacket};
 
+use super::PublishError;
+
 pub struct DhtClient {
     pub rpc: Rpc,
     pub cache: Option<Box<dyn Cache>>,
     pub resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>>,
-    pub publish_senders: HashMap<Id, Sender<Result<(), ()>>>,
+    pub publish_senders: HashMap<Id, Sender<Result<(), PublishError>>>,
     pub resolvers: Option<Box<[SocketAddrV4]>>,
 }
 
 impl DhtClient {
-    pub fn publish(&mut self, signed_packet: &SignedPacket, sender: Sender<Result<(), ()>>) {
+    pub fn publish(
+        &mut self,
+        signed_packet: &SignedPacket,
+        sender: Sender<Result<(), PublishError>>,
+    ) {
         let mutable_item = mainline::MutableItem::from(signed_packet);
         let target = *mutable_item.target();
 
-        if let Err(_put_error) = self.rpc.put(messages::PutRequestSpecific::PutMutable(
+        if let Err(put_error) = self.rpc.put(messages::PutRequestSpecific::PutMutable(
             mutable_item.into(),
         )) {
-            // TODO: do better
-            let _ = sender.send(Err(()));
+            if let PutError::PutQueryIsInflight(_) = put_error {
+                let _ = sender.send(Err(PublishError::PublishInflight));
+
+                return;
+            }
+
+            handle_put_error(put_error);
         } else {
             self.publish_senders.insert(target, sender);
         };
@@ -113,12 +124,26 @@ impl DhtClient {
 
         for (id, error) in &report.done_put_queries {
             if let Some(sender) = self.publish_senders.remove(id) {
-                let _ = sender.send(if let Some(_error) = error.to_owned() {
-                    Err(())
+                if let Some(put_error) = error.to_owned() {
+                    handle_put_error(put_error);
                 } else {
-                    Ok(())
-                });
+                    let _ = sender.send(Ok(()));
+                };
             };
+        }
+    }
+}
+
+fn handle_put_error(error: PutError) {
+    match error {
+        mainline::rpc::PutError::NoClosestNodes => {
+            debug!("mainline failed to find closest nodes (usually means UDP and or Mainline packets are firewalled)");
+        }
+        mainline::rpc::PutError::PutQueryIsInflight(_) => {
+            unreachable!("Should not make two publish queries at the same time!");
+        }
+        mainline::rpc::PutError::ErrorResponse(error) => {
+            debug!(?error, "mainline nodes responded with error for PUT query");
         }
     }
 }
@@ -384,5 +409,37 @@ mod tests {
         let resolved = client.resolve(&keypair.public_key()).await.unwrap();
 
         assert_eq!(resolved, None);
+    }
+
+    #[tokio::test]
+    async fn inflight() {
+        let testnet = Testnet::new(10).unwrap();
+
+        let client = Client::builder()
+            .no_default_network()
+            .bootstrap(&testnet.bootstrap)
+            .request_timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        let clone = client.clone();
+        let packet = signed_packet.clone();
+
+        let handle = tokio::spawn(async move {
+            let result = clone.publish(&packet).await;
+
+            assert_eq!(result, Err(PublishError::PublishInflight));
+        });
+
+        client.publish(&signed_packet).await.unwrap();
+
+        handle.await.unwrap()
     }
 }

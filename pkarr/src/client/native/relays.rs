@@ -8,6 +8,8 @@ use crate::{Cache, CacheKey, PublicKey, SignedPacket};
 
 use crate::client::shared::{publish_to_relay, resolve_from_relay};
 
+use super::PublishError;
+
 pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
@@ -33,7 +35,11 @@ impl RelaysClient {
         }
     }
 
-    pub fn publish(&self, signed_packet: &SignedPacket, sender: flume::Sender<Result<(), ()>>) {
+    pub fn publish(
+        &self,
+        signed_packet: &SignedPacket,
+        sender: flume::Sender<Result<(), PublishError>>,
+    ) {
         let public_key = signed_packet.public_key();
         let body = signed_packet.to_relay_payload();
 

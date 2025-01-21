@@ -1,28 +1,19 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://pkarr.org/relays).
 
+use flume::r#async::RecvStream;
 use flume::{Receiver, Sender};
-use futures_lite::{Future, Stream};
-use mainline::rpc::DEFAULT_REQUEST_TIMEOUT;
-use mainline::{errors::PutError, rpc::DEFAULT_BOOTSTRAP_NODES};
+use futures_lite::{Stream, StreamExt};
+use pubky_timestamp::Timestamp;
 use std::pin::Pin;
-use std::task::Poll;
-use std::time::Duration;
-use std::{
-    net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
-    num::NonZeroUsize,
-    thread,
-};
+use std::task::{Context, Poll};
+use std::{num::NonZeroUsize, thread};
 use tracing::debug;
-#[cfg(feature = "relays")]
-use url::Url;
 
-use crate::{
-    Cache, CacheKey, InMemoryCache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL,
-    DEFAULT_RESOLVERS,
-};
+use crate::{Cache, CacheKey, InMemoryCache};
 use crate::{PublicKey, SignedPacket};
 
 mod actor_thread;
+mod builder;
 #[cfg(feature = "dht")]
 mod dht;
 #[cfg(feature = "relays")]
@@ -30,260 +21,10 @@ mod relays;
 
 pub use actor_thread::Info;
 use actor_thread::{actor_thread, ActorMessage};
+pub use builder::{ClientBuilder, Config};
 
 // TODO: recognize when the cache is updated since `publish` was called,
 // and return an error ... a CAS error maybe.
-
-#[derive(Debug)]
-/// [Client]'s Config
-pub struct Config {
-    pub dht_config: mainline::rpc::Config,
-    /// A set of [resolver](https://pkarr.org/resolvers)s
-    /// to be queried alongside the Dht routing table, to
-    /// lower the latency on cold starts, and help if the
-    /// Dht is missing values not't republished often enough.
-    ///
-    /// Defaults to [DEFAULT_RESOLVERS]
-    pub resolvers: Option<Vec<SocketAddrV4>>,
-    /// Defaults to [DEFAULT_CACHE_SIZE]
-    pub cache_size: usize,
-    /// Used in the `min` parameter in [SignedPacket::expires_in].
-    ///
-    /// Defaults to [DEFAULT_MINIMUM_TTL]
-    pub minimum_ttl: u32,
-    /// Used in the `max` parameter in [SignedPacket::expires_in].
-    ///
-    /// Defaults to [DEFAULT_MAXIMUM_TTL]
-    pub maximum_ttl: u32,
-    /// Custom [Cache] implementation, defaults to [InMemoryCache]
-    pub cache: Option<Box<dyn Cache>>,
-
-    /// Pkarr [Relays](https://pkarr.org/relays) Urls
-    #[cfg(feature = "relays")]
-    pub relays: Option<Vec<Url>>,
-
-    /// Timeout for both Dht and Relays requests.
-    ///
-    /// The longer this timeout the longer resolve queries will take before consider failed.
-    ///
-    /// Defaults to [mainline::rpc::DEFAULT_REQUEST_TIMEOUT]
-    pub request_timeout: Duration,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            dht_config: mainline::rpc::Config::default(),
-            cache_size: DEFAULT_CACHE_SIZE,
-            resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
-            minimum_ttl: DEFAULT_MINIMUM_TTL,
-            maximum_ttl: DEFAULT_MAXIMUM_TTL,
-            cache: None,
-            #[cfg(feature = "relays")]
-            relays: Some(
-                crate::DEFAULT_RELAYS
-                    .iter()
-                    .map(|s| {
-                        Url::parse(s).expect("DEFAULT_RELAYS should be parsed to Url successfully.")
-                    })
-                    .collect(),
-            ),
-            request_timeout: DEFAULT_REQUEST_TIMEOUT,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct ClientBuilder(Config);
-
-impl ClientBuilder {
-    /// Similar to crates `no-default-features`, this method will remove the default
-    /// [mainline::Config::bootstrap], [Config::resolvers], and [Config::relays],
-    /// effectively disabling the use of both [mainline] and [Relays](https://pkarr.org/relays).
-    ///
-    /// You can [Self::use_mainline] or [Self::use_relays] to add both or either
-    /// back with the default configurations for each.
-    ///
-    /// Or you can use [Self::relays] to use custom [Relays](https://pkarr.org/relays).
-    ///
-    /// Similarly you can use [Self::resolvers] and / or [Self::bootstrap] to use [mainline]
-    /// with custom configurations.
-    pub fn no_default_network(mut self) -> Self {
-        #[cfg(feature = "dht")]
-        {
-            self.0.resolvers = None;
-            self.0.dht_config.bootstrap = vec![];
-        }
-        #[cfg(feature = "relays")]
-        {
-            self.0.relays = None;
-        }
-
-        self
-    }
-
-    /// Reenable using [mainline] with [DEFAULT_RESOLVERS] and [DEFAULT_BOOTSTRAP_NODES].
-    #[cfg(feature = "dht")]
-    pub fn use_mainline(mut self) -> Self {
-        self.0.resolvers = Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS));
-        self.0.dht_config.bootstrap = DEFAULT_BOOTSTRAP_NODES.map(|s| s.to_string()).to_vec();
-
-        self
-    }
-
-    /// Convienent method to set the [mainline::Config::bootstrap].
-    ///
-    /// You can start a separate Dht network by setting this to an empty array.
-    ///
-    /// If you want to extend [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes with more nodes, you can
-    /// use [Self::extra_bootstrap].
-    #[cfg(feature = "dht")]
-    pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
-        self.0.dht_config.bootstrap = bootstrap.to_vec();
-
-        self
-    }
-
-    #[cfg(feature = "dht")]
-    /// Extend the [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes.
-    ///
-    /// If you want to set (override) the [Config::dht_config::bootsrtap][mainline::Config::bootstrap],
-    /// use [Self::bootstrap]
-    pub fn extra_resolvers(mut self, resolvers: Vec<String>) -> Self {
-        let resolvers = resolvers_to_socket_addrs(&resolvers);
-
-        if let Some(ref mut existing) = self.0.resolvers {
-            existing.extend_from_slice(&resolvers);
-        };
-
-        self
-    }
-
-    /// Set custom set of [resolvers](Config::resolvers).
-    ///
-    /// You can disable using resolvers by passing `None`.
-    ///
-    /// If you want to extend the [Config::resolvers] with more nodes, you can
-    /// use [Self::extra_resolvers].
-    #[cfg(feature = "dht")]
-    pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
-        self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
-
-        self
-    }
-
-    #[cfg(feature = "dht")]
-    /// Extend the current [Config::resolvers] with extra resolvers.
-    ///
-    /// If you want to set (override) the [Config::resolvers], use [Self::resolvers]
-    pub fn extra_bootstrap(mut self, bootstrap: &[String]) -> Self {
-        for node in bootstrap {
-            if !self.0.dht_config.bootstrap.contains(node) {
-                self.0.dht_config.bootstrap.push(node.clone())
-            }
-        }
-
-        self
-    }
-
-    #[cfg(feature = "relays")]
-    /// Reenable using [Config::relays] with [crate::DEFAULT_RELAYS].
-    pub fn use_relays(mut self) -> Self {
-        self.0.relays = Some(
-            crate::DEFAULT_RELAYS
-                .iter()
-                .map(|s| {
-                    Url::parse(s).expect("DEFAULT_RELAYS should be parsed to Url successfully.")
-                })
-                .collect(),
-        );
-
-        self
-    }
-
-    /// Set custom set of [relays](Config::relays)
-    #[cfg(feature = "relays")]
-    pub fn relays(mut self, relays: Option<Vec<Url>>) -> Self {
-        self.0.relays = relays;
-
-        self
-    }
-
-    #[cfg(feature = "dht")]
-    /// Extend the current [Config::relays] with extra relays.
-    ///
-    /// If you want to set (override) the [Config::relays], use [Self::relays]
-    pub fn extra_relays(mut self, relays: Vec<Url>) -> Self {
-        if let Some(ref mut existing) = self.0.relays {
-            for relay in relays {
-                if !existing.contains(&relay) {
-                    existing.push(relay)
-                }
-            }
-        }
-
-        self
-    }
-
-    /// Set the [Config::cache_size].
-    ///
-    /// Controls the capacity of [Cache].
-    ///
-    /// If set to `0` cache will be disabled.
-    pub fn cache_size(mut self, cache_size: usize) -> Self {
-        self.0.cache_size = cache_size;
-
-        self
-    }
-
-    /// Set the [Config::minimum_ttl] value.
-    ///
-    /// Limits how soon a [SignedPacket] is considered expired.
-    pub fn minimum_ttl(mut self, ttl: u32) -> Self {
-        self.0.minimum_ttl = ttl;
-
-        self
-    }
-
-    /// Set the [Config::maximum_ttl] value.
-    ///
-    /// Limits how long it takes before a [SignedPacket] is considered expired.
-    pub fn maximum_ttl(mut self, ttl: u32) -> Self {
-        self.0.maximum_ttl = ttl;
-
-        self
-    }
-
-    /// Set a custom implementation of [Cache].
-    pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
-        self.0.cache = Some(cache);
-
-        self
-    }
-
-    /// Set [Config::dht_config]
-    #[cfg(feature = "dht")]
-    pub fn dht_config(mut self, config: mainline::rpc::Config) -> Self {
-        self.0.dht_config = config;
-
-        self
-    }
-
-    /// Set the maximum [Config::request_timeout] for both Dht and relays client.
-    ///
-    /// Useful for testing NOT FOUND responses, where you want to reach the timeout
-    /// sooner than the default of [mainline::rpc::DEFAULT_REQUEST_TIMEOUT].
-    pub fn request_timeout(mut self, timeout: Duration) -> Self {
-        self.0.dht_config.request_timeout = timeout;
-        self.0.request_timeout = timeout;
-
-        self
-    }
-
-    pub fn build(self) -> Result<Client, std::io::Error> {
-        Client::new(self.0)
-    }
-}
 
 #[derive(Clone, Debug)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or
@@ -358,31 +99,34 @@ impl Client {
 
     // === Public Methods ===
 
+    // TODO: Test failed to publish
     /// Publishes a [SignedPacket] to the Dht.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
-        self.publish_inner(signed_packet)?
+        let cache_key = CacheKey::from(signed_packet.public_key());
+
+        let cas = self.check_most_recent(&cache_key, signed_packet)?;
+
+        let mut stream = self.resolve_stream(&signed_packet.public_key())?;
+        while (stream.next().await).is_some() {}
+
+        self.publish_inner(signed_packet, cache_key, cas)?
             .recv_async()
             .await
             .expect("Query was dropped before sending a response, please open an issue.")
-            .map_err(|_error| {
-                // TODO: do better.
-                PublishError::PublishInflight
-            })?;
-
-        Ok(())
     }
 
     /// Publishes a [SignedPacket] to the Dht.
     pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
-        self.publish_inner(signed_packet)?
+        let cache_key = CacheKey::from(signed_packet.public_key());
+
+        let cas = self.check_most_recent(&cache_key, signed_packet)?;
+
+        let mut iter = self.resolve_iter(&signed_packet.public_key())?;
+        while (iter.next()).is_some() {}
+
+        self.publish_inner(signed_packet, cache_key, cas)?
             .recv()
             .expect("Query was dropped before sending a response, please open an issue.")
-            .map_err(|_error| {
-                // TODO: do better.
-                PublishError::PublishInflight
-            })?;
-
-        Ok(())
     }
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
@@ -422,7 +166,7 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<SignedPacketStream, ClientWasShutdown> {
-        Ok(SignedPacketStream(self.resolve_rx(public_key)?))
+        Ok(self.resolve_rx(public_key)?.into())
     }
 
     /// Shutdown the actor thread loop.
@@ -462,26 +206,40 @@ impl Client {
     pub(crate) fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
-    ) -> Result<Receiver<Result<(), ()>>, PublishError> {
-        let cache_key = CacheKey::from(signed_packet.public_key());
-
-        if let Some(cache) = &self.cache {
-            if let Some(current) = cache.get(&cache_key) {
-                if current.timestamp() > signed_packet.timestamp() {
-                    return Err(PublishError::NotMostRecent);
+        cache_key: CacheKey,
+        cas: Option<Timestamp>,
+    ) -> Result<Receiver<Result<(), PublishError>>, PublishError> {
+        if let Some(cas) = cas {
+            if let Some(cached) = self.cache.as_ref().and_then(|cache| cache.get(&cache_key)) {
+                if cached.timestamp() != cas {
+                    return Err(PublishError::CasFailed);
                 }
-            };
-
-            cache.put(&cache_key, signed_packet);
+            }
         }
 
-        let (sender, receiver) = flume::bounded::<Result<(), ()>>(1);
+        let (sender, receiver) = flume::bounded::<Result<(), PublishError>>(1);
 
         self.sender
             .send(ActorMessage::Publish(signed_packet.clone(), sender))
             .map_err(|_| PublishError::ClientWasShutdown)?;
 
         Ok(receiver)
+    }
+
+    fn check_most_recent(
+        &self,
+        cache_key: &CacheKey,
+        signed_packet: &SignedPacket,
+    ) -> Result<Option<Timestamp>, PublishError> {
+        if let Some(cached) = self.cache.as_ref().and_then(|cache| cache.get(cache_key)) {
+            if cached.timestamp() >= signed_packet.timestamp() {
+                return Err(PublishError::NotMostRecent);
+            }
+
+            return Ok(Some(cached.timestamp()));
+        }
+
+        Ok(None)
     }
 }
 
@@ -496,37 +254,30 @@ impl std::fmt::Display for ClientWasShutdown {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 /// Errors occuring during publishing a [SignedPacket]
 pub enum PublishError {
     #[error("Found a more recent SignedPacket in the client's cache")]
     /// Found a more recent SignedPacket in the client's cache
     NotMostRecent,
 
+    #[error("Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing")]
+    /// Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing
+    CasFailed,
+
     #[error("Pkarr Client was shutdown")]
     ClientWasShutdown,
 
+    // TODO: should we remove this when there is no dht or support it for relays?
     #[error("Publish query is already inflight for the same public_key")]
     /// [crate::Client::publish] is already inflight to the same public_key
     PublishInflight,
-
-    #[error(transparent)]
-    MainlinePutError(#[from] PutError),
 }
 
-pub fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<SocketAddrV4> {
-    resolvers
-        .iter()
-        .flat_map(|resolver| {
-            resolver.to_socket_addrs().map(|iter| {
-                iter.filter_map(|a| match a {
-                    SocketAddr::V4(a) => Some(a),
-                    _ => None,
-                })
-            })
-        })
-        .flatten()
-        .collect::<Vec<_>>()
+impl From<ClientWasShutdown> for PublishError {
+    fn from(_: ClientWasShutdown) -> Self {
+        Self::ClientWasShutdown
+    }
 }
 
 pub struct SignedPacketIterator(flume::Receiver<SignedPacket>);
@@ -539,20 +290,19 @@ impl Iterator for SignedPacketIterator {
     }
 }
 
-pub struct SignedPacketStream(flume::Receiver<SignedPacket>);
+pub struct SignedPacketStream(RecvStream<'static, SignedPacket>);
+
+impl From<Receiver<SignedPacket>> for SignedPacketStream {
+    fn from(value: Receiver<SignedPacket>) -> Self {
+        Self(value.into_stream())
+    }
+}
 
 impl Stream for SignedPacketStream {
     type Item = SignedPacket;
 
-    fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        match Pin::new(&mut self.0.recv_async()).poll(cx) {
-            Poll::Ready(Ok(item)) => Poll::Ready(Some(item)),
-            Poll::Ready(Err(_)) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
-        }
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.0.poll_next(cx)
     }
 }
 
@@ -562,6 +312,7 @@ mod tests {
 
     use std::{thread, time::Duration};
 
+    use native::PublishError;
     use pkarr_relay::Relay;
 
     use super::super::*;
@@ -718,5 +469,37 @@ mod tests {
         let resolved = client.resolve(&keypair.public_key()).await.unwrap();
 
         assert_eq!(resolved, None);
+    }
+
+    #[tokio::test]
+    async fn inflight() {
+        let relay = Relay::start_test().await.unwrap();
+
+        let client = Client::builder()
+            .bootstrap(&[relay.resolver_address().to_string()])
+            .relays(Some(vec![relay.local_url()]))
+            .request_timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        let clone = client.clone();
+        let packet = signed_packet.clone();
+
+        let handle = tokio::spawn(async move {
+            let result = clone.publish(&packet).await;
+
+            assert_eq!(result, Err(PublishError::PublishInflight));
+        });
+
+        client.publish(&signed_packet).await.unwrap();
+
+        handle.await.unwrap()
     }
 }

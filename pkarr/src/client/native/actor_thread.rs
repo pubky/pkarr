@@ -8,6 +8,7 @@ use crate::{client::native::dht::DhtClient, Cache, CacheKey, Config, PublicKey, 
 
 #[cfg(feature = "relays")]
 use super::relays::RelaysClient;
+use super::PublishError;
 
 pub fn actor_thread(
     receiver: Receiver<ActorMessage>,
@@ -150,7 +151,7 @@ pub fn actor_thread(
 }
 
 pub enum ActorMessage {
-    Publish(SignedPacket, Sender<Result<(), ()>>),
+    Publish(SignedPacket, Sender<Result<(), PublishError>>),
     Resolve(PublicKey, Sender<SignedPacket>),
     Shutdown(Sender<()>),
     Info(Sender<Info>),
