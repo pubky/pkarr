@@ -95,17 +95,46 @@ impl Client {
         self.cache.as_deref()
     }
 
-    // === Public Methods ===
+    // === Publish ===
 
-    // TODO: Test failed to publish
-    /// Publishes a [SignedPacket] to the Dht.
+    /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
+    ///
+    /// # Consistency
+    ///
+    /// Publishing different packets concurrently is not safe, as it risks losing data (records)
+    /// in the earlier packet that are accidentally gets dropped in the more recently published
+    /// packet.
+    ///
+    /// We can't perfectly protect against this, as the distributed network is available and
+    /// partition tolerant, and thus isn't consistent. See [CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem).
+    ///
+    /// However, there are ways to reduce the risk of inconsistent writes:
+    /// 1. You can and should "read before write" by calling [Self::resolve_most_recent]
+    ///     before publishing, to reduce the chances of missing records from previous packets
+    ///     published from other clients.
+    /// 2. Publishing two different [SignedPacket]s from the same client concurrently will return
+    ///    an [PublishError::PublishInflight] error.
+    /// 3. Before publishing, this client will query the network first, and if it finds a more
+    ///    recent [SignedPacket] than the packet you are trying to publish, it will return a
+    ///    [PublishError::NotMostRecent] error.
+    /// 4. Before publishing, this client will query the network first, and if it finds a more
+    ///    recent [SignedPacket] than what already existed in cache before publishing, it will
+    ///    return a [PublishError::CasFailed] error.
+    /// 5. While Publishing, if _any_ node or relay responds with a more recent [SignedPacket]s,
+    ///     this method will return a [PublishError::NotMostRecent] error.
+    /// 6. While Publishing, if _all_ nodes and/or relays responds with a compare and swap error,
+    ///     which may happen if they know of a more recent [SignedPacket] than the one we
+    ///     discovered before publishing, this method will return a [PublishError::NotMostRecent] error.
+    ///     This error is not as reliable as it only works if all nodes or all relays agree, to
+    ///     avoid disruption from malicious nodes/relays.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let cache_key = CacheKey::from(signed_packet.public_key());
 
         let cas = self.check_most_recent(&cache_key, signed_packet)?;
 
-        let mut stream = self.resolve_stream(&signed_packet.public_key())?;
-        while (stream.next().await).is_some() {}
+        let _ = self
+            .resolve_most_recent(&signed_packet.public_key())
+            .await?;
 
         self.publish_inner(signed_packet, cache_key, cas)?
             .recv_async()
@@ -113,19 +142,49 @@ impl Client {
             .expect("Query was dropped before sending a response, please open an issue.")
     }
 
-    /// Publishes a [SignedPacket] to the Dht.
+    /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
+    ///
+    /// # Consistency
+    ///
+    /// Publishing different packets concurrently is not safe, as it risks losing data (records)
+    /// in the earlier packet that are accidentally gets dropped in the more recently published
+    /// packet.
+    ///
+    /// We can't perfectly protect against this, as the distributed network is available and
+    /// partition tolerant, and thus isn't consistent. See [CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem).
+    ///
+    /// However, there are ways to reduce the risk of inconsistent writes:
+    /// 1. You can and should "read before write" by calling [Self::resolve_most_recent_sync]
+    ///     before publishing, to reduce the chances of missing records from previous packets
+    ///     published from other clients.
+    /// 2. Publishing two different [SignedPacket]s from the same client concurrently will return
+    ///    an [PublishError::PublishInflight] error.
+    /// 3. Before publishing, this client will query the network first, and if it finds a more
+    ///    recent [SignedPacket] than the packet you are trying to publish, it will return a
+    ///    [PublishError::NotMostRecent] error.
+    /// 4. Before publishing, this client will query the network first, and if it finds a more
+    ///    recent [SignedPacket] than what already existed in cache before publishing, it will
+    ///    return a [PublishError::CasFailed] error.
+    /// 5. While Publishing, if _any_ node or relay responds with a more recent [SignedPacket]s,
+    ///     this method will return a [PublishError::NotMostRecent] error.
+    /// 6. While Publishing, if _all_ nodes and/or relays responds with a compare and swap error,
+    ///     which may happen if they know of a more recent [SignedPacket] than the one we
+    ///     discovered before publishing, this method will return a [PublishError::NotMostRecent] error.
+    ///     This error is not as reliable as it only works if all nodes or all relays agree, to
+    ///     avoid disruption from malicious nodes/relays.
     pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let cache_key = CacheKey::from(signed_packet.public_key());
 
         let cas = self.check_most_recent(&cache_key, signed_packet)?;
 
-        let mut iter = self.resolve_iter(&signed_packet.public_key())?;
-        while (iter.next()).is_some() {}
+        let _ = self.resolve_most_recent_sync(&signed_packet.public_key())?;
 
         self.publish_inner(signed_packet, cache_key, cas)?
             .recv()
             .expect("Query was dropped before sending a response, please open an issue.")
     }
+
+    // === Resolve ===
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
     /// If there is no packet in the cache, or if the cached packet is expired,
@@ -153,6 +212,7 @@ impl Client {
         Ok(self.resolve_rx(public_key)?.recv().ok())
     }
 
+    /// Returns a [Iterator] of incoming [SignedPacket]s.
     pub fn resolve_iter(
         &self,
         public_key: &PublicKey,
@@ -160,12 +220,49 @@ impl Client {
         Ok(SignedPacketIterator(self.resolve_rx(public_key)?))
     }
 
+    /// Returns a [Stream] of incoming [SignedPacket]s.
     pub fn resolve_stream(
         &self,
         public_key: &PublicKey,
     ) -> Result<SignedPacketStream, ClientWasShutdown> {
         Ok(self.resolve_rx(public_key)?.into())
     }
+
+    /// Returns the most recent [SignedPacket] found after querying all
+    /// [mainline] Dht nodes and or [Relays](https:://pkarr.org/relays).
+    ///
+    /// Useful if you want to read the most recent packet before publishing
+    /// a new packet.
+    ///
+    /// This is a best effort, and doesn't guarantee consistency.
+    pub async fn resolve_most_recent(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
+        let mut stream = self.resolve_stream(public_key)?;
+        while (stream.next().await).is_some() {}
+
+        Ok(self.cache().and_then(|cache| cache.get(&public_key.into())))
+    }
+
+    /// Returns the most recent [SignedPacket] found after querying all
+    /// [mainline] Dht nodes and or [Relays](https:://pkarr.org/relays).
+    ///
+    /// Useful if you want to read the most recent packet before publishing
+    /// a new packet.
+    ///
+    /// This is a best effort, and doesn't guarantee consistency.
+    pub fn resolve_most_recent_sync(
+        &self,
+        public_key: &PublicKey,
+    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
+        let mut iter = self.resolve_iter(public_key)?;
+        while (iter.next()).is_some() {}
+
+        Ok(self.cache().and_then(|cache| cache.get(&public_key.into())))
+    }
+
+    // === Shutdwon ===
 
     /// Shutdown the actor thread loop.
     pub async fn shutdown(&mut self) {
@@ -308,11 +405,12 @@ pub enum PublishError {
     #[error("Pkarr Client was shutdown")]
     ClientWasShutdown,
 
-    // TODO: should we remove this when there is no dht or support it for relays?
     #[error("Publish query is already inflight for the same public_key")]
     /// [crate::Client::publish] is already inflight to the same public_key
     PublishInflight,
 
+    // === Mainline only errors ===
+    //
     #[cfg(feature = "dht")]
     #[error("Publishing SignedPacket to Mainline failed.")]
     ///Publishing SignedPacket to Mainline failed.
