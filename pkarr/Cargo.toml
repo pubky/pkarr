@@ -4,21 +4,22 @@ version = "3.0.0"
 authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
+homepage = "https://github.com/pubky/pkarr"
 license = "MIT"
-repository = "https://git.pkarr.org"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 categories = ["network-programming"]
+repository = "https://github.com/pubky/pkarr"
 
 [dependencies]
 bytes = "1.9.0"
 base32 = "0.5.1"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
-self_cell = "1.0.4"
-simple-dns = "0.9.2"
-thiserror = "2.0.3"
+self_cell = "1.1.0"
+simple-dns = "0.9.3"
+thiserror = "2.0.11"
 dyn-clone = "1.0.17"
 lru = { version = "0.12.5", default-features = false }
-serde = { version = "1.0.215", features = ["derive"] }
+serde = { version = "1.0.217", features = ["derive"] }
 rand = "0.8.5"
 
 document-features = "0.2.10"
@@ -27,23 +28,23 @@ document-features = "0.2.10"
 flume = { version = "0.11.1", features = ["select", "eventual-fairness", "async"], default-features = false , optional = true }
 
 # feat: endpoints dependencies
-futures-lite = { version = "2.5.0", default-features = false, features= ["std"], optional = true }
+futures-lite = { version = "2.6.0", default-features = false, features= ["std"], optional = true }
 genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"], optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tracing = "0.1.41"
-pubky-timestamp = { version = "0.2.0", features = ["full"] }
+pubky-timestamp = { version = "0.3.0", features = ["full"] }
 
 # feat: dht dependencies
 mainline = { git = "https://github.com/pubky/mainline", branch="v5", optional = true, default-features = false }
 
 # feat: relay dependencies
-reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls"], optional = true }
-tokio = { version = "1.41.1", optional = true, default-features = false }
+reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"], optional = true }
+tokio = { version = "1.43.0", optional = true, default-features = false }
 sha1_smol = { version = "1.0.1", optional = true }
 
 # feat: lmdb-cache defendencies
-heed = { version = "0.20.5", default-features = false, optional = true }
+heed = { version = "0.21.0", default-features = false, optional = true }
 byteorder = { version = "1.5.0", default-features = false, optional = true }
 page_size = { version = "0.6.0", optional = true }
 
@@ -56,31 +57,31 @@ rustls = { version = "0.23", default-features = false, features = ["ring"], opti
 webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-pubky-timestamp = { version = "0.2.0", default-features = false, features = ["httpdate"] }
-js-sys = "0.3.74"
+pubky-timestamp = { version = "0.3.0", default-features = false, features = ["httpdate"] }
+js-sys = "0.3.77"
 futures = "0.3.31"
 getrandom = { version = "0.2", features = ["js"] }
-reqwest = { version = "0.12.9", default-features = false }
-wasm-bindgen-futures = "0.4.47"
+reqwest = { version = "0.12.12", default-features = false }
+wasm-bindgen-futures = "0.4.50"
 url = "2.5.4"
-log = "0.4.22"
+log = "0.4.25"
 
 [dev-dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.95"
 pkarr-relay = { path = "../relay" }
 postcard = { version = "1.1.1", features = ["alloc"] }
-tokio = { version = "1.41.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-clap = { version = "4.5.21", features = ["derive"] }
+clap = { version = "4.5.27", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 mainline = { git = "https://github.com/pubky/mainline", branch="v5" }
-tokio-rustls = "0.26.0"
-axum = "0.7.9"
+tokio-rustls = "0.26.1"
+axum = "0.8.1"
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
-wasm-bindgen = { version = "0.2.89", features = ["serde-serialize"] }
+wasm-bindgen = { version = "0.2.100", features = ["serde-serialize"] }
 wasm-bindgen-test = "0.3"
 console_log = { version = "1.0.0", features = ["color"] }
 

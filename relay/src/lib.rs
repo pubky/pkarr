@@ -219,7 +219,7 @@ impl Relay {
 pub fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
     let mut router = Router::new()
         .route(
-            "/:key",
+            "/{key}",
             axum::routing::get(crate::handlers::get).put(crate::handlers::put),
         )
         .route(
