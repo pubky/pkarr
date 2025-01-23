@@ -28,15 +28,15 @@ pub struct Config {
     pub resolvers: Option<Vec<SocketAddrV4>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: usize,
-    /// Used in the `min` parameter in [SignedPacket::expires_in].
+    /// Used in the `min` parameter in [crate::SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MINIMUM_TTL]
     pub minimum_ttl: u32,
-    /// Used in the `max` parameter in [SignedPacket::expires_in].
+    /// Used in the `max` parameter in [crate::SignedPacket::expires_in].
     ///
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
-    /// Custom [Cache] implementation, defaults to [InMemoryCache]
+    /// Custom [Cache] implementation, defaults to [crate::InMemoryCache]
     pub cache: Option<Box<dyn Cache>>,
 
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
@@ -219,7 +219,7 @@ impl ClientBuilder {
 
     /// Set the [Config::minimum_ttl] value.
     ///
-    /// Limits how soon a [SignedPacket] is considered expired.
+    /// Limits how soon a [crate::SignedPacket] is considered expired.
     pub fn minimum_ttl(mut self, ttl: u32) -> Self {
         self.0.minimum_ttl = ttl;
 
@@ -228,7 +228,7 @@ impl ClientBuilder {
 
     /// Set the [Config::maximum_ttl] value.
     ///
-    /// Limits how long it takes before a [SignedPacket] is considered expired.
+    /// Limits how long it takes before a [crate::SignedPacket] is considered expired.
     pub fn maximum_ttl(mut self, ttl: u32) -> Self {
         self.0.maximum_ttl = ttl;
 
