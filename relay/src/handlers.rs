@@ -31,7 +31,7 @@ pub async fn put(
         .publish(&signed_packet)
         .await
         .map_err(|error| match error {
-            pkarr::errors::PublishError::PublishInflight => {
+            pkarr::errors::PublishError::ConcurrentPublish => {
                 Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error))
             }
             pkarr::errors::PublishError::NotMostRecent => {

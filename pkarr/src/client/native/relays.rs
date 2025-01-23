@@ -254,4 +254,40 @@ mod tests {
 
         assert_eq!(resolved, None);
     }
+
+    // #[tokio::test]
+    async fn concurrent_publish_different() {
+        let relay = Relay::start_test().await.unwrap();
+
+        let client = Client::builder()
+            .no_default_network()
+            .relays(Some(vec![relay.local_url()]))
+            .request_timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        let clone = client.clone();
+
+        let handle = tokio::spawn(async move {
+            let signed_packet = SignedPacket::builder()
+                .txt("foo".try_into().unwrap(), "zar".try_into().unwrap(), 30)
+                .sign(&keypair)
+                .unwrap();
+
+            let result = clone.publish(&signed_packet).await;
+
+            assert!(matches!(result, Err(PublishError::ConcurrentPublish)));
+        });
+
+        client.publish(&signed_packet).await.unwrap();
+
+        handle.await.unwrap()
+    }
 }

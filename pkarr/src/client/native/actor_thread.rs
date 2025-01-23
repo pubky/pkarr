@@ -146,6 +146,7 @@ pub fn actor_thread(
                         dht_info: dht_info.unwrap(),
                     });
                 }
+                // TODO: return routing table.
                 ActorMessage::Check(sender) => {
                     let _ = sender.send(if dht_client.is_none() && relays_client.is_none() {
                         Err(BuildError::NoNetwork)
@@ -158,7 +159,7 @@ pub fn actor_thread(
 
         #[cfg(feature = "dht")]
         if let Some(ref mut dht_client) = dht_client {
-            dht_client.tick();
+            dht_client.tick(relays_client.is_none());
         }
     }
 

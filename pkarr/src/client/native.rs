@@ -109,20 +109,20 @@ impl Client {
     /// partition tolerant, and thus isn't consistent. See [CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem).
     ///
     /// However, there are ways to reduce the risk of inconsistent writes:
-    /// 1. You can and should "read before write" by calling [Self::resolve_most_recent]
+    /// - You can and should "read before write" by calling [Self::resolve_most_recent]
     ///     before publishing, to reduce the chances of missing records from previous packets
     ///     published from other clients.
-    /// 2. Publishing two different [SignedPacket]s from the same client concurrently will return
-    ///    an [PublishError::PublishInflight] error.
-    /// 3. Before publishing, this client will query the network first, and if it finds a more
-    ///    recent [SignedPacket] than the packet you are trying to publish, it will return a
-    ///    [PublishError::NotMostRecent] error.
-    /// 4. Before publishing, this client will query the network first, and if it finds a more
-    ///    recent [SignedPacket] than what already existed in cache before publishing, it will
-    ///    return a [PublishError::CasFailed] error.
-    /// 5. While Publishing, if _any_ node or relay responds with a more recent [SignedPacket]s,
+    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
+    ///    an [PublishError::ConcurrentPublish] error.
+    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent]) this method
+    ///     will query the network first, and if it finds a more recent [SignedPacket] than the packet
+    ///     you are trying to publish, it will return a [PublishError::NotMostRecent] error.
+    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent]) this method
+    ///     will query the network first, and if it finds a more recent [SignedPacket] than what
+    ///     already existed in cache before publishing, it will return a [PublishError::CasFailed] error.
+    /// - While Publishing, if most nodes or relays responds with a more recent [SignedPacket]s,
     ///     this method will return a [PublishError::NotMostRecent] error.
-    /// 6. While Publishing, if _all_ nodes and/or relays responds with a compare and swap error,
+    /// - While Publishing, if most nodes and/or relays responds with a compare and swap error,
     ///     which may happen if they know of a more recent [SignedPacket] than the one we
     ///     discovered before publishing, this method will return a [PublishError::NotMostRecent] error.
     ///     This error is not as reliable as it only works if all nodes or all relays agree, to
@@ -130,13 +130,16 @@ impl Client {
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let cache_key = CacheKey::from(signed_packet.public_key());
 
-        let cas = self.check_most_recent(&cache_key, signed_packet)?;
+        let cached = self.check_most_recent(&cache_key, signed_packet)?;
 
+        // TODO: skip lookup if the cache is still very fresh, persumably the user
+        // called [Self::resolve_most_recent] very recently.
+        // if cahed.map(|s|s.last_seen() )
         let _ = self
             .resolve_most_recent(&signed_packet.public_key())
             .await?;
 
-        self.publish_inner(signed_packet, cache_key, cas)?
+        self.publish_inner(signed_packet, cache_key, cached.map(|s| s.timestamp()))?
             .recv_async()
             .await
             .expect("Query was dropped before sending a response, please open an issue.")
@@ -154,20 +157,20 @@ impl Client {
     /// partition tolerant, and thus isn't consistent. See [CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem).
     ///
     /// However, there are ways to reduce the risk of inconsistent writes:
-    /// 1. You can and should "read before write" by calling [Self::resolve_most_recent_sync]
+    /// - You can and should "read before write" by calling [Self::resolve_most_recent_sync]
     ///     before publishing, to reduce the chances of missing records from previous packets
     ///     published from other clients.
-    /// 2. Publishing two different [SignedPacket]s from the same client concurrently will return
-    ///    an [PublishError::PublishInflight] error.
-    /// 3. Before publishing, this client will query the network first, and if it finds a more
-    ///    recent [SignedPacket] than the packet you are trying to publish, it will return a
-    ///    [PublishError::NotMostRecent] error.
-    /// 4. Before publishing, this client will query the network first, and if it finds a more
-    ///    recent [SignedPacket] than what already existed in cache before publishing, it will
-    ///    return a [PublishError::CasFailed] error.
-    /// 5. While Publishing, if _any_ node or relay responds with a more recent [SignedPacket]s,
+    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
+    ///    an [PublishError::ConcurrentPublish] error.
+    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent_sync]) this method
+    ///     will query the network first, and if it finds a more recent [SignedPacket] than the packet
+    ///     you are trying to publish, it will return a [PublishError::NotMostRecent] error.
+    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent_sync]) this method
+    ///     will query the network first, and if it finds a more recent [SignedPacket] than what
+    ///     already existed in cache before publishing, it will return a [PublishError::CasFailed] error.
+    /// - While Publishing, if most nodes or relays responds with a more recent [SignedPacket]s,
     ///     this method will return a [PublishError::NotMostRecent] error.
-    /// 6. While Publishing, if _all_ nodes and/or relays responds with a compare and swap error,
+    /// - While Publishing, if most nodes and/or relays responds with a compare and swap error,
     ///     which may happen if they know of a more recent [SignedPacket] than the one we
     ///     discovered before publishing, this method will return a [PublishError::NotMostRecent] error.
     ///     This error is not as reliable as it only works if all nodes or all relays agree, to
@@ -175,11 +178,11 @@ impl Client {
     pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let cache_key = CacheKey::from(signed_packet.public_key());
 
-        let cas = self.check_most_recent(&cache_key, signed_packet)?;
+        let cached = self.check_most_recent(&cache_key, signed_packet)?;
 
         let _ = self.resolve_most_recent_sync(&signed_packet.public_key())?;
 
-        self.publish_inner(signed_packet, cache_key, cas)?
+        self.publish_inner(signed_packet, cache_key, cached.map(|s| s.timestamp()))?
             .recv()
             .expect("Query was dropped before sending a response, please open an issue.")
     }
@@ -325,13 +328,13 @@ impl Client {
         &self,
         cache_key: &CacheKey,
         signed_packet: &SignedPacket,
-    ) -> Result<Option<Timestamp>, PublishError> {
+    ) -> Result<Option<SignedPacket>, PublishError> {
         if let Some(cached) = self.cache.as_ref().and_then(|cache| cache.get(cache_key)) {
             if cached.timestamp() >= signed_packet.timestamp() {
                 return Err(PublishError::NotMostRecent);
             }
 
-            return Ok(Some(cached.timestamp()));
+            return Ok(Some(cached));
         }
 
         Ok(None)
@@ -391,7 +394,7 @@ impl std::fmt::Display for ClientWasShutdown {
     }
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone)]
 /// Errors occuring during publishing a [SignedPacket]
 pub enum PublishError {
     #[error("Found a more recent SignedPacket in the client's cache")]
@@ -405,9 +408,9 @@ pub enum PublishError {
     #[error("Pkarr Client was shutdown")]
     ClientWasShutdown,
 
-    #[error("Publish query is already inflight for the same public_key")]
-    /// [crate::Client::publish] is already inflight to the same public_key
-    PublishInflight,
+    #[error("Publish query is already inflight for the same public_key with a different value")]
+    /// [crate::Client::publish] is already inflight to the same public_key with a different value
+    ConcurrentPublish,
 
     // === Mainline only errors ===
     //
@@ -589,7 +592,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inflight() {
+    async fn concurrent_publish_different() {
         let relay = Relay::start_test().await.unwrap();
 
         let client = Client::builder()
@@ -607,12 +610,16 @@ mod tests {
             .unwrap();
 
         let clone = client.clone();
-        let packet = signed_packet.clone();
 
         let handle = tokio::spawn(async move {
-            let result = clone.publish(&packet).await;
+            let signed_packet = SignedPacket::builder()
+                .txt("foo".try_into().unwrap(), "zar".try_into().unwrap(), 30)
+                .sign(&keypair)
+                .unwrap();
 
-            assert!(matches!(result, Err(PublishError::PublishInflight)));
+            let result = clone.publish(&signed_packet).await;
+
+            assert!(matches!(result, Err(PublishError::ConcurrentPublish)));
         });
 
         client.publish(&signed_packet).await.unwrap();

@@ -5,8 +5,8 @@ use std::{collections::HashMap, net::SocketAddrV4};
 use flume::Sender;
 use mainline::{
     rpc::{
-        messages::{self, PutMutableRequestArguments},
-        PutError, Response, Rpc,
+        messages::{self, ErrorSpecific, PutMutableRequestArguments},
+        GetRequestSpecific, PutError, Response, Rpc,
     },
     Id,
 };
@@ -21,7 +21,7 @@ pub struct DhtClient {
     pub rpc: Rpc,
     pub cache: Option<Box<dyn Cache>>,
     pub resolve_senders: HashMap<Id, Vec<Sender<SignedPacket>>>,
-    pub publish_senders: HashMap<Id, Sender<Result<(), PublishError>>>,
+    pub publish_senders: HashMap<Id, Vec<Sender<Result<(), PublishError>>>>,
     pub resolvers: Option<Box<[SocketAddrV4]>>,
 }
 
@@ -42,15 +42,15 @@ impl DhtClient {
         if let Err(put_error) = self.rpc.put(messages::PutRequestSpecific::PutMutable(
             put_mutable_request,
         )) {
-            if let PutError::PutQueryIsInflight(_) = put_error {
-                let _ = sender.send(Err(PublishError::PublishInflight));
-
-                return;
+            if let PutError::ConcurrentPutMutable(_) = put_error {
+                let _ = sender.send(Err(PublishError::ConcurrentPublish));
+            } else {
+                log_put_error(&put_error);
             }
-
-            handle_put_error(put_error);
         } else {
-            self.publish_senders.insert(target, sender);
+            let senders = self.publish_senders.entry(target).or_default();
+
+            senders.push(sender)
         };
     }
 
@@ -67,7 +67,7 @@ impl DhtClient {
         };
 
         if let Some(responses) = self.rpc.get(
-            messages::RequestTypeSpecific::GetValue(messages::GetValueRequestArguments {
+            GetRequestSpecific::GetValue(messages::GetValueRequestArguments {
                 target,
                 seq: most_recent_known_timestamp.map(|t| t as i64),
                 salt: None,
@@ -88,7 +88,7 @@ impl DhtClient {
         };
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, no_relays: bool) {
         let report = self.rpc.tick();
 
         // === Receive and handle incoming mutable item from the DHT ===
@@ -132,32 +132,66 @@ impl DhtClient {
         }
 
         for (id, error) in &report.done_put_queries {
-            // TODO: should not return an error unless relays also failed?
-            if let Some(sender) = self.publish_senders.remove(id) {
+            if let Some(senders) = self.publish_senders.remove(id) {
                 if let Some(put_error) = error.to_owned() {
-                    if let PutError::NoClosestNodes = put_error {
-                        let _ = sender.send(Err(PublishError::NoClosestNodes));
-                    }
+                    log_put_error(&put_error);
 
-                    handle_put_error(put_error);
+                    if no_relays {
+                        if let Some(error) = match put_error {
+                            PutError::NoClosestNodes => {
+                                // If we found no closest nodes, and there is no relays client
+                                // then we should return an error informing the user that the publish
+                                // failed.
+                                Some(PublishError::NoClosestNodes)
+                            }
+                            // If most nodes responded with 301 or 302, we should return an error
+                            // because it is unlikely they are all lying.
+                            PutError::ErrorResponse(ErrorSpecific { code: 301, .. }) => {
+                                Some(PublishError::CasFailed)
+                            }
+                            PutError::ErrorResponse(ErrorSpecific { code: 302, .. }) => {
+                                Some(PublishError::NotMostRecent)
+                            }
+                            PutError::ConcurrentPutMutable(_) => {
+                                unreachable!(
+                                    "Should not make two publish queries at the same time!",
+                                );
+                            }
+                            PutError::ErrorResponse(ErrorSpecific { .. }) => {
+                                todo!();
+                            }
+                            PutError::Timeout => {
+                                todo!();
+                            }
+                        } {
+                            for sender in senders {
+                                let _ = sender.send(Err(error.clone()));
+                            }
+                        }
+                    }
                 } else {
-                    let _ = sender.send(Ok(()));
+                    for sender in senders {
+                        let _ = sender.send(Ok(()));
+                    }
                 };
             };
         }
     }
 }
 
-fn handle_put_error(error: PutError) {
+fn log_put_error(error: &PutError) {
     match error {
-        mainline::rpc::PutError::NoClosestNodes => {
+        PutError::NoClosestNodes => {
             debug!("mainline failed to find closest nodes (usually means UDP and or Mainline packets are firewalled)");
         }
-        mainline::rpc::PutError::PutQueryIsInflight(_) => {
+        PutError::ConcurrentPutMutable(_) => {
             unreachable!("Should not make two publish queries at the same time!");
         }
-        mainline::rpc::PutError::ErrorResponse(error) => {
+        PutError::ErrorResponse(error) => {
             debug!(?error, "mainline nodes responded with error for PUT query");
+        }
+        PutError::Timeout => {
+            debug!("mainline put query timed out");
         }
     }
 }
@@ -426,7 +460,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inflight() {
+    async fn concurrent_publish_different() {
         let testnet = Testnet::new(10).unwrap();
 
         let client = Client::builder()
@@ -444,12 +478,16 @@ mod tests {
             .unwrap();
 
         let clone = client.clone();
-        let packet = signed_packet.clone();
 
         let handle = tokio::spawn(async move {
-            let result = clone.publish(&packet).await;
+            let signed_packet = SignedPacket::builder()
+                .txt("foo".try_into().unwrap(), "zar".try_into().unwrap(), 30)
+                .sign(&keypair)
+                .unwrap();
 
-            assert!(matches!(result, Err(PublishError::PublishInflight)));
+            let result = clone.publish(&signed_packet).await;
+
+            assert!(matches!(result, Err(PublishError::ConcurrentPublish)));
         });
 
         client.publish(&signed_packet).await.unwrap();

@@ -1390,7 +1390,7 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 [[package]]
 name = "mainline"
 version = "4.2.0"
-source = "git+https://github.com/pubky/mainline?branch=v5#9a74da81a48345e822f0d1efae1c030deee230b8"
+source = "git+https://github.com/pubky/mainline?branch=v5#090588d02138b7b48741b0ccea9689f1cf1bfa9b"
 dependencies = [
  "crc",
  "document-features",
