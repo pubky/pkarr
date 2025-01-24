@@ -42,6 +42,9 @@ pub struct Config {
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
     #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
+    /// Tokio runtime to use in relyas client.
+    #[cfg(feature = "relays")]
+    pub relays_runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
 
     /// Timeout for both Dht and Relays requests.
     ///
@@ -69,6 +72,7 @@ impl Default for Config {
                     })
                     .collect(),
             ),
+            relays_runtime: None,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
         }
     }
@@ -186,6 +190,14 @@ impl ClientBuilder {
     #[cfg(feature = "relays")]
     pub fn relays(mut self, relays: Option<Vec<Url>>) -> Self {
         self.0.relays = relays;
+
+        self
+    }
+
+    /// Use custom Tokio runtime for relays client
+    #[cfg(feature = "relays")]
+    pub fn relays_runtime(mut self, runtime: std::sync::Arc<tokio::runtime::Runtime>) -> Self {
+        self.0.relays_runtime = Some(runtime);
 
         self
     }

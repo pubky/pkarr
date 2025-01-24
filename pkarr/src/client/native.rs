@@ -102,6 +102,19 @@ impl Client {
         rx.recv().map_err(|_| ClientWasShutdown)
     }
 
+    /// Turn this node's routing table to a list of bootstraping nodes.
+    ///
+    /// Returns `Ok(None)` if the only relays are used.
+    pub fn to_bootstrap(&self) -> Result<Option<Vec<String>>, ClientWasShutdown> {
+        let (sender, receiver) = flume::bounded::<Option<Vec<String>>>(1);
+
+        self.sender
+            .send(ActorMessage::ToBootstrap(sender))
+            .map_err(|_| ClientWasShutdown)?;
+
+        receiver.recv().map_err(|_| ClientWasShutdown)
+    }
+
     /// Returns a reference to the internal cache.
     pub fn cache(&self) -> Option<&dyn Cache> {
         self.cache.as_deref()
@@ -451,6 +464,13 @@ impl std::fmt::Display for ClientWasShutdown {
 #[derive(thiserror::Error, Debug, Clone)]
 /// Errors occuring during publishing a [SignedPacket]
 pub enum PublishError {
+    #[error("Pkarr Client was shutdown")]
+    ClientWasShutdown,
+
+    #[error("Publish query is already inflight for the same public_key with a different value")]
+    /// [crate::Client::publish] is already inflight to the same public_key with a different value
+    ConcurrentPublish,
+
     #[error("Found a more recent SignedPacket in the client's cache")]
     /// Found a more recent SignedPacket in the client's cache
     NotMostRecent,
@@ -458,13 +478,6 @@ pub enum PublishError {
     #[error("Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing")]
     /// Compare and swap failed; there is a more recent SignedPacket than the one seen before publishing
     CasFailed,
-
-    #[error("Pkarr Client was shutdown")]
-    ClientWasShutdown,
-
-    #[error("Publish query is already inflight for the same public_key with a different value")]
-    /// [crate::Client::publish] is already inflight to the same public_key with a different value
-    ConcurrentPublish,
 
     /// Publish query timed out with no responses neither success or errors, from Dht or relays.
     #[error("Publish query timed out with no responses neither success or errors.")]
@@ -655,6 +668,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn no_network() {
+        assert!(matches!(
+            Client::builder().no_default_network().build(),
+            Err(BuildError::NoNetwork)
+        ));
+    }
+
+    #[tokio::test]
     async fn concurrent_publish_different() {
         let relay = Relay::start_test().await.unwrap();
 
@@ -688,13 +709,5 @@ mod tests {
         client.publish(&signed_packet).await.unwrap();
 
         handle.await.unwrap()
-    }
-
-    #[tokio::test]
-    async fn no_network() {
-        assert!(matches!(
-            Client::builder().no_default_network().build(),
-            Err(BuildError::NoNetwork)
-        ));
     }
 }

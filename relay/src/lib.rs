@@ -124,7 +124,11 @@ impl Relay {
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
 
-        let resolver_address = client.info()?.dht_info().local_addr();
+        let resolver_address = client
+            .info()?
+            .dht_info()
+            .expect("dht network is enabled")
+            .local_addr();
         let relay_address = listener.local_addr()?;
 
         info!("Running as a resolver on UDP socket {resolver_address}");

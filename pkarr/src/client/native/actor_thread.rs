@@ -59,9 +59,14 @@ pub fn actor_thread(
     let mut dht_client: Option<()> = None;
 
     #[cfg(feature = "relays")]
-    let mut relays_client = config
-        .relays
-        .map(|r| RelaysClient::new(r.into(), cache.clone(), config.request_timeout));
+    let mut relays_client = config.relays.map(|r| {
+        RelaysClient::new(
+            r.into(),
+            cache.clone(),
+            config.request_timeout,
+            config.relays_runtime,
+        )
+    });
 
     #[cfg(not(feature = "relays"))]
     let mut relays_client: Option<()> = None;
@@ -76,17 +81,17 @@ pub fn actor_thread(
                     break;
                 }
                 ActorMessage::Publish(signed_packet, sender, cas) => {
-                    #[cfg(feature = "relays")]
-                    {
-                        if let Some(relays) = &relays_client {
-                            relays.publish(&signed_packet, sender.clone(), cas);
-                        }
-                    }
-
                     #[cfg(feature = "dht")]
                     {
                         if let Some(ref mut dht_client) = dht_client {
-                            dht_client.publish(&signed_packet, sender, cas);
+                            dht_client.publish(&signed_packet, sender.clone(), cas);
+                        }
+                    }
+
+                    #[cfg(feature = "relays")]
+                    {
+                        if let Some(relays) = &relays_client {
+                            relays.publish(&signed_packet, sender, cas);
                         }
                     }
                 }
@@ -141,12 +146,16 @@ pub fn actor_thread(
                 ActorMessage::Info(sender) => {
                     let dht_info = dht_client.as_ref().map(|dht_client| dht_client.rpc.info());
 
-                    let _ = sender.send(Info {
-                        // TODO: figure out Info with or without dht and or relay.
-                        dht_info: dht_info.unwrap(),
-                    });
+                    let _ = sender.send(Info { dht_info });
                 }
-                // TODO: return routing table.
+                #[cfg(feature = "dht")]
+                ActorMessage::ToBootstrap(sender) => {
+                    let bootstrap = dht_client
+                        .as_ref()
+                        .map(|dht_client| dht_client.rpc.routing_table().to_bootstrap());
+
+                    let _ = sender.send(bootstrap);
+                }
                 ActorMessage::Check(sender) => {
                     let _ = sender.send(if dht_client.is_none() && relays_client.is_none() {
                         Err(BuildError::NoNetwork)
@@ -176,17 +185,19 @@ pub enum ActorMessage {
     Shutdown(Sender<()>),
     Info(Sender<Info>),
     Check(Sender<Result<(), BuildError>>),
+    #[cfg(feature = "dht")]
+    ToBootstrap(Sender<Option<Vec<String>>>),
 }
 
 pub struct Info {
     #[cfg(feature = "dht")]
-    dht_info: mainline::rpc::Info,
+    dht_info: Option<mainline::rpc::Info>,
 }
 
-// TODO: add more infor like Mainline
 impl Info {
     #[cfg(feature = "dht")]
-    pub fn dht_info(&self) -> &mainline::rpc::Info {
-        &self.dht_info
+    /// Returns [mainline::rpc::Info] if the dht client is enabled.
+    pub fn dht_info(&self) -> Option<&mainline::rpc::Info> {
+        self.dht_info.as_ref()
     }
 }
