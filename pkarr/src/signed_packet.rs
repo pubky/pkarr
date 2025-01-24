@@ -479,12 +479,12 @@ impl SignedPacket {
         self.expires_in(min, max) == 0
     }
 
-    // === Private Methods ===
-
     /// Time since the [Self::last_seen] in seconds
-    fn elapsed(&self) -> u32 {
+    pub fn elapsed(&self) -> u32 {
         ((Timestamp::now().as_u64() - self.last_seen.as_u64()) / 1_000_000) as u32
     }
+
+    // === Private Methods ===
 
     /// Creates a [Self] from the serialized representation:
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`

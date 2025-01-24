@@ -12,6 +12,7 @@ All notable changes to pkarr will be documented in this file.
 - Impl `PartialEq, Eq` for `SignedPacket`.
 - Impl `From<PublicKey>` for `CacheKey`.
 - Add `SignedPacket::serialize` and `SignedPacket::deserialize`.
+- Add `SignedPacket::elapsed()` to return the number of seconds since this packet was last seen from remote network. 
 - Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.
 - Add `pkarr::LmdbCache` for persistent cache using lmdb.
 - Add `pkarr.pubky.org` as an extra default Relay and Resolver.

@@ -23,6 +23,9 @@ pub use actor_thread::Info;
 use actor_thread::{actor_thread, ActorMessage};
 pub use builder::{ClientBuilder, Config};
 
+/// Cache agen in seconds before we try to refresh it from the network.
+const CACHE_AGE_BEFORE_REFRESH_FOR_READ_BEFORE_PUBLISH: u32 = 10;
+
 #[derive(Clone, Debug)]
 /// Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or
 /// [Relays](https://pkarr.org/relays).
@@ -112,32 +115,34 @@ impl Client {
     /// - You can and should "read before write" by calling [Self::resolve_most_recent]
     ///     before publishing, to reduce the chances of missing records from previous packets
     ///     published from other clients.
-    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
-    ///    an [PublishError::ConcurrentPublish] error.
-    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent]) this method
-    ///     will query the network first, and if it finds a more recent [SignedPacket] than the packet
-    ///     you are trying to publish, it will return a [PublishError::NotMostRecent] error.
-    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent]) this method
-    ///     will query the network first, and if it finds a more recent [SignedPacket] than what
-    ///     already existed in cache before publishing, it will return a [PublishError::CasFailed] error.
-    /// - While Publishing, if most nodes or relays responds with a more recent [SignedPacket]s,
+    /// - If the cached [SignedPacket] is more recent than the packet you are trying to publish,
     ///     this method will return a [PublishError::NotMostRecent] error.
-    /// - While Publishing, if most nodes and/or relays responds with a compare and swap error,
-    ///     which may happen if they know of a more recent [SignedPacket] than the one we
-    ///     discovered before publishing, this method will return a [PublishError::NotMostRecent] error.
-    ///     This error is not as reliable as it only works if all nodes or all relays agree, to
-    ///     avoid disruption from malicious nodes/relays.
+    /// - Before publishing this method will refresh the cache by resolving the most recent [SignedPacket]
+    ///     if needed (if you didn't call [Self::resolve_most_recent] right before publishing),
+    ///     and if it finds a more recent [SignedPacket] than the cached packet before before
+    ///     resolving the most recent packet, it will return a [PublishError::CasFailed] error.
+    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
+    ///    a [PublishError::ConcurrentPublish] error.
+    /// - If all pre-checks above passed, and publishing starts, if most dht nodes or relays responded
+    ///     claims to have more recent packet than the one we are trying to publish,
+    ///     this method will return a [PublishError::NotMostRecent] error.
+    /// - If most dht nodes or relays responds with a compare and swap error,
+    ///     which may happen if they know of a more recent [SignedPacket] than the one we read from
+    ///     our fresh cache before publishing, this method will return a [PublishError::NotMostRecent] error.
     pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let cache_key = CacheKey::from(signed_packet.public_key());
 
-        let cached = self.check_most_recent(&cache_key, signed_packet)?;
+        let mut cached = self.check_more_recent_than_cached(&cache_key, signed_packet)?;
 
-        // TODO: skip lookup if the cache is still very fresh, persumably the user
-        // called [Self::resolve_most_recent] very recently.
-        // if cahed.map(|s|s.last_seen() )
-        let _ = self
-            .resolve_most_recent(&signed_packet.public_key())
-            .await?;
+        if cached
+            .as_ref()
+            .map(|s| s.elapsed() > CACHE_AGE_BEFORE_REFRESH_FOR_READ_BEFORE_PUBLISH)
+            .unwrap_or(true)
+        {
+            cached = self
+                .resolve_most_recent(&signed_packet.public_key())
+                .await?;
+        }
 
         self.publish_inner(signed_packet, cache_key, cached.map(|s| s.timestamp()))?
             .recv_async()
@@ -160,27 +165,32 @@ impl Client {
     /// - You can and should "read before write" by calling [Self::resolve_most_recent_sync]
     ///     before publishing, to reduce the chances of missing records from previous packets
     ///     published from other clients.
-    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
-    ///    an [PublishError::ConcurrentPublish] error.
-    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent_sync]) this method
-    ///     will query the network first, and if it finds a more recent [SignedPacket] than the packet
-    ///     you are trying to publish, it will return a [PublishError::NotMostRecent] error.
-    /// - Before publishing, (if you don't manually call [Self::resolve_most_recent_sync]) this method
-    ///     will query the network first, and if it finds a more recent [SignedPacket] than what
-    ///     already existed in cache before publishing, it will return a [PublishError::CasFailed] error.
-    /// - While Publishing, if most nodes or relays responds with a more recent [SignedPacket]s,
+    /// - If the cached [SignedPacket] is more recent than the packet you are trying to publish,
     ///     this method will return a [PublishError::NotMostRecent] error.
-    /// - While Publishing, if most nodes and/or relays responds with a compare and swap error,
-    ///     which may happen if they know of a more recent [SignedPacket] than the one we
-    ///     discovered before publishing, this method will return a [PublishError::NotMostRecent] error.
-    ///     This error is not as reliable as it only works if all nodes or all relays agree, to
-    ///     avoid disruption from malicious nodes/relays.
+    /// - Before publishing this method will refresh the cache by resolving the most recent [SignedPacket]
+    ///     if needed (if you didn't call [Self::resolve_most_recent_sync] right before publishing),
+    ///     and if it finds a more recent [SignedPacket] than the cached packet before before
+    ///     resolving the most recent packet, it will return a [PublishError::CasFailed] error.
+    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
+    ///    a [PublishError::ConcurrentPublish] error.
+    /// - If all pre-checks above passed, and publishing starts, if most dht nodes or relays responded
+    ///     claims to have more recent packet than the one we are trying to publish,
+    ///     this method will return a [PublishError::NotMostRecent] error.
+    /// - If most dht nodes or relays responds with a compare and swap error,
+    ///     which may happen if they know of a more recent [SignedPacket] than the one we read from
+    ///     our fresh cache before publishing, this method will return a [PublishError::NotMostRecent] error.
     pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
         let cache_key = CacheKey::from(signed_packet.public_key());
 
-        let cached = self.check_most_recent(&cache_key, signed_packet)?;
+        let mut cached = self.check_more_recent_than_cached(&cache_key, signed_packet)?;
 
-        let _ = self.resolve_most_recent_sync(&signed_packet.public_key())?;
+        if cached
+            .as_ref()
+            .map(|s| s.elapsed() > CACHE_AGE_BEFORE_REFRESH_FOR_READ_BEFORE_PUBLISH)
+            .unwrap_or(true)
+        {
+            cached = self.resolve_most_recent_sync(&signed_packet.public_key())?;
+        }
 
         self.publish_inner(signed_packet, cache_key, cached.map(|s| s.timestamp()))?
             .recv()
@@ -324,7 +334,7 @@ impl Client {
         Ok(receiver)
     }
 
-    fn check_most_recent(
+    fn check_more_recent_than_cached(
         &self,
         cache_key: &CacheKey,
         signed_packet: &SignedPacket,
