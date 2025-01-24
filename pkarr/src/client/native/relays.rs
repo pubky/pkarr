@@ -41,12 +41,11 @@ impl RelaysClient {
         &self,
         signed_packet: &SignedPacket,
         sender: flume::Sender<Result<(), PublishError>>,
-        _cas: Option<Timestamp>,
+        cas: Option<Timestamp>,
     ) {
-        // TODO: support cas for relays.
-
         let public_key = signed_packet.public_key();
         let body = signed_packet.to_relay_payload();
+        let cas = cas.map(|timestamp| timestamp.format_http_date());
 
         for relay in &self.relays {
             let http_client = self.http_client.clone();
@@ -54,9 +53,10 @@ impl RelaysClient {
             let public_key = public_key.clone();
             let body = body.clone();
             let sender = sender.clone();
+            let cas = cas.clone();
 
             self.runtime.spawn(async move {
-                if publish_to_relay(http_client, relay, &public_key, body)
+                if publish_to_relay(http_client, relay, &public_key, body, cas)
                     .await
                     .is_ok()
                 {

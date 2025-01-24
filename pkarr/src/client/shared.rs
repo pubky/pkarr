@@ -30,17 +30,19 @@ pub async fn publish_to_relay(
     relay: Url,
     public_key: &PublicKey,
     body: Bytes,
+    cas: Option<String>,
 ) -> Result<(), reqwest::Error> {
     let url = format_url(&relay, public_key);
 
-    let response = http_client
-        .put(url.clone())
-        .body(body)
-        .send()
-        .await
-        .inspect_err(|error| {
-            cross_debug!("Failed to send a request PUT {url} {error}");
-        })?;
+    let mut request = http_client.put(url.clone());
+
+    if let Some(date) = cas {
+        request = request.header(header::IF_UNMODIFIED_SINCE, date);
+    }
+
+    let response = request.body(body).send().await.inspect_err(|error| {
+        cross_debug!("Failed to send a request PUT {url} {error}");
+    })?;
 
     let status = response.status();
 
