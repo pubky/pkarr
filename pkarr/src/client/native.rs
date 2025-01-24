@@ -422,12 +422,21 @@ pub enum PublishError {
     /// [crate::Client::publish] is already inflight to the same public_key with a different value
     ConcurrentPublish,
 
+    /// Publish query timed out with no responses neither success or errors, from Dht or relays.
+    #[error("Publish query timed out with no responses neither success or errors.")]
+    Timeout,
+
     // === Mainline only errors ===
     //
     #[cfg(feature = "dht")]
     #[error("Publishing SignedPacket to Mainline failed.")]
     ///Publishing SignedPacket to Mainline failed.
     NoClosestNodes,
+
+    #[cfg(feature = "dht")]
+    #[error("Publishing SignedPacket to Mainline failed.")]
+    ///Publishing SignedPacket to Mainline failed, received an error response.
+    MainlineErrorResponse(mainline::rpc::messages::ErrorSpecific),
 }
 
 impl From<ClientWasShutdown> for PublishError {

@@ -88,6 +88,7 @@ impl DhtClient {
         };
     }
 
+    // TODO: instead of no_relays check if there are no more pending relays responses.
     pub fn tick(&mut self, no_relays: bool) {
         let report = self.rpc.tick();
 
@@ -136,37 +137,46 @@ impl DhtClient {
                 if let Some(put_error) = error.to_owned() {
                     log_put_error(&put_error);
 
-                    if no_relays {
-                        if let Some(error) = match put_error {
-                            PutError::NoClosestNodes => {
-                                // If we found no closest nodes, and there is no relays client
-                                // then we should return an error informing the user that the publish
-                                // failed.
+                    if let Some(error) = match put_error {
+                        // If most nodes responded with 301 or 302, we should return an error
+                        // because it is unlikely they are all lying.
+                        PutError::ErrorResponse(ErrorSpecific { code: 301, .. }) => {
+                            Some(PublishError::CasFailed)
+                        }
+                        PutError::ErrorResponse(ErrorSpecific { code: 302, .. }) => {
+                            Some(PublishError::NotMostRecent)
+                        }
+                        PutError::NoClosestNodes => {
+                            // If we found no closest nodes, and there is no relays client
+                            // then we should return an error informing the user that the publish
+                            // failed.
+                            if no_relays {
                                 Some(PublishError::NoClosestNodes)
+                            } else {
+                                None
                             }
-                            // If most nodes responded with 301 or 302, we should return an error
-                            // because it is unlikely they are all lying.
-                            PutError::ErrorResponse(ErrorSpecific { code: 301, .. }) => {
-                                Some(PublishError::CasFailed)
+                        }
+
+                        PutError::ErrorResponse(error) => {
+                            if no_relays {
+                                Some(PublishError::MainlineErrorResponse(error))
+                            } else {
+                                None
                             }
-                            PutError::ErrorResponse(ErrorSpecific { code: 302, .. }) => {
-                                Some(PublishError::NotMostRecent)
+                        }
+                        PutError::Timeout => {
+                            if no_relays {
+                                Some(PublishError::Timeout)
+                            } else {
+                                None
                             }
-                            PutError::ConcurrentPutMutable(_) => {
-                                unreachable!(
-                                    "Should not make two publish queries at the same time!",
-                                );
-                            }
-                            PutError::ErrorResponse(ErrorSpecific { .. }) => {
-                                todo!();
-                            }
-                            PutError::Timeout => {
-                                todo!();
-                            }
-                        } {
-                            for sender in senders {
-                                let _ = sender.send(Err(error.clone()));
-                            }
+                        }
+                        PutError::ConcurrentPutMutable(_) => {
+                            unreachable!("Should not make two publish queries at the same time!",);
+                        }
+                    } {
+                        for sender in senders {
+                            let _ = sender.send(Err(error.clone()));
                         }
                     }
                 } else {
