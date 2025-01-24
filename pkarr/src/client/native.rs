@@ -38,6 +38,7 @@ impl Client {
     pub fn new(config: Config) -> Result<Client, BuildError> {
         let (sender, receiver) = flume::bounded(32);
 
+        #[cfg(feature = "relays")]
         if config
             .relays
             .as_ref()

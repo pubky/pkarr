@@ -61,7 +61,6 @@ impl Default for Config {
     fn default() -> Self {
         let pkarr_config = pkarr::client::Config {
             resolvers: None,
-            relays: None,
             ..Default::default()
         };
 

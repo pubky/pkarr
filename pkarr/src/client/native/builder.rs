@@ -72,6 +72,7 @@ impl Default for Config {
                     })
                     .collect(),
             ),
+            #[cfg(feature = "relays")]
             relays_runtime: None,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
         }
@@ -202,7 +203,7 @@ impl ClientBuilder {
         self
     }
 
-    #[cfg(feature = "dht")]
+    #[cfg(feature = "relays")]
     /// Extend the current [Config::relays] with extra relays.
     ///
     /// If you want to set (override) the [Config::relays], use [Self::relays]

@@ -56,7 +56,7 @@ pub fn actor_thread(
     };
 
     #[cfg(not(feature = "dht"))]
-    let mut dht_client: Option<()> = None;
+    let dht_client: Option<()> = None;
 
     #[cfg(feature = "relays")]
     let mut relays_client = config.relays.map(|r| {
@@ -69,7 +69,7 @@ pub fn actor_thread(
     });
 
     #[cfg(not(feature = "relays"))]
-    let mut relays_client: Option<()> = None;
+    let relays_client: Option<()> = None;
 
     loop {
         // === Receive actor messages ===
