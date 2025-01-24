@@ -394,10 +394,7 @@ mod tests {
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .dht_config(mainline::Config {
-                request_timeout: Duration::from_millis(10),
-                ..Default::default()
-            })
+            .request_timeout(Duration::from_millis(10))
             // Everything is expired
             .maximum_ttl(0)
             .build()
@@ -470,13 +467,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn no_closest_nodes() {
+        let testnet = Testnet::new(10).unwrap();
+
+        let client = Client::builder()
+            .no_default_network()
+            .bootstrap(&testnet.bootstrap)
+            .request_timeout(Duration::from_millis(0))
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        assert!(matches!(
+            client.publish(&signed_packet).await,
+            Err(PublishError::NoClosestNodes)
+        ));
+    }
+
+    #[tokio::test]
     async fn concurrent_publish_different() {
         let testnet = Testnet::new(10).unwrap();
 
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .request_timeout(Duration::from_millis(100))
             .build()
             .unwrap();
 
@@ -506,26 +526,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_closest_nodes() {
+    async fn not_most_recent() {
         let testnet = Testnet::new(10).unwrap();
 
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .request_timeout(Duration::from_millis(0))
             .build()
             .unwrap();
 
         let keypair = Keypair::random();
 
-        let signed_packet = SignedPacket::builder()
+        let older = SignedPacket::builder()
             .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
             .sign(&keypair)
             .unwrap();
 
-        assert!(matches!(
-            client.publish(&signed_packet).await,
-            Err(PublishError::NoClosestNodes)
-        ));
+        let more_recent = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        client.publish(&more_recent).await.unwrap();
+
+        let result = client.publish(&older).await;
+
+        assert!(matches!(result, Err(PublishError::NotMostRecent)));
+    }
+
+    #[tokio::test]
+    async fn cas_failed() {
+        let testnet = Testnet::new(10).unwrap();
+
+        let client = Client::builder()
+            .no_default_network()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap();
+
+        let keypair = Keypair::random();
+
+        let older = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        let cas = Timestamp::now();
+
+        let more_recent = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        client.publish(&older).await.unwrap();
+
+        let result = client.publish_with_cas(&more_recent, Some(cas)).await;
+
+        assert!(matches!(result, Err(PublishError::CasFailed)));
     }
 }
