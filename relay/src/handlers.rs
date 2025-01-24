@@ -7,7 +7,9 @@ use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::{header, StatusCode};
 use httpdate::HttpDate;
-use tracing::error;
+use pkarr::errors::PublishError;
+use pubky_timestamp::Timestamp;
+use tracing::{debug, error};
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
@@ -18,6 +20,7 @@ use crate::AppState;
 pub async fn put(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
+    request_headers: HeaderMap,
     body: Bytes,
 ) -> Result<impl IntoResponse, Error> {
     let public_key = PublicKey::try_from(public_key.as_str())
@@ -26,23 +29,42 @@ pub async fn put(
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
+    let cas = if let Some(header_value) = request_headers.get(header::IF_UNMODIFIED_SINCE) {
+        let httpdate = header_value.to_str().map_err(|_| {
+            Error::new(
+                StatusCode::BAD_REQUEST,
+                Some("Could not parse `IF_UNMODIFIED_SINCE` header"),
+            )
+        })?;
+
+        Some(Timestamp::parse_http_date(httpdate).map_err(|_| {
+            Error::new(
+                StatusCode::BAD_REQUEST,
+                Some("Could not parse `IF_UNMODIFIED_SINCE` header"),
+            )
+        })?)
+    } else {
+        None
+    };
+
     state
         .client
-        .publish(&signed_packet)
+        .publish_with_cas(&signed_packet, cas)
         .await
         .map_err(|error| match error {
-            pkarr::errors::PublishError::ConcurrentPublish => {
+            PublishError::ConcurrentPublish => {
                 Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error))
             }
-            pkarr::errors::PublishError::NotMostRecent => {
-                Error::new(StatusCode::CONFLICT, Some(error))
-            }
-            pkarr::errors::PublishError::ClientWasShutdown => {
+            PublishError::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
+            PublishError::ClientWasShutdown => {
                 error!("Pkarr client was shutdown");
                 Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
-            error => {
-                error!(?error, "Unexpected error");
+            PublishError::CasFailed => Error::new(StatusCode::PRECONDITION_FAILED, Some(error)),
+            PublishError::Timeout
+            | PublishError::MainlineErrorResponse(_)
+            | PublishError::NoClosestNodes => {
+                debug!(?error, "Unexpected error while publishing");
                 Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
         })?;

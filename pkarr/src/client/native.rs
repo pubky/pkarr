@@ -197,6 +197,35 @@ impl Client {
             .expect("Query was dropped before sending a response, please open an issue.")
     }
 
+    /// Publish a [SignedPacket] with a manually provided CAS timestamp.
+    ///
+    /// Useful for relays that get a request to publish a packet from a remote client that
+    /// sends their CAS as `IF_UNMODIFIED_SINCE` header.
+    pub async fn publish_with_cas(
+        &self,
+        signed_packet: &SignedPacket,
+        cas: Option<Timestamp>,
+    ) -> Result<(), PublishError> {
+        self.publish_inner(signed_packet, signed_packet.public_key().into(), cas)?
+            .recv_async()
+            .await
+            .expect("Query was dropped before sending a response, please open an issue.")
+    }
+
+    /// Publish a [SignedPacket] with a manually provided CAS timestamp.
+    ///
+    /// Useful for relays that get a request to publish a packet from a remote client that
+    /// sends their CAS as `IF_UNMODIFIED_SINCE` header.
+    pub fn publish_with_cas_sync(
+        &self,
+        signed_packet: &SignedPacket,
+        cas: Option<Timestamp>,
+    ) -> Result<(), PublishError> {
+        self.publish_inner(signed_packet, signed_packet.public_key().into(), cas)?
+            .recv()
+            .expect("Query was dropped before sending a response, please open an issue.")
+    }
+
     // === Resolve ===
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
