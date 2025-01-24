@@ -38,6 +38,15 @@ impl Client {
     pub fn new(config: Config) -> Result<Client, BuildError> {
         let (sender, receiver) = flume::bounded(32);
 
+        if config
+            .relays
+            .as_ref()
+            .map(|relays| relays.is_empty())
+            .unwrap_or_default()
+        {
+            return Err(BuildError::EmptyListOfRelays);
+        }
+
         let cache = if config.cache_size == 0 {
             None
         } else {
@@ -413,13 +422,19 @@ pub enum BuildError {
     /// Failed to spawn the actor thread.
     ActorThreadSpawn(std::io::Error),
 
+    #[error("Client configured without Mainline node or relays.")]
+    /// Client configured without Mainline node or relays.
+    NoNetwork,
+
+    #[cfg(feature = "dht")]
     #[error("Failed to bind mainline UdpSocket (and Relays are disabled).")]
     /// Failed to bind mainline UdpSocket (and Relays are disabled).
     MainlineUdpSocket(std::io::Error),
 
-    #[error("Client configured without Mainline node or relays.")]
-    /// Client configured without Mainline node or relays.
-    NoNetwork,
+    #[cfg(feature = "relays")]
+    #[error("Passed an empty list of relays")]
+    /// Passed an empty list of relays
+    EmptyListOfRelays,
 }
 
 #[derive(Debug)]
