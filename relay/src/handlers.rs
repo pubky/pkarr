@@ -7,7 +7,7 @@ use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::{header, StatusCode};
 use httpdate::HttpDate;
-use pkarr::errors::PublishError;
+use pkarr::errors::{ConcurrencyError, PublishError};
 use pubky_timestamp::Timestamp;
 use tracing::{debug, error};
 
@@ -52,15 +52,19 @@ pub async fn put(
         .publish_with_cas(&signed_packet, cas)
         .await
         .map_err(|error| match error {
-            PublishError::ConcurrentPublish => {
-                Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error))
-            }
-            PublishError::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
+            PublishError::Concurrency(error) => match error {
+                ConcurrencyError::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
+                ConcurrencyError::CasFailed => {
+                    Error::new(StatusCode::PRECONDITION_FAILED, Some(error))
+                }
+                ConcurrencyError::ConflictRisk => {
+                    Error::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
+                }
+            },
             PublishError::ClientWasShutdown => {
                 error!("Pkarr client was shutdown");
                 Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
-            PublishError::CasFailed => Error::new(StatusCode::PRECONDITION_FAILED, Some(error)),
             PublishError::Timeout
             | PublishError::MainlineErrorResponse(_)
             | PublishError::NoClosestNodes => {

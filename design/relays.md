@@ -30,10 +30,11 @@ On receiving a PUT request, the relay server should:
 #### Errors
 
 - `400 Bad Request` if the public key in the path is invalid, or the payload has invalid signature, or DNS packet.
-- `409 Conflict` if the timestamp is older than what the server or the DHT network already seen.
-- `413 Payload Too Large` if the payload is larger than 1072 bytes
-- `429 Too Many Requests` if the server is already publishing a packet for the same key, or if it is rate limiting requests from the same IP.
-- `412 Precondition Failed` if the `If-Unmodified-Since` condition fails.
+- `409 Conflict` if the timestamp is older than what the server or the DHT network already seen (equivalent to error code `302` in `BEP0044`).
+- `412 Precondition Failed` if the `If-Unmodified-Since` condition fails (equivalent to error code `301` in `BEP0044`).
+- `413 Payload Too Large` if the payload is larger than 1072 bytes.
+- `428 Precondition Required` if the server is already publishing another packet for the same key, it should require a `If-Unmodified-Since` header.
+- `429 Too Many Requests` if the server is rate limiting requests from the same IP.
 
 ### GET
 
