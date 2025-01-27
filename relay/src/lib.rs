@@ -74,6 +74,7 @@ pub struct Relay {
     handle: Handle,
     resolver_address: SocketAddrV4,
     relay_address: SocketAddr,
+    bootstrap: Vec<String>,
 }
 
 impl Relay {
@@ -120,6 +121,8 @@ impl Relay {
         config.pkarr_config.dht_config.server = Some(server);
         config.pkarr_config.cache = Some(cache);
 
+        let bootstrap = config.pkarr_config.dht_config.bootstrap.clone();
+
         let client = Client::new(config.pkarr_config)?;
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
@@ -148,6 +151,7 @@ impl Relay {
             handle,
             resolver_address,
             relay_address,
+            bootstrap,
         })
     }
 
@@ -174,6 +178,7 @@ impl Relay {
         };
 
         config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
+        config.pkarr_config.dht_config.server_mode = true;
         config.pkarr_config.resolvers = None;
 
         unsafe { Self::start(config).await }
@@ -196,15 +201,24 @@ impl Relay {
         };
 
         config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
+        config.pkarr_config.dht_config.server_mode = true;
         config.pkarr_config.resolvers = None;
 
         unsafe { Self::start(config).await }
     }
 
+    /// Returns the address of the internal [mainline] Dht node
+    /// acting as bootstrapping node an a [resolver](https://pkarr.org/resolvers)
     pub fn resolver_address(&self) -> SocketAddrV4 {
         self.resolver_address
     }
 
+    /// Returns the bootstrapping nodes for the dht network used in this relay.
+    pub fn as_bootstrap(&self) -> &[String] {
+        &self.bootstrap
+    }
+
+    /// Returns the HTTP socket address
     pub fn relay_address(&self) -> SocketAddr {
         self.relay_address
     }

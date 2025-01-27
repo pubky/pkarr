@@ -4,8 +4,9 @@ use std::{collections::HashMap, net::SocketAddrV4};
 
 use flume::Sender;
 use mainline::{
+    errors::PutQueryError,
     rpc::{
-        messages::{self, ErrorSpecific, PutMutableRequestArguments},
+        messages::{self, PutMutableRequestArguments},
         GetRequestSpecific, PutError, Response, Rpc,
     },
     Id,
@@ -13,7 +14,7 @@ use mainline::{
 use pubky_timestamp::Timestamp;
 use tracing::debug;
 
-use crate::{Cache, SignedPacket};
+use crate::{errors::ConcurrencyError, Cache, SignedPacket};
 
 use super::PublishError;
 
@@ -39,19 +40,15 @@ impl DhtClient {
 
         put_mutable_request.cas = cas.map(|cas| cas.as_u64() as i64);
 
-        if let Err(put_error) = self.rpc.put(messages::PutRequestSpecific::PutMutable(
-            put_mutable_request,
-        )) {
-            if let PutError::ConcurrentPutMutable(_) = put_error {
-                let _ = sender.send(Err(PublishError::ConcurrentPublish));
-            } else {
-                log_put_error(&put_error);
-            }
-        } else {
-            let senders = self.publish_senders.entry(target).or_default();
+        self.rpc
+            .put(messages::PutRequestSpecific::PutMutable(
+                put_mutable_request,
+            ))
+            .expect("should be infallible");
 
-            senders.push(sender)
-        };
+        let senders = self.publish_senders.entry(target).or_default();
+
+        senders.push(sender)
     }
 
     pub fn resolve(
@@ -135,44 +132,35 @@ impl DhtClient {
         for (id, error) in &report.done_put_queries {
             if let Some(senders) = self.publish_senders.remove(id) {
                 if let Some(put_error) = error.to_owned() {
-                    log_put_error(&put_error);
+                    debug!(?put_error, "mainline PUT mutable query failed");
 
                     if let Some(error) = match put_error {
-                        // If most nodes responded with 301 or 302, we should return an error
-                        // because it is unlikely they are all lying.
-                        PutError::ErrorResponse(ErrorSpecific { code: 301, .. }) => {
-                            Some(PublishError::CasFailed)
-                        }
-                        PutError::ErrorResponse(ErrorSpecific { code: 302, .. }) => {
-                            Some(PublishError::NotMostRecent)
-                        }
-                        PutError::NoClosestNodes => {
-                            // If we found no closest nodes, and there is no relays client
-                            // then we should return an error informing the user that the publish
-                            // failed.
+                        // Return Concurrency errors regardless of the state of the
+                        // publish query in the relays client.
+                        PutError::Concurrency(error) => Some(match error {
+                            mainline::errors::ConcurrencyError::ConflictRisk => {
+                                PublishError::Concurrency(ConcurrencyError::ConflictRisk)
+                            }
+                            mainline::errors::ConcurrencyError::NotMostRecent => {
+                                PublishError::Concurrency(ConcurrencyError::NotMostRecent)
+                            }
+                            mainline::errors::ConcurrencyError::CasFailed => {
+                                PublishError::Concurrency(ConcurrencyError::CasFailed)
+                            }
+                        }),
+                        PutError::Query(error) => {
                             if no_relays {
-                                Some(PublishError::NoClosestNodes)
+                                Some(match error {
+                                    PutQueryError::Timeout => PublishError::Timeout,
+                                    // TODO: Maybe return a unified error response (unexpected)?
+                                    PutQueryError::NoClosestNodes => PublishError::NoClosestNodes,
+                                    PutQueryError::ErrorResponse(error) => {
+                                        PublishError::MainlineErrorResponse(error)
+                                    }
+                                })
                             } else {
                                 None
                             }
-                        }
-
-                        PutError::ErrorResponse(error) => {
-                            if no_relays {
-                                Some(PublishError::MainlineErrorResponse(error))
-                            } else {
-                                None
-                            }
-                        }
-                        PutError::Timeout => {
-                            if no_relays {
-                                Some(PublishError::Timeout)
-                            } else {
-                                None
-                            }
-                        }
-                        PutError::ConcurrentPutMutable(_) => {
-                            unreachable!("Should not make two publish queries at the same time!",);
                         }
                     } {
                         for sender in senders {
@@ -186,402 +174,5 @@ impl DhtClient {
                 };
             };
         }
-    }
-}
-
-fn log_put_error(error: &PutError) {
-    match error {
-        PutError::NoClosestNodes => {
-            debug!("mainline failed to find closest nodes (usually means UDP and or Mainline packets are firewalled)");
-        }
-        PutError::ConcurrentPutMutable(_) => {
-            unreachable!("Should not make two publish queries at the same time!");
-        }
-        PutError::ErrorResponse(error) => {
-            debug!(?error, "mainline nodes responded with error for PUT query");
-        }
-        PutError::Timeout => {
-            debug!("mainline put query timed out");
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    //! Dht only tests
-
-    use std::{thread, time::Duration};
-
-    use mainline::Testnet;
-
-    use super::super::*;
-    use crate::{Keypair, SignedPacket};
-
-    #[test]
-    fn shutdown_sync() {
-        let testnet = Testnet::new(3).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        client.shutdown_sync();
-
-        assert!(client.info().is_err());
-    }
-
-    #[test]
-    fn publish_resolve_sync() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish_sync(&signed_packet).unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-        let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    }
-
-    #[test]
-    fn thread_safe_sync() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish_sync(&signed_packet).unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        thread::spawn(move || {
-            let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-            let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-            assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        })
-        .join()
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn shutdown() {
-        let testnet = Testnet::new(3).unwrap();
-
-        let mut a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        a.shutdown().await;
-
-        assert!(a.info().is_err());
-    }
-
-    #[tokio::test]
-    async fn publish_resolve() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish(&signed_packet).await.unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-        let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    }
-
-    #[tokio::test]
-    async fn thread_safe() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let a = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish(&signed_packet).await.unwrap();
-
-        let b = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        tokio::spawn(async move {
-            let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-            let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-            assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        })
-        .await
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn return_expired_packet_fallback() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .request_timeout(Duration::from_millis(10))
-            // Everything is expired
-            .maximum_ttl(0)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-
-        client
-            .cache()
-            .unwrap()
-            .put(&keypair.public_key().into(), &signed_packet);
-
-        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
-
-        assert_eq!(resolved, Some(signed_packet));
-    }
-
-    #[tokio::test]
-    async fn ttl_0_test() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .maximum_ttl(0)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-
-        client.publish(&signed_packet).await.unwrap();
-
-        // First Call
-        let resolved = client
-            .resolve(&signed_packet.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
-
-        thread::sleep(Duration::from_millis(10));
-
-        let second = client
-            .resolve(&signed_packet.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
-    }
-
-    #[tokio::test]
-    async fn not_found() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
-
-        assert_eq!(resolved, None);
-    }
-
-    #[tokio::test]
-    async fn no_closest_nodes() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .request_timeout(Duration::from_millis(0))
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        assert!(matches!(
-            client.publish(&signed_packet).await,
-            Err(PublishError::NoClosestNodes)
-        ));
-    }
-
-    #[tokio::test]
-    async fn concurrent_publish_different() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        let clone = client.clone();
-
-        let handle = tokio::spawn(async move {
-            let signed_packet = SignedPacket::builder()
-                .txt("foo".try_into().unwrap(), "zar".try_into().unwrap(), 30)
-                .sign(&keypair)
-                .unwrap();
-
-            let result = clone.publish(&signed_packet).await;
-
-            assert!(matches!(result, Err(PublishError::ConcurrentPublish)));
-        });
-
-        client.publish(&signed_packet).await.unwrap();
-
-        handle.await.unwrap()
-    }
-
-    #[tokio::test]
-    async fn not_most_recent() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let older = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        let more_recent = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        client.publish(&more_recent).await.unwrap();
-
-        let result = client.publish(&older).await;
-
-        assert!(matches!(result, Err(PublishError::NotMostRecent)));
-    }
-
-    #[tokio::test]
-    async fn cas_failed() {
-        let testnet = Testnet::new(10).unwrap();
-
-        let client = Client::builder()
-            .no_default_network()
-            .bootstrap(&testnet.bootstrap)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-
-        let older = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        let cas = Timestamp::now();
-
-        let more_recent = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        client.publish(&older).await.unwrap();
-
-        let result = client.publish_with_cas(&more_recent, Some(cas)).await;
-
-        assert!(matches!(result, Err(PublishError::CasFailed)));
     }
 }

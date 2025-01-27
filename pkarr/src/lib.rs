@@ -37,7 +37,9 @@ pub mod errors {
     //! Exported errors
 
     #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
-    pub use super::client::native::{ClientWasShutdown, PublishError};
+    pub use super::client::native::{
+        BuildError, ClientWasShutdown, ConcurrencyError, PublishError,
+    };
 
     #[cfg(all(feature = "client", target_arch = "wasm32"))]
     pub use super::client::web::{AllGetRequestsFailed, EmptyListOfRelays, PublishError};

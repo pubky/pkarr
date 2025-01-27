@@ -30,6 +30,7 @@ futures-lite = { version = "2.6.0", default-features = false, features= ["std"],
 
 # feat: endpoints dependencies
 genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"], optional = true }
+rstest = "0.24.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tracing = "0.1.41"
@@ -70,6 +71,7 @@ log = "0.4.25"
 anyhow = "1.0.95"
 pkarr-relay = { path = "../relay" }
 postcard = { version = "1.1.1", features = ["alloc"] }
+reqwest = "0.12.12"
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
@@ -117,4 +119,4 @@ default = ["full"]
 all-features = true
 
 [lints.clippy]
-# unwrap_used = "deny"
+unwrap_used = "deny"
