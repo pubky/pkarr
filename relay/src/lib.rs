@@ -179,7 +179,6 @@ impl Relay {
 
         config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
         config.pkarr_config.dht_config.server_mode = true;
-        config.pkarr_config.resolvers = None;
 
         unsafe { Self::start(config).await }
     }
@@ -202,7 +201,6 @@ impl Relay {
 
         config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
         config.pkarr_config.dht_config.server_mode = true;
-        config.pkarr_config.resolvers = None;
 
         unsafe { Self::start(config).await }
     }
