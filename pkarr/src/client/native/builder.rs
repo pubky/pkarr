@@ -15,7 +15,6 @@ use crate::{
 
 use super::{BuildError, Client};
 
-#[derive(Debug)]
 /// [Client]'s Config
 pub struct Config {
     pub dht_config: mainline::rpc::Config,
@@ -76,6 +75,38 @@ impl Default for Config {
             relays_runtime: None,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
         }
+    }
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("Config");
+
+        debug_struct.field("dht_config", &self.dht_config);
+        debug_struct.field("resolvers", &self.resolvers);
+        debug_struct.field("cache_size", &self.cache_size);
+        debug_struct.field("minimum_ttl", &self.minimum_ttl);
+        debug_struct.field("maximum_ttl", &self.maximum_ttl);
+        debug_struct.field("cache", &self.cache);
+
+        #[cfg(feature = "relays")]
+        debug_struct.field(
+            "relays",
+            &self
+                .relays
+                .as_ref()
+                .map(|urls| urls.iter().map(|url| url.as_str()).collect::<Vec<_>>()),
+        );
+
+        #[cfg(feature = "relays")]
+        debug_struct.field(
+            "relays_runtime",
+            &self.relays_runtime.as_ref().map(|_| "Some(Arc<Runtime>)"),
+        );
+
+        debug_struct.field("request_timeout", &self.request_timeout);
+
+        debug_struct.finish()
     }
 }
 
