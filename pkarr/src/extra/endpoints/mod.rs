@@ -278,6 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn max_chain_exceeded() {
+        // TODO: investigate why this is slow even if request_timeout is small?
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
             .no_default_network()

@@ -520,6 +520,7 @@ mod tests {
 
     enum Networks {
         Dht,
+        #[cfg(feature = "relays")]
         Relays,
         Both,
     }
@@ -529,24 +530,32 @@ mod tests {
     fn builder(relay: &Relay, networks: &Networks) -> ClientBuilder {
         let builder = Client::builder()
             .no_default_network()
+            // Because of pkarr_relay crate, dht is always enabled.
+            .bootstrap(relay.as_bootstrap())
+            .resolvers(Some(vec![relay.resolver_address().to_string()]))
             .request_timeout(Duration::from_millis(100));
 
         match networks {
-            Networks::Dht => builder
-                .bootstrap(relay.as_bootstrap())
-                .resolvers(Some(vec![relay.resolver_address().to_string()])),
-            Networks::Relays => builder.relays(Some(vec![relay.local_url()])),
-            Networks::Both => builder
-                .bootstrap(&[relay.resolver_address().to_string()])
-                .resolvers(Some(vec![relay.resolver_address().to_string()]))
+            Networks::Dht => builder,
+            #[cfg(feature = "relays")]
+            Networks::Relays => builder
+                .no_default_network()
                 .relays(Some(vec![relay.local_url()])),
+            Networks::Both => {
+                #[cfg(feature = "relays")]
+                {
+                    builder.relays(Some(vec![relay.local_url()]))
+                }
+                #[cfg(not(feature = "relays"))]
+                builder
+            }
         }
     }
 
     #[rstest]
     #[case::dht(Networks::Dht)]
-    // #[case::relays(Networks::Relays)]
     #[case::both_networks(Networks::Both)]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn publish_resolve(#[case] networks: Networks) {
         let relay = Relay::start_test().await.unwrap();

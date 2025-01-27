@@ -120,3 +120,11 @@ all-features = true
 
 [lints.clippy]
 unwrap_used = "deny"
+
+[[example]]
+name = "http-get"
+required-features = ["reqwest-builder"]
+
+[[example]]
+name = "http-serve"
+required-features = ["tls"]

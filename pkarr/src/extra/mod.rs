@@ -26,13 +26,7 @@ impl From<crate::Client> for ::reqwest::ClientBuilder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use mainline::Testnet;
     use std::net::SocketAddr;
-    use std::net::TcpListener;
-    use std::sync::Arc;
-
-    use axum::{routing::get, Router};
-    use axum_server::tls_rustls::RustlsConfig;
 
     use crate::{dns::rdata::SVCB, Client, Keypair, SignedPacket};
 
@@ -49,8 +43,17 @@ mod tests {
         client.publish(&signed_packet).await.unwrap();
     }
 
+    #[cfg(feature = "reqwest-builder")]
     #[tokio::test]
     async fn reqwest_pkarr_domain() {
+        use mainline::Testnet;
+        use std::net::TcpListener;
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        use axum::{routing::get, Router};
+        use axum_server::tls_rustls::RustlsConfig;
+
         let testnet = Testnet::new(3).unwrap();
 
         let keypair = Keypair::random();
@@ -63,6 +66,7 @@ mod tests {
 
             let client = Client::builder()
                 .bootstrap(&testnet.bootstrap)
+                .request_timeout(Duration::from_millis(100))
                 .build()
                 .unwrap();
             publish_server_pkarr(&client, &keypair, &address).await;
