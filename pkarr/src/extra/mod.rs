@@ -40,7 +40,7 @@ mod tests {
             .sign(keypair)
             .unwrap();
 
-        client.publish(&signed_packet).await.unwrap();
+        client.publish(&signed_packet, None).await.unwrap();
     }
 
     #[cfg(feature = "reqwest-builder")]

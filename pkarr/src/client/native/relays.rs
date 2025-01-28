@@ -12,7 +12,7 @@ use crate::{Cache, CacheKey, PublicKey, SignedPacket};
 
 use crate::client::shared::{publish_to_relay, resolve_from_relay};
 
-use super::{ConcurrencyError, PublishError};
+use super::{ConcurrencyError, PublishError, QueryError};
 
 pub struct RelaysClient {
     relays: Box<[Url]>,
@@ -20,7 +20,7 @@ pub struct RelaysClient {
     cache: Option<Box<dyn Cache>>,
     runtime: Arc<Runtime>,
 
-    inflight_publish: InflightPublishRequests,
+    pub(crate) inflight_publish: InflightPublishRequests,
 }
 
 impl RelaysClient {
@@ -121,7 +121,7 @@ struct InflightpublishRequest {
 }
 
 #[derive(Clone)]
-struct InflightPublishRequests {
+pub(crate) struct InflightPublishRequests {
     majority: usize,
     requests: Arc<RwLock<HashMap<PublicKey, InflightpublishRequest>>>,
 }
@@ -225,7 +225,7 @@ impl InflightPublishRequests {
 
         if let Some(request) = inflight.get_mut(public_key) {
             request.errors.push(if error.is_timeout() {
-                PublishError::Timeout
+                PublishError::Query(QueryError::Timeout)
             } else if error.is_status() {
                 match error
                     .status()
@@ -251,7 +251,8 @@ impl InflightPublishRequests {
                     }
                 }
             } else {
-                todo!()
+                // TODO: better error, a generic fail
+                PublishError::Query(QueryError::Timeout)
             });
 
             if request.errors.len() >= self.majority {

@@ -69,12 +69,12 @@ log = "0.4.25"
 
 [dev-dependencies]
 anyhow = "1.0.95"
-pkarr-relay = { path = "../relay" }
 postcard = { version = "1.1.1", features = ["alloc"] }
 reqwest = "0.12.12"
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+pkarr-relay = { path = "../relay" }
 clap = { version = "4.5.27", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 mainline = { git = "https://github.com/pubky/mainline", branch="v5" }

@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
     println!("\nPublishing {} ...", keypair.public_key());
 
-    match client.publish(&signed_packet).await {
+    match client.publish(&signed_packet, None).await {
         Ok(()) => {
             println!(
                 "\nSuccessfully published {} in {:?}",

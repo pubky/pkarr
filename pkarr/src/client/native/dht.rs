@@ -14,7 +14,7 @@ use mainline::{
 use pubky_timestamp::Timestamp;
 use tracing::debug;
 
-use crate::{errors::ConcurrencyError, Cache, SignedPacket};
+use crate::{client::native::QueryError, errors::ConcurrencyError, Cache, SignedPacket};
 
 use super::PublishError;
 
@@ -36,13 +36,9 @@ impl DhtClient {
         let mutable_item = mainline::MutableItem::from(signed_packet);
         let target = *mutable_item.target();
 
-        let mut put_mutable_request: PutMutableRequestArguments = mutable_item.into();
-
-        put_mutable_request.cas = cas.map(|cas| cas.as_u64() as i64);
-
         self.rpc
             .put(messages::PutRequestSpecific::PutMutable(
-                put_mutable_request,
+                PutMutableRequestArguments::from(mutable_item, cas.map(|t| t.as_u64() as i64)),
             ))
             .expect("should be infallible");
 
@@ -151,12 +147,16 @@ impl DhtClient {
                         PutError::Query(error) => {
                             if no_relays {
                                 Some(match error {
-                                    PutQueryError::Timeout => PublishError::Timeout,
-                                    // TODO: Maybe return a unified error response (unexpected)?
-                                    PutQueryError::NoClosestNodes => PublishError::NoClosestNodes,
-                                    PutQueryError::ErrorResponse(error) => {
-                                        PublishError::MainlineErrorResponse(error)
+                                    PutQueryError::Timeout => {
+                                        PublishError::Query(QueryError::Timeout)
                                     }
+                                    // TODO: Maybe return a unified error response (unexpected)?
+                                    PutQueryError::NoClosestNodes => {
+                                        PublishError::Query(QueryError::NoClosestNodes)
+                                    }
+                                    PutQueryError::ErrorResponse(error) => PublishError::Query(
+                                        QueryError::MainlineErrorResponse(error),
+                                    ),
                                 })
                             } else {
                                 None

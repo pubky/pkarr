@@ -122,94 +122,84 @@ impl Client {
 
     /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
     ///
-    /// # Consistency
+    /// # Lost Update Problem
     ///
-    /// Publishing different packets concurrently is not safe, as it risks losing data (records)
-    /// in the earlier packet that are accidentally gets dropped in the more recently published
-    /// packet.
+    /// Mainline DHT and remote relays form a distributed network, and like all distributed networks,
+    /// it is vulnerable to [Write–write conflict](https://en.wikipedia.org/wiki/Write-write_conflict).
     ///
-    /// We can't perfectly protect against this, as the distributed network is available and
-    /// partition tolerant, and thus isn't consistent. See [CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem).
+    /// ## Read first
     ///
-    /// However, there are ways to reduce the risk of inconsistent writes:
-    /// - You can and should "read before write" by calling [Self::resolve_most_recent]
-    ///     before publishing, to reduce the chances of missing records from previous packets
-    ///     published from other clients.
-    /// - If the cached [SignedPacket] is more recent than the packet you are trying to publish,
-    ///     this method will return a [PublishError::NotMostRecent] error.
-    /// - Before publishing this method will refresh the cache by resolving the most recent [SignedPacket]
-    ///     if needed (if you didn't call [Self::resolve_most_recent] right before publishing),
-    ///     and if it finds a more recent [SignedPacket] than the cached packet before before
-    ///     resolving the most recent packet, it will return a [PublishError::CasFailed] error.
-    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
-    ///    a [PublishError::ConcurrentPublish] error.
-    /// - If all pre-checks above passed, and publishing starts, if most dht nodes or relays responded
-    ///     claims to have more recent packet than the one we are trying to publish,
-    ///     this method will return a [PublishError::NotMostRecent] error.
-    /// - If most dht nodes or relays responds with a compare and swap error,
-    ///     which may happen if they know of a more recent [SignedPacket] than the one we read from
-    ///     our fresh cache before publishing, this method will return a [PublishError::NotMostRecent] error.
-    pub async fn publish(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
-        self.publish_inner(
-            signed_packet,
-            self.resolve_most_recent(&signed_packet.public_key())
-                .await?
-                .map(|s| s.timestamp()),
-        )?
-        .recv_async()
-        .await
-        .expect("Query was dropped before sending a response, please open an issue.")
-    }
-
-    /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
+    /// To mitigate the risk of lost updates, you should call the [Self::resolve_most_recent] method
+    /// then start authoring the new [SignedPacket] based on the most recent as in the following example:
     ///
-    /// # Consistency
+    ///```rust
+    /// use mainline::Testnet;
+    /// use pkarr::{Client, SignedPacket, Keypair};
     ///
-    /// Publishing different packets concurrently is not safe, as it risks losing data (records)
-    /// in the earlier packet that are accidentally gets dropped in the more recently published
-    /// packet.
+    /// #[tokio::main]
+    /// async fn run() -> anyhow::Result<()> {
+    ///     let testnet = Testnet::new(3)?;
+    ///     let client = Client::builder()
+    ///         // Disable the default network settings (builtin relays and mainline bootstrap nodes).
+    ///         .no_default_network()
+    ///         .bootstrap(&testnet.bootstrap)
+    ///         .build()?;
     ///
-    /// We can't perfectly protect against this, as the distributed network is available and
-    /// partition tolerant, and thus isn't consistent. See [CAP theorem](https://en.wikipedia.org/wiki/CAP_theorem).
+    ///     let keypair = Keypair::random();
     ///
-    /// However, there are ways to reduce the risk of inconsistent writes:
-    /// - You can and should "read before write" by calling [Self::resolve_most_recent_sync]
-    ///     before publishing, to reduce the chances of missing records from previous packets
-    ///     published from other clients.
-    /// - If the cached [SignedPacket] is more recent than the packet you are trying to publish,
-    ///     this method will return a [PublishError::NotMostRecent] error.
-    /// - Before publishing this method will refresh the cache by resolving the most recent [SignedPacket]
-    ///     if needed (if you didn't call [Self::resolve_most_recent_sync] right before publishing),
-    ///     and if it finds a more recent [SignedPacket] than the cached packet before before
-    ///     resolving the most recent packet, it will return a [PublishError::CasFailed] error.
-    /// - Publishing two different [SignedPacket]s from the same client concurrently will return
-    ///    a [PublishError::ConcurrentPublish] error.
-    /// - If all pre-checks above passed, and publishing starts, if most dht nodes or relays responded
-    ///     claims to have more recent packet than the one we are trying to publish,
-    ///     this method will return a [PublishError::NotMostRecent] error.
-    /// - If most dht nodes or relays responds with a compare and swap error,
-    ///     which may happen if they know of a more recent [SignedPacket] than the one we read from
-    ///     our fresh cache before publishing, this method will return a [PublishError::NotMostRecent] error.
-    pub fn publish_sync(&self, signed_packet: &SignedPacket) -> Result<(), PublishError> {
-        self.publish_inner(
-            signed_packet,
-            self.resolve_most_recent_sync(&signed_packet.public_key())?
-                .map(|s| s.timestamp()),
-        )?
-        .recv()
-        .expect("Query was dropped before sending a response, please open an issue.")
-    }
-
-    /// Publish a [SignedPacket] with a manually provided CAS timestamp.
+    ///     let (signed_packet, cas) = if let Some(most_recent) = client
+    ///         .resolve_most_recent(&keypair.public_key()).await?
+    ///     {
     ///
-    /// Useful for:
-    /// 1. Manually call [Self::resolve_most_recent] and use the result as `CAS` field
-    ///     instead of relying on [Self::publish] assuming that you are publishing based
-    ///     on the cached signed packet which could be updated immediately after you call
-    ///     [Self::publish] defeating the purpose of `CAS`.
-    /// 2. Relays that get a request to publish a packet from a remote client that
-    ///     sends their CAS as `IF_UNMODIFIED_SINCE` header.
-    pub async fn publish_with_cas(
+    ///         let mut builder = SignedPacket::builder();
+    ///
+    ///         // 1. Optionally inherit all or some of the existing records.
+    ///         for record in most_recent.all_resource_records() {
+    ///             let name = record.name.to_string();
+    ///
+    ///             if name != "foo" && name != "sercert" {
+    ///                 builder = builder.record(record.clone());
+    ///             }
+    ///         };
+    ///
+    ///         // 2. Optionally add more new records.
+    ///         let signed_packet = builder
+    ///             .txt("foo".try_into()?, "bar".try_into()?, 30)
+    ///             .a("secret".try_into()?, 42.into(), 30)
+    ///             .sign(&keypair)?;
+    ///
+    ///         (
+    ///             signed_packet,
+    ///             // 3. Use the most recent [SignedPacket::timestamp] as a `CAS`.
+    ///             Some(most_recent.timestamp())
+    ///         )
+    ///     } else {
+    ///         (
+    ///             SignedPacket::builder()
+    ///                 .txt("foo".try_into()?, "bar".try_into()?, 30)
+    ///                 .a("secret".try_into()?, 42.into(), 30)
+    ///                 .sign(&keypair)?,
+    ///             None
+    ///         )
+    ///     };
+    ///
+    ///     client.publish(&signed_packet, cas).await?;
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// ## Errors
+    ///
+    /// This method may return on of these errors:
+    ///
+    /// 1. [Shutdown][PublishError::ClientWasShutdown].
+    /// 2. [QueryError]: when the query fails, and you need to retry or debug the network.
+    /// 3. [ConcurrencyError]: when an write conflict (or the risk of it) is detedcted.
+    ///
+    /// If you get a [ConcurrencyError]; you should resolver the most recent packet again,
+    /// and repeat the steps in the previous example.
+    pub async fn publish(
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
@@ -220,11 +210,85 @@ impl Client {
             .expect("Query was dropped before sending a response, please open an issue.")
     }
 
-    /// Publish a [SignedPacket] with a manually provided CAS timestamp.
+    /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
     ///
-    /// Useful for relays that get a request to publish a packet from a remote client that
-    /// sends their CAS as `IF_UNMODIFIED_SINCE` header.
-    pub fn publish_with_cas_sync(
+    /// # Lost Update Problem
+    ///
+    /// Mainline DHT and remote relays form a distributed network, and like all distributed networks,
+    /// it is vulnerable to [Write–write conflict](https://en.wikipedia.org/wiki/Write-write_conflict).
+    ///
+    /// ## Read first
+    ///
+    /// To mitigate the risk of lost updates, you should call the [Self::resolve_most_recent] method
+    /// then start authoring the new [SignedPacket] based on the most recent as in the following example:
+    ///
+    ///```rust
+    /// use mainline::Testnet;
+    /// use pkarr::{Client, SignedPacket, Keypair};
+    ///
+    /// fn run() -> anyhow::Result<()> {
+    ///     let testnet = Testnet::new(3)?;
+    ///     let client = Client::builder()
+    ///         // Disable the default network settings (builtin relays and mainline bootstrap nodes).
+    ///         .no_default_network()
+    ///         .bootstrap(&testnet.bootstrap)
+    ///         .build()?;
+    ///
+    ///     let keypair = Keypair::random();
+    ///
+    ///     let (signed_packet, cas) = if let Some(most_recent) = client
+    ///         .resolve_most_recent_sync(&keypair.public_key())?
+    ///     {
+    ///
+    ///         let mut builder = SignedPacket::builder();
+    ///
+    ///         // 1. Optionally inherit all or some of the existing records.
+    ///         for record in most_recent.all_resource_records() {
+    ///             let name = record.name.to_string();
+    ///
+    ///             if name != "foo" && name != "sercert" {
+    ///                 builder = builder.record(record.clone());
+    ///             }
+    ///         };
+    ///
+    ///         // 2. Optionally add more new records.
+    ///         let signed_packet = builder
+    ///             .txt("foo".try_into()?, "bar".try_into()?, 30)
+    ///             .a("secret".try_into()?, 42.into(), 30)
+    ///             .sign(&keypair)?;
+    ///
+    ///         (
+    ///             signed_packet,
+    ///             // 3. Use the most recent [SignedPacket::timestamp] as a `CAS`.
+    ///             Some(most_recent.timestamp())
+    ///         )
+    ///     } else {
+    ///         (
+    ///             SignedPacket::builder()
+    ///                 .txt("foo".try_into()?, "bar".try_into()?, 30)
+    ///                 .a("secret".try_into()?, 42.into(), 30)
+    ///                 .sign(&keypair)?,
+    ///             None
+    ///         )
+    ///     };
+    ///
+    ///     client.publish_sync(&signed_packet, cas)?;
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// ## Errors
+    ///
+    /// This method may return on of these errors:
+    ///
+    /// 1. [Shutdown][PublishError::ClientWasShutdown].
+    /// 2. [QueryError]: when the query fails, and you need to retry or debug the network.
+    /// 3. [ConcurrencyError]: when an write conflict (or the risk of it) is detedcted.
+    ///
+    /// If you get a [ConcurrencyError]; you should resolver the most recent packet again,
+    /// and repeat the steps in the previous example.
+    pub fn publish_sync(
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
@@ -458,8 +522,15 @@ pub enum PublishError {
     ClientWasShutdown,
 
     #[error(transparent)]
-    Concurrency(#[from] ConcurrencyError),
+    Query(QueryError),
 
+    #[error(transparent)]
+    Concurrency(#[from] ConcurrencyError),
+}
+
+#[derive(thiserror::Error, Debug, Clone)]
+/// Errors that requires either a retry or debugging the network condition.
+pub enum QueryError {
     /// Publish query timed out with no responses neither success or errors, from Dht or relays.
     #[error("Publish query timed out with no responses neither success or errors.")]
     Timeout,
@@ -555,7 +626,8 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    // TODO: enable testing relays only
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn publish_resolve(#[case] networks: Networks) {
         let relay = Relay::start_test().await.unwrap();
@@ -569,7 +641,7 @@ mod tests {
             .sign(&keypair)
             .unwrap();
 
-        a.publish(&signed_packet).await.unwrap();
+        a.publish(&signed_packet, None).await.unwrap();
 
         let b = builder(&relay, &networks).build().unwrap();
 

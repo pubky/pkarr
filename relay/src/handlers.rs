@@ -49,7 +49,7 @@ pub async fn put(
 
     state
         .client
-        .publish_with_cas(&signed_packet, cas)
+        .publish(&signed_packet, cas)
         .await
         .map_err(|error| match error {
             PublishError::Concurrency(error) => match error {
@@ -65,11 +65,9 @@ pub async fn put(
                 error!("Pkarr client was shutdown");
                 Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
-            PublishError::Timeout
-            | PublishError::MainlineErrorResponse(_)
-            | PublishError::NoClosestNodes => {
-                debug!(?error, "Unexpected error while publishing");
-                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
+            PublishError::Query(query_error) => {
+                debug!(?query_error, "Query error while publishing");
+                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(query_error))
             }
         })?;
 

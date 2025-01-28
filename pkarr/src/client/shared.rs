@@ -41,7 +41,7 @@ pub async fn publish_to_relay(
     }
 
     let response = request.body(body).send().await.inspect_err(|error| {
-        cross_debug!("Failed to send a request PUT {url} {error}");
+        cross_debug!("PUT {:?}", error);
     })?;
 
     let status = response.status();
@@ -86,7 +86,7 @@ pub async fn resolve_from_relay(
     }
 
     let response = request.send().await.inspect_err(|error| {
-        cross_debug!("Failed to send a request GET {url} {error}");
+        cross_debug!("GET {:?}", error);
     })?;
 
     let status = response.status();
