@@ -34,7 +34,7 @@ impl RelayBuilder {
 
     // Configure the port for the internal Mainline DHT node to listen on
     pub fn dht_port(mut self, port: u16) -> Self {
-        self.0.pkarr_config.dht_config.port = Some(port);
+        self.0.pkarr.dht(|builder| builder.port(port));
 
         self
     }
@@ -74,7 +74,6 @@ pub struct Relay {
     handle: Handle,
     resolver_address: SocketAddrV4,
     relay_address: SocketAddr,
-    bootstrap: Vec<String>,
 }
 
 impl Relay {
@@ -112,25 +111,26 @@ impl Relay {
 
         let server = Box::new(DhtServer::new(
             cache.clone(),
-            config.pkarr_config.resolvers.clone(),
-            config.pkarr_config.minimum_ttl,
-            config.pkarr_config.maximum_ttl,
+            None,
+            // TODO: move ttl logic to Cache trait.
+            0,
+            100000,
             rate_limiter.clone(),
         ));
 
-        config.pkarr_config.dht_config.server = Some(server);
-        config.pkarr_config.cache = Some(cache);
+        config
+            .pkarr
+            .dht(|builder| builder.custom_server(server))
+            .cache(cache);
 
-        let bootstrap = config.pkarr_config.dht_config.bootstrap.clone();
-
-        let client = Client::new(config.pkarr_config)?;
+        let client = config.pkarr.build()?;
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
 
         let resolver_address = client
-            .info()?
-            .dht_info()
+            .dht()
             .expect("dht network is enabled")
+            .info()?
             .local_addr();
         let relay_address = listener.local_addr()?;
 
@@ -151,7 +151,6 @@ impl Relay {
             handle,
             resolver_address,
             relay_address,
-            bootstrap,
         })
     }
 
@@ -166,7 +165,7 @@ impl Relay {
     ///
     /// # Safety
     /// See [Self::start]
-    pub async fn start_test() -> anyhow::Result<Self> {
+    pub async fn start_test() -> anyhow::Result<(Self, mainline::Testnet)> {
         let testnet = mainline::Testnet::new(10)?;
 
         let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
@@ -177,10 +176,12 @@ impl Relay {
             ..Default::default()
         };
 
-        config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
-        config.pkarr_config.dht_config.server_mode = true;
+        config
+            .pkarr
+            .bootstrap(&testnet.bootstrap)
+            .dht(|builder| builder.bootstrap(&testnet.bootstrap).server_mode());
 
-        unsafe { Self::start(config).await }
+        Ok((unsafe { Self::start(config).await? }, testnet))
     }
 
     /// Run a Pkarr relay in a Testnet mode (on port 15411).
@@ -199,8 +200,10 @@ impl Relay {
             ..Default::default()
         };
 
-        config.pkarr_config.dht_config.bootstrap = testnet.bootstrap.clone();
-        config.pkarr_config.dht_config.server_mode = true;
+        config
+            .pkarr
+            .bootstrap(&testnet.bootstrap)
+            .dht(|builder| builder.server_mode());
 
         unsafe { Self::start(config).await }
     }
@@ -209,11 +212,6 @@ impl Relay {
     /// acting as bootstrapping node an a [resolver](https://pkarr.org/resolvers)
     pub fn resolver_address(&self) -> SocketAddrV4 {
         self.resolver_address
-    }
-
-    /// Returns the bootstrapping nodes for the dht network used in this relay.
-    pub fn as_bootstrap(&self) -> &[String] {
-        &self.bootstrap
     }
 
     /// Returns the HTTP socket address

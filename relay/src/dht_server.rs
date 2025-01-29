@@ -19,6 +19,7 @@ use tracing::debug;
 use crate::rate_limiting::IpRateLimiter;
 
 /// DhtServer with Rate limiting
+#[derive(Clone)]
 pub struct DhtServer {
     default_server: DefaultServer,
     resolvers: Option<Box<[SocketAddrV4]>>,

@@ -7,7 +7,7 @@ use std::{
 use url::Url;
 
 #[cfg(feature = "dht")]
-use mainline::rpc::{DEFAULT_BOOTSTRAP_NODES, DEFAULT_REQUEST_TIMEOUT};
+use mainline::rpc::DEFAULT_REQUEST_TIMEOUT;
 
 use crate::{
     Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
@@ -16,15 +16,8 @@ use crate::{
 use super::{BuildError, Client};
 
 /// [Client]'s Config
+#[derive(Clone)]
 pub struct Config {
-    pub dht_config: mainline::rpc::Config,
-    /// A set of [resolver](https://pkarr.org/resolvers)s
-    /// to be queried alongside the Dht routing table, to
-    /// lower the latency on cold starts, and help if the
-    /// Dht is missing values not't republished often enough.
-    ///
-    /// Defaults to [DEFAULT_RESOLVERS]
-    pub resolvers: Option<Vec<SocketAddrV4>>,
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: usize,
     /// Used in the `min` parameter in [crate::SignedPacket::expires_in].
@@ -37,6 +30,15 @@ pub struct Config {
     pub maximum_ttl: u32,
     /// Custom [Cache] implementation, defaults to [crate::InMemoryCache]
     pub cache: Option<Box<dyn Cache>>,
+
+    pub dht: Option<mainline::DhtBuilder>,
+    /// A set of [resolver](https://pkarr.org/resolvers)s
+    /// to be queried alongside the Dht routing table, to
+    /// lower the latency on cold starts, and help if the
+    /// Dht is missing values not't republished often enough.
+    ///
+    /// Defaults to [DEFAULT_RESOLVERS]
+    pub resolvers: Option<Vec<SocketAddrV4>>,
 
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
     #[cfg(feature = "relays")]
@@ -56,12 +58,16 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            dht_config: mainline::rpc::Config::default(),
             cache_size: DEFAULT_CACHE_SIZE,
-            resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
             minimum_ttl: DEFAULT_MINIMUM_TTL,
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
+
+            #[cfg(feature = "dht")]
+            dht: Some(mainline::Dht::builder()),
+            #[cfg(feature = "dht")]
+            resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
+
             #[cfg(feature = "relays")]
             relays: Some(
                 crate::DEFAULT_RELAYS
@@ -73,6 +79,7 @@ impl Default for Config {
             ),
             #[cfg(feature = "relays")]
             relays_runtime: None,
+
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
         }
     }
@@ -82,12 +89,15 @@ impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_struct = f.debug_struct("Config");
 
-        debug_struct.field("dht_config", &self.dht_config);
-        debug_struct.field("resolvers", &self.resolvers);
         debug_struct.field("cache_size", &self.cache_size);
         debug_struct.field("minimum_ttl", &self.minimum_ttl);
         debug_struct.field("maximum_ttl", &self.maximum_ttl);
         debug_struct.field("cache", &self.cache);
+
+        #[cfg(feature = "dht")]
+        debug_struct.field("dht", &self.dht);
+        #[cfg(feature = "dht")]
+        debug_struct.field("resolvers", &self.resolvers);
 
         #[cfg(feature = "relays")]
         debug_struct.field(
@@ -125,11 +135,11 @@ impl ClientBuilder {
     ///
     /// Similarly you can use [Self::resolvers] and / or [Self::bootstrap] to use [mainline]
     /// with custom configurations.
-    pub fn no_default_network(mut self) -> Self {
+    pub fn no_default_network(&mut self) -> &mut Self {
         #[cfg(feature = "dht")]
         {
             self.0.resolvers = None;
-            self.0.dht_config.bootstrap = vec![];
+            self.0.dht = None;
         }
         #[cfg(feature = "relays")]
         {
@@ -139,24 +149,41 @@ impl ClientBuilder {
         self
     }
 
-    /// Reenable using [mainline] with [DEFAULT_RESOLVERS] and [DEFAULT_BOOTSTRAP_NODES].
+    /// Reenable using [mainline] with [DEFAULT_RESOLVERS] and [mainline::Config::default].
     #[cfg(feature = "dht")]
-    pub fn use_mainline(mut self) -> Self {
+    pub fn use_mainline(&mut self) -> &mut Self {
         self.0.resolvers = Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS));
-        self.0.dht_config.bootstrap = DEFAULT_BOOTSTRAP_NODES.map(|s| s.to_string()).to_vec();
+        self.0.dht = Default::default();
 
         self
     }
 
-    /// Convienent method to set the [mainline::Config::bootstrap].
+    /// Convienent method to set the [mainline::Config::bootstrap] in [Config::dht].
     ///
     /// You can start a separate Dht network by setting this to an empty array.
     ///
     /// If you want to extend [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes with more nodes, you can
     /// use [Self::extra_bootstrap].
     #[cfg(feature = "dht")]
-    pub fn bootstrap(mut self, bootstrap: &[String]) -> Self {
-        self.0.dht_config.bootstrap = bootstrap.to_vec();
+    pub fn bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
+        self.dht(|b| b.bootstrap(bootstrap));
+
+        self
+    }
+
+    /// Create [Self::dht] if `None`, and allows mutating it with a callback function.
+    #[cfg(feature = "dht")]
+    pub fn dht<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut mainline::DhtBuilder) -> &mut mainline::DhtBuilder,
+    {
+        if self.0.dht.is_none() {
+            self.0.dht = Some(Default::default());
+        }
+
+        if let Some(ref mut builder) = self.0.dht {
+            f(builder);
+        };
 
         self
     }
@@ -166,7 +193,7 @@ impl ClientBuilder {
     ///
     /// If you want to set (override) the [Config::dht_config::bootsrtap][mainline::Config::bootstrap],
     /// use [Self::bootstrap]
-    pub fn extra_resolvers(mut self, resolvers: Vec<String>) -> Self {
+    pub fn extra_resolvers(&mut self, resolvers: Vec<String>) -> &mut Self {
         let resolvers = resolvers_to_socket_addrs(&resolvers);
 
         if let Some(ref mut existing) = self.0.resolvers {
@@ -183,7 +210,7 @@ impl ClientBuilder {
     /// If you want to extend the [Config::resolvers] with more nodes, you can
     /// use [Self::extra_resolvers].
     #[cfg(feature = "dht")]
-    pub fn resolvers(mut self, resolvers: Option<Vec<String>>) -> Self {
+    pub fn resolvers(&mut self, resolvers: Option<Vec<String>>) -> &mut Self {
         self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
 
         self
@@ -193,19 +220,15 @@ impl ClientBuilder {
     /// Extend the current [Config::resolvers] with extra resolvers.
     ///
     /// If you want to set (override) the [Config::resolvers], use [Self::resolvers]
-    pub fn extra_bootstrap(mut self, bootstrap: &[String]) -> Self {
-        for node in bootstrap {
-            if !self.0.dht_config.bootstrap.contains(node) {
-                self.0.dht_config.bootstrap.push(node.clone())
-            }
-        }
+    pub fn extra_bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
+        self.dht(|b| b.extra_bootstrap(bootstrap));
 
         self
     }
 
     #[cfg(feature = "relays")]
     /// Reenable using [Config::relays] with [crate::DEFAULT_RELAYS].
-    pub fn use_relays(mut self) -> Self {
+    pub fn use_relays(&mut self) -> &mut Self {
         self.0.relays = Some(
             crate::DEFAULT_RELAYS
                 .iter()
@@ -220,7 +243,7 @@ impl ClientBuilder {
 
     /// Set custom set of [relays](Config::relays)
     #[cfg(feature = "relays")]
-    pub fn relays(mut self, relays: Option<Vec<Url>>) -> Self {
+    pub fn relays(&mut self, relays: Option<Vec<Url>>) -> &mut Self {
         self.0.relays = relays;
 
         self
@@ -228,7 +251,10 @@ impl ClientBuilder {
 
     /// Use custom Tokio runtime for relays client
     #[cfg(feature = "relays")]
-    pub fn relays_runtime(mut self, runtime: std::sync::Arc<tokio::runtime::Runtime>) -> Self {
+    pub fn relays_runtime(
+        &mut self,
+        runtime: std::sync::Arc<tokio::runtime::Runtime>,
+    ) -> &mut Self {
         self.0.relays_runtime = Some(runtime);
 
         self
@@ -238,7 +264,7 @@ impl ClientBuilder {
     /// Extend the current [Config::relays] with extra relays.
     ///
     /// If you want to set (override) the [Config::relays], use [Self::relays]
-    pub fn extra_relays(mut self, relays: Vec<Url>) -> Self {
+    pub fn extra_relays(&mut self, relays: Vec<Url>) -> &mut Self {
         if let Some(ref mut existing) = self.0.relays {
             for relay in relays {
                 if !existing.contains(&relay) {
@@ -255,7 +281,7 @@ impl ClientBuilder {
     /// Controls the capacity of [Cache].
     ///
     /// If set to `0` cache will be disabled.
-    pub fn cache_size(mut self, cache_size: usize) -> Self {
+    pub fn cache_size(&mut self, cache_size: usize) -> &mut Self {
         self.0.cache_size = cache_size;
 
         self
@@ -264,7 +290,7 @@ impl ClientBuilder {
     /// Set the [Config::minimum_ttl] value.
     ///
     /// Limits how soon a [crate::SignedPacket] is considered expired.
-    pub fn minimum_ttl(mut self, ttl: u32) -> Self {
+    pub fn minimum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.minimum_ttl = ttl;
 
         self
@@ -273,23 +299,15 @@ impl ClientBuilder {
     /// Set the [Config::maximum_ttl] value.
     ///
     /// Limits how long it takes before a [crate::SignedPacket] is considered expired.
-    pub fn maximum_ttl(mut self, ttl: u32) -> Self {
+    pub fn maximum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.maximum_ttl = ttl;
 
         self
     }
 
     /// Set a custom implementation of [Cache].
-    pub fn cache(mut self, cache: Box<dyn Cache>) -> Self {
+    pub fn cache(&mut self, cache: Box<dyn Cache>) -> &mut Self {
         self.0.cache = Some(cache);
-
-        self
-    }
-
-    /// Set [Config::dht_config]
-    #[cfg(feature = "dht")]
-    pub fn dht_config(mut self, config: mainline::rpc::Config) -> Self {
-        self.0.dht_config = config;
 
         self
     }
@@ -298,15 +316,15 @@ impl ClientBuilder {
     ///
     /// Useful for testing NOT FOUND responses, where you want to reach the timeout
     /// sooner than the default of [mainline::rpc::DEFAULT_REQUEST_TIMEOUT].
-    pub fn request_timeout(mut self, timeout: Duration) -> Self {
-        self.0.dht_config.request_timeout = timeout;
+    pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.0.request_timeout = timeout;
+        self.0.dht.as_mut().map(|b| b.request_timeout(timeout));
 
         self
     }
 
-    pub fn build(self) -> Result<Client, BuildError> {
-        Client::new(self.0)
+    pub fn build(&self) -> Result<Client, BuildError> {
+        Client::new(self.0.clone())
     }
 }
 

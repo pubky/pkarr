@@ -1446,10 +1446,11 @@ checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 [[package]]
 name = "mainline"
 version = "4.2.1"
-source = "git+https://github.com/pubky/mainline?branch=v5#b5e523cca70d95b0d16140e7863d494cb9b93b02"
+source = "git+https://github.com/pubky/mainline?branch=v5#ec92f104cd8ce17795ffc9f3ab4015aa27a5f27f"
 dependencies = [
  "crc",
  "document-features",
+ "dyn-clone",
  "ed25519-dalek",
  "flume",
  "futures-lite",

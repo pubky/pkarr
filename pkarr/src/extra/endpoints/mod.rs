@@ -260,12 +260,9 @@ mod tests {
     async fn empty() {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
-            .bootstrap(&testnet.bootstrap)
             .no_default_network()
-            .dht_config(mainline::Config {
-                request_timeout: Duration::from_millis(20),
-                ..Default::default()
-            })
+            .bootstrap(&testnet.bootstrap)
+            .request_timeout(Duration::from_millis(20))
             .build()
             .unwrap();
 

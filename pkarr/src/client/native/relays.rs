@@ -134,13 +134,6 @@ impl InflightPublishRequests {
         }
     }
 
-    pub fn contains_key(&self, public_key: &PublicKey) -> bool {
-        self.requests
-            .read()
-            .expect("InflightPublishRequests read lock")
-            .contains_key(public_key)
-    }
-
     pub fn add_sender(
         &self,
         public_key: &PublicKey,

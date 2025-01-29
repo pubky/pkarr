@@ -8,7 +8,7 @@ mod shared;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod native;
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{Client, ClientBuilder, Config, Info};
+pub use native::{Client, ClientBuilder, Config};
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod web;

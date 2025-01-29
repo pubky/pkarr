@@ -3,7 +3,6 @@
 //! This server will _not_ be accessible from other networks
 //! unless the provided IP is public and the port number is forwarded.
 
-use simple_dns::rdata::RData;
 use tracing::Level;
 use tracing_subscriber;
 

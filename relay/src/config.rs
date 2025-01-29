@@ -43,8 +43,8 @@ pub struct Config {
     ///
     /// Defaults to `6881`
     pub http_port: u16,
-    /// Pkarr client configuration
-    pub pkarr_config: pkarr::client::Config,
+    /// Pkarr client builder
+    pub pkarr: pkarr::client::ClientBuilder,
     /// Path to cache database
     ///
     /// Defaults to a directory in the OS data directory
@@ -59,19 +59,17 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let pkarr_config = pkarr::client::Config {
-            resolvers: None,
-            relays: None,
-            ..Default::default()
-        };
-
-        Self {
+        let mut this = Self {
             http_port: 6881,
-            pkarr_config,
+            pkarr: Default::default(),
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: Some(RateLimiterConfig::default()),
-        }
+        };
+
+        this.pkarr.resolvers(None).relays(None);
+
+        this
     }
 }
 
@@ -87,14 +85,16 @@ impl Config {
         let mut config = Config::default();
 
         if let Some(ttl) = config_toml.minimum_ttl {
-            config.pkarr_config.minimum_ttl = ttl;
+            config.pkarr.minimum_ttl(ttl);
         }
 
         if let Some(ttl) = config_toml.maximum_ttl {
-            config.pkarr_config.maximum_ttl = ttl;
+            config.pkarr.maximum_ttl(ttl);
         }
 
-        config.pkarr_config.dht_config.port = config_toml.mainline.and_then(|m| m.port);
+        if let Some(port) = config_toml.mainline.and_then(|m| m.port) {
+            config.pkarr.dht(|builder| builder.port(port));
+        }
 
         if let Some(HttpConfig { port: Some(port) }) = config_toml.http {
             config.http_port = port;
