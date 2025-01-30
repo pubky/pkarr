@@ -681,7 +681,9 @@ mod tests {
 
     use native::{BuildError, ConcurrencyError, PublishError};
     use pkarr_relay::Relay;
+    use pubky_timestamp::Timestamp;
     use rstest::rstest;
+    use tracing_subscriber::fmt::init;
 
     use super::super::*;
     use crate::{Keypair, SignedPacket};
@@ -963,126 +965,150 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn concurrent_put_mutable_different() {
-    //     let testnet = Testnet::new(10).unwrap();
-    //
-    //     let client = Dht::builder()
-    //         .bootstrap(&testnet.bootstrap)
-    //         .build()
-    //         .unwrap();
-    //
-    //     let mut handles = vec![];
-    //
-    //     for i in 0..2 {
-    //         let client = client.clone();
-    //
-    //         let signer = SigningKey::from_bytes(&[
-    //             56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
-    //             228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
-    //         ]);
-    //
-    //         let seq = 1000;
-    //
-    //         let mut value = b"Hello World!".to_vec();
-    //         value.push(i);
-    //
-    //         let item = MutableItem::new(signer.clone(), &value, seq, None);
-    //
-    //         let handle = std::thread::spawn(move || {
-    //             let result = client.put_mutable(item, None);
-    //             if i == 0 {
-    //                 assert!(matches!(result, Ok(_)))
-    //             } else {
-    //                 assert!(matches!(
-    //                     result,
-    //                     Err(PutMutableError::Concurrency(ConcurrencyError::ConflictRisk))
-    //                 ))
-    //             }
-    //         });
-    //
-    //         handles.push(handle);
-    //     }
-    //
-    //     for handle in handles {
-    //         handle.join().unwrap();
-    //     }
-    // }
-    //
-    // #[test]
-    // fn concurrent_put_mutable_different_with_cas() {
-    //     let testnet = Testnet::new(10).unwrap();
-    //
-    //     let client = Dht::builder()
-    //         .bootstrap(&testnet.bootstrap)
-    //         .build()
-    //         .unwrap();
-    //
-    //     let signer = SigningKey::from_bytes(&[
-    //         56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
-    //         228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
-    //     ]);
-    //
-    //     // First
-    //     {
-    //         let item = MutableItem::new(signer.clone(), &[], 1000, None);
-    //
-    //         let (sender, _) = flume::bounded::<Result<Id, PutError>>(1);
-    //         let target = *item.target();
-    //         let request =
-    //             PutRequestSpecific::PutMutable(PutMutableRequestArguments::from(item, None));
-    //         client
-    //             .0
-    //             .send(ActorMessage::Put(target, request, sender))
-    //             .map_err(|_| DhtWasShutdown)
-    //             .unwrap();
-    //     }
-    //
-    //     std::thread::sleep(Duration::from_millis(100));
-    //
-    //     // Second
-    //     {
-    //         let item = MutableItem::new(signer, &[], 1001, None);
-    //
-    //         let most_recent = client.get_mutable_most_recent(item.key(), None).unwrap();
-    //
-    //         if let Some(cas) = most_recent.map(|item| item.seq()) {
-    //             client.put_mutable(item, Some(cas)).unwrap();
-    //         } else {
-    //             client.put_mutable(item, None).unwrap();
-    //         }
-    //     }
-    // }
-    //
-    // #[test]
-    // fn conflict_302_seq_less_than_current() {
-    //     let testnet = Testnet::new(10).unwrap();
-    //
-    //     let client = Dht::builder()
-    //         .bootstrap(&testnet.bootstrap)
-    //         .build()
-    //         .unwrap();
-    //
-    //     let signer = SigningKey::from_bytes(&[
-    //         56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
-    //         228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
-    //     ]);
-    //
-    //     client
-    //         .put_mutable(MutableItem::new(signer.clone(), &[], 1001, None), None)
-    //         .unwrap();
-    //
-    //     assert!(matches!(
-    //         client.put_mutable(MutableItem::new(signer, &[], 1000, None), None),
-    //         Err(PutMutableError::Concurrency(
-    //             ConcurrencyError::NotMostRecent
-    //         ))
-    //     ));
-    // }
-    //
-    // #[test]
-    // fn conflict_301_cas() {
-    //     let testnet = Testnet::new(10).unwrap();
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
+        let (relay, testnet) = Relay::start_test().await.unwrap();
+
+        let client = builder(&relay, &testnet, networks).build().unwrap();
+
+        let mut handles = vec![];
+
+        let keypair = Keypair::random();
+
+        let timestamp = Timestamp::now();
+
+        for i in 0..2 {
+            let client = client.clone();
+
+            let signed_packet = SignedPacket::builder()
+                .txt(
+                    format!("foo{i}").as_str().try_into().unwrap(),
+                    "bar".try_into().unwrap(),
+                    30,
+                )
+                .timestamp(timestamp)
+                .sign(&keypair)
+                .unwrap();
+
+            handles.push(tokio::spawn(async move {
+                let result = client.publish(&signed_packet, None).await;
+
+                if i == 0 {
+                    assert!(matches!(result, Ok(_)))
+                } else {
+                    assert!(matches!(
+                        result,
+                        Err(PublishError::Concurrency(ConcurrencyError::ConflictRisk))
+                    ))
+                }
+            }));
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+    }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn concurrent_publish_different_with_cas(#[case] networks: Networks) {
+        let (relay, testnet) = Relay::start_test().await.unwrap();
+
+        let client = builder(&relay, &testnet, networks).build().unwrap();
+
+        let keypair = Keypair::random();
+
+        // First
+        let cloned_client = client.clone();
+        let cloned_keypair = keypair.clone();
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&cloned_keypair)
+            .unwrap();
+
+        let handle = tokio::spawn(async move {
+            let result = cloned_client.publish(&signed_packet, None).await;
+
+            assert!(matches!(result, Ok(_)))
+        });
+
+        // Second
+        {
+            let signed_packet = SignedPacket::builder()
+                .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+                .sign(&keypair)
+                .unwrap();
+
+            let most_recent = client
+                .resolve_most_recent(&keypair.public_key())
+                .await
+                .unwrap();
+
+            if let Some(cas) = most_recent.map(|s| s.timestamp()) {
+                client.publish(&signed_packet, Some(cas)).await.unwrap();
+            } else {
+                client.publish(&signed_packet, None).await.unwrap();
+            }
+        }
+
+        handle.await.unwrap();
+    }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn conflict_302(#[case] networks: Networks) {
+        let (relay, testnet) = Relay::start_test().await.unwrap();
+
+        let client = builder(&relay, &testnet, networks).build().unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet_builder =
+            SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
+
+        let t1 = Timestamp::now();
+        let t2 = Timestamp::now();
+
+        client
+            .publish(
+                &signed_packet_builder
+                    .clone()
+                    .timestamp(t2)
+                    .sign(&keypair)
+                    .unwrap(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            client
+                .publish(
+                    &signed_packet_builder.timestamp(t1).sign(&keypair).unwrap(),
+                    None
+                )
+                .await,
+            Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
+        ));
+    }
+
+    // #[rstest]
+    // #[case::dht(Networks::Dht)]
+    // #[case::both_networks(Networks::Both)]
+    // // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    // #[tokio::test]
+    // async fn conflict_301_cas(#[case] networks: Networks) {
+    //     let (relay, testnet) = Relay::start_test().await.unwrap();
     //
     //     let client = Dht::builder()
     //         .bootstrap(&testnet.bootstrap)
