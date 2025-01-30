@@ -76,8 +76,8 @@ impl Client {
         }
 
         let client = Client(Arc::new(Inner {
-            minimum_ttl: config.minimum_ttl,
-            maximum_ttl: config.maximum_ttl,
+            minimum_ttl: config.minimum_ttl.min(config.maximum_ttl),
+            maximum_ttl: config.maximum_ttl.max(config.minimum_ttl),
             cache,
             #[cfg(feature = "dht")]
             dht,
@@ -516,7 +516,7 @@ impl Client {
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
         if let Some(cached) = self.cache().as_ref().and_then(|cache| cache.get(cache_key)) {
-            if cached.timestamp() >= signed_packet.timestamp() {
+            if cached.more_recent_than(signed_packet) {
                 return Err(ConcurrencyError::NotMostRecent)?;
             }
         } else if let Some(cas) = cas {
@@ -722,8 +722,6 @@ mod tests {
             }
         }
 
-        dbg!(&builder);
-
         builder
     }
 
@@ -762,7 +760,7 @@ mod tests {
     #[case::both_networks(Networks::Both)]
     // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
-    async fn send(#[case] networks: Networks) {
+    async fn client_send(#[case] networks: Networks) {
         let (relay, testnet) = Relay::start_test().await.unwrap();
 
         let a = builder(&relay, &testnet, networks).build().unwrap();
@@ -802,7 +800,10 @@ mod tests {
 
         let keypair = Keypair::random();
 
-        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
 
         client
             .cache()
@@ -828,7 +829,10 @@ mod tests {
             .unwrap();
 
         let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
 
         client.publish(&signed_packet, None).await.unwrap();
 
@@ -875,4 +879,228 @@ mod tests {
             Err(BuildError::NoNetwork)
         ));
     }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn repeated_publish_query(#[case] networks: Networks) {
+        let (relay, testnet) = Relay::start_test().await.unwrap();
+
+        let client = builder(&relay, &testnet, networks).build().unwrap();
+
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        let id = client.publish(&signed_packet, None).await.unwrap();
+
+        assert_eq!(client.publish(&signed_packet, None).await.unwrap(), id);
+    }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn concurrent_get_mutable(#[case] networks: Networks) {
+        let (relay, testnet) = Relay::start_test().await.unwrap();
+
+        let a = builder(&relay, &testnet, networks).build().unwrap();
+        let b = builder(&relay, &testnet, networks).build().unwrap();
+
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        a.publish(&signed_packet, None).await.unwrap();
+
+        // let _stream = b.resolve_stream(&signed_packet.public_key()).unwrap();
+
+        let response_second = b
+            .resolve(&signed_packet.public_key())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(&response_second.as_bytes(), &signed_packet.as_bytes());
+    }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn concurrent_put_mutable_same(#[case] networks: Networks) {
+        let (relay, testnet) = Relay::start_test().await.unwrap();
+
+        let client = builder(&relay, &testnet, networks).build().unwrap();
+
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        let mut handles = vec![];
+
+        for _ in 0..2 {
+            let client = client.clone();
+            let signed_packet = signed_packet.clone();
+
+            handles.push(tokio::spawn(async move {
+                client.publish(&signed_packet, None).await.unwrap()
+            }));
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+    }
+
+    // #[test]
+    // fn concurrent_put_mutable_different() {
+    //     let testnet = Testnet::new(10).unwrap();
+    //
+    //     let client = Dht::builder()
+    //         .bootstrap(&testnet.bootstrap)
+    //         .build()
+    //         .unwrap();
+    //
+    //     let mut handles = vec![];
+    //
+    //     for i in 0..2 {
+    //         let client = client.clone();
+    //
+    //         let signer = SigningKey::from_bytes(&[
+    //             56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
+    //             228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
+    //         ]);
+    //
+    //         let seq = 1000;
+    //
+    //         let mut value = b"Hello World!".to_vec();
+    //         value.push(i);
+    //
+    //         let item = MutableItem::new(signer.clone(), &value, seq, None);
+    //
+    //         let handle = std::thread::spawn(move || {
+    //             let result = client.put_mutable(item, None);
+    //             if i == 0 {
+    //                 assert!(matches!(result, Ok(_)))
+    //             } else {
+    //                 assert!(matches!(
+    //                     result,
+    //                     Err(PutMutableError::Concurrency(ConcurrencyError::ConflictRisk))
+    //                 ))
+    //             }
+    //         });
+    //
+    //         handles.push(handle);
+    //     }
+    //
+    //     for handle in handles {
+    //         handle.join().unwrap();
+    //     }
+    // }
+    //
+    // #[test]
+    // fn concurrent_put_mutable_different_with_cas() {
+    //     let testnet = Testnet::new(10).unwrap();
+    //
+    //     let client = Dht::builder()
+    //         .bootstrap(&testnet.bootstrap)
+    //         .build()
+    //         .unwrap();
+    //
+    //     let signer = SigningKey::from_bytes(&[
+    //         56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
+    //         228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
+    //     ]);
+    //
+    //     // First
+    //     {
+    //         let item = MutableItem::new(signer.clone(), &[], 1000, None);
+    //
+    //         let (sender, _) = flume::bounded::<Result<Id, PutError>>(1);
+    //         let target = *item.target();
+    //         let request =
+    //             PutRequestSpecific::PutMutable(PutMutableRequestArguments::from(item, None));
+    //         client
+    //             .0
+    //             .send(ActorMessage::Put(target, request, sender))
+    //             .map_err(|_| DhtWasShutdown)
+    //             .unwrap();
+    //     }
+    //
+    //     std::thread::sleep(Duration::from_millis(100));
+    //
+    //     // Second
+    //     {
+    //         let item = MutableItem::new(signer, &[], 1001, None);
+    //
+    //         let most_recent = client.get_mutable_most_recent(item.key(), None).unwrap();
+    //
+    //         if let Some(cas) = most_recent.map(|item| item.seq()) {
+    //             client.put_mutable(item, Some(cas)).unwrap();
+    //         } else {
+    //             client.put_mutable(item, None).unwrap();
+    //         }
+    //     }
+    // }
+    //
+    // #[test]
+    // fn conflict_302_seq_less_than_current() {
+    //     let testnet = Testnet::new(10).unwrap();
+    //
+    //     let client = Dht::builder()
+    //         .bootstrap(&testnet.bootstrap)
+    //         .build()
+    //         .unwrap();
+    //
+    //     let signer = SigningKey::from_bytes(&[
+    //         56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
+    //         228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
+    //     ]);
+    //
+    //     client
+    //         .put_mutable(MutableItem::new(signer.clone(), &[], 1001, None), None)
+    //         .unwrap();
+    //
+    //     assert!(matches!(
+    //         client.put_mutable(MutableItem::new(signer, &[], 1000, None), None),
+    //         Err(PutMutableError::Concurrency(
+    //             ConcurrencyError::NotMostRecent
+    //         ))
+    //     ));
+    // }
+    //
+    // #[test]
+    // fn conflict_301_cas() {
+    //     let testnet = Testnet::new(10).unwrap();
+    //
+    //     let client = Dht::builder()
+    //         .bootstrap(&testnet.bootstrap)
+    //         .build()
+    //         .unwrap();
+    //
+    //     let signer = SigningKey::from_bytes(&[
+    //         56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
+    //         228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
+    //     ]);
+    //
+    //     client
+    //         .put_mutable(MutableItem::new(signer.clone(), &[], 1001, None), None)
+    //         .unwrap();
+    //
+    //     assert!(matches!(
+    //         client.put_mutable(MutableItem::new(signer, &[], 1002, None), Some(1000)),
+    //         Err(PutMutableError::Concurrency(ConcurrencyError::CasFailed))
+    //     ));
+    // }
 }
