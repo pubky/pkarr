@@ -1102,31 +1102,41 @@ mod tests {
         ));
     }
 
-    // #[rstest]
-    // #[case::dht(Networks::Dht)]
-    // #[case::both_networks(Networks::Both)]
-    // // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    // #[tokio::test]
-    // async fn conflict_301_cas(#[case] networks: Networks) {
-    //     let (relay, testnet) = Relay::start_test().await.unwrap();
-    //
-    //     let client = Dht::builder()
-    //         .bootstrap(&testnet.bootstrap)
-    //         .build()
-    //         .unwrap();
-    //
-    //     let signer = SigningKey::from_bytes(&[
-    //         56, 171, 62, 85, 105, 58, 155, 209, 189, 8, 59, 109, 137, 84, 84, 201, 221, 115, 7,
-    //         228, 127, 70, 4, 204, 182, 64, 77, 98, 92, 215, 27, 103,
-    //     ]);
-    //
-    //     client
-    //         .put_mutable(MutableItem::new(signer.clone(), &[], 1001, None), None)
-    //         .unwrap();
-    //
-    //     assert!(matches!(
-    //         client.put_mutable(MutableItem::new(signer, &[], 1002, None), Some(1000)),
-    //         Err(PutMutableError::Concurrency(ConcurrencyError::CasFailed))
-    //     ));
-    // }
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn conflict_301_cas(#[case] networks: Networks) {
+        let (relay, testnet) = Relay::start_test().await.unwrap();
+
+        let client = builder(&relay, &testnet, networks).build().unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet_builder =
+            SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
+
+        let t1 = Timestamp::now();
+        let t2 = Timestamp::now();
+
+        client
+            .publish(
+                &signed_packet_builder
+                    .clone()
+                    .timestamp(t2)
+                    .sign(&keypair)
+                    .unwrap(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            client
+                .publish(&signed_packet_builder.sign(&keypair).unwrap(), Some(t1))
+                .await,
+            Err(PublishError::Concurrency(ConcurrencyError::CasFailed))
+        ));
+    }
 }
