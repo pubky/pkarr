@@ -3,6 +3,17 @@
 #![doc = document_features::document_features!()]
 //!
 
+macro_rules! cross_debug {
+    ($($arg:tt)*) => {
+        #[cfg(target_arch = "wasm32")]
+        log::debug!($($arg)*);
+        #[cfg(not(target_arch = "wasm32"))]
+        tracing::debug!($($arg)*);
+        #[cfg(test)]
+        eprintln!($($arg)*);
+    };
+}
+
 // Modules
 #[cfg(feature = "client")]
 pub mod client;

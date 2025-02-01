@@ -8,7 +8,6 @@ use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tracing::debug;
 
 #[cfg(feature = "dht")]
 use mainline::{
@@ -53,7 +52,7 @@ impl Client {
             )
         };
 
-        debug!(?config, "Starting Pkarr Client..");
+        cross_debug!("Starting Pkarr Client {:?}", config);
 
         let dht = if let Some(builder) = config.dht {
             Some(builder.build().map_err(BuildError::DhtBuildError)?)
@@ -331,39 +330,40 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        let public_key = public_key.clone();
+        async_compat::Compat::new(async {
+            let public_key = public_key.clone();
 
-        let cache_key: CacheKey = public_key.as_ref().into();
+            let cache_key: CacheKey = public_key.as_ref().into();
 
-        let cached_packet = self
-            .cache()
-            .as_ref()
-            .and_then(|cache| cache.get(&cache_key));
+            let cached_packet = self
+                .cache()
+                .as_ref()
+                .and_then(|cache| cache.get(&cache_key));
 
-        if let Some(cached_packet) = cached_packet {
-            if cached_packet.is_expired(self.0.minimum_ttl, self.0.maximum_ttl) {
-                let stream =
-                    self.resolve_stream(public_key, cache_key, Some(cached_packet.timestamp()))?;
+            // Stream is a future, so it won't run until we await or spawn it.
+            let mut stream = self.resolve_stream(
+                public_key,
+                cache_key,
+                cached_packet.as_ref().map(|s| s.timestamp()),
+            )?;
 
-                tokio::spawn(async move {
-                    let mut stream = stream;
-                    while stream.next().await.is_some() {}
-                });
-            }
+            if let Some(cached_packet) = cached_packet {
+                if cached_packet.is_expired(self.0.minimum_ttl, self.0.maximum_ttl) {
+                    tokio::spawn(async move { while stream.next().await.is_some() {} });
+                }
 
-            debug!(
-                public_key = ?cached_packet.public_key(),
-                "responding with cached packet even if expired"
-            );
+                cross_debug!(
+                    "responding with cached packet even if expired. public_key: {}",
+                    cached_packet.public_key()
+                );
+            } else {
+                // Wait for the earliest positive response.
+                let _ = stream.next().await;
+            };
 
-            Ok(Some(cached_packet))
-        } else {
-            // We have nothing locally, we have to resolve.
-            Ok(self
-                .resolve_stream(public_key, cache_key, None)?
-                .next()
-                .await)
-        }
+            Ok(self.cache().and_then(|cache| cache.get(&cache_key)))
+        })
+        .await
     }
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
@@ -402,7 +402,7 @@ impl Client {
             cache_key,
             cached_packet.map(|s| s.timestamp()),
         )?;
-        while (stream.next().await).is_some() {}
+        while stream.next().await.is_some() {}
 
         Ok(self.cache().and_then(|cache| cache.get(&public_key.into())))
     }
@@ -428,13 +428,13 @@ impl Client {
         &self,
         public_key: PublicKey,
         cache_key: CacheKey,
-        most_recent_known_timestamp: Option<Timestamp>,
+        more_recent_than: Option<Timestamp>,
     ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
         let dht_stream = match self.dht() {
             Some(node) => map_dht_stream(node.as_async().get_mutable(
                 public_key.as_bytes(),
                 None,
-                most_recent_known_timestamp.map(|t| t.as_u64() as i64),
+                more_recent_than.map(|t| t.as_u64() as i64),
             )?),
             None => None,
         };
@@ -443,7 +443,7 @@ impl Client {
             .0
             .relays
             .as_ref()
-            .map(|relays| relays.resolve(&public_key));
+            .map(|relays| relays.resolve(&public_key, more_recent_than));
 
         let cache = self.0.cache.clone();
 
@@ -458,14 +458,16 @@ impl Client {
                 .and_then(|cache| cache.clone().get_read_only(&cache_key))
             {
                 if signed_packet.more_recent_than(&cached) {
-                    debug!(?public_key, "Received more recent packet than in cache");
+                    cross_debug!(
+                        "Received more recent packet than in cache. public_key: {public_key}",
+                    );
 
                     Some(signed_packet)
                 } else {
                     None
                 }
             } else {
-                debug!(?public_key, "Received new packet after cache miss");
+                cross_debug!("Received new packet after cache miss. public_key: {public_key}");
 
                 Some(signed_packet)
             };
@@ -525,7 +527,7 @@ fn map_dht_stream(
                 move |mutable_item| match SignedPacket::try_from(mutable_item) {
                     Ok(signed_packet) => Some(signed_packet),
                     Err(error) => {
-                        debug!(?error, "Got an invalid signed packet from the DHT");
+                        cross_debug!("Got an invalid signed packet from the DHT. Error: {error}");
                         None
                     }
                 },
@@ -778,14 +780,11 @@ mod tests {
             .sign(&keypair)
             .unwrap();
 
-        dbg!("BEFORE PUBLISH");
         a.publish(&signed_packet, None).await.unwrap();
-        dbg!("AFTER PUBLISH");
 
         let b = builder(&relay, &testnet, networks).build().unwrap();
 
         tokio::spawn(async move {
-            dbg!("RESOLVING");
             let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
             assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 

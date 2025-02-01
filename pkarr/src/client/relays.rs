@@ -20,17 +20,6 @@ use crate::{PublicKey, SignedPacket};
 
 use super::native::{ConcurrencyError, PublishError, QueryError};
 
-macro_rules! cross_debug {
-    ($($arg:tt)*) => {
-        #[cfg(target_arch = "wasm32")]
-        log::debug!($($arg)*);
-        #[cfg(not(target_arch = "wasm32"))]
-        tracing::debug!($($arg)*);
-        #[cfg(test)]
-        eprintln!($($arg)*);
-    };
-}
-
 pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
@@ -115,20 +104,23 @@ impl RelaysClient {
     pub fn resolve(
         &self,
         public_key: &PublicKey,
+        more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
+        let if_modified_since = more_recent_than.map(|t| t.format_http_date());
 
         self.relays.iter().for_each(|relay| {
             let http_client = self.http_client.clone();
             let relay = relay.clone();
             let public_key = public_key.clone();
+            let if_modified_since = if_modified_since.clone();
 
-            futures.push(async_compat::Compat::new(resolve_from_relay(
+            futures.push(resolve_from_relay(
                 http_client,
                 relay,
                 public_key,
-                None,
-            )));
+                if_modified_since,
+            ));
         });
 
         // Box the stream to unify its type
@@ -172,8 +164,7 @@ impl InflightPublishRequests {
 
         if let Some(inflight_request) = requests.get_mut(public_key) {
             if signed_packet.signature() == inflight_request.signed_packet.signature() {
-                // Noop, the inflight query is sufficient.
-                return Ok(());
+                // No-op, the inflight query is sufficient.
             } else if !signed_packet.more_recent_than(&inflight_request.signed_packet) {
                 return Err(ConcurrencyError::NotMostRecent)?;
             } else if let Some(cas) = cas {
@@ -368,13 +359,13 @@ pub async fn resolve_from_relay(
     http_client: reqwest::Client,
     relay: Url,
     public_key: PublicKey,
-    cas: Option<String>,
+    if_modified_since: Option<String>,
 ) -> Option<SignedPacket> {
     let url = format_url(&relay, &public_key);
 
     let mut request = http_client.get(url.clone());
 
-    if let Some(httpdate) = cas {
+    if let Some(httpdate) = if_modified_since {
         request = request.header(
             header::IF_MODIFIED_SINCE,
             HeaderValue::from_str(httpdate.as_str()).expect("httpdate to be valid header value"),
