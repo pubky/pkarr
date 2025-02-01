@@ -4,10 +4,7 @@
 //!     $ cargo run --example resolve <zbase32 encoded key>
 
 use clap::Parser;
-use std::{
-    thread::sleep,
-    time::{Duration, Instant},
-};
+use std::time::Instant;
 use tracing_subscriber;
 
 use pkarr::{Client, PublicKey};
@@ -58,21 +55,26 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Resolving Pkarr: {} ...", cli.public_key);
     println!("\n=== COLD LOOKUP ===");
-    resolve(&client, &public_key).await;
+    resolve(&client, &public_key, false).await;
 
-    // loop {
-    sleep(Duration::from_secs(1));
     println!("=== SUBSEQUENT LOOKUP ===");
-    resolve(&client, &public_key).await;
-    // }
+    resolve(&client, &public_key, false).await;
+
+    println!("Resolving most recent..");
+    println!("=== SUBSEQUENT LOOKUP ===");
+    resolve(&client, &public_key, true).await;
 
     Ok(())
 }
 
-async fn resolve(client: &Client, public_key: &PublicKey) {
+async fn resolve(client: &Client, public_key: &PublicKey, most_recent: bool) {
     let start = Instant::now();
 
-    match client.resolve(public_key).await {
+    match if most_recent {
+        client.resolve_most_recent(public_key).await
+    } else {
+        client.resolve(public_key).await
+    } {
         Ok(Some(signed_packet)) => {
             println!(
                 "\nResolved in {:?} milliseconds {}",

@@ -7,7 +7,7 @@
 //!     $ cargo run --example publish
 
 use clap::Parser;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tracing_subscriber;
 
 use pkarr::{Client, Keypair, SignedPacket};

@@ -4,22 +4,35 @@ use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use bytes::Bytes;
 use flume::Sender;
 use futures_buffered::FuturesUnorderedBounded;
 use futures_lite::{Stream, StreamExt};
 use pubky_timestamp::Timestamp;
-use reqwest::{Client, StatusCode};
 use url::Url;
+
+use reqwest::{
+    header::{self, HeaderValue},
+    Client, StatusCode,
+};
 
 use crate::{PublicKey, SignedPacket};
 
-use crate::client::shared::{publish_to_relay, resolve_from_relay};
-
 use super::native::{ConcurrencyError, PublishError, QueryError};
+
+macro_rules! cross_debug {
+    ($($arg:tt)*) => {
+        #[cfg(target_arch = "wasm32")]
+        log::debug!($($arg)*);
+        #[cfg(not(target_arch = "wasm32"))]
+        tracing::debug!($($arg)*);
+    };
+}
 
 pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
+    timeout: Duration,
     pub(crate) inflight_publish: InflightPublishRequests,
 }
 
@@ -52,6 +65,7 @@ impl RelaysClient {
                 .build()
                 .expect("Client building should be infallible"),
 
+            timeout,
             inflight_publish,
         }
     }
@@ -82,9 +96,11 @@ impl RelaysClient {
             let body = body.clone();
             let cas = cas.clone();
             let inflight = self.inflight_publish.clone();
+            let timeout = self.timeout;
 
+            // TODO: use futures_buffered instead of sender?
             tokio::spawn(async move {
-                let result = publish_to_relay(http_client, relay, &public_key, body, cas)
+                let result = publish_to_relay(http_client, relay, &public_key, body, cas, timeout)
                     .await
                     .map_err(map_reqwest_error);
 
@@ -248,6 +264,50 @@ impl InflightPublishRequests {
     }
 }
 
+pub async fn publish_to_relay(
+    http_client: reqwest::Client,
+    relay: Url,
+    public_key: &PublicKey,
+    body: Bytes,
+    cas: Option<String>,
+    timeout: Duration,
+) -> Result<(), reqwest::Error> {
+    let url = format_url(&relay, public_key);
+
+    let mut request = http_client
+        .put(url.clone())
+        // Publish combines the http latency with the PUT query to the dht
+        // on the relay side, so we should be as generous as possible
+        .timeout(timeout * 3);
+
+    if let Some(date) = cas {
+        request = request.header(header::IF_UNMODIFIED_SINCE, date);
+    }
+
+    let response = request.body(body).send().await.inspect_err(|error| {
+        dbg!(&error);
+        cross_debug!("PUT {:?}", error);
+    })?;
+
+    let status = response.status();
+
+    if let Err(error) = response.error_for_status_ref() {
+        let text = response.text().await.unwrap_or("".to_string());
+
+        cross_debug!("Got error response for PUT {url} {status} {text}");
+
+        return Err(error);
+    };
+
+    if status != StatusCode::OK {
+        cross_debug!("Got neither 200 nor >=400 status code {status} for PUT {url}",);
+    }
+
+    cross_debug!("Successfully published to {url}");
+
+    Ok(())
+}
+
 fn map_reqwest_error(error: reqwest::Error) -> PublishError {
     if error.is_timeout() {
         PublishError::Query(QueryError::Timeout)
@@ -276,5 +336,84 @@ fn map_reqwest_error(error: reqwest::Error) -> PublishError {
     } else {
         // TODO: better error, a generic fail
         PublishError::Query(QueryError::Timeout)
+    }
+}
+
+pub fn format_url(relay: &Url, public_key: &PublicKey) -> Url {
+    let mut url = relay.clone();
+
+    let mut segments = url
+        .path_segments_mut()
+        .expect("Relay url cannot be base, is it http(s)?");
+
+    segments.push(&public_key.to_string());
+
+    drop(segments);
+
+    url
+}
+
+pub async fn resolve_from_relay(
+    http_client: reqwest::Client,
+    relay: Url,
+    public_key: &PublicKey,
+    cas: Option<String>,
+) -> Option<SignedPacket> {
+    let url = format_url(&relay, public_key);
+
+    let mut request = http_client.get(url.clone());
+
+    if let Some(httpdate) = cas {
+        request = request.header(
+            header::IF_MODIFIED_SINCE,
+            HeaderValue::from_str(httpdate.as_str()).expect("httpdate to be valid header value"),
+        );
+    }
+
+    let response = match request.send().await {
+        Ok(response) => response,
+        Err(error) => {
+            cross_debug!("GET {:?}", error);
+
+            return None;
+        }
+    };
+
+    let status = response.status();
+
+    if response.error_for_status_ref().is_err() {
+        let text = response.text().await.unwrap_or("".to_string());
+
+        cross_debug!("Got error response for GET {url} {status} {text}");
+
+        return None;
+    };
+
+    if response.status() != StatusCode::OK {
+        cross_debug!("Got neither 200 nor >=400 status code {status} for GET {url}",);
+    }
+
+    if response.content_length().unwrap_or_default() > SignedPacket::MAX_BYTES {
+        cross_debug!("Response too large for GET {url}");
+
+        return None;
+    }
+
+    let payload = match response.bytes().await {
+        Ok(payload) => payload,
+        Err(error) => {
+            cross_debug!("Failed to read relay response from GET {url} {error}");
+
+            return None;
+        }
+    };
+
+    match SignedPacket::from_relay_payload(public_key, &payload) {
+        Ok(signed_packet) => Some(signed_packet),
+        Err(error) => {
+            cross_debug!("Invalid signed_packet {url}:{error}");
+
+            None
+        }
     }
 }
