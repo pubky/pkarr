@@ -111,7 +111,7 @@ impl std::fmt::Debug for Config {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ClientBuilder(Config);
 
 impl ClientBuilder {

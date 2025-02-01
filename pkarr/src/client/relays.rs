@@ -26,6 +26,8 @@ macro_rules! cross_debug {
         log::debug!($($arg)*);
         #[cfg(not(target_arch = "wasm32"))]
         tracing::debug!($($arg)*);
+        #[cfg(test)]
+        eprintln!($($arg)*);
     };
 }
 
@@ -75,7 +77,7 @@ impl RelaysClient {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> flume::Receiver<Result<(), PublishError>> {
-        let (tx, rx) = flume::bounded(self.relays.len());
+        let (tx, rx) = flume::bounded(1);
 
         let public_key = signed_packet.public_key();
         let body = signed_packet.to_relay_payload();
@@ -98,7 +100,6 @@ impl RelaysClient {
             let inflight = self.inflight_publish.clone();
             let timeout = self.timeout;
 
-            // TODO: use futures_buffered instead of sender?
             tokio::spawn(async move {
                 let result = publish_to_relay(http_client, relay, &public_key, body, cas, timeout)
                     .await
@@ -122,9 +123,12 @@ impl RelaysClient {
             let relay = relay.clone();
             let public_key = public_key.clone();
 
-            futures.push(
-                async move { resolve_from_relay(http_client, relay, &public_key, None).await },
-            )
+            futures.push(async_compat::Compat::new(resolve_from_relay(
+                http_client,
+                relay,
+                public_key,
+                None,
+            )));
         });
 
         // Box the stream to unify its type
@@ -142,14 +146,14 @@ struct InflightpublishRequest {
 
 #[derive(Clone, Debug)]
 pub(crate) struct InflightPublishRequests {
-    majority: usize,
+    relays_count: usize,
     requests: Arc<RwLock<HashMap<PublicKey, InflightpublishRequest>>>,
 }
 
 impl InflightPublishRequests {
     fn new(relays_count: usize) -> Self {
         Self {
-            majority: (relays_count / 2) + 1,
+            relays_count,
             requests: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -214,7 +218,9 @@ impl InflightPublishRequests {
         if let Some(request) = inflight.get_mut(public_key) {
             request.success_count += 1;
 
-            if request.success_count >= self.majority {
+            let majority = (self.relays_count / 2) + 1;
+
+            if request.success_count >= majority {
                 done = true;
             }
         }
@@ -237,20 +243,26 @@ impl InflightPublishRequests {
         let mut error_to_send = None;
 
         if let Some(request) = inflight.get_mut(public_key) {
-            request.errors.push(error);
+            let majority = (self.relays_count / 2) + 1;
 
-            if request.errors.len() >= self.majority {
-                if let Some(most_common_error) = request.errors.first() {
-                    if matches!(
-                        most_common_error,
-                        PublishError::Concurrency(ConcurrencyError::NotMostRecent)
-                    ) || matches!(
-                        most_common_error,
-                        PublishError::Concurrency(ConcurrencyError::CasFailed)
-                    ) {
-                        error_to_send = Some(most_common_error.clone());
-                    }
-                };
+            if request.errors.len() == self.relays_count - 1 {
+                error_to_send = Some(error);
+            } else {
+                request.errors.push(error);
+
+                if request.errors.len() >= majority {
+                    if let Some(most_common_error) = request.errors.first() {
+                        if matches!(
+                            most_common_error,
+                            PublishError::Concurrency(ConcurrencyError::NotMostRecent)
+                        ) || matches!(
+                            most_common_error,
+                            PublishError::Concurrency(ConcurrencyError::CasFailed)
+                        ) {
+                            error_to_send = Some(most_common_error.clone());
+                        }
+                    };
+                }
             }
         }
 
@@ -285,7 +297,6 @@ pub async fn publish_to_relay(
     }
 
     let response = request.body(body).send().await.inspect_err(|error| {
-        dbg!(&error);
         cross_debug!("PUT {:?}", error);
     })?;
 
@@ -356,10 +367,10 @@ pub fn format_url(relay: &Url, public_key: &PublicKey) -> Url {
 pub async fn resolve_from_relay(
     http_client: reqwest::Client,
     relay: Url,
-    public_key: &PublicKey,
+    public_key: PublicKey,
     cas: Option<String>,
 ) -> Option<SignedPacket> {
-    let url = format_url(&relay, public_key);
+    let url = format_url(&relay, &public_key);
 
     let mut request = http_client.get(url.clone());
 
@@ -408,7 +419,7 @@ pub async fn resolve_from_relay(
         }
     };
 
-    match SignedPacket::from_relay_payload(public_key, &payload) {
+    match SignedPacket::from_relay_payload(&public_key, &payload) {
         Ok(signed_packet) => Some(signed_packet),
         Err(error) => {
             cross_debug!("Invalid signed_packet {url}:{error}");

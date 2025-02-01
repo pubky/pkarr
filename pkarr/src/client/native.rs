@@ -2,7 +2,7 @@
 
 use flume::r#async::RecvStream;
 use flume::Receiver;
-use futures_lite::{Stream, StreamExt};
+use futures_lite::{stream, Stream, StreamExt};
 use pubky_timestamp::Timestamp;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
@@ -16,47 +16,37 @@ use mainline::{
     Dht,
 };
 
+use super::builder::Config;
+
+use crate::client::relays::RelaysClient;
 use crate::{Cache, CacheKey, InMemoryCache};
 use crate::{PublicKey, SignedPacket};
 
-mod builder;
-// #[cfg(feature = "relays")]
-// mod relays;
+pub use super::builder::ClientBuilder;
 
-pub use builder::{ClientBuilder, Config};
-
-#[derive(Clone, Debug)]
-/// Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or
-/// [Relays](https://pkarr.org/relays).
+#[derive(Debug)]
 pub struct Inner {
     minimum_ttl: u32,
     maximum_ttl: u32,
-    cache: Option<Box<dyn Cache>>,
+    cache: Option<Arc<dyn Cache>>,
     #[cfg(feature = "dht")]
     dht: Option<Dht>,
+    #[cfg(feature = "relays")]
+    relays: Option<RelaysClient>,
 }
 
+/// Pkarr client for publishing and resolving [SignedPacket]s over
+/// [mainline] Dht and/or [Relays](https://pkarr.org/relays).
 #[derive(Clone, Debug)]
 pub struct Client(Arc<Inner>);
 
 impl Client {
-    pub fn new(config: Config) -> Result<Client, BuildError> {
-        #[cfg(feature = "relays")]
-        let relays_client = if let Some(ref relays) = config.relays {
-            if relays.is_empty() {
-                return Err(BuildError::EmptyListOfRelays);
-            }
-
-            Some(())
-        } else {
-            None
-        };
-
+    pub(crate) fn new(config: Config) -> Result<Client, BuildError> {
         let cache = if config.cache_size == 0 {
             None
         } else {
             Some(
-                config.cache.clone().unwrap_or(Box::new(InMemoryCache::new(
+                config.cache.clone().unwrap_or(Arc::new(InMemoryCache::new(
                     NonZeroUsize::new(config.cache_size)
                         .expect("if cache size is zero cache should be disabled."),
                 ))),
@@ -71,7 +61,21 @@ impl Client {
             None
         };
 
-        if dht.is_none() && relays_client.is_none() {
+        #[cfg(feature = "relays")]
+        let relays = if let Some(ref relays) = config.relays {
+            if relays.is_empty() {
+                return Err(BuildError::EmptyListOfRelays);
+            }
+
+            let relays_client =
+                RelaysClient::new(relays.clone().into_boxed_slice(), config.request_timeout);
+
+            Some(relays_client)
+        } else {
+            None
+        };
+
+        if dht.is_none() && relays.is_none() {
             return Err(BuildError::NoNetwork);
         }
 
@@ -81,6 +85,8 @@ impl Client {
             cache,
             #[cfg(feature = "dht")]
             dht,
+            #[cfg(feature = "relays")]
+            relays,
         }));
 
         Ok(client)
@@ -197,21 +203,34 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        let cache_key: CacheKey = signed_packet.public_key().into();
+        async_compat::Compat::new(async {
+            let cache_key: CacheKey = signed_packet.public_key().into();
 
-        self.check_conflict(signed_packet, &cache_key, cas)?;
+            self.check_conflict(signed_packet, &cache_key, cas)?;
 
-        if let Some(cache) = self.cache() {
-            cache.put(&cache_key, signed_packet);
-        }
+            if let Some(cache) = self.cache() {
+                cache.put(&cache_key, signed_packet);
+            }
 
-        if let Some(node) = self.dht() {
-            node.as_async()
-                .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
-                .await?;
-        }
+            if let Some(node) = self.dht() {
+                node.as_async()
+                    .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
+                    .await?;
+            }
 
-        Ok(())
+            // TODO: support other modes than DhtFirst
+
+            if let Some(ref relays) = self.0.relays {
+                relays
+                    .publish(signed_packet, cas)
+                    .recv_async()
+                    .await
+                    .expect("pkarr relays publish dropped sender too soon")?;
+            }
+
+            Ok(())
+        })
+        .await
     }
 
     /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
@@ -297,19 +316,7 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        let cache_key: CacheKey = signed_packet.public_key().into();
-
-        self.check_conflict(signed_packet, &cache_key, cas)?;
-
-        if let Some(cache) = self.cache() {
-            cache.put(&cache_key, signed_packet);
-        }
-
-        if let Some(node) = self.dht() {
-            node.put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))?;
-        }
-
-        Ok(())
+        futures_lite::future::block_on(self.publish(signed_packet, cas))
     }
 
     // === Resolve ===
@@ -318,42 +325,58 @@ impl Client {
     /// If there is no packet in the cache, or if the cached packet is expired,
     /// it will make a DHT query in a background query and caches any more recent packets it receieves.
     ///
-    /// If you want to have more control, you can call [Self::resolve_iter], or [Self::resolve_stream]
-    /// to iterate over incoming [SignedPacket]s until your lookup criteria is satisfied.
+    /// If you want to get the most recent version of a [SignedPacket],
+    /// you should use [Self::resolve_most_recent].
     pub async fn resolve(
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        Ok(self.resolve_rx(public_key)?.recv_async().await.ok())
+        let public_key = public_key.clone();
+
+        let cache_key: CacheKey = public_key.as_ref().into();
+
+        let cached_packet = self
+            .cache()
+            .as_ref()
+            .and_then(|cache| cache.get(&cache_key));
+
+        if let Some(cached_packet) = cached_packet {
+            if cached_packet.is_expired(self.0.minimum_ttl, self.0.maximum_ttl) {
+                let stream =
+                    self.resolve_stream(public_key, cache_key, Some(cached_packet.timestamp()))?;
+
+                tokio::spawn(async move {
+                    let mut stream = stream;
+                    while stream.next().await.is_some() {}
+                });
+            }
+
+            debug!(
+                public_key = ?cached_packet.public_key(),
+                "responding with cached packet even if expired"
+            );
+
+            Ok(Some(cached_packet))
+        } else {
+            // We have nothing locally, we have to resolve.
+            Ok(self
+                .resolve_stream(public_key, cache_key, None)?
+                .next()
+                .await)
+        }
     }
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
     /// If there is no packet in the cache, or if the cached packet is expired,
     /// it will make a DHT query in a background query and caches any more recent packets it receieves.
     ///
-    /// If you want to have more control, you can call [Self::resolve_iter], or [Self::resolve_stream]
-    /// to iterate over incoming [SignedPacket]s until your lookup criteria is satisfied.
+    /// If you want to get the most recent version of a [SignedPacket],
+    /// you should use [Self::resolve_most_recent_sync].
     pub fn resolve_sync(
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        Ok(self.resolve_rx(public_key)?.recv().ok())
-    }
-
-    /// Returns a [Iterator] of incoming [SignedPacket]s.
-    pub fn resolve_iter(
-        &self,
-        public_key: &PublicKey,
-    ) -> Result<SignedPacketIterator, ClientWasShutdown> {
-        Ok(SignedPacketIterator(self.resolve_rx(public_key)?))
-    }
-
-    /// Returns a [Stream] of incoming [SignedPacket]s.
-    pub fn resolve_stream(
-        &self,
-        public_key: &PublicKey,
-    ) -> Result<SignedPacketStream, ClientWasShutdown> {
-        Ok(self.resolve_rx(public_key)?.into())
+        futures_lite::future::block_on(self.resolve(public_key))
     }
 
     /// Returns the most recent [SignedPacket] found after querying all
@@ -367,7 +390,18 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        let mut stream = self.resolve_stream(public_key)?;
+        let cache_key: CacheKey = public_key.as_ref().into();
+
+        let cached_packet = self
+            .cache()
+            .as_ref()
+            .and_then(|cache| cache.get(&cache_key));
+
+        let mut stream = self.resolve_stream(
+            public_key.clone(),
+            cache_key,
+            cached_packet.map(|s| s.timestamp()),
+        )?;
         while (stream.next().await).is_some() {}
 
         Ok(self.cache().and_then(|cache| cache.get(&public_key.into())))
@@ -384,129 +418,71 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        let mut iter = self.resolve_iter(public_key)?;
-        while (iter.next()).is_some() {}
-
-        Ok(self.cache().and_then(|cache| cache.get(&public_key.into())))
-    }
-
-    // === Shutdwon ===
-
-    /// Shutdown the actor thread loop.
-    // TODO: Can we shutdown request? can we merge
-    pub async fn shutdown(&mut self) {
-        if let Some(node) = self.dht() {
-            node.as_async().shutdown().await;
-        }
-    }
-
-    /// Shutdown the actor thread loop.
-    pub fn shutdown_sync(&self) {
-        if let Some(mut node) = self.dht() {
-            node.shutdown();
-        }
+        futures_lite::future::block_on(self.resolve_most_recent(public_key))
     }
 
     // === Private Methods ===
 
-    /// Returns a `flume::Receiver<SignedPacket>` that allows [iterating](flume::Receiver::recv) over or
-    /// [streaming](flume::Receiver::recv_async) incoming [SignedPacket]s, in case you need more control over your
-    /// caching strategy and when resolution should terminate, as well as filtering [SignedPacket]s according to a custom criteria.
-    pub(crate) fn resolve_rx(
+    /// Returns a [Stream] of incoming [SignedPacket]s.
+    pub fn resolve_stream(
         &self,
-        public_key: &PublicKey,
-    ) -> Result<Receiver<SignedPacket>, ClientWasShutdown> {
-        let (tx, rx) = flume::bounded::<SignedPacket>(1);
+        public_key: PublicKey,
+        cache_key: CacheKey,
+        most_recent_known_timestamp: Option<Timestamp>,
+    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
+        let dht_stream = match self.dht() {
+            Some(node) => map_dht_stream(node.as_async().get_mutable(
+                public_key.as_bytes(),
+                None,
+                most_recent_known_timestamp.map(|t| t.as_u64() as i64),
+            )?),
+            None => None,
+        };
 
-        let cache_key: CacheKey = public_key.into();
-
-        let cached_packet = self
-            .cache()
+        let relays_stream = self
+            .0
+            .relays
             .as_ref()
-            .and_then(|cache| cache.get(&cache_key));
+            .map(|relays| relays.resolve(&public_key));
 
-        // Sending the `timestamp` of the known cache, help save some bandwith,
-        // since remote nodes will not send the encoded packet if they don't know
-        // any more recent versions.
-        let most_recent_known_timestamp = cached_packet
-            .as_ref()
-            .map(|cached| cached.timestamp().as_u64());
+        let cache = self.0.cache.clone();
 
-        // TODO: use configured min/max ttl
-        // Should query?
-        if cached_packet
-            .as_ref()
-            .map(|c| c.is_expired(self.0.minimum_ttl, self.0.maximum_ttl))
-            .unwrap_or(true)
-        {
-            debug!(
-                ?public_key,
-                "querying the DHT to hydrate our cache for later."
-            );
+        let stream = match (dht_stream, relays_stream) {
+            (Some(s), None) | (None, Some(s)) => s,
+            (Some(a), Some(b)) => Box::pin(stream::or(a, b)),
+            (None, None) => unreachable!("should not create a client with no network"),
+        }
+        .map(move |signed_packet| {
+            let new_packet: Option<SignedPacket> = if let Some(cached) = cache
+                .clone()
+                .and_then(|cache| cache.clone().get_read_only(&cache_key))
+            {
+                if signed_packet.more_recent_than(&cached) {
+                    debug!(?public_key, "Received more recent packet than in cache");
 
-            if let Some(node) = self.dht() {
-                let iter = node.get_mutable(
-                    public_key.as_bytes(),
-                    None,
-                    most_recent_known_timestamp.map(|t| t as i64),
-                )?;
+                    Some(signed_packet)
+                } else {
+                    None
+                }
+            } else {
+                debug!(?public_key, "Received new packet after cache miss");
 
-                let tx = tx.clone();
-                let public_key = public_key.clone();
-                let cache = self.0.cache.clone();
+                Some(signed_packet)
+            };
 
-                // TODO: Avoid a new thread for every request.
-                std::thread::spawn(move || {
-                    for mutable_item in iter {
-                        match SignedPacket::try_from(mutable_item) {
-                            Ok(signed_packet) => {
-                                let new_packet: Option<SignedPacket> = if let Some(ref cached) =
-                                    cache
-                                        .as_ref()
-                                        .and_then(|cache| cache.get_read_only(&cache_key))
-                                {
-                                    if signed_packet.more_recent_than(cached) {
-                                        debug!(
-                                            ?public_key,
-                                            "Received more recent packet than in cache"
-                                        );
+            if let Some(packet) = new_packet {
+                if let Some(cache) = &cache {
+                    cache.put(&cache_key, &packet)
+                };
 
-                                        Some(signed_packet)
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    debug!(?public_key, "Received new packet after cache miss");
-                                    Some(signed_packet)
-                                };
-
-                                if let Some(packet) = new_packet {
-                                    if let Some(cache) = &cache {
-                                        cache.put(&cache_key, &packet)
-                                    };
-
-                                    let _ = tx.send(packet);
-                                }
-                            }
-                            Err(error) => {
-                                debug!(?error, "Got an invalid signed packet from the DHT");
-                            }
-                        }
-                    }
-                });
+                Some(packet)
+            } else {
+                None
             }
-        }
+        })
+        .filter_map(|x| x);
 
-        if let Some(cached_packet) = cached_packet {
-            debug!(
-                public_key = ?cached_packet.public_key(),
-                "responding with cached packet even if expired"
-            );
-
-            let _ = tx.send(cached_packet);
-        }
-
-        Ok(rx)
+        Ok(Box::pin(stream))
     }
 
     fn check_conflict(
@@ -529,6 +505,34 @@ impl Client {
 
         Ok(())
     }
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        if let Some(ref mut dht) = self.dht {
+            dht.shutdown();
+        };
+    }
+}
+
+#[cfg(feature = "dht")]
+fn map_dht_stream(
+    stream: mainline::async_dht::GetStream<mainline::MutableItem>,
+) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
+    return Some(
+        stream
+            .map(
+                move |mutable_item| match SignedPacket::try_from(mutable_item) {
+                    Ok(signed_packet) => Some(signed_packet),
+                    Err(error) => {
+                        debug!(?error, "Got an invalid signed packet from the DHT");
+                        None
+                    }
+                },
+            )
+            .filter_map(|x| x)
+            .boxed(),
+    );
 }
 
 pub struct SignedPacketIterator(flume::Receiver<SignedPacket>);
@@ -683,7 +687,6 @@ mod tests {
     use pkarr_relay::Relay;
     use pubky_timestamp::Timestamp;
     use rstest::rstest;
-    use tracing_subscriber::fmt::init;
 
     use super::super::*;
     use crate::{Keypair, SignedPacket};
@@ -730,11 +733,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // TODO: enable testing relays only
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn publish_resolve(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let a = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -760,10 +763,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn client_send(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let a = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -774,11 +778,14 @@ mod tests {
             .sign(&keypair)
             .unwrap();
 
+        dbg!("BEFORE PUBLISH");
         a.publish(&signed_packet, None).await.unwrap();
+        dbg!("AFTER PUBLISH");
 
         let b = builder(&relay, &testnet, networks).build().unwrap();
 
         tokio::spawn(async move {
+            dbg!("RESOLVING");
             let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
             assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
@@ -793,10 +800,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn return_expired_packet_fallback(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -820,10 +828,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn ttl_0_test(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks)
             .maximum_ttl(0)
@@ -860,10 +869,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn not_found(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -885,10 +895,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn repeated_publish_query(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -906,10 +917,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
-    async fn concurrent_get_mutable(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+    async fn concurrent_resolve(#[case] networks: Networks) {
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let a = builder(&relay, &testnet, networks).build().unwrap();
         let b = builder(&relay, &testnet, networks).build().unwrap();
@@ -922,7 +934,9 @@ mod tests {
 
         a.publish(&signed_packet, None).await.unwrap();
 
-        // let _stream = b.resolve_stream(&signed_packet.public_key()).unwrap();
+        let public_key = signed_packet.public_key();
+        let bclone = b.clone();
+        let _stream = tokio::spawn(async move { bclone.resolve(&public_key).await.unwrap() });
 
         let response_second = b
             .resolve(&signed_packet.public_key())
@@ -931,15 +945,18 @@ mod tests {
             .unwrap();
 
         assert_eq!(&response_second.as_bytes(), &signed_packet.as_bytes());
+
+        assert!(_stream.await.is_ok())
     }
 
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
-    async fn concurrent_put_mutable_same(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+    async fn concurrent_publish_same_packet(#[case] networks: Networks) {
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -968,10 +985,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -1016,10 +1034,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn concurrent_publish_different_with_cas(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -1064,10 +1083,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn conflict_302(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -1105,10 +1125,11 @@ mod tests {
     #[rstest]
     #[case::dht(Networks::Dht)]
     #[case::both_networks(Networks::Both)]
-    // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn conflict_301_cas(#[case] networks: Networks) {
-        let (relay, testnet) = Relay::start_test().await.unwrap();
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::start_test(&testnet).await.unwrap();
 
         let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -1139,4 +1160,78 @@ mod tests {
             Err(PublishError::Concurrency(ConcurrencyError::CasFailed))
         ));
     }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[test]
+    fn no_tokio_sync(#[case] networks: Networks) {
+        let (relay, testnet) = futures_lite::future::block_on(async_compat::Compat::new(async {
+            let testnet = mainline::Testnet::new(10).unwrap();
+            let relay = Relay::start_test(&testnet).await.unwrap();
+
+            (relay, testnet)
+        }));
+
+        let a = builder(&relay, &testnet, networks).build().unwrap();
+
+        let keypair = Keypair::random();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+            .sign(&keypair)
+            .unwrap();
+
+        a.publish_sync(&signed_packet, None).unwrap();
+
+        let b = builder(&relay, &testnet, networks).build().unwrap();
+
+        let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+
+        let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(from_cache.last_seen(), resolved.last_seen());
+    }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[test]
+    fn no_tokio_async(#[case] networks: Networks) {
+        futures_lite::future::block_on(async {
+            let (relay, testnet) = async_compat::Compat::new(async {
+                let testnet = mainline::Testnet::new(10).unwrap();
+                let relay = Relay::start_test(&testnet).await.unwrap();
+
+                (relay, testnet)
+            })
+            .await;
+
+            let a = builder(&relay, &testnet, networks).build().unwrap();
+
+            let keypair = Keypair::random();
+
+            let signed_packet = SignedPacket::builder()
+                .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+                .sign(&keypair)
+                .unwrap();
+
+            a.publish(&signed_packet, None).await.unwrap();
+
+            let b = builder(&relay, &testnet, networks).build().unwrap();
+
+            let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+
+            let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
+            assert_eq!(from_cache.last_seen(), resolved.last_seen());
+        });
+    }
+
+    // TODO: test background resolve query
+    // TODO: test multiple relays
 }
