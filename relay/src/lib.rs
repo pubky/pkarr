@@ -7,6 +7,7 @@ mod rate_limiting;
 use std::{
     net::{SocketAddr, SocketAddrV4, TcpListener},
     path::PathBuf,
+    sync::Arc,
 };
 
 use axum::{extract::DefaultBodyLimit, Router};
@@ -103,7 +104,7 @@ impl Relay {
             }
         };
 
-        let cache = Box::new(LmdbCache::open(&cache_path, config.cache_size)?);
+        let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
         let rate_limiter = config
             .rate_limiter
@@ -165,9 +166,7 @@ impl Relay {
     ///
     /// # Safety
     /// See [Self::start]
-    pub async fn start_test() -> anyhow::Result<(Self, mainline::Testnet)> {
-        let testnet = mainline::Testnet::new(10)?;
-
+    pub async fn start_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
         let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
 
         let mut config = Config {
@@ -181,7 +180,7 @@ impl Relay {
             .bootstrap(&testnet.bootstrap)
             .dht(|builder| builder.bootstrap(&testnet.bootstrap).server_mode());
 
-        Ok((unsafe { Self::start(config).await? }, testnet))
+        Ok(unsafe { Self::start(config).await? })
     }
 
     /// Run a Pkarr relay in a Testnet mode (on port 15411).

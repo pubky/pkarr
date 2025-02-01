@@ -6,21 +6,43 @@
 //! run this example from the project root:
 //!     $ cargo run --example publish
 
+use clap::Parser;
+use std::time::{Duration, Instant};
 use tracing_subscriber;
 
-use std::time::Instant;
+use pkarr::{Client, Keypair, SignedPacket};
 
-use pkarr::{Keypair, SignedPacket};
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Publish to DHT only, Relays only, or default to both.
+    mode: Option<Mode>,
+}
 
-use pkarr::Client;
+#[derive(Debug, Clone)]
+enum Mode {
+    Dht,
+    Relays,
+    Both,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("pkarr=info")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("debug").init();
 
-    let client = Client::builder().build()?;
+    let cli = Cli::parse();
+
+    let mut builder = Client::builder();
+    match cli.mode.unwrap_or(Mode::Both) {
+        Mode::Dht => {
+            builder.no_relays();
+        }
+        Mode::Relays => {
+            builder.no_dht();
+        }
+        _ => {}
+    }
+    let client = builder.build()?;
 
     let keypair = Keypair::random();
 
@@ -46,4 +68,14 @@ async fn main() -> anyhow::Result<()> {
     };
 
     Ok(())
+}
+
+impl From<String> for Mode {
+    fn from(value: String) -> Self {
+        match value.to_lowercase().as_str() {
+            "dht" => Self::Dht,
+            "relay" | "relays" => Self::Relays,
+            _ => Self::Both,
+        }
+    }
 }

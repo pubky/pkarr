@@ -1,5 +1,6 @@
 use std::{
     net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
+    sync::Arc,
     time::Duration,
 };
 
@@ -13,7 +14,7 @@ use crate::{
     Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
 };
 
-use super::{BuildError, Client};
+use super::native::{BuildError, Client};
 
 /// [Client]'s Config
 #[derive(Clone)]
@@ -29,7 +30,7 @@ pub struct Config {
     /// Defaults to [DEFAULT_MAXIMUM_TTL]
     pub maximum_ttl: u32,
     /// Custom [Cache] implementation, defaults to [crate::InMemoryCache]
-    pub cache: Option<Box<dyn Cache>>,
+    pub cache: Option<Arc<dyn Cache>>,
 
     pub dht: Option<mainline::DhtBuilder>,
     /// A set of [resolver](https://pkarr.org/resolvers)s
@@ -44,8 +45,6 @@ pub struct Config {
     #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
     /// Tokio runtime to use in relyas client.
-    #[cfg(feature = "relays")]
-    pub relays_runtime: Option<std::sync::Arc<tokio::runtime::Runtime>>,
 
     /// Timeout for both Dht and Relays requests.
     ///
@@ -77,8 +76,6 @@ impl Default for Config {
                     })
                     .collect(),
             ),
-            #[cfg(feature = "relays")]
-            relays_runtime: None,
 
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
         }
@@ -106,12 +103,6 @@ impl std::fmt::Debug for Config {
                 .relays
                 .as_ref()
                 .map(|urls| urls.iter().map(|url| url.as_str()).collect::<Vec<_>>()),
-        );
-
-        #[cfg(feature = "relays")]
-        debug_struct.field(
-            "relays_runtime",
-            &self.relays_runtime.as_ref().map(|_| "Some(Arc<Runtime>)"),
         );
 
         debug_struct.field("request_timeout", &self.request_timeout);
@@ -149,11 +140,22 @@ impl ClientBuilder {
         self
     }
 
-    /// Reenable using [mainline] with [DEFAULT_RESOLVERS] and [mainline::Config::default].
+    /// Reenable using [mainline] DHT with [DEFAULT_RESOLVERS] and [mainline::Config::default].
     #[cfg(feature = "dht")]
-    pub fn use_mainline(&mut self) -> &mut Self {
+    pub fn use_dht(&mut self) -> &mut Self {
         self.0.resolvers = Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS));
-        self.0.dht = Default::default();
+        self.0.dht = Some(mainline::DhtBuilder::default());
+
+        self
+    }
+
+    /// Disable relays, and use the Dht only.
+    ///
+    /// Equivilant to `builder.no_default_network().use_relays();`
+    pub fn no_dht(&mut self) -> &mut Self {
+        self.no_default_network();
+        #[cfg(feature = "relays")]
+        self.use_relays();
 
         self
     }
@@ -249,13 +251,14 @@ impl ClientBuilder {
         self
     }
 
-    /// Use custom Tokio runtime for relays client
+    /// Disable relays, and use the Dht only.
+    ///
+    /// Equivilant to `builder.no_default_network().use_dht();`
     #[cfg(feature = "relays")]
-    pub fn relays_runtime(
-        &mut self,
-        runtime: std::sync::Arc<tokio::runtime::Runtime>,
-    ) -> &mut Self {
-        self.0.relays_runtime = Some(runtime);
+    pub fn no_relays(&mut self) -> &mut Self {
+        self.no_default_network();
+        #[cfg(feature = "dht")]
+        self.use_dht();
 
         self
     }
@@ -306,7 +309,7 @@ impl ClientBuilder {
     }
 
     /// Set a custom implementation of [Cache].
-    pub fn cache(&mut self, cache: Box<dyn Cache>) -> &mut Self {
+    pub fn cache(&mut self, cache: Arc<dyn Cache>) -> &mut Self {
         self.0.cache = Some(cache);
 
         self

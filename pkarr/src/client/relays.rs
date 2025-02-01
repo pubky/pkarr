@@ -1,51 +1,56 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use flume::Sender;
+use futures_buffered::FuturesUnorderedBounded;
+use futures_lite::{Stream, StreamExt};
 use pubky_timestamp::Timestamp;
 use reqwest::{Client, StatusCode};
-use tokio::runtime::{Builder, Runtime};
 use url::Url;
 
-use crate::{Cache, CacheKey, PublicKey, SignedPacket};
+use crate::{PublicKey, SignedPacket};
 
 use crate::client::shared::{publish_to_relay, resolve_from_relay};
 
-use super::{ConcurrencyError, PublishError, QueryError};
+use super::native::{ConcurrencyError, PublishError, QueryError};
 
 pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
-    cache: Option<Box<dyn Cache>>,
-    runtime: Arc<Runtime>,
-
     pub(crate) inflight_publish: InflightPublishRequests,
 }
 
+impl Debug for RelaysClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_struct = f.debug_struct("RelaysClient");
+
+        debug_struct.field(
+            "relays",
+            &self
+                .relays
+                .as_ref()
+                .iter()
+                .map(|url| url.as_str())
+                .collect::<Vec<_>>(),
+        );
+
+        debug_struct.finish()
+    }
+}
+
 impl RelaysClient {
-    pub fn new(
-        relays: Box<[Url]>,
-        cache: Option<Box<dyn Cache>>,
-        timeout: Duration,
-        runtime: Option<Arc<Runtime>>,
-    ) -> Self {
+    pub fn new(relays: Box<[Url]>, timeout: Duration) -> Self {
         let inflight_publish = InflightPublishRequests::new(relays.len());
 
         Self {
             relays,
-            runtime: runtime.unwrap_or(Arc::new(
-                Builder::new_multi_thread()
-                    .worker_threads(4)
-                    .enable_all()
-                    .build()
-                    .expect("Failed to create Tokio runtime"),
-            )),
             http_client: Client::builder()
                 .timeout(timeout)
                 .build()
                 .expect("Client building should be infallible"),
-            cache,
 
             inflight_publish,
         }
@@ -54,19 +59,18 @@ impl RelaysClient {
     pub fn publish(
         &self,
         signed_packet: &SignedPacket,
-        sender: Sender<Result<(), PublishError>>,
         cas: Option<Timestamp>,
-    ) {
+    ) -> flume::Receiver<Result<(), PublishError>> {
+        let (tx, rx) = flume::bounded(self.relays.len());
+
         let public_key = signed_packet.public_key();
         let body = signed_packet.to_relay_payload();
 
         if let Err(error) =
             self.inflight_publish
-                .add_sender(&public_key, &sender, signed_packet, cas)
+                .add_sender(&public_key, tx.clone(), signed_packet, cas)
         {
-            // ConcurrentPublish
-            let _ = sender.send(Err(error));
-            return;
+            let _ = tx.send(Err(error));
         };
 
         let cas = cas.map(|timestamp| timestamp.format_http_date());
@@ -79,40 +83,40 @@ impl RelaysClient {
             let cas = cas.clone();
             let inflight = self.inflight_publish.clone();
 
-            self.runtime.spawn(async move {
-                inflight.add_result(
-                    &public_key,
-                    publish_to_relay(http_client, relay, &public_key, body, cas).await,
-                )
+            tokio::spawn(async move {
+                let result = publish_to_relay(http_client, relay, &public_key, body, cas)
+                    .await
+                    .map_err(map_reqwest_error);
+
+                inflight.add_result(&public_key, result);
             });
         }
+
+        rx
     }
 
     pub fn resolve(
         &self,
         public_key: &PublicKey,
-        cache_key: &CacheKey,
-        sender: Sender<SignedPacket>,
-    ) {
-        for relay in &self.relays {
+    ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
+        let mut futures = FuturesUnorderedBounded::new(self.relays.len());
+
+        self.relays.iter().for_each(|relay| {
             let http_client = self.http_client.clone();
             let relay = relay.clone();
-            let sender = sender.clone();
-            let cache = self.cache.clone();
-            let cache_key = *cache_key;
             let public_key = public_key.clone();
 
-            self.runtime.spawn(async move {
-                if let Ok(Some(signed_packet)) =
-                    resolve_from_relay(http_client, relay, &public_key, cache, &cache_key).await
-                {
-                    let _ = sender.send(signed_packet);
-                }
-            });
-        }
+            futures.push(
+                async move { resolve_from_relay(http_client, relay, &public_key, None).await },
+            )
+        });
+
+        // Box the stream to unify its type
+        Box::pin(futures.filter_map(|opt| opt))
     }
 }
 
+#[derive(Debug)]
 struct InflightpublishRequest {
     signed_packet: SignedPacket,
     senders: Vec<Sender<Result<(), PublishError>>>,
@@ -120,7 +124,7 @@ struct InflightpublishRequest {
     errors: Vec<PublishError>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct InflightPublishRequests {
     majority: usize,
     requests: Arc<RwLock<HashMap<PublicKey, InflightpublishRequest>>>,
@@ -137,7 +141,7 @@ impl InflightPublishRequests {
     pub fn add_sender(
         &self,
         public_key: &PublicKey,
-        sender: &Sender<Result<(), PublishError>>,
+        sender: Sender<Result<(), PublishError>>,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
@@ -166,7 +170,7 @@ impl InflightPublishRequests {
                 public_key.clone(),
                 InflightpublishRequest {
                     signed_packet: signed_packet.clone(),
-                    senders: vec![],
+                    senders: vec![sender],
                     success_count: 0,
                     errors: vec![],
                 },
@@ -176,7 +180,7 @@ impl InflightPublishRequests {
         Ok(())
     }
 
-    pub fn add_result(&self, public_key: &PublicKey, result: Result<(), reqwest::Error>) {
+    pub fn add_result(&self, public_key: &PublicKey, result: Result<(), PublishError>) {
         match result {
             Ok(_) => self.add_success(public_key),
             Err(error) => self.add_error(public_key, error),
@@ -208,7 +212,7 @@ impl InflightPublishRequests {
         }
     }
 
-    fn add_error(&self, public_key: &PublicKey, error: reqwest::Error) {
+    fn add_error(&self, public_key: &PublicKey, error: PublishError) {
         let mut inflight = self
             .requests
             .write()
@@ -217,36 +221,7 @@ impl InflightPublishRequests {
         let mut error_to_send = None;
 
         if let Some(request) = inflight.get_mut(public_key) {
-            request.errors.push(if error.is_timeout() {
-                PublishError::Query(QueryError::Timeout)
-            } else if error.is_status() {
-                match error
-                    .status()
-                    .expect("previously verified that it is a status error")
-                {
-                    StatusCode::BAD_REQUEST => {
-                        todo!("an error for both dht error sepcifi and relay bad request")
-                    }
-                    StatusCode::CONFLICT => {
-                        PublishError::Concurrency(ConcurrencyError::NotMostRecent)
-                    }
-                    StatusCode::PRECONDITION_FAILED => {
-                        PublishError::Concurrency(ConcurrencyError::CasFailed)
-                    }
-                    StatusCode::PRECONDITION_REQUIRED => {
-                        PublishError::Concurrency(ConcurrencyError::ConflictRisk)
-                    }
-                    StatusCode::INTERNAL_SERVER_ERROR => {
-                        todo!()
-                    }
-                    _ => {
-                        todo!()
-                    }
-                }
-            } else {
-                // TODO: better error, a generic fail
-                PublishError::Query(QueryError::Timeout)
-            });
+            request.errors.push(error);
 
             if request.errors.len() >= self.majority {
                 if let Some(most_common_error) = request.errors.first() {
@@ -270,5 +245,36 @@ impl InflightPublishRequests {
                 }
             }
         }
+    }
+}
+
+fn map_reqwest_error(error: reqwest::Error) -> PublishError {
+    if error.is_timeout() {
+        PublishError::Query(QueryError::Timeout)
+    } else if error.is_status() {
+        match error
+            .status()
+            .expect("previously verified that it is a status error")
+        {
+            StatusCode::BAD_REQUEST => {
+                todo!("an error for both dht error sepcifi and relay bad request")
+            }
+            StatusCode::CONFLICT => PublishError::Concurrency(ConcurrencyError::NotMostRecent),
+            StatusCode::PRECONDITION_FAILED => {
+                PublishError::Concurrency(ConcurrencyError::CasFailed)
+            }
+            StatusCode::PRECONDITION_REQUIRED => {
+                PublishError::Concurrency(ConcurrencyError::ConflictRisk)
+            }
+            StatusCode::INTERNAL_SERVER_ERROR => {
+                todo!()
+            }
+            _ => {
+                todo!()
+            }
+        }
+    } else {
+        // TODO: better error, a generic fail
+        PublishError::Query(QueryError::Timeout)
     }
 }

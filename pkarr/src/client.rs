@@ -2,6 +2,9 @@
 
 pub mod cache;
 
+mod builder;
+mod relays;
+
 #[cfg(any(feature = "relays", target_arch = "wasm32"))]
 mod shared;
 
