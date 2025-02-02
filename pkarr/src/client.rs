@@ -3,6 +3,7 @@
 pub mod cache;
 
 mod builder;
+#[cfg(any(feature = "relays", target_arch = "wasm32"))]
 mod relays;
 
 #[cfg(not(target_arch = "wasm32"))]

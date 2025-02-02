@@ -67,7 +67,8 @@ impl Default for Config {
             rate_limiter: Some(RateLimiterConfig::default()),
         };
 
-        this.pkarr.resolvers(None).relays(None);
+        this.pkarr.no_resolvers();
+        this.pkarr.no_relays();
 
         this
     }

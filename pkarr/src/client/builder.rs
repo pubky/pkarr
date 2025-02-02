@@ -32,6 +32,7 @@ pub struct Config {
     /// Custom [Cache] implementation, defaults to [crate::InMemoryCache]
     pub cache: Option<Arc<dyn Cache>>,
 
+    #[cfg(feature = "dht")]
     pub dht: Option<mainline::DhtBuilder>,
     /// A set of [resolver](https://pkarr.org/resolvers)s
     /// to be queried alongside the Dht routing table, to
@@ -39,6 +40,7 @@ pub struct Config {
     /// Dht is missing values not't republished often enough.
     ///
     /// Defaults to [DEFAULT_RESOLVERS]
+    #[cfg(feature = "dht")]
     pub resolvers: Option<Vec<SocketAddrV4>>,
 
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
@@ -127,15 +129,9 @@ impl ClientBuilder {
     /// Similarly you can use [Self::resolvers] and / or [Self::bootstrap] to use [mainline]
     /// with custom configurations.
     pub fn no_default_network(&mut self) -> &mut Self {
-        #[cfg(feature = "dht")]
-        {
-            self.0.resolvers = None;
-            self.0.dht = None;
-        }
-        #[cfg(feature = "relays")]
-        {
-            self.0.relays = None;
-        }
+        self.no_dht();
+        self.no_resolvers();
+        self.no_relays();
 
         self
     }
@@ -150,12 +146,11 @@ impl ClientBuilder {
     }
 
     /// Disable relays, and use the Dht only.
-    ///
-    /// Equivilant to `builder.no_default_network().use_relays();`
     pub fn no_dht(&mut self) -> &mut Self {
-        self.no_default_network();
-        #[cfg(feature = "relays")]
-        self.use_relays();
+        #[cfg(feature = "dht")]
+        {
+            self.0.dht = None;
+        }
 
         self
     }
@@ -190,6 +185,19 @@ impl ClientBuilder {
         self
     }
 
+    /// Set custom set of [resolvers](Config::resolvers).
+    ///
+    /// You can disable using resolvers by passing `None`.
+    ///
+    /// If you want to extend the [Config::resolvers] with more nodes, you can
+    /// use [Self::extra_resolvers].
+    #[cfg(feature = "dht")]
+    pub fn resolvers(&mut self, resolvers: Option<Vec<String>>) -> &mut Self {
+        self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
+
+        self
+    }
+
     #[cfg(feature = "dht")]
     /// Extend the [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes.
     ///
@@ -200,20 +208,27 @@ impl ClientBuilder {
 
         if let Some(ref mut existing) = self.0.resolvers {
             existing.extend_from_slice(&resolvers);
+        } else {
+            self.0.resolvers = Some(resolvers);
         };
 
         self
     }
 
-    /// Set custom set of [resolvers](Config::resolvers).
-    ///
-    /// You can disable using resolvers by passing `None`.
-    ///
-    /// If you want to extend the [Config::resolvers] with more nodes, you can
-    /// use [Self::extra_resolvers].
+    /// Disable [Config::resolvers]
+    pub fn no_resolvers(&mut self) -> &mut Self {
+        #[cfg(feature = "dht")]
+        {
+            self.0.resolvers = None;
+        }
+
+        self
+    }
+
     #[cfg(feature = "dht")]
-    pub fn resolvers(&mut self, resolvers: Option<Vec<String>>) -> &mut Self {
-        self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
+    /// Re-enable using [Resolvers](https://pkarr.org/resolvers) with the [DEFAULT_RESOLVERS].
+    pub fn use_resolvers(&mut self) -> &mut Self {
+        self.0.resolvers = Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS));
 
         self
     }
@@ -244,21 +259,21 @@ impl ClientBuilder {
     }
 
     /// Set custom set of [relays](Config::relays)
+    ///
+    /// If you want to disable relays use [Self::no_relays] instead.
     #[cfg(feature = "relays")]
-    pub fn relays(&mut self, relays: Option<Vec<Url>>) -> &mut Self {
-        self.0.relays = relays;
+    pub fn relays(&mut self, relays: Vec<Url>) -> &mut Self {
+        self.0.relays = Some(relays);
 
         self
     }
 
     /// Disable relays, and use the Dht only.
-    ///
-    /// Equivilant to `builder.no_default_network().use_dht();`
-    #[cfg(feature = "relays")]
     pub fn no_relays(&mut self) -> &mut Self {
-        self.no_default_network();
-        #[cfg(feature = "dht")]
-        self.use_dht();
+        #[cfg(feature = "relays")]
+        {
+            self.0.relays = None;
+        }
 
         self
     }

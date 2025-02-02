@@ -25,7 +25,6 @@ pubky-timestamp = { version = "0.3.0", features = ["full"] }
 document-features = "0.2.10"
 
 #feat: client dependencies
-flume = { version = "0.11.1", features = ["eventual-fairness", "async"], default-features = false , optional = true }
 futures-lite = { version = "2.6.0", default-features = false, optional = true , features =["std"]}
 futures-buffered = { version = "0.2.9", optional = true }
 dyn-clone = "1.0.17"
@@ -91,17 +90,15 @@ console_log = { version = "1.0.0", features = ["color"] }
 [features]
 # Clients 
 ## Use [client::Client] with, you have to enable `dht` and / or `relays` features as well.
-client = ["dep:flume", "dep:futures-lite"]
+client = ["dep:futures-lite", "dep:async-compat", "dep:tokio"]  
 ## Use [client::Client] with [mainline] support.
 dht = ["client", "dep:mainline"]
 ## Use [client::Client] with [Relays](https://pkarr.org/relays).
 relays = [
   "client", 
   "dep:url", 
-  "dep:tokio", 
   "dep:reqwest", 
   "dep:sha1_smol", 
-  "dep:async-compat",
   "dep:futures-buffered"  
 ]
 
