@@ -1,6 +1,6 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://pkarr.org/relays).
 
-use futures_lite::{stream, Stream, StreamExt};
+use futures_lite::{Stream, StreamExt};
 use pubky_timestamp::Timestamp;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -224,21 +224,39 @@ impl Client {
                 cache.put(&cache_key, signed_packet);
             }
 
-            if let Some(node) = self.dht() {
-                // TODO: support other modes than DhtFirst
-                return node
-                    .as_async()
-                    .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
-                    .await
-                    .map(|_| Ok(()))?;
-            }
+            // TODO: support other modes than Parallel.
 
-            #[cfg(any(feature = "relays", all(target_family = "wasm", target_os = "unknown")))]
-            if let Some(ref relays) = self.0.relays {
-                relays.publish(signed_packet, cas).await?;
-            }
+            // Handle DHT and Relay futures based on feature flags and target family
+            #[cfg(feature = "dht")]
+            let dht_future = self.dht().map(|node| map_dht_put(node, signed_packet, cas));
 
-            Ok(())
+            #[cfg(feature = "relays")]
+            let relays_future = self
+                .0
+                .relays
+                .as_ref()
+                .map(|relays| relays.publish(signed_packet, cas));
+
+            #[cfg(all(feature = "dht", not(feature = "relays")))]
+            let result = dht_future.expect("infallible").await;
+
+            #[cfg(all(feature = "relays", not(feature = "dht")))]
+            let result = relays_future.expect("infallible").await;
+
+            #[cfg(all(feature = "dht", feature = "relays"))]
+            let result = if dht_future.is_some() && relays_future.is_some() {
+                futures_lite::future::or(
+                    dht_future.expect("infallible"),
+                    relays_future.expect("infallible"),
+                )
+                .await
+            } else if dht_future.is_some() {
+                dht_future.expect("infallible").await
+            } else {
+                relays_future.expect("infallible").await
+            };
+
+            result
         })
         .await
     }
@@ -450,8 +468,6 @@ impl Client {
             )?),
             None => None,
         };
-        #[cfg(not(feature = "dht"))]
-        let dht_stream = None;
 
         #[cfg(feature = "relays")]
         let relays_stream = self
@@ -459,17 +475,24 @@ impl Client {
             .relays
             .as_ref()
             .map(|relays| relays.resolve(&public_key, more_recent_than));
-        #[cfg(not(feature = "relays"))]
-        let relays_stream = None;
 
         let cache = self.0.cache.clone();
 
+        #[cfg(all(feature = "dht", not(feature = "relays")))]
+        let stream = dht_stream.expect("infallible");
+
+        #[cfg(all(feature = "relays", not(feature = "dht")))]
+        let stream = relays_stream.expect("infallible");
+
+        #[cfg(all(feature = "dht", feature = "relays"))]
         let stream = match (dht_stream, relays_stream) {
             (Some(s), None) | (None, Some(s)) => s,
-            (Some(a), Some(b)) => Box::pin(stream::or(a, b)),
+            (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
-        }
-        .filter_map(move |signed_packet| {
+        };
+
+        // TODO: support other modes than Parallel.
+        let stream = stream.filter_map(move |signed_packet| {
             let new_packet: Option<SignedPacket> = if let Some(cached) = cache
                 .clone()
                 .and_then(|cache| cache.clone().get_read_only(&cache_key))
@@ -550,6 +573,18 @@ fn map_dht_stream(
             )
             .boxed(),
     );
+}
+
+#[cfg(feature = "dht")]
+async fn map_dht_put(
+    node: mainline::Dht,
+    signed_packet: &SignedPacket,
+    cas: Option<Timestamp>,
+) -> Result<(), PublishError> {
+    node.as_async()
+        .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
+        .await
+        .map(|_| Ok(()))?
 }
 
 #[derive(thiserror::Error, Debug)]
