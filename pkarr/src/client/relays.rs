@@ -5,7 +5,6 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use bytes::Bytes;
-use flume::Sender;
 use futures_buffered::FuturesUnorderedBounded;
 use futures_lite::{Stream, StreamExt};
 use pubky_timestamp::Timestamp;
@@ -61,44 +60,51 @@ impl RelaysClient {
         }
     }
 
-    pub fn publish(
+    pub async fn publish(
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> flume::Receiver<Result<(), PublishError>> {
-        let (tx, rx) = flume::bounded(1);
-
+    ) -> Result<(), PublishError> {
         let public_key = signed_packet.public_key();
+
+        self.inflight_publish
+            .start_request(&public_key, signed_packet, cas)?;
+
+        let mut futures = futures_buffered::FuturesUnorderedBounded::new(self.relays.len());
+
         let body = signed_packet.to_relay_payload();
-
-        if let Err(error) =
-            self.inflight_publish
-                .add_sender(&public_key, tx.clone(), signed_packet, cas)
-        {
-            let _ = tx.send(Err(error));
-        };
-
         let cas = cas.map(|timestamp| timestamp.format_http_date());
 
         for relay in &self.relays {
             let http_client = self.http_client.clone();
-            let relay = relay.clone();
-            let public_key = public_key.clone();
-            let body = body.clone();
-            let cas = cas.clone();
-            let inflight = self.inflight_publish.clone();
             let timeout = self.timeout;
 
-            tokio::spawn(async move {
+            let cas = cas.clone();
+            let body = body.clone();
+
+            let public_key = public_key.clone();
+            let relay = relay.clone();
+
+            let mut inflight = self.inflight_publish.clone();
+
+            futures.push(async move {
                 let result = publish_to_relay(http_client, relay, &public_key, body, cas, timeout)
                     .await
                     .map_err(map_reqwest_error);
 
-                inflight.add_result(&public_key, result);
+                inflight.add_result(&public_key, result)
             });
         }
 
-        rx
+        futures
+            .filter_map(|result| match result {
+                Ok(true) => Some(Ok(())),
+                Ok(false) => None,
+                Err(err) => Some(Err(err)),
+            })
+            .next()
+            .await
+            .expect("infallible")
     }
 
     pub fn resolve(
@@ -107,6 +113,7 @@ impl RelaysClient {
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
+
         let if_modified_since = more_recent_than.map(|t| t.format_http_date());
 
         self.relays.iter().for_each(|relay| {
@@ -123,23 +130,21 @@ impl RelaysClient {
             ));
         });
 
-        // Box the stream to unify its type
         Box::pin(futures.filter_map(|opt| opt))
     }
 }
 
 #[derive(Debug)]
-struct InflightpublishRequest {
+struct InflightPublishRequest {
     signed_packet: SignedPacket,
-    senders: Vec<Sender<Result<(), PublishError>>>,
     success_count: usize,
-    errors: Vec<PublishError>,
+    errors: HashMap<PublishError, usize>,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct InflightPublishRequests {
     relays_count: usize,
-    requests: Arc<RwLock<HashMap<PublicKey, InflightpublishRequest>>>,
+    requests: Arc<RwLock<HashMap<PublicKey, InflightPublishRequest>>>,
 }
 
 impl InflightPublishRequests {
@@ -150,10 +155,9 @@ impl InflightPublishRequests {
         }
     }
 
-    pub fn add_sender(
+    pub fn start_request(
         &self,
         public_key: &PublicKey,
-        sender: Sender<Result<(), PublishError>>,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
@@ -169,21 +173,18 @@ impl InflightPublishRequests {
                 return Err(ConcurrencyError::NotMostRecent)?;
             } else if let Some(cas) = cas {
                 if cas != inflight_request.signed_packet.timestamp() {
-                    return Err(ConcurrencyError::ConflictRisk)?;
+                    return Err(ConcurrencyError::CasFailed)?;
                 }
             } else {
                 return Err(ConcurrencyError::ConflictRisk)?;
             };
-
-            inflight_request.senders.push(sender.clone());
         } else {
             requests.insert(
                 public_key.clone(),
-                InflightpublishRequest {
+                InflightPublishRequest {
                     signed_packet: signed_packet.clone(),
-                    senders: vec![sender],
                     success_count: 0,
-                    errors: vec![],
+                    errors: Default::default(),
                 },
             );
         };
@@ -191,79 +192,95 @@ impl InflightPublishRequests {
         Ok(())
     }
 
-    pub fn add_result(&self, public_key: &PublicKey, result: Result<(), PublishError>) {
+    pub fn add_result(
+        &mut self,
+        public_key: &PublicKey,
+        result: Result<(), PublishError>,
+    ) -> Result<bool, PublishError> {
         match result {
             Ok(_) => self.add_success(public_key),
             Err(error) => self.add_error(public_key, error),
         }
     }
 
-    fn add_success(&self, public_key: &PublicKey) {
+    fn add_success(&self, public_key: &PublicKey) -> Result<bool, PublishError> {
         let mut inflight = self
             .requests
             .write()
             .expect("InflightPublishRequests write lock");
 
-        let mut done = false;
+        let request = inflight.get_mut(public_key).expect("infallible");
+        let majority = (self.relays_count / 2) + 1;
 
-        if let Some(request) = inflight.get_mut(public_key) {
-            request.success_count += 1;
+        request.success_count += 1;
 
-            let majority = (self.relays_count / 2) + 1;
+        if self.done(request) {
+            return Ok(true);
+        } else if request.success_count >= majority {
+            inflight.remove(public_key);
 
-            if request.success_count >= majority {
-                done = true;
-            }
+            return Ok(true);
         }
 
-        if done {
-            if let Some(request) = inflight.remove(public_key) {
-                for sender in request.senders {
-                    let _ = sender.send(Ok(()));
-                }
+        Ok(false)
+    }
+
+    fn add_error(
+        &mut self,
+        public_key: &PublicKey,
+        error: PublishError,
+    ) -> Result<bool, PublishError> {
+        let mut inflight = self
+            .requests
+            .write()
+            .expect("InflightPublishRequests write lock");
+
+        let request = inflight.get_mut(public_key).expect("infallible");
+        let majority = (self.relays_count / 2) + 1;
+
+        // Add error, and return early error if necessary.
+        {
+            let count = request.errors.get(&error).unwrap_or(&0) + 1;
+
+            if count >= majority
+                && matches!(
+                    error,
+                    PublishError::Concurrency(ConcurrencyError::NotMostRecent)
+                ) | matches!(
+                    error,
+                    PublishError::Concurrency(ConcurrencyError::CasFailed)
+                )
+            {
+                inflight.remove(public_key);
+
+                return Err(error);
             }
+
+            request.errors.insert(error, count);
+        }
+
+        if self.done(request) {
+            let request = inflight.remove(public_key).expect("infallible");
+
+            if request.success_count >= majority {
+                Ok(true)
+            } else {
+                let most_common_error = request
+                    .errors
+                    .into_iter()
+                    .max_by_key(|&(_, count)| count)
+                    .map(|(error, _)| error)
+                    .expect("infallible");
+
+                Err(most_common_error)
+            }
+        } else {
+            Ok(false)
         }
     }
 
-    fn add_error(&self, public_key: &PublicKey, error: PublishError) {
-        let mut inflight = self
-            .requests
-            .write()
-            .expect("InflightPublishRequests write lock");
-
-        let mut error_to_send = None;
-
-        if let Some(request) = inflight.get_mut(public_key) {
-            let majority = (self.relays_count / 2) + 1;
-
-            if request.errors.len() == self.relays_count - 1 {
-                error_to_send = Some(error);
-            } else {
-                request.errors.push(error);
-
-                if request.errors.len() >= majority {
-                    if let Some(most_common_error) = request.errors.first() {
-                        if matches!(
-                            most_common_error,
-                            PublishError::Concurrency(ConcurrencyError::NotMostRecent)
-                        ) || matches!(
-                            most_common_error,
-                            PublishError::Concurrency(ConcurrencyError::CasFailed)
-                        ) {
-                            error_to_send = Some(most_common_error.clone());
-                        }
-                    };
-                }
-            }
-        }
-
-        if let Some(most_common_error) = error_to_send {
-            if let Some(request) = inflight.remove(public_key) {
-                for sender in request.senders {
-                    let _ = sender.send(Err(most_common_error.clone()));
-                }
-            }
-        }
+    fn done(&self, request: &InflightPublishRequest) -> bool {
+        (request.errors.len() + request.success_count) == self.relays_count
     }
 }
 
@@ -303,9 +320,9 @@ pub async fn publish_to_relay(
 
     if status != StatusCode::OK {
         cross_debug!("Got neither 200 nor >=400 status code {status} for PUT {url}",);
+    } else {
+        cross_debug!("Successfully published to {url}");
     }
-
-    cross_debug!("Successfully published to {url}");
 
     Ok(())
 }

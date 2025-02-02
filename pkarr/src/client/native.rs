@@ -1,13 +1,10 @@
 //! Pkarr client for publishing and resolving [SignedPacket]s over [mainline] and/or [Relays](https://pkarr.org/relays).
 
-use flume::r#async::RecvStream;
-use flume::Receiver;
 use futures_lite::{stream, Stream, StreamExt};
 use pubky_timestamp::Timestamp;
-use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{hash::Hash, num::NonZeroUsize};
 
 #[cfg(feature = "dht")]
 use mainline::{
@@ -17,6 +14,7 @@ use mainline::{
 
 use super::builder::Config;
 
+#[cfg(feature = "relays")]
 use crate::client::relays::RelaysClient;
 use crate::{Cache, CacheKey, InMemoryCache};
 use crate::{PublicKey, SignedPacket};
@@ -74,7 +72,22 @@ impl Client {
             None
         };
 
-        if dht.is_none() && relays.is_none() {
+        #[cfg(feature = "dht")]
+        if dht.is_none() {
+            #[cfg(feature = "relays")]
+            if relays.is_none() {
+                return Err(BuildError::NoNetwork);
+            }
+            #[cfg(not(feature = "relays"))]
+            return Err(BuildError::NoNetwork);
+        }
+        #[cfg(feature = "relays")]
+        if relays.is_none() {
+            #[cfg(feature = "dht")]
+            if dht.is_none() {
+                return Err(BuildError::NoNetwork);
+            }
+            #[cfg(not(feature = "dht"))]
             return Err(BuildError::NoNetwork);
         }
 
@@ -212,19 +225,17 @@ impl Client {
             }
 
             if let Some(node) = self.dht() {
-                node.as_async()
+                // TODO: support other modes than DhtFirst
+                return node
+                    .as_async()
                     .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
-                    .await?;
+                    .await
+                    .map(|_| Ok(()))?;
             }
 
-            // TODO: support other modes than DhtFirst
-
+            #[cfg(any(feature = "relays", all(target_family = "wasm", target_os = "unknown")))]
             if let Some(ref relays) = self.0.relays {
-                relays
-                    .publish(signed_packet, cas)
-                    .recv_async()
-                    .await
-                    .expect("pkarr relays publish dropped sender too soon")?;
+                relays.publish(signed_packet, cas).await?;
             }
 
             Ok(())
@@ -252,7 +263,7 @@ impl Client {
     ///     let testnet = Testnet::new(3)?;
     ///     let client = Client::builder()
     ///         // Disable the default network settings (builtin relays and mainline bootstrap nodes).
-    ///         .no_default_network()
+    ///         .no_relays()
     ///         .bootstrap(&testnet.bootstrap)
     ///         .build()?;
     ///
@@ -430,6 +441,7 @@ impl Client {
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
     ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
+        #[cfg(feature = "dht")]
         let dht_stream = match self.dht() {
             Some(node) => map_dht_stream(node.as_async().get_mutable(
                 public_key.as_bytes(),
@@ -438,12 +450,17 @@ impl Client {
             )?),
             None => None,
         };
+        #[cfg(not(feature = "dht"))]
+        let dht_stream = None;
 
+        #[cfg(feature = "relays")]
         let relays_stream = self
             .0
             .relays
             .as_ref()
             .map(|relays| relays.resolve(&public_key, more_recent_than));
+        #[cfg(not(feature = "relays"))]
+        let relays_stream = None;
 
         let cache = self.0.cache.clone();
 
@@ -452,7 +469,7 @@ impl Client {
             (Some(a), Some(b)) => Box::pin(stream::or(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
         }
-        .map(move |signed_packet| {
+        .filter_map(move |signed_packet| {
             let new_packet: Option<SignedPacket> = if let Some(cached) = cache
                 .clone()
                 .and_then(|cache| cache.clone().get_read_only(&cache_key))
@@ -481,8 +498,7 @@ impl Client {
             } else {
                 None
             }
-        })
-        .filter_map(|x| x);
+        });
 
         Ok(Box::pin(stream))
     }
@@ -523,7 +539,7 @@ fn map_dht_stream(
 ) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
     return Some(
         stream
-            .map(
+            .filter_map(
                 move |mutable_item| match SignedPacket::try_from(mutable_item) {
                     Ok(signed_packet) => Some(signed_packet),
                     Err(error) => {
@@ -532,35 +548,8 @@ fn map_dht_stream(
                     }
                 },
             )
-            .filter_map(|x| x)
             .boxed(),
     );
-}
-
-pub struct SignedPacketIterator(flume::Receiver<SignedPacket>);
-
-impl Iterator for SignedPacketIterator {
-    type Item = SignedPacket;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.recv().ok()
-    }
-}
-
-pub struct SignedPacketStream(RecvStream<'static, SignedPacket>);
-
-impl From<Receiver<SignedPacket>> for SignedPacketStream {
-    fn from(value: Receiver<SignedPacket>) -> Self {
-        Self(value.into_stream())
-    }
-}
-
-impl Stream for SignedPacketStream {
-    type Item = SignedPacket;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.0.poll_next(cx)
-    }
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -598,7 +587,7 @@ impl From<DhtWasShutdown> for ClientWasShutdown {
     }
 }
 
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 /// Errors occuring during publishing a [SignedPacket]
 pub enum PublishError {
     #[error(transparent)]
@@ -631,7 +620,34 @@ pub enum QueryError {
     DhtErrorResponse(mainline::rpc::messages::ErrorSpecific),
 }
 
-#[derive(thiserror::Error, Debug, Clone)]
+impl Eq for QueryError {
+    fn assert_receiver_is_total_eq(&self) {}
+}
+
+impl PartialEq for QueryError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                QueryError::DhtErrorResponse(self_error),
+                QueryError::DhtErrorResponse(other_error),
+            ) => self_error.code == other_error.code,
+            (s, o) => s == o,
+        }
+    }
+}
+
+impl Hash for QueryError {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            QueryError::DhtErrorResponse(error) => {
+                state.write(&error.code.to_be_bytes());
+            }
+            error => error.hash(state),
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 /// Errors that requires resolving most recent [SignedPacket] before publishing.
 pub enum ConcurrencyError {
     #[error("A different SignedPacket is being concurrently published for the same PublicKey.")]
@@ -677,560 +693,4 @@ impl From<PutMutableError> for PublishError {
             }),
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    //! Combined client tests
-
-    use std::{thread, time::Duration};
-
-    use native::{BuildError, ConcurrencyError, PublishError};
-    use pkarr_relay::Relay;
-    use pubky_timestamp::Timestamp;
-    use rstest::rstest;
-
-    use super::super::*;
-    use crate::{Keypair, SignedPacket};
-
-    #[derive(Copy, Clone)]
-    enum Networks {
-        Dht,
-        #[cfg(feature = "relays")]
-        Relays,
-        Both,
-    }
-
-    /// Parametric [ClientBuilder] with no default networks,
-    /// instead it uses mainline or relays depending on `networks` enum.
-    fn builder(relay: &Relay, testnet: &mainline::Testnet, networks: Networks) -> ClientBuilder {
-        let mut builder = Client::builder();
-
-        builder
-            .no_default_network()
-            // Because of pkarr_relay crate, dht is always enabled.
-            .bootstrap(&testnet.bootstrap)
-            .resolvers(Some(vec![relay.resolver_address().to_string()]))
-            .request_timeout(Duration::from_millis(100));
-
-        match networks {
-            Networks::Dht => {}
-            #[cfg(feature = "relays")]
-            Networks::Relays => {
-                builder
-                    .no_default_network()
-                    .relays(Some(vec![relay.local_url()]));
-            }
-            Networks::Both => {
-                #[cfg(feature = "relays")]
-                {
-                    builder.relays(Some(vec![relay.local_url()]));
-                }
-            }
-        }
-
-        builder
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn publish_resolve(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let a = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish(&signed_packet, None).await.unwrap();
-
-        let b = builder(&relay, &testnet, networks).build().unwrap();
-
-        let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-        let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn client_send(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let a = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish(&signed_packet, None).await.unwrap();
-
-        let b = builder(&relay, &testnet, networks).build().unwrap();
-
-        tokio::spawn(async move {
-            let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-            let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-            assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        })
-        .await
-        .unwrap();
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn return_expired_packet_fallback(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        client
-            .cache()
-            .unwrap()
-            .put(&keypair.public_key().into(), &signed_packet);
-
-        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
-
-        assert_eq!(resolved, Some(signed_packet));
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn ttl_0_test(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks)
-            .maximum_ttl(0)
-            .build()
-            .unwrap();
-
-        let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        client.publish(&signed_packet, None).await.unwrap();
-
-        // First Call
-        let resolved = client
-            .resolve(&signed_packet.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
-
-        thread::sleep(Duration::from_millis(10));
-
-        let second = client
-            .resolve(&signed_packet.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn not_found(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        let resolved = client.resolve(&keypair.public_key()).await.unwrap();
-
-        assert_eq!(resolved, None);
-    }
-
-    #[test]
-    fn no_network() {
-        assert!(matches!(
-            Client::builder().no_default_network().build(),
-            Err(BuildError::NoNetwork)
-        ));
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn repeated_publish_query(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        let id = client.publish(&signed_packet, None).await.unwrap();
-
-        assert_eq!(client.publish(&signed_packet, None).await.unwrap(), id);
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn concurrent_resolve(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let a = builder(&relay, &testnet, networks).build().unwrap();
-        let b = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish(&signed_packet, None).await.unwrap();
-
-        let public_key = signed_packet.public_key();
-        let bclone = b.clone();
-        let _stream = tokio::spawn(async move { bclone.resolve(&public_key).await.unwrap() });
-
-        let response_second = b
-            .resolve(&signed_packet.public_key())
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(&response_second.as_bytes(), &signed_packet.as_bytes());
-
-        assert!(_stream.await.is_ok())
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn concurrent_publish_same_packet(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        let mut handles = vec![];
-
-        for _ in 0..2 {
-            let client = client.clone();
-            let signed_packet = signed_packet.clone();
-
-            handles.push(tokio::spawn(async move {
-                client.publish(&signed_packet, None).await.unwrap()
-            }));
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let mut handles = vec![];
-
-        let keypair = Keypair::random();
-
-        let timestamp = Timestamp::now();
-
-        for i in 0..2 {
-            let client = client.clone();
-
-            let signed_packet = SignedPacket::builder()
-                .txt(
-                    format!("foo{i}").as_str().try_into().unwrap(),
-                    "bar".try_into().unwrap(),
-                    30,
-                )
-                .timestamp(timestamp)
-                .sign(&keypair)
-                .unwrap();
-
-            handles.push(tokio::spawn(async move {
-                let result = client.publish(&signed_packet, None).await;
-
-                if i == 0 {
-                    assert!(matches!(result, Ok(_)))
-                } else {
-                    assert!(matches!(
-                        result,
-                        Err(PublishError::Concurrency(ConcurrencyError::ConflictRisk))
-                    ))
-                }
-            }));
-        }
-
-        for handle in handles {
-            handle.await.unwrap();
-        }
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn concurrent_publish_different_with_cas(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        // First
-        let cloned_client = client.clone();
-        let cloned_keypair = keypair.clone();
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&cloned_keypair)
-            .unwrap();
-
-        let handle = tokio::spawn(async move {
-            let result = cloned_client.publish(&signed_packet, None).await;
-
-            assert!(matches!(result, Ok(_)))
-        });
-
-        // Second
-        {
-            let signed_packet = SignedPacket::builder()
-                .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-                .sign(&keypair)
-                .unwrap();
-
-            let most_recent = client
-                .resolve_most_recent(&keypair.public_key())
-                .await
-                .unwrap();
-
-            if let Some(cas) = most_recent.map(|s| s.timestamp()) {
-                client.publish(&signed_packet, Some(cas)).await.unwrap();
-            } else {
-                client.publish(&signed_packet, None).await.unwrap();
-            }
-        }
-
-        handle.await.unwrap();
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn conflict_302(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet_builder =
-            SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
-
-        let t1 = Timestamp::now();
-        let t2 = Timestamp::now();
-
-        client
-            .publish(
-                &signed_packet_builder
-                    .clone()
-                    .timestamp(t2)
-                    .sign(&keypair)
-                    .unwrap(),
-                None,
-            )
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            client
-                .publish(
-                    &signed_packet_builder.timestamp(t1).sign(&keypair).unwrap(),
-                    None
-                )
-                .await,
-            Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
-        ));
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[tokio::test]
-    async fn conflict_301_cas(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new(10).unwrap();
-        let relay = Relay::start_test(&testnet).await.unwrap();
-
-        let client = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet_builder =
-            SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
-
-        let t1 = Timestamp::now();
-        let t2 = Timestamp::now();
-
-        client
-            .publish(
-                &signed_packet_builder
-                    .clone()
-                    .timestamp(t2)
-                    .sign(&keypair)
-                    .unwrap(),
-                None,
-            )
-            .await
-            .unwrap();
-
-        assert!(matches!(
-            client
-                .publish(&signed_packet_builder.sign(&keypair).unwrap(), Some(t1))
-                .await,
-            Err(PublishError::Concurrency(ConcurrencyError::CasFailed))
-        ));
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[test]
-    fn no_tokio_sync(#[case] networks: Networks) {
-        let (relay, testnet) = futures_lite::future::block_on(async_compat::Compat::new(async {
-            let testnet = mainline::Testnet::new(10).unwrap();
-            let relay = Relay::start_test(&testnet).await.unwrap();
-
-            (relay, testnet)
-        }));
-
-        let a = builder(&relay, &testnet, networks).build().unwrap();
-
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        a.publish_sync(&signed_packet, None).unwrap();
-
-        let b = builder(&relay, &testnet, networks).build().unwrap();
-
-        let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-        let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
-        assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(from_cache.last_seen(), resolved.last_seen());
-    }
-
-    #[rstest]
-    #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
-    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-    #[test]
-    fn no_tokio_async(#[case] networks: Networks) {
-        futures_lite::future::block_on(async {
-            let (relay, testnet) = async_compat::Compat::new(async {
-                let testnet = mainline::Testnet::new(10).unwrap();
-                let relay = Relay::start_test(&testnet).await.unwrap();
-
-                (relay, testnet)
-            })
-            .await;
-
-            let a = builder(&relay, &testnet, networks).build().unwrap();
-
-            let keypair = Keypair::random();
-
-            let signed_packet = SignedPacket::builder()
-                .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-                .sign(&keypair)
-                .unwrap();
-
-            a.publish(&signed_packet, None).await.unwrap();
-
-            let b = builder(&relay, &testnet, networks).build().unwrap();
-
-            let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-
-            let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
-            assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-            assert_eq!(from_cache.last_seen(), resolved.last_seen());
-        });
-    }
-
-    // TODO: test background resolve query
-    // TODO: test multiple relays
 }

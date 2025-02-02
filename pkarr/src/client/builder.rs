@@ -349,14 +349,14 @@ impl ClientBuilder {
 fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<SocketAddrV4> {
     resolvers
         .iter()
-        .flat_map(|resolver| {
-            resolver.to_socket_addrs().map(|iter| {
-                iter.filter_map(|a| match a {
-                    SocketAddr::V4(a) => Some(a),
-                    _ => None,
-                })
-            })
-        })
+        .flat_map(|resolver| resolver.to_socket_addrs().ok())
         .flatten()
-        .collect::<Vec<_>>()
+        .flat_map(|addr| {
+            if let SocketAddr::V4(addr) = addr {
+                Some(addr)
+            } else {
+                None
+            }
+        })
+        .collect()
 }

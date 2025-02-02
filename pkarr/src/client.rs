@@ -15,3 +15,6 @@ pub use native::{Client, ClientBuilder};
 pub(crate) mod web;
 #[cfg(target_arch = "wasm32")]
 pub use web::{Client, ClientBuilder, Config};
+
+#[cfg(test)]
+mod tests;

@@ -9,8 +9,6 @@ macro_rules! cross_debug {
         log::debug!($($arg)*);
         #[cfg(not(target_arch = "wasm32"))]
         tracing::debug!($($arg)*);
-        #[cfg(test)]
-        eprintln!($($arg)*);
     };
 }
 
