@@ -94,7 +94,7 @@ console_log = { version = "1.0.0", features = ["color"] }
 [features]
 # Basic types
 keys = []
-signed_packet = ["keys", "dep:simple-dns", "dep:pubky-timestamp"]
+signed_packet = ["keys", "dep:simple-dns", "dep:pubky-timestamp", "dep:bytes"]
 
 # Clients 
 __client = ["signed_packet", "dep:dyn-clone", "dep:lru", "dep:sha1_smol", "dep:futures-lite", "dep:async-compat", "dep:tokio"]

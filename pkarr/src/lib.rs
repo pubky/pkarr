@@ -52,6 +52,7 @@ pub mod errors {
 
     #[cfg(feature = "keys")]
     pub use super::keys::PublicKeyError;
+
     #[cfg(feature = "signed_packet")]
     pub use super::signed_packet::{SignedPacketBuildError, SignedPacketVerifyError};
 }
