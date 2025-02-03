@@ -7,7 +7,9 @@ use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::{header, StatusCode};
 use httpdate::HttpDate;
-use tracing::error;
+use pkarr::errors::{ConcurrencyError, PublishError};
+use pubky_timestamp::Timestamp;
+use tracing::{debug, error};
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
@@ -18,6 +20,7 @@ use crate::AppState;
 pub async fn put(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
+    request_headers: HeaderMap,
     body: Bytes,
 ) -> Result<impl IntoResponse, Error> {
     let public_key = PublicKey::try_from(public_key.as_str())
@@ -26,24 +29,45 @@ pub async fn put(
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
+    let cas = if let Some(header_value) = request_headers.get(header::IF_UNMODIFIED_SINCE) {
+        let httpdate = header_value.to_str().map_err(|_| {
+            Error::new(
+                StatusCode::BAD_REQUEST,
+                Some("Could not parse `IF_UNMODIFIED_SINCE` header"),
+            )
+        })?;
+
+        Some(Timestamp::parse_http_date(httpdate).map_err(|_| {
+            Error::new(
+                StatusCode::BAD_REQUEST,
+                Some("Could not parse `IF_UNMODIFIED_SINCE` header"),
+            )
+        })?)
+    } else {
+        None
+    };
+
     state
         .client
-        .publish(&signed_packet)
+        .publish(&signed_packet, cas)
         .await
         .map_err(|error| match error {
-            pkarr::errors::PublishError::PublishInflight => {
-                Error::new(StatusCode::TOO_MANY_REQUESTS, Some(error))
-            }
-            pkarr::errors::PublishError::NotMostRecent => {
-                Error::new(StatusCode::CONFLICT, Some(error))
-            }
-            pkarr::errors::PublishError::ClientWasShutdown => {
+            PublishError::Concurrency(error) => match error {
+                ConcurrencyError::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
+                ConcurrencyError::CasFailed => {
+                    Error::new(StatusCode::PRECONDITION_FAILED, Some(error))
+                }
+                ConcurrencyError::ConflictRisk => {
+                    Error::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
+                }
+            },
+            PublishError::ClientWasShutdown => {
                 error!("Pkarr client was shutdown");
                 Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
-            error => {
-                error!(?error, "Unexpected error");
-                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
+            PublishError::Query(query_error) => {
+                debug!(?query_error, "Query error while publishing");
+                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(query_error))
             }
         })?;
 
@@ -65,7 +89,9 @@ pub async fn get(
 
         response_headers.insert(
             header::CONTENT_TYPE,
-            "application/pkarr.org/relays#payload".try_into().unwrap(),
+            "application/pkarr.org/relays#payload"
+                .try_into()
+                .expect("pkarr payload content-type header should be valid"),
         );
         response_headers.insert(
             header::CACHE_CONTROL,
@@ -74,7 +100,7 @@ pub async fn get(
                 signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL)
             )
             .try_into()
-            .unwrap(),
+            .expect("pkarr cache-control header should be valid."),
         );
         response_headers.insert(
             header::LAST_MODIFIED,
@@ -99,7 +125,7 @@ pub async fn get(
                 *response.status_mut() = StatusCode::NOT_MODIFIED;
             }
         } else {
-            *response.body_mut() = signed_packet.as_relay_payload().to_vec().into();
+            *response.body_mut() = signed_packet.to_relay_payload().into();
         };
 
         Ok(response)

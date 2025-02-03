@@ -1,6 +1,7 @@
 //! Signed DNS packet
 
 use crate::{Keypair, PublicKey};
+use bytes::{Bytes, BytesMut};
 use ed25519_dalek::{Signature, SignatureError};
 use self_cell::self_cell;
 use simple_dns::{
@@ -9,7 +10,7 @@ use simple_dns::{
 };
 use std::{
     char,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
@@ -17,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use pubky_timestamp::Timestamp;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SignedPacketBuilder {
     records: Vec<ResourceRecord<'static>>,
     timestamp: Option<Timestamp>,
@@ -138,13 +139,13 @@ const DOT: char = '.';
 
 self_cell!(
     struct Inner {
-        owner: Box<[u8]>,
+        owner: Bytes,
 
         #[covariant]
         dependent: Packet,
     }
 
-    impl{Debug, PartialEq, Eq}
+    impl{PartialEq, Eq}
 );
 
 impl Inner {
@@ -155,7 +156,7 @@ impl Inner {
         encoded_packet: &[u8],
     ) -> Result<Self, SimpleDnsError> {
         // Create the inner bytes from <public_key><signature>timestamp><v>
-        let mut bytes = Vec::with_capacity(encoded_packet.len() + 104);
+        let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 104);
 
         bytes.extend_from_slice(public_key.as_bytes());
         bytes.extend_from_slice(&signature.to_bytes());
@@ -165,12 +166,12 @@ impl Inner {
         Self::try_new(bytes.into(), |bytes| Packet::parse(&bytes[104..]))
     }
 
-    fn try_from_bytes(bytes: Box<[u8]>) -> Result<Self, SimpleDnsError> {
+    fn try_from_bytes(bytes: Bytes) -> Result<Self, SimpleDnsError> {
         Inner::try_new(bytes, |bytes| Packet::parse(&bytes[104..]))
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 /// Signed DNS packet
 pub struct SignedPacket {
     inner: Inner,
@@ -284,24 +285,24 @@ impl SignedPacket {
         })
     }
 
-    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md) payload.
+    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://pkarr.org/relays) payload.
     pub fn from_relay_payload(
         public_key: &PublicKey,
-        payload: &[u8],
+        payload: &Bytes,
     ) -> Result<SignedPacket, SignedPacketVerifyError> {
-        let mut bytes = Vec::with_capacity(payload.len() + 32);
+        let mut bytes = BytesMut::with_capacity(payload.len() + 32);
 
         bytes.extend_from_slice(public_key.as_bytes());
         bytes.extend_from_slice(payload);
 
-        SignedPacket::from_bytes(&bytes)
+        SignedPacket::from_bytes(&bytes.into())
     }
 
     // === Getters ===
 
     /// Returns the serialized signed packet:
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
-    pub fn as_bytes(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &Bytes {
         self.inner.borrow_owner()
     }
 
@@ -337,9 +338,9 @@ impl SignedPacket {
     }
 
     /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
-    /// to be sent as a request/response body to or from [relays](https://github.com/Nuhvi/pkarr/blob/main/design/relays.md).
-    pub fn as_relay_payload(&self) -> &[u8] {
-        &self.inner.borrow_owner()[32..]
+    /// to be sent as a request/response body to or from [relays](https://pkarr.org/relays).
+    pub fn to_relay_payload(&self) -> Bytes {
+        self.inner.borrow_owner().slice(32..)
     }
 
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
@@ -369,8 +370,8 @@ impl SignedPacket {
     }
 
     /// Returns the DNS [Packet] compressed and encoded.
-    pub fn encoded_packet(&self) -> &[u8] {
-        &self.inner.borrow_owner()[104..]
+    pub fn encoded_packet(&self) -> Bytes {
+        self.inner.borrow_owner().slice(104..)
     }
 
     /// Return the DNS [Packet].
@@ -478,12 +479,12 @@ impl SignedPacket {
         self.expires_in(min, max) == 0
     }
 
-    // === Private Methods ===
-
     /// Time since the [Self::last_seen] in seconds
-    fn elapsed(&self) -> u32 {
+    pub fn elapsed(&self) -> u32 {
         ((Timestamp::now().as_u64() - self.last_seen.as_u64()) / 1_000_000) as u32
     }
+
+    // === Private Methods ===
 
     /// Creates a [Self] from the serialized representation:
     /// `<32 bytes public_key><64 bytes signature><8 bytes big-endian timestamp in microseconds><encoded DNS packet>`
@@ -497,7 +498,7 @@ impl SignedPacket {
     /// You can skip all these validations by using [Self::from_bytes_unchecked] instead.
     ///
     /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
-    fn from_bytes(bytes: &[u8]) -> Result<SignedPacket, SignedPacketVerifyError> {
+    fn from_bytes(bytes: &Bytes) -> Result<SignedPacket, SignedPacketVerifyError> {
         if bytes.len() < 104 {
             return Err(SignedPacketVerifyError::InvalidSignedPacketBytesLength(
                 bytes.len(),
@@ -523,16 +524,16 @@ impl SignedPacket {
         public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
 
         Ok(SignedPacket {
-            inner: Inner::try_from_bytes(bytes.into())?,
+            inner: Inner::try_from_bytes(bytes.to_owned())?,
             last_seen: Timestamp::now(),
         })
     }
 
     /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
     /// like ones stored on disk or in a database.
-    fn from_bytes_unchecked(bytes: &[u8], last_seen: impl Into<Timestamp>) -> SignedPacket {
+    fn from_bytes_unchecked(bytes: &Bytes, last_seen: impl Into<Timestamp>) -> SignedPacket {
         SignedPacket {
-            inner: Inner::try_from_bytes(bytes.into())
+            inner: Inner::try_from_bytes(bytes.to_owned())
                 .expect("called SignedPacket::from_bytes_unchecked on invalid bytes"),
             last_seen: last_seen.into(),
         }
@@ -626,21 +627,34 @@ impl Clone for SignedPacket {
     }
 }
 
+impl Debug for SignedPacket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SignedPacket")
+            .field("timestamp", &self.timestamp())
+            .field("last_seen", &self.last_seen())
+            .field("public_key", &self.public_key())
+            .field("signature", &self.signature())
+            .field("packet", &self.packet())
+            .finish()
+    }
+}
+
 impl Display for SignedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {},\n    signature: {}\n    records:\n",
+            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {} {},\n    signature: {}\n    records:\n",
             &self.public_key(),
             &self.elapsed(),
             &self.timestamp(),
+            &self.timestamp().format_http_date(),
             &self.signature(),
         )?;
 
         for answer in &self.packet().answers {
             writeln!(
                 f,
-                "        {}  IN  {}  {}\n",
+                "        {}  IN  {}  {}",
                 &answer.name,
                 &answer.ttl,
                 match &answer.rdata {
@@ -714,7 +728,7 @@ pub enum SignedPacketVerifyError {
     PublicKeyError(#[from] PublicKeyError),
 }
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 /// Errors trying to create a new [SignedPacket]
 pub enum SignedPacketBuildError {
     #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
@@ -726,7 +740,7 @@ pub enum SignedPacketBuildError {
     FailedToWrite(#[from] SimpleDnsError),
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use simple_dns::rdata::CNAME;
 
@@ -783,7 +797,7 @@ mod tests {
 
         assert!(SignedPacket::from_relay_payload(
             &signed_packet.public_key(),
-            signed_packet.as_relay_payload()
+            &signed_packet.to_relay_payload()
         )
         .is_ok());
     }
@@ -793,7 +807,7 @@ mod tests {
         let keypair = Keypair::random();
 
         let bytes = vec![0; 1073];
-        let error = SignedPacket::from_relay_payload(&keypair.public_key(), &bytes);
+        let error = SignedPacket::from_relay_payload(&keypair.public_key(), &bytes.into());
 
         assert!(error.is_err());
     }
@@ -848,7 +862,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[test]
     fn to_mutable() {
         let keypair = Keypair::random();
@@ -913,8 +927,8 @@ mod tests {
         assert_eq!(signed_packet.as_bytes(), from_bytes2.as_bytes());
 
         let public_key = keypair.public_key();
-        let payload = signed_packet.as_relay_payload();
-        let from_relay_payload = SignedPacket::from_relay_payload(&public_key, payload).unwrap();
+        let payload = signed_packet.to_relay_payload();
+        let from_relay_payload = SignedPacket::from_relay_payload(&public_key, &payload).unwrap();
         assert_eq!(signed_packet.as_bytes(), from_relay_payload.as_bytes());
     }
 

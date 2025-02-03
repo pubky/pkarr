@@ -1,3 +1,13 @@
+//! A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays) and
+//! [resolver](https://pkarr.org/resolvers).
+//!
+//! You can run this relay as a binary or a crate for testing purposes.
+//!
+
+// TODO: enable
+// #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 mod config;
 mod dht_server;
 mod error;
@@ -7,6 +17,7 @@ mod rate_limiting;
 use std::{
     net::{SocketAddr, SocketAddrV4, TcpListener},
     path::PathBuf,
+    sync::Arc,
 };
 
 use axum::{extract::DefaultBodyLimit, Router};
@@ -19,6 +30,7 @@ use tracing::info;
 use pkarr::{extra::lmdb_cache::LmdbCache, Client};
 
 pub use config::Config;
+use url::Url;
 
 #[derive(Debug, Default)]
 pub struct RelayBuilder(Config);
@@ -33,7 +45,7 @@ impl RelayBuilder {
 
     // Configure the port for the internal Mainline DHT node to listen on
     pub fn dht_port(mut self, port: u16) -> Self {
-        self.0.pkarr_config.dht_config.port = Some(port);
+        self.0.pkarr.dht(|builder| builder.port(port));
 
         self
     }
@@ -88,6 +100,8 @@ impl Relay {
     pub async unsafe fn start(config: Config) -> anyhow::Result<Self> {
         let mut config = config;
 
+        tracing::debug!(?config, "Pkarr server config");
+
         let cache_path = match config.cache_path {
             Some(path) => path,
             None => {
@@ -100,7 +114,7 @@ impl Relay {
             }
         };
 
-        let cache = Box::new(LmdbCache::open(&cache_path, config.cache_size)?);
+        let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
         let rate_limiter = config
             .rate_limiter
@@ -108,20 +122,27 @@ impl Relay {
 
         let server = Box::new(DhtServer::new(
             cache.clone(),
-            config.pkarr_config.resolvers.clone(),
-            config.pkarr_config.minimum_ttl,
-            config.pkarr_config.maximum_ttl,
+            None,
+            // TODO: move ttl logic to Cache trait.
+            0,
+            100000,
             rate_limiter.clone(),
         ));
 
-        config.pkarr_config.dht_config.server = Some(server);
-        config.pkarr_config.cache = Some(cache);
+        config
+            .pkarr
+            .dht(|builder| builder.custom_server(server))
+            .cache(cache);
 
-        let client = Client::new(config.pkarr_config)?;
+        let client = config.pkarr.build()?;
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
 
-        let resolver_address = client.info()?.dht_info().local_addr();
+        let resolver_address = client
+            .dht()
+            .expect("dht network is enabled")
+            .info()?
+            .local_addr();
         let relay_address = listener.local_addr()?;
 
         info!("Running as a resolver on UDP socket {resolver_address}");
@@ -151,12 +172,66 @@ impl Relay {
         unsafe { Self::start(config).await }
     }
 
+    /// Start an ephemeral Pkarr relay on a random port number.
+    ///
+    /// # Safety
+    /// See [Self::start]
+    pub async fn start_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
+        let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
+
+        let mut config = Config {
+            cache_path: Some(storage.join("pkarr-relay")),
+            http_port: 0,
+            ..Default::default()
+        };
+
+        config
+            .pkarr
+            .bootstrap(&testnet.bootstrap)
+            .dht(|builder| builder.bootstrap(&testnet.bootstrap).server_mode());
+
+        Ok(unsafe { Self::start(config).await? })
+    }
+
+    /// Run a Pkarr relay in a Testnet mode (on port 15411).
+    ///
+    /// # Safety
+    /// See [Self::start]
+    pub async fn start_testnet() -> anyhow::Result<Self> {
+        let testnet = mainline::Testnet::new(10)?;
+
+        let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
+
+        let mut config = Config {
+            http_port: 15411,
+            cache_path: Some(storage.join("pkarr-relay")),
+            rate_limiter: None,
+            ..Default::default()
+        };
+
+        config
+            .pkarr
+            .bootstrap(&testnet.bootstrap)
+            .dht(|builder| builder.server_mode());
+
+        unsafe { Self::start(config).await }
+    }
+
+    /// Returns the address of the internal [mainline] Dht node
+    /// acting as bootstrapping node an a [resolver](https://pkarr.org/resolvers)
     pub fn resolver_address(&self) -> SocketAddrV4 {
         self.resolver_address
     }
 
+    /// Returns the HTTP socket address
     pub fn relay_address(&self) -> SocketAddr {
         self.relay_address
+    }
+
+    /// Returns the localhost Url of this http server.
+    pub fn local_url(&self) -> Url {
+        Url::parse(&format!("http://localhost:{}", self.relay_address.port()))
+            .expect("local_url should be formatted fine")
     }
 
     pub fn shutdown(&self) {
@@ -167,7 +242,7 @@ impl Relay {
 pub fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
     let mut router = Router::new()
         .route(
-            "/:key",
+            "/{key}",
             axum::routing::get(crate::handlers::get).put(crate::handlers::put),
         )
         .route(

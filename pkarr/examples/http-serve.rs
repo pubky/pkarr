@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
 
     // You should republish this every time the socket address change
     // and once an hour otherwise.
-    publish_server_pkarr(&client, &keypair, &addr).await;
+    publish_server_pkarr(&client, &keypair, &addr).await?;
 
     println!("Server running on https://{}", keypair.public_key());
 
@@ -62,15 +62,20 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &SocketAddr) {
+async fn publish_server_pkarr(
+    client: &Client,
+    keypair: &Keypair,
+    socket_addr: &SocketAddr,
+) -> anyhow::Result<()> {
     let mut svcb = SVCB::new(0, ".".try_into().expect("infallible"));
     svcb.set_port(socket_addr.port());
 
     let signed_packet = SignedPacket::builder()
         .https(".".try_into().unwrap(), svcb, 60 * 60)
         .address(".".try_into().unwrap(), socket_addr.ip(), 60 * 60)
-        .sign(&keypair)
-        .unwrap();
+        .sign(&keypair)?;
 
-    client.publish(&signed_packet).await.unwrap();
+    client.publish(&signed_packet, None).await?;
+
+    Ok(())
 }

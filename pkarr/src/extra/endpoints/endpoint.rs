@@ -6,7 +6,7 @@ use crate::{
     PublicKey, SignedPacket,
 };
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
@@ -20,6 +20,7 @@ pub struct Endpoint {
     port: u16,
     /// SocketAddrs from the [SignedPacket]
     addrs: Vec<IpAddr>,
+    params: BTreeMap<u16, Box<[u8]>>,
 }
 
 impl Endpoint {
@@ -29,15 +30,10 @@ impl Endpoint {
     /// 2. Sort them by priority (reverse)
     /// 3. Shuffle records within each priority
     /// 3. If the target is `.`, keep track of A and AAAA records see [rfc9460](https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
-    pub(crate) fn parse(
-        signed_packet: &SignedPacket,
-        target: &str,
-        // TODO: change is_svcb to a better name
-        is_svcb: bool,
-    ) -> Vec<Endpoint> {
+    pub(crate) fn parse(signed_packet: &SignedPacket, target: &str, https: bool) -> Vec<Endpoint> {
         let mut records = signed_packet
             .resource_records(target)
-            .filter_map(|record| get_svcb(record, is_svcb))
+            .filter_map(|record| get_svcb(record, https))
             .collect::<Vec<_>>();
 
         // TODO: support wildcard?
@@ -95,20 +91,42 @@ impl Endpoint {
                     port,
                     public_key: signed_packet.public_key(),
                     addrs,
+                    params: s
+                        .iter_params()
+                        .map(|(key, value)| (key, value.into()))
+                        .collect(),
                 }
             })
             .collect::<Vec<_>>()
     }
 
+    // === Getters ===
+
     /// Returns the [SVCB] record's `target` value.
-    ///
-    /// Useful in web browsers where we can't use [Self::to_socket_addrs]
-    pub fn domain(&self) -> &str {
+    pub fn target(&self) -> &str {
         &self.target
     }
 
-    pub fn port(&self) -> u16 {
-        self.port
+    /// Returns the [SVCB] record's `target` value, if it is an ICANN domain.
+    ///
+    /// Returns `None` if the target was `.` or a z32 encoded public key.
+    ///
+    /// Useful in web browsers where we can't use [Self::to_socket_addrs]
+    pub fn domain(&self) -> Option<&str> {
+        if self.target != "." && self.target.parse::<PublicKey>().is_err() {
+            Some(&self.target)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the port number of this endpoint if set to non-zero value.
+    pub fn port(&self) -> Option<u16> {
+        if self.port > 0 {
+            Some(self.port)
+        } else {
+            None
+        }
     }
 
     /// Return the [PublicKey] of the [SignedPacket] this endpoint was found at.
@@ -118,6 +136,8 @@ impl Endpoint {
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
+
+    // === Public Methods ===
 
     /// Return an iterator of [SocketAddr], either by resolving the [Endpoint::domain] using normal DNS,
     /// or, if the target is ".", return the [RData::A] or [RData::AAAA] records
@@ -141,30 +161,35 @@ impl Endpoint {
                 .map_or(vec![], |v| v.collect::<Vec<_>>())
         }
     }
+
+    // Returns a service parameter.
+    pub fn get_param(&self, key: u16) -> Option<&[u8]> {
+        self.params.get(&key).map(|v| v.as_ref())
+    }
 }
 
-fn get_svcb<'a>(record: &'a ResourceRecord, is_svcb: bool) -> Option<&'a SVCB<'a>> {
+fn get_svcb<'a>(record: &'a ResourceRecord, get_https: bool) -> Option<&'a SVCB<'a>> {
     match &record.rdata {
         RData::SVCB(svcb) => {
-            if is_svcb {
-                Some(svcb)
-            } else {
+            if get_https {
                 None
+            } else {
+                Some(svcb)
             }
         }
 
         RData::HTTPS(curr) => {
-            if is_svcb {
-                None
-            } else {
+            if get_https {
                 Some(&curr.0)
+            } else {
+                None
             }
         }
         _ => None,
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 
@@ -201,16 +226,16 @@ mod tests {
         let tld = keypair.public_key();
 
         // Follow foo.tld HTTPS records
-        let endpoint = Endpoint::parse(&signed_packet, &format!("foo.{tld}"), false)
+        let endpoint = Endpoint::parse(&signed_packet, &format!("foo.{tld}"), true)
             .pop()
             .unwrap();
-        assert_eq!(endpoint.domain(), "https.example.com");
+        assert_eq!(endpoint.domain(), Some("https.example.com"));
 
         // Follow _foo.tld SVCB records
-        let endpoint = Endpoint::parse(&signed_packet, &format!("_foo.{tld}"), true)
+        let endpoint = Endpoint::parse(&signed_packet, &format!("_foo.{tld}"), false)
             .pop()
             .unwrap();
-        assert_eq!(endpoint.domain(), "protocol.example.com");
+        assert_eq!(endpoint.domain(), Some("protocol.example.com"));
     }
 
     #[test]
@@ -238,12 +263,13 @@ mod tests {
         let endpoint = Endpoint::parse(
             &signed_packet,
             &signed_packet.public_key().to_string(),
-            false,
+            true,
         )
         .pop()
         .unwrap();
 
-        assert_eq!(endpoint.domain(), ".");
+        assert_eq!(endpoint.target(), ".");
+        assert_eq!(endpoint.domain(), None);
 
         let mut addrs = endpoint.to_socket_addrs();
         addrs.sort();

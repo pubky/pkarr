@@ -11,17 +11,15 @@ use tracing::{instrument, Level};
 
 use crate::Client;
 
-use crate::extra::endpoints::EndpointsResolver;
-
 #[derive(Debug)]
-pub struct CertVerifier<T: EndpointsResolver + Send + Sync + Debug + Clone>(T);
+pub struct CertVerifier(Client);
 
 static SUPPORTED_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[webpki::ring::ED25519],
     mapping: &[(SignatureScheme::ED25519, &[webpki::ring::ED25519])],
 };
 
-impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for CertVerifier<T> {
+impl ServerCertVerifier for CertVerifier {
     #[instrument(ret(level = Level::TRACE), err(level = Level::TRACE))]
     /// Verify Pkarr public keys
     fn verify_server_cert(
@@ -111,21 +109,14 @@ impl<T: EndpointsResolver + Send + Sync + Debug + Clone> ServerCertVerifier for 
     }
 }
 
-impl<T: EndpointsResolver + Send + Sync + Debug + Clone> CertVerifier<T> {
-    pub(crate) fn new(pkarr_client: T) -> Self {
+impl CertVerifier {
+    pub(crate) fn new(pkarr_client: Client) -> Self {
         CertVerifier(pkarr_client)
     }
 }
 
-impl From<Client> for CertVerifier<Client> {
+impl From<Client> for CertVerifier {
     fn from(pkarr_client: Client) -> Self {
-        CertVerifier::new(pkarr_client)
-    }
-}
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-impl From<crate::client::relay::Client> for CertVerifier<crate::client::relay::Client> {
-    fn from(pkarr_client: crate::client::relay::Client) -> Self {
         CertVerifier::new(pkarr_client)
     }
 }
@@ -136,22 +127,7 @@ impl From<Client> for rustls::ClientConfig {
     ///
     /// If you want more control, create a [CertVerifier] from this [Client] to use as a [custom certificate verifier][DangerousClientConfigBuilder::with_custom_certificate_verifier].
     fn from(client: Client) -> Self {
-        let verifier: CertVerifier<Client> = client.into();
-
-        create_client_config_with_ring()
-            .with_custom_certificate_verifier(Arc::new(verifier))
-            .with_no_client_auth()
-    }
-}
-
-#[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-impl From<crate::client::relay::Client> for rustls::ClientConfig {
-    /// Creates a [rustls::ClientConfig] that uses [rustls::crypto::ring::default_provider()]
-    /// and no client auth and follows the [tls for pkarr domains](https://pkarr.org/tls) spec.
-    ///
-    /// If you want more control, create a [CertVerifier] from this [Client] to use as a [custom certificate verifier][DangerousClientConfigBuilder::with_custom_certificate_verifier].
-    fn from(client: crate::client::relay::Client) -> Self {
-        let verifier: CertVerifier<crate::client::relay::Client> = client.into();
+        let verifier: CertVerifier = client.into();
 
         create_client_config_with_ring()
             .with_custom_certificate_verifier(Arc::new(verifier))

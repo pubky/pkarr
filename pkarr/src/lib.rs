@@ -3,13 +3,17 @@
 #![doc = document_features::document_features!()]
 //!
 
-// TODO: once we merge udp and relay clients, we should have a "client" feature
+// TODO: deny missing_docs
+#![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 // Modules
-#[cfg(any(target_arch = "wasm32", feature = "relay", feature = "dht"))]
+#[cfg(feature = "__client")]
 pub mod client;
 pub mod extra;
+#[cfg(feature = "keys")]
 mod keys;
+#[cfg(feature = "signed_packet")]
 mod signed_packet;
 
 /// Default minimum TTL: 5 minutes
@@ -20,19 +24,20 @@ pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 /// Default [relay](https://pkarr.org/relays)s
 pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.org"];
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 /// Default [resolver](https://pkarr.org/resolvers)s
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
 
 // Exports
-#[cfg(any(target_arch = "wasm32", feature = "relay", feature = "dht"))]
+#[cfg(feature = "__client")]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
+#[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
+#[cfg(feature = "signed_packet")]
 pub use signed_packet::SignedPacket;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-pub use client::dht::Info;
-#[cfg(any(target_arch = "wasm32", feature = "dht"))]
-pub use client::{Client, Config};
+#[cfg(feature = "__client")]
+pub use client::{Client, ClientBuilder};
 
 // Rexports
 pub use simple_dns as dns;
@@ -40,13 +45,14 @@ pub use simple_dns as dns;
 pub mod errors {
     //! Exported errors
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-    pub use super::client::dht::{ClientWasShutdown, PublishError};
+    #[cfg(feature = "__client")]
+    pub use super::client::native::{
+        BuildError, ClientWasShutdown, ConcurrencyError, PublishError,
+    };
 
-    #[cfg(any(target_arch = "wasm32", feature = "relay"))]
-    pub use super::client::relay::{EmptyListOfRelays, PublishToRelayError};
-
+    #[cfg(feature = "keys")]
     pub use super::keys::PublicKeyError;
-    pub use super::signed_packet::SignedPacketBuildError;
-    pub use super::signed_packet::SignedPacketVerifyError;
+
+    #[cfg(feature = "signed_packet")]
+    pub use super::signed_packet::{SignedPacketBuildError, SignedPacketVerifyError};
 }

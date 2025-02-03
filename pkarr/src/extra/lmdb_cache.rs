@@ -2,6 +2,7 @@
 
 use std::{
     borrow::Cow,
+    fmt::Debug,
     fs,
     path::Path,
     sync::{Arc, RwLock},
@@ -67,7 +68,7 @@ impl<'a> BytesDecode<'a> for SignedPacketCodec {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 /// Persistent [crate::Cache] implementation using LMDB's bindings [heed]
 pub struct LmdbCache {
     capacity: usize,
@@ -76,6 +77,15 @@ pub struct LmdbCache {
     key_to_time_table: KeyToTimeTable,
     time_to_key_table: TimeToKeyTable,
     batch: Arc<RwLock<Vec<CacheKey>>>,
+}
+
+impl Debug for LmdbCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LmdbCache")
+            .field("capacity", &self.capacity)
+            .field("env", &self.env)
+            .finish_non_exhaustive()
+    }
 }
 
 impl LmdbCache {
