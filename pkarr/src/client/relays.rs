@@ -19,9 +19,8 @@ use reqwest::{
     Client, StatusCode,
 };
 
+use super::{ConcurrencyError, PublishError, QueryError};
 use crate::{PublicKey, SignedPacket};
-
-use super::native::{ConcurrencyError, PublishError, QueryError};
 
 pub struct RelaysClient {
     relays: Box<[Url]>,

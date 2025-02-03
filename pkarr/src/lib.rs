@@ -59,9 +59,7 @@ pub mod errors {
         feature = "__client",
         not(all(target_family = "wasm", not(feature = "relays")))
     ))]
-    pub use super::client::native::{
-        BuildError, ClientWasShutdown, ConcurrencyError, PublishError,
-    };
+    pub use super::client::{BuildError, ClientWasShutdown, ConcurrencyError, PublishError};
 
     #[cfg(feature = "keys")]
     pub use super::keys::PublicKeyError;

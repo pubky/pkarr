@@ -1,4 +1,4 @@
-//! Combined client tests
+//! Client native tests
 
 use std::{thread, time::Duration};
 

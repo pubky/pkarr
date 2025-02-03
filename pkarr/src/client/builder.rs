@@ -10,7 +10,7 @@ use crate::{Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL}
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
 use crate::DEFAULT_RESOLVERS;
 
-use super::native::{BuildError, Client};
+use crate::{errors::BuildError, Client};
 
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::rpc::DEFAULT_REQUEST_TIMEOUT;
