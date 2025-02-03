@@ -6,29 +6,11 @@ use std::fmt::Debug;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-use mainline::MutableItem;
-
 use crate::SignedPacket;
 
 /// The sha1 hash of the [crate::PublicKey] used as the key in [Cache].
 pub type CacheKey = [u8; 20];
 
-#[cfg(feature = "dht")]
-impl From<&crate::PublicKey> for CacheKey {
-    fn from(public_key: &crate::PublicKey) -> CacheKey {
-        MutableItem::target_from_key(public_key.as_bytes(), None).into()
-    }
-}
-
-#[cfg(feature = "dht")]
-impl From<crate::PublicKey> for CacheKey {
-    fn from(public_key: crate::PublicKey) -> CacheKey {
-        (&public_key).into()
-    }
-}
-
-#[cfg(not(feature = "dht"))]
 impl From<&crate::PublicKey> for CacheKey {
     fn from(public_key: &crate::PublicKey) -> CacheKey {
         let mut encoded = vec![];
@@ -41,7 +23,6 @@ impl From<&crate::PublicKey> for CacheKey {
     }
 }
 
-#[cfg(not(feature = "dht"))]
 impl From<crate::PublicKey> for CacheKey {
     fn from(value: crate::PublicKey) -> Self {
         (&value).into()

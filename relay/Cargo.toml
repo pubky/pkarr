@@ -37,6 +37,3 @@ url = "2.5.4"
 
 [package.metadata.docs.rs]
 all-features = true
-
-[lints.clippy]
-unwrap_used = "deny"

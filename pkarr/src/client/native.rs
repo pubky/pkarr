@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::{hash::Hash, num::NonZeroUsize};
 
-#[cfg(feature = "dht")]
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 use mainline::{
     errors::{DhtWasShutdown, PutMutableError},
     Dht,
@@ -26,7 +26,7 @@ pub struct Inner {
     minimum_ttl: u32,
     maximum_ttl: u32,
     cache: Option<Arc<dyn Cache>>,
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     dht: Option<Dht>,
     #[cfg(feature = "relays")]
     relays: Option<RelaysClient>,
@@ -52,13 +52,16 @@ impl Client {
 
         cross_debug!("Starting Pkarr Client {:?}", config);
 
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         let dht = if let Some(builder) = config.dht {
             Some(builder.build().map_err(BuildError::DhtBuildError)?)
         } else {
             None
         };
+        #[cfg(not(all(feature = "dht", not(target_family = "wasm"))))]
+        let dht: Option<()> = None;
 
-        #[cfg(feature = "relays")]
+        #[cfg(any(feature = "relays", target_family = "wasm"))]
         let relays = if let Some(ref relays) = config.relays {
             if relays.is_empty() {
                 return Err(BuildError::EmptyListOfRelays);
@@ -71,23 +74,10 @@ impl Client {
         } else {
             None
         };
+        #[cfg(not(any(feature = "relays", target_family = "wasm")))]
+        let relays: Option<()> = None;
 
-        #[cfg(feature = "dht")]
-        if dht.is_none() {
-            #[cfg(feature = "relays")]
-            if relays.is_none() {
-                return Err(BuildError::NoNetwork);
-            }
-            #[cfg(not(feature = "relays"))]
-            return Err(BuildError::NoNetwork);
-        }
-        #[cfg(feature = "relays")]
-        if relays.is_none() {
-            #[cfg(feature = "dht")]
-            if dht.is_none() {
-                return Err(BuildError::NoNetwork);
-            }
-            #[cfg(not(feature = "dht"))]
+        if dht.is_none() && relays.is_none() {
             return Err(BuildError::NoNetwork);
         }
 
@@ -95,7 +85,7 @@ impl Client {
             minimum_ttl: config.minimum_ttl.min(config.maximum_ttl),
             maximum_ttl: config.maximum_ttl.max(config.minimum_ttl),
             cache,
-            #[cfg(feature = "dht")]
+            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             dht,
             #[cfg(feature = "relays")]
             relays,
@@ -124,7 +114,7 @@ impl Client {
     /// Gives you access to methods like [mainline::Dht::info],
     /// [mainline::Dht::bootstrapped], and [mainline::Dht::to_bootstrap]
     /// among ther rest of the API.
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub fn dht(&self) -> Option<mainline::Dht> {
         self.0.dht.as_ref().cloned()
     }
@@ -215,23 +205,29 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        async_compat::Compat::new(async {
+        async fn execute(
+            client: Client,
+            signed_packet: &SignedPacket,
+            cas: Option<Timestamp>,
+        ) -> Result<(), PublishError> {
             let cache_key: CacheKey = signed_packet.public_key().into();
 
-            self.check_conflict(signed_packet, &cache_key, cas)?;
+            client.check_conflict(signed_packet, &cache_key, cas)?;
 
-            if let Some(cache) = self.cache() {
+            if let Some(cache) = client.cache() {
                 cache.put(&cache_key, signed_packet);
             }
 
             // TODO: support other modes than Parallel.
 
             // Handle DHT and Relay futures based on feature flags and target family
-            #[cfg(feature = "dht")]
-            let dht_future = self.dht().map(|node| map_dht_put(node, signed_packet, cas));
+            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+            let dht_future = client
+                .dht()
+                .map(|node| map_dht_put(node, signed_packet, cas));
 
             #[cfg(feature = "relays")]
-            let relays_future = self
+            let relays_future = client
                 .0
                 .relays
                 .as_ref()
@@ -257,8 +253,9 @@ impl Client {
             };
 
             result
-        })
-        .await
+        }
+
+        async_compat::Compat::new(execute(self.clone(), signed_packet, cas)).await
     }
 
     /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
@@ -459,7 +456,7 @@ impl Client {
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
     ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
-        #[cfg(feature = "dht")]
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         let dht_stream = match self.dht() {
             Some(node) => map_dht_stream(node.as_async().get_mutable(
                 public_key.as_bytes(),
@@ -487,6 +484,7 @@ impl Client {
         #[cfg(all(feature = "dht", feature = "relays"))]
         let stream = match (dht_stream, relays_stream) {
             (Some(s), None) | (None, Some(s)) => s,
+            // TODO: support other modes than Parallel.
             (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
         };
@@ -550,13 +548,14 @@ impl Client {
 
 impl Drop for Inner {
     fn drop(&mut self) {
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         if let Some(ref mut dht) = self.dht {
             dht.shutdown();
         };
     }
 }
 
-#[cfg(feature = "dht")]
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 fn map_dht_stream(
     stream: mainline::async_dht::GetStream<mainline::MutableItem>,
 ) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
@@ -575,7 +574,7 @@ fn map_dht_stream(
     );
 }
 
-#[cfg(feature = "dht")]
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 async fn map_dht_put(
     node: mainline::Dht,
     signed_packet: &SignedPacket,
@@ -594,12 +593,12 @@ pub enum BuildError {
     /// Client configured without Mainline node or relays.
     NoNetwork,
 
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Failed to build the Dht client {0}")]
     /// Failed to build the Dht client.
     DhtBuildError(std::io::Error),
 
-    #[cfg(feature = "relays")]
+    #[cfg(any(feature = "relays", target_family = "wasm"))]
     #[error("Passed an empty list of relays")]
     /// Passed an empty list of relays
     EmptyListOfRelays,
@@ -616,6 +615,7 @@ impl std::fmt::Display for ClientWasShutdown {
     }
 }
 
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 impl From<DhtWasShutdown> for ClientWasShutdown {
     fn from(_: DhtWasShutdown) -> Self {
         Self
@@ -644,12 +644,12 @@ pub enum QueryError {
 
     // === Mainline only errors ===
     //
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Publishing SignedPacket to Mainline failed.")]
     ///Publishing SignedPacket to Mainline failed.
     NoClosestNodes,
 
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Publishing SignedPacket to Mainline failed.")]
     ///Publishing SignedPacket to Mainline failed, received an error response.
     DhtErrorResponse(mainline::rpc::messages::ErrorSpecific),
@@ -662,6 +662,7 @@ impl Eq for QueryError {
 impl PartialEq for QueryError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             (
                 QueryError::DhtErrorResponse(self_error),
                 QueryError::DhtErrorResponse(other_error),
@@ -674,10 +675,16 @@ impl PartialEq for QueryError {
 impl Hash for QueryError {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
+            QueryError::Timeout => 0.hash(state),
+            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+            QueryError::NoClosestNodes => 1.hash(state),
+            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             QueryError::DhtErrorResponse(error) => {
-                state.write(&error.code.to_be_bytes());
+                let mut bytes = vec![2];
+                bytes.extend_from_slice(&error.code.to_be_bytes());
+
+                state.write(bytes.as_slice());
             }
-            error => error.hash(state),
         }
     }
 }
@@ -710,6 +717,7 @@ impl From<ClientWasShutdown> for PublishError {
     }
 }
 
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 impl From<PutMutableError> for PublishError {
     fn from(value: PutMutableError) -> Self {
         match value {

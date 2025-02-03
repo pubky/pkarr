@@ -33,7 +33,7 @@ impl Endpoint {
     pub(crate) fn parse(signed_packet: &SignedPacket, target: &str, https: bool) -> Vec<Endpoint> {
         let mut records = signed_packet
             .resource_records(target)
-            .flat_map(|record| get_svcb(record, https))
+            .filter_map(|record| get_svcb(record, https))
             .collect::<Vec<_>>();
 
         // TODO: support wildcard?

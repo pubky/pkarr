@@ -1,3 +1,13 @@
+//! A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays) and
+//! [resolver](https://pkarr.org/resolvers).
+//!
+//! You can run this relay as a binary or a crate for testing purposes.
+//!
+
+// TODO: enable
+// #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 mod config;
 mod dht_server;
 mod error;

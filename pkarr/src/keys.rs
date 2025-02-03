@@ -1,12 +1,12 @@
 //! Utility structs for Ed25519 keys.
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
 use ed25519_dalek::pkcs8::{Document, EncodePrivateKey, EncodePublicKey};
 use ed25519_dalek::{
     SecretKey, Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey,
 };
 use rand::rngs::OsRng;
-#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
 use rustls::{
     crypto::ring::sign::any_eddsa_type, pki_types::CertificateDer,
     server::AlwaysResolvesServerRawPublicKeys, sign::CertifiedKey, ServerConfig,
@@ -59,7 +59,7 @@ impl Keypair {
         self.public_key().to_uri_string()
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
     /// Return a RawPublicKey certified key according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
     /// useful to use with [rustls::ConfigBuilder::with_cert_resolver] and [rustls::server::AlwaysResolvesServerRawPublicKeys]
     pub fn to_rpk_certified_key(&self) -> CertifiedKey {
@@ -81,7 +81,7 @@ impl Keypair {
         CertifiedKey::new(vec![client_public_key_as_cert], client_private_key)
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
     /// Create a [rustls::ServerConfig] using this keypair as a RawPublicKey certificate according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
     pub fn to_rpk_rustls_server_config(&self) -> ServerConfig {
         let cert_resolver =
@@ -95,7 +95,7 @@ impl Keypair {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
 impl From<Keypair> for ServerConfig {
     /// calls [Keypair::to_rpk_rustls_server_config]
     fn from(keypair: Keypair) -> Self {
@@ -103,7 +103,7 @@ impl From<Keypair> for ServerConfig {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
 impl From<&Keypair> for ServerConfig {
     /// calls [Keypair::to_rpk_rustls_server_config]
     fn from(keypair: &Keypair) -> Self {
@@ -148,7 +148,7 @@ impl PublicKey {
         self.0.as_bytes()
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
     pub fn to_public_key_der(&self) -> Document {
         self.0.to_public_key_der().expect("to_public_key_der")
     }
@@ -551,7 +551,7 @@ mod tests {
         assert_eq!(public_key.verifying_key().as_bytes(), &expected);
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
     #[test]
     fn pkcs8() {
         let str = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
@@ -571,7 +571,7 @@ mod tests {
         )
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "tls"))]
+    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
     #[test]
     fn certificate() {
         use rustls::SignatureAlgorithm;

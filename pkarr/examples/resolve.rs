@@ -61,7 +61,6 @@ async fn main() -> anyhow::Result<()> {
     resolve(&client, &public_key, false).await;
 
     println!("Resolving most recent..");
-    println!("=== SUBSEQUENT LOOKUP ===");
     resolve(&client, &public_key, true).await;
 
     Ok(())

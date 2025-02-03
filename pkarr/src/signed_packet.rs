@@ -862,7 +862,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[test]
     fn to_mutable() {
         let keypair = Keypair::random();

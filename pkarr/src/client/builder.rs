@@ -1,20 +1,23 @@
-use std::{
-    net::{SocketAddr, SocketAddrV4, ToSocketAddrs},
-    sync::Arc,
-    time::Duration,
-};
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+use std::net::{SocketAddr, SocketAddrV4, ToSocketAddrs};
+use std::{sync::Arc, time::Duration};
 
-#[cfg(feature = "relays")]
+#[cfg(any(feature = "relays", target_family = "wasm"))]
 use url::Url;
 
-#[cfg(feature = "dht")]
-use mainline::rpc::DEFAULT_REQUEST_TIMEOUT;
+use crate::{Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
-use crate::{
-    Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL, DEFAULT_RESOLVERS,
-};
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+use crate::DEFAULT_RESOLVERS;
 
 use super::native::{BuildError, Client};
+
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::rpc::DEFAULT_REQUEST_TIMEOUT;
+#[cfg(not(all(feature = "dht", not(target_family = "wasm"))))]
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+
+// TODO: default to not using both resolvers and relays.
 
 /// [Client]'s Config
 #[derive(Clone)]
@@ -32,7 +35,7 @@ pub struct Config {
     /// Custom [Cache] implementation, defaults to [crate::InMemoryCache]
     pub cache: Option<Arc<dyn Cache>>,
 
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub dht: Option<mainline::DhtBuilder>,
     /// A set of [resolver](https://pkarr.org/resolvers)s
     /// to be queried alongside the Dht routing table, to
@@ -40,11 +43,11 @@ pub struct Config {
     /// Dht is missing values not't republished often enough.
     ///
     /// Defaults to [DEFAULT_RESOLVERS]
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub resolvers: Option<Vec<SocketAddrV4>>,
 
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
-    #[cfg(feature = "relays")]
+    #[cfg(any(feature = "relays", target_family = "wasm"))]
     pub relays: Option<Vec<Url>>,
     /// Tokio runtime to use in relyas client.
 
@@ -52,7 +55,7 @@ pub struct Config {
     ///
     /// The longer this timeout the longer resolve queries will take before consider failed.
     ///
-    /// Defaults to [mainline::rpc::DEFAULT_REQUEST_TIMEOUT]
+    /// Defaults to [DEFAULT_REQUEST_TIMEOUT]
     pub request_timeout: Duration,
 }
 
@@ -64,12 +67,12 @@ impl Default for Config {
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
 
-            #[cfg(feature = "dht")]
+            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             dht: Some(mainline::Dht::builder()),
-            #[cfg(feature = "dht")]
+            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
 
-            #[cfg(feature = "relays")]
+            #[cfg(any(feature = "relays", target_family = "wasm"))]
             relays: Some(
                 crate::DEFAULT_RELAYS
                     .iter()
@@ -121,9 +124,6 @@ impl ClientBuilder {
     /// [mainline::Config::bootstrap], [Config::resolvers], and [Config::relays],
     /// effectively disabling the use of both [mainline] and [Relays](https://pkarr.org/relays).
     ///
-    /// You can [Self::use_mainline] or [Self::use_relays] to add both or either
-    /// back with the default configurations for each.
-    ///
     /// Or you can use [Self::relays] to use custom [Relays](https://pkarr.org/relays).
     ///
     /// Similarly you can use [Self::resolvers] and / or [Self::bootstrap] to use [mainline]
@@ -132,15 +132,6 @@ impl ClientBuilder {
         self.no_dht();
         self.no_resolvers();
         self.no_relays();
-
-        self
-    }
-
-    /// Reenable using [mainline] DHT with [DEFAULT_RESOLVERS] and [mainline::Config::default].
-    #[cfg(feature = "dht")]
-    pub fn use_dht(&mut self) -> &mut Self {
-        self.0.resolvers = Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS));
-        self.0.dht = Some(mainline::DhtBuilder::default());
 
         self
     }
@@ -226,34 +217,11 @@ impl ClientBuilder {
     }
 
     #[cfg(feature = "dht")]
-    /// Re-enable using [Resolvers](https://pkarr.org/resolvers) with the [DEFAULT_RESOLVERS].
-    pub fn use_resolvers(&mut self) -> &mut Self {
-        self.0.resolvers = Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS));
-
-        self
-    }
-
-    #[cfg(feature = "dht")]
     /// Extend the current [Config::resolvers] with extra resolvers.
     ///
     /// If you want to set (override) the [Config::resolvers], use [Self::resolvers]
     pub fn extra_bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
         self.dht(|b| b.extra_bootstrap(bootstrap));
-
-        self
-    }
-
-    #[cfg(feature = "relays")]
-    /// Reenable using [Config::relays] with [crate::DEFAULT_RELAYS].
-    pub fn use_relays(&mut self) -> &mut Self {
-        self.0.relays = Some(
-            crate::DEFAULT_RELAYS
-                .iter()
-                .map(|s| {
-                    Url::parse(s).expect("DEFAULT_RELAYS should be parsed to Url successfully.")
-                })
-                .collect(),
-        );
 
         self
     }
@@ -336,6 +304,7 @@ impl ClientBuilder {
     /// sooner than the default of [mainline::rpc::DEFAULT_REQUEST_TIMEOUT].
     pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.0.request_timeout = timeout;
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         self.0.dht.as_mut().map(|b| b.request_timeout(timeout));
 
         self
@@ -346,6 +315,7 @@ impl ClientBuilder {
     }
 }
 
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<SocketAddrV4> {
     resolvers
         .iter()
