@@ -8,7 +8,10 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 // Modules
-#[cfg(feature = "__client")]
+#[cfg(all(
+    feature = "__client",
+    not(all(target_family = "wasm", not(feature = "relays")))
+))]
 pub mod client;
 pub mod extra;
 #[cfg(feature = "keys")]
@@ -29,23 +32,33 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
 
 // Exports
-#[cfg(feature = "__client")]
+#[cfg(all(
+    feature = "__client",
+    not(all(target_family = "wasm", not(feature = "relays")))
+))]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
 #[cfg(feature = "signed_packet")]
 pub use signed_packet::SignedPacket;
 
-#[cfg(feature = "__client")]
+#[cfg(all(
+    feature = "__client",
+    not(all(target_family = "wasm", not(feature = "relays")))
+))]
 pub use client::{Client, ClientBuilder};
 
 // Rexports
+#[cfg(feature = "signed_packet")]
 pub use simple_dns as dns;
 
 pub mod errors {
     //! Exported errors
 
-    #[cfg(feature = "__client")]
+    #[cfg(all(
+        feature = "__client",
+        not(all(target_family = "wasm", not(feature = "relays")))
+    ))]
     pub use super::client::native::{
         BuildError, ClientWasShutdown, ConcurrencyError, PublishError,
     };

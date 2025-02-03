@@ -67,8 +67,11 @@ impl Client {
                 return Err(BuildError::EmptyListOfRelays);
             }
 
-            let relays_client =
-                RelaysClient::new(relays.clone().into_boxed_slice(), config.request_timeout);
+            let relays_client = RelaysClient::new(
+                relays.clone().into_boxed_slice(),
+                #[cfg(not(target_family = "wasm"))]
+                config.request_timeout,
+            );
 
             Some(relays_client)
         } else {
@@ -218,44 +221,15 @@ impl Client {
                 cache.put(&cache_key, signed_packet);
             }
 
-            // TODO: support other modes than Parallel.
-
-            // Handle DHT and Relay futures based on feature flags and target family
-            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-            let dht_future = client
-                .dht()
-                .map(|node| map_dht_put(node, signed_packet, cas));
-
-            #[cfg(feature = "relays")]
-            let relays_future = client
-                .0
-                .relays
-                .as_ref()
-                .map(|relays| relays.publish(signed_packet, cas));
-
-            #[cfg(all(feature = "dht", not(feature = "relays")))]
-            let result = dht_future.expect("infallible").await;
-
-            #[cfg(all(feature = "relays", not(feature = "dht")))]
-            let result = relays_future.expect("infallible").await;
-
-            #[cfg(all(feature = "dht", feature = "relays"))]
-            let result = if dht_future.is_some() && relays_future.is_some() {
-                futures_lite::future::or(
-                    dht_future.expect("infallible"),
-                    relays_future.expect("infallible"),
-                )
-                .await
-            } else if dht_future.is_some() {
-                dht_future.expect("infallible").await
-            } else {
-                relays_future.expect("infallible").await
-            };
-
-            result
+            client.select_publish_future(signed_packet, cas).await
         }
 
-        async_compat::Compat::new(execute(self.clone(), signed_packet, cas)).await
+        #[cfg(not(target_family = "wasm"))]
+        {
+            async_compat::Compat::new(execute(self.clone(), signed_packet, cas)).await
+        }
+        #[cfg(target_family = "wasm")]
+        execute(self.clone(), signed_packet, cas).await
     }
 
     /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
@@ -356,26 +330,34 @@ impl Client {
         &self,
         public_key: &PublicKey,
     ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        async_compat::Compat::new(async {
+        async fn execute(
+            client: Client,
+            public_key: &PublicKey,
+        ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
             let public_key = public_key.clone();
 
             let cache_key: CacheKey = public_key.as_ref().into();
 
-            let cached_packet = self
+            let cached_packet = client
                 .cache()
                 .as_ref()
                 .and_then(|cache| cache.get(&cache_key));
 
             // Stream is a future, so it won't run until we await or spawn it.
-            let mut stream = self.resolve_stream(
+            let mut stream = client.resolve_stream(
                 public_key,
                 cache_key,
                 cached_packet.as_ref().map(|s| s.timestamp()),
             )?;
 
             if let Some(cached_packet) = cached_packet {
-                if cached_packet.is_expired(self.0.minimum_ttl, self.0.maximum_ttl) {
+                if cached_packet.is_expired(client.0.minimum_ttl, client.0.maximum_ttl) {
+                    #[cfg(not(target_family = "wasm"))]
                     tokio::spawn(async move { while stream.next().await.is_some() {} });
+                    #[cfg(target_family = "wasm")]
+                    wasm_bindgen_futures::spawn_local(async move {
+                        while stream.next().await.is_some() {}
+                    });
                 }
 
                 cross_debug!(
@@ -387,9 +369,15 @@ impl Client {
                 let _ = stream.next().await;
             };
 
-            Ok(self.cache().and_then(|cache| cache.get(&cache_key)))
-        })
-        .await
+            Ok(client.cache().and_then(|cache| cache.get(&cache_key)))
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            async_compat::Compat::new(execute(self.clone(), public_key)).await
+        }
+        #[cfg(target_family = "wasm")]
+        execute(self.clone(), public_key).await
     }
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
@@ -449,81 +437,7 @@ impl Client {
 
     // === Private Methods ===
 
-    /// Returns a [Stream] of incoming [SignedPacket]s.
-    pub fn resolve_stream(
-        &self,
-        public_key: PublicKey,
-        cache_key: CacheKey,
-        more_recent_than: Option<Timestamp>,
-    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-        let dht_stream = match self.dht() {
-            Some(node) => map_dht_stream(node.as_async().get_mutable(
-                public_key.as_bytes(),
-                None,
-                more_recent_than.map(|t| t.as_u64() as i64),
-            )?),
-            None => None,
-        };
-
-        #[cfg(feature = "relays")]
-        let relays_stream = self
-            .0
-            .relays
-            .as_ref()
-            .map(|relays| relays.resolve(&public_key, more_recent_than));
-
-        let cache = self.0.cache.clone();
-
-        #[cfg(all(feature = "dht", not(feature = "relays")))]
-        let stream = dht_stream.expect("infallible");
-
-        #[cfg(all(feature = "relays", not(feature = "dht")))]
-        let stream = relays_stream.expect("infallible");
-
-        #[cfg(all(feature = "dht", feature = "relays"))]
-        let stream = match (dht_stream, relays_stream) {
-            (Some(s), None) | (None, Some(s)) => s,
-            // TODO: support other modes than Parallel.
-            (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
-            (None, None) => unreachable!("should not create a client with no network"),
-        };
-
-        // TODO: support other modes than Parallel.
-        let stream = stream.filter_map(move |signed_packet| {
-            let new_packet: Option<SignedPacket> = if let Some(cached) = cache
-                .clone()
-                .and_then(|cache| cache.clone().get_read_only(&cache_key))
-            {
-                if signed_packet.more_recent_than(&cached) {
-                    cross_debug!(
-                        "Received more recent packet than in cache. public_key: {public_key}",
-                    );
-
-                    Some(signed_packet)
-                } else {
-                    None
-                }
-            } else {
-                cross_debug!("Received new packet after cache miss. public_key: {public_key}");
-
-                Some(signed_packet)
-            };
-
-            if let Some(packet) = new_packet {
-                if let Some(cache) = &cache {
-                    cache.put(&cache_key, &packet)
-                };
-
-                Some(packet)
-            } else {
-                None
-            }
-        });
-
-        Ok(Box::pin(stream))
-    }
-
+    /// Check if there is any conflict with existing (cached) packet.
     fn check_conflict(
         &self,
         signed_packet: &SignedPacket,
@@ -543,6 +457,176 @@ impl Client {
         }
 
         Ok(())
+    }
+
+    /// Returns the first result from either the DHT or the Relays client or both.
+    async fn select_publish_future(
+        &self,
+        signed_packet: &SignedPacket,
+        cas: Option<Timestamp>,
+    ) -> Result<(), PublishError> {
+        // TODO: support other modes than Parallel.
+
+        // Handle DHT and Relay futures based on feature flags and target family
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+        let dht_future = self.dht().map(|node| async {
+            node.as_async()
+                .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
+                .await
+                .map(|_| Ok(()))?
+        });
+
+        #[cfg(feature = "relays")]
+        let relays_future = self
+            .0
+            .relays
+            .as_ref()
+            .map(|relays| relays.publish(signed_packet, cas));
+
+        #[cfg(all(
+            all(feature = "dht", not(target_family = "wasm")),
+            not(feature = "relays")
+        ))]
+        let result = dht_future.expect("infallible").await;
+
+        #[cfg(all(
+            feature = "relays",
+            not(all(feature = "dht", not(target_family = "wasm")))
+        ))]
+        let result = relays_future.expect("infallible").await;
+
+        #[cfg(all(all(feature = "dht", not(target_family = "wasm")), feature = "relays"))]
+        let result = if dht_future.is_some() && relays_future.is_some() {
+            futures_lite::future::or(
+                dht_future.expect("infallible"),
+                relays_future.expect("infallible"),
+            )
+            .await
+        } else if dht_future.is_some() {
+            dht_future.expect("infallible").await
+        } else {
+            relays_future.expect("infallible").await
+        };
+
+        result
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn resolve_stream(
+        &self,
+        public_key: PublicKey,
+        cache_key: CacheKey,
+        more_recent_than: Option<Timestamp>,
+    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket>>>, ClientWasShutdown> {
+        let cache = self.0.cache.clone();
+
+        let stream = self
+            .0
+            .relays
+            .as_ref()
+            .expect("infallible")
+            .resolve_futures(&public_key, more_recent_than)
+            .filter_map(|opt| opt)
+            .filter_map(move |signed_packet| {
+                filter_incoming_signed_packet(&public_key, cache.clone(), &cache_key, signed_packet)
+            });
+
+        Ok(Box::pin(stream))
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    /// Returns a [Stream] of incoming [SignedPacket]s.
+    fn resolve_stream(
+        &self,
+        public_key: PublicKey,
+        cache_key: CacheKey,
+        more_recent_than: Option<Timestamp>,
+    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
+        let cache = self.0.cache.clone();
+
+        Ok(self
+            .merged_resolve_stream(&public_key, more_recent_than)?
+            .filter_map(move |signed_packet| {
+                filter_incoming_signed_packet(&public_key, cache.clone(), &cache_key, signed_packet)
+            })
+            .boxed())
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    /// Returns a Stream from both the DHT and Relays client.
+    fn merged_resolve_stream(
+        &self,
+        public_key: &PublicKey,
+        more_recent_than: Option<Timestamp>,
+    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
+        // TODO: support other modes than Parallel.
+        //
+        #[cfg(feature = "dht")]
+        let dht_stream = match self.dht() {
+            Some(node) => map_dht_stream(node.as_async().get_mutable(
+                public_key.as_bytes(),
+                None,
+                more_recent_than.map(|t| t.as_u64() as i64),
+            )?),
+            None => None,
+        };
+
+        #[cfg(feature = "relays")]
+        let relays_stream = self
+            .0
+            .relays
+            .as_ref()
+            .map(|relays| relays.resolve(&public_key, more_recent_than));
+
+        #[cfg(all(feature = "dht", not(feature = "relays")))]
+        let stream = dht_stream.expect("infallible");
+
+        #[cfg(all(feature = "relays", not(feature = "dht")))]
+        let stream = relays_stream.expect("infallible");
+
+        #[cfg(all(feature = "dht", feature = "relays"))]
+        let stream = match (dht_stream, relays_stream) {
+            (Some(s), None) | (None, Some(s)) => s,
+            // TODO: support other modes than Parallel.
+            (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
+            (None, None) => unreachable!("should not create a client with no network"),
+        };
+
+        Ok(Box::pin(stream))
+    }
+}
+
+fn filter_incoming_signed_packet(
+    public_key: &PublicKey,
+    cache: Option<Arc<dyn Cache>>,
+    cache_key: &CacheKey,
+    signed_packet: SignedPacket,
+) -> Option<SignedPacket> {
+    let new_packet: Option<SignedPacket> = if let Some(cached) = cache
+        .clone()
+        .and_then(|cache| cache.clone().get_read_only(cache_key))
+    {
+        if signed_packet.more_recent_than(&cached) {
+            cross_debug!("Received more recent packet than in cache. public_key: {public_key}",);
+
+            Some(signed_packet)
+        } else {
+            None
+        }
+    } else {
+        cross_debug!("Received new packet after cache miss. public_key: {public_key}");
+
+        Some(signed_packet)
+    };
+
+    if let Some(packet) = new_packet {
+        if let Some(cache) = &cache {
+            cache.put(cache_key, &packet)
+        };
+
+        Some(packet)
+    } else {
+        None
     }
 }
 
@@ -574,18 +658,6 @@ fn map_dht_stream(
     );
 }
 
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
-async fn map_dht_put(
-    node: mainline::Dht,
-    signed_packet: &SignedPacket,
-    cas: Option<Timestamp>,
-) -> Result<(), PublishError> {
-    node.as_async()
-        .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
-        .await
-        .map(|_| Ok(()))?
-}
-
 #[derive(thiserror::Error, Debug)]
 /// Errors occuring during building a [Client]
 pub enum BuildError {
@@ -605,6 +677,7 @@ pub enum BuildError {
 }
 
 #[derive(Debug)]
+// TODO: can we avoid this entirely, by restarting the dht node if shutdown?
 pub struct ClientWasShutdown;
 
 impl std::error::Error for ClientWasShutdown {}

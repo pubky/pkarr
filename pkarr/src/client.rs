@@ -12,18 +12,13 @@ macro_rules! cross_debug {
 pub mod cache;
 
 mod builder;
-#[cfg(any(feature = "relays", target_arch = "wasm32"))]
+pub(crate) mod native;
+#[cfg(feature = "relays")]
 mod relays;
 
-// #[cfg(not(target_arch = "wasm32"))]
-pub(crate) mod native;
-// #[cfg(not(target_arch = "wasm32"))]
 pub use native::{Client, ClientBuilder};
 
-// #[cfg(target_arch = "wasm32")]
-// pub(crate) mod web;
-// #[cfg(target_arch = "wasm32")]
-// pub use web::{Client, ClientBuilder, Config};
-
-#[cfg(test)]
+#[cfg(all(test, not(target_family = "wasm")))]
 mod tests;
+#[cfg(all(test, target_family = "wasm"))]
+mod tests_web;

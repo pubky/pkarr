@@ -4,8 +4,8 @@
 //! You can run this relay as a binary or a crate for testing purposes.
 //!
 
-// TODO: enable
-// #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
+// TODO: deny missing_docs
+#![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 mod config;

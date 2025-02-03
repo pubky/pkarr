@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
+#[cfg(not(target_family = "wasm"))]
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
+#[cfg(not(target_family = "wasm"))]
 use std::time::Duration;
 
 use bytes::Bytes;
 use futures_buffered::FuturesUnorderedBounded;
-use futures_lite::{Stream, StreamExt};
+#[cfg(not(target_family = "wasm"))]
+use futures_lite::Stream;
+use futures_lite::StreamExt;
 use pubky_timestamp::Timestamp;
 use url::Url;
 
@@ -22,6 +26,7 @@ use super::native::{ConcurrencyError, PublishError, QueryError};
 pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
+    #[cfg(not(target_family = "wasm"))]
     timeout: Duration,
     pub(crate) inflight_publish: InflightPublishRequests,
 }
@@ -45,16 +50,16 @@ impl Debug for RelaysClient {
 }
 
 impl RelaysClient {
-    pub fn new(relays: Box<[Url]>, timeout: Duration) -> Self {
+    pub fn new(relays: Box<[Url]>, #[cfg(not(target_family = "wasm"))] timeout: Duration) -> Self {
         let inflight_publish = InflightPublishRequests::new(relays.len());
 
         Self {
             relays,
             http_client: Client::builder()
-                .timeout(timeout)
                 .build()
                 .expect("Client building should be infallible"),
 
+            #[cfg(not(target_family = "wasm"))]
             timeout,
             inflight_publish,
         }
@@ -77,6 +82,7 @@ impl RelaysClient {
 
         for relay in &self.relays {
             let http_client = self.http_client.clone();
+            #[cfg(not(target_family = "wasm"))]
             let timeout = self.timeout;
 
             let cas = cas.clone();
@@ -88,9 +94,17 @@ impl RelaysClient {
             let mut inflight = self.inflight_publish.clone();
 
             futures.push(async move {
-                let result = publish_to_relay(http_client, relay, &public_key, body, cas, timeout)
-                    .await
-                    .map_err(map_reqwest_error);
+                let result = publish_to_relay(
+                    http_client,
+                    relay,
+                    &public_key,
+                    body,
+                    cas,
+                    #[cfg(not(target_family = "wasm"))]
+                    timeout,
+                )
+                .await
+                .map_err(map_reqwest_error);
 
                 inflight.add_result(&public_key, result)
             });
@@ -107,11 +121,23 @@ impl RelaysClient {
             .expect("infallible")
     }
 
+    #[cfg(not(target_family = "wasm"))]
     pub fn resolve(
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
+        Box::pin(
+            self.resolve_futures(public_key, more_recent_than)
+                .filter_map(|opt| opt),
+        )
+    }
+
+    pub fn resolve_futures(
+        &self,
+        public_key: &PublicKey,
+        more_recent_than: Option<Timestamp>,
+    ) -> FuturesUnorderedBounded<impl futures_lite::Future<Output = Option<SignedPacket>>> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
 
         let if_modified_since = more_recent_than.map(|t| t.format_http_date());
@@ -121,16 +147,20 @@ impl RelaysClient {
             let relay = relay.clone();
             let public_key = public_key.clone();
             let if_modified_since = if_modified_since.clone();
+            #[cfg(not(target_family = "wasm"))]
+            let timeout = self.timeout;
 
             futures.push(resolve_from_relay(
                 http_client,
                 relay,
                 public_key,
                 if_modified_since,
+                #[cfg(not(target_family = "wasm"))]
+                timeout,
             ));
         });
 
-        Box::pin(futures.filter_map(|opt| opt))
+        futures
     }
 }
 
@@ -290,15 +320,20 @@ pub async fn publish_to_relay(
     public_key: &PublicKey,
     body: Bytes,
     cas: Option<String>,
-    timeout: Duration,
+    #[cfg(not(target_family = "wasm"))] timeout: Duration,
 ) -> Result<(), reqwest::Error> {
     let url = format_url(&relay, public_key);
 
-    let mut request = http_client
-        .put(url.clone())
-        // Publish combines the http latency with the PUT query to the dht
-        // on the relay side, so we should be as generous as possible
-        .timeout(timeout * 3);
+    let mut request = http_client.put(url.clone());
+
+    // TODO: enable for wasm after reqwest release
+    #[cfg(not(target_family = "wasm"))]
+    {
+        request = request
+            // Publish combines the http latency with the PUT query to the dht
+            // on the relay side, so we should be as generous as possible
+            .timeout(timeout * 3);
+    }
 
     if let Some(date) = cas {
         request = request.header(header::IF_UNMODIFIED_SINCE, date);
@@ -377,10 +412,17 @@ pub async fn resolve_from_relay(
     relay: Url,
     public_key: PublicKey,
     if_modified_since: Option<String>,
+    #[cfg(not(target_family = "wasm"))] timeout: Duration,
 ) -> Option<SignedPacket> {
     let url = format_url(&relay, &public_key);
 
     let mut request = http_client.get(url.clone());
+
+    // TODO: enable for wasm after reqwest release
+    #[cfg(not(target_family = "wasm"))]
+    {
+        request = request.timeout(timeout);
+    }
 
     if let Some(httpdate) = if_modified_since {
         request = request.header(

@@ -2,7 +2,7 @@
 use std::net::{SocketAddr, SocketAddrV4, ToSocketAddrs};
 use std::{sync::Arc, time::Duration};
 
-#[cfg(any(feature = "relays", target_family = "wasm"))]
+#[cfg(feature = "relays")]
 use url::Url;
 
 use crate::{Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
@@ -47,7 +47,7 @@ pub struct Config {
     pub resolvers: Option<Vec<SocketAddrV4>>,
 
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
-    #[cfg(any(feature = "relays", target_family = "wasm"))]
+    #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
     /// Tokio runtime to use in relyas client.
 
@@ -72,7 +72,7 @@ impl Default for Config {
             #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
 
-            #[cfg(any(feature = "relays", target_family = "wasm"))]
+            #[cfg(feature = "relays")]
             relays: Some(
                 crate::DEFAULT_RELAYS
                     .iter()
@@ -96,9 +96,9 @@ impl std::fmt::Debug for Config {
         debug_struct.field("maximum_ttl", &self.maximum_ttl);
         debug_struct.field("cache", &self.cache);
 
-        #[cfg(feature = "dht")]
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         debug_struct.field("dht", &self.dht);
-        #[cfg(feature = "dht")]
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         debug_struct.field("resolvers", &self.resolvers);
 
         #[cfg(feature = "relays")]
@@ -138,7 +138,7 @@ impl ClientBuilder {
 
     /// Disable relays, and use the Dht only.
     pub fn no_dht(&mut self) -> &mut Self {
-        #[cfg(feature = "dht")]
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         {
             self.0.dht = None;
         }
@@ -152,7 +152,7 @@ impl ClientBuilder {
     ///
     /// If you want to extend [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes with more nodes, you can
     /// use [Self::extra_bootstrap].
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub fn bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
         self.dht(|b| b.bootstrap(bootstrap));
 
@@ -160,7 +160,7 @@ impl ClientBuilder {
     }
 
     /// Create [Self::dht] if `None`, and allows mutating it with a callback function.
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut mainline::DhtBuilder) -> &mut mainline::DhtBuilder,
@@ -182,14 +182,14 @@ impl ClientBuilder {
     ///
     /// If you want to extend the [Config::resolvers] with more nodes, you can
     /// use [Self::extra_resolvers].
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub fn resolvers(&mut self, resolvers: Option<Vec<String>>) -> &mut Self {
         self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
 
         self
     }
 
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     /// Extend the [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes.
     ///
     /// If you want to set (override) the [Config::dht_config::bootsrtap][mainline::Config::bootstrap],
@@ -208,7 +208,7 @@ impl ClientBuilder {
 
     /// Disable [Config::resolvers]
     pub fn no_resolvers(&mut self) -> &mut Self {
-        #[cfg(feature = "dht")]
+        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         {
             self.0.resolvers = None;
         }
@@ -216,7 +216,7 @@ impl ClientBuilder {
         self
     }
 
-    #[cfg(feature = "dht")]
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     /// Extend the current [Config::resolvers] with extra resolvers.
     ///
     /// If you want to set (override) the [Config::resolvers], use [Self::resolvers]
