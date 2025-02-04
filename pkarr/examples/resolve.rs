@@ -74,18 +74,15 @@ async fn resolve(client: &Client, public_key: &PublicKey, most_recent: bool) {
     } else {
         client.resolve(public_key).await
     } {
-        Ok(Some(signed_packet)) => {
+        Some(signed_packet) => {
             println!(
                 "\nResolved in {:?} milliseconds {}",
                 start.elapsed().as_millis(),
                 signed_packet
             );
         }
-        Ok(None) => {
+        None => {
             println!("\nFailed to resolve {}", public_key);
-        }
-        Err(error) => {
-            println!("Got error: {:?}", error)
         }
     }
 }

@@ -9,7 +9,7 @@ use http::{header, StatusCode};
 use httpdate::HttpDate;
 use pkarr::errors::{ConcurrencyError, PublishError};
 use pubky_timestamp::Timestamp;
-use tracing::{debug, error};
+use tracing::debug;
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
@@ -61,10 +61,6 @@ pub async fn put(
                     Error::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
                 }
             },
-            PublishError::ClientWasShutdown => {
-                error!("Pkarr client was shutdown");
-                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
-            }
             PublishError::Query(query_error) => {
                 debug!(?query_error, "Query error while publishing");
                 Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(query_error))
@@ -82,7 +78,7 @@ pub async fn get(
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    if let Some(signed_packet) = state.client.resolve(&public_key).await? {
+    if let Some(signed_packet) = state.client.resolve(&public_key).await {
         tracing::debug!(?public_key, "cache hit responding with packet!");
 
         let mut response_headers = HeaderMap::new();

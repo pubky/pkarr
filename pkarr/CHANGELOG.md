@@ -33,6 +33,7 @@ All notable changes to pkarr will be documented in this file.
 - Add feature `reqwest-resolve` to create a custom `reqwest::dns::Resolve` implementation from `Client` and `relay::client::Client`
 - Add feature `tls` to create `rustls::ClientConfig` from `Client` and `relay::client::Client` and create `rustls::ServerCongif` from `KeyPair`.
 - Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
+- Add `BlockingClient` wrapper accessed by calling `Client::as_blocking()`.
 
 ### Changed
 
@@ -43,14 +44,14 @@ All notable changes to pkarr will be documented in this file.
 - Make `rand` non-optional, and remove the feature flag.
 - Replace `ureq` with `reqwest` to work with HTTP/2 relays, and Wasm, but you can still use the client outside tokio.
 - Update `simple-dns` so you can't use `Name::new("@")`, instead you should use `Name::new(".")`, `SignedPacket::resource_records("@")` still works.
-- `Client::resolve`, `Client::resolve_sync` return expired cached `SignedPacket` _before_ making query to the network (Relays/Resolvers/Dht) in the background.
+- `Client::resolve`, `BlockingClient::resolve` return expired cached `SignedPacket` _before_ making query to the network (Relays/Resolvers/Dht) in the background.
 - Replace `ClientBuilder::testnet()` with `ClientBuilder::bootstrap()`.
 - `Client::cache()` returns an option, in case the cache size is set to zero.
 - Rename feature `relay` to `relays`.
 - Default client uses both `mainline` and `relays`, and each can be disabled with feature flags or the builder methods.
 - Improve `Debug` and `Display` implementations for `SignedPacket`.
 - update to `mainline` v5.
-- `Client::publish()` takes an optional `cas` argument.
+- `Client::publish()` and `BlockingClien` take an optional `cas` argument.
 
 ### Removed
 
@@ -58,5 +59,5 @@ All notable changes to pkarr will be documented in this file.
 - Removed `SignedPacket::from_packet`.
 - Removed `SignedPacket::packet` getter.
 - Removed rexported `mainline`
-- Removed `Client::shutdown` and `Client::shutdown_sync`, and replaced with shutdown on `Drop`.
+- Removed `Client::shutdown` and `Client::shutdown_sync`.
 - Removed crate level `Error` enum, and replaced with more granular error types.

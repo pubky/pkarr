@@ -11,6 +11,7 @@ macro_rules! cross_debug {
 
 pub mod cache;
 
+pub mod blocking;
 mod builder;
 #[cfg(feature = "relays")]
 mod relays;
@@ -27,10 +28,7 @@ use std::sync::Arc;
 use std::{hash::Hash, num::NonZeroUsize};
 
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-use mainline::{
-    errors::{DhtWasShutdown, PutMutableError},
-    Dht,
-};
+use mainline::{errors::PutMutableError, Dht};
 
 use builder::Config;
 
@@ -217,9 +215,8 @@ impl Client {
     ///
     /// This method may return on of these errors:
     ///
-    /// 1. [Shutdown][PublishError::ClientWasShutdown].
-    /// 2. [QueryError]: when the query fails, and you need to retry or debug the network.
-    /// 3. [ConcurrencyError]: when an write conflict (or the risk of it) is detedcted.
+    /// 1. [QueryError]: when the query fails, and you need to retry or debug the network.
+    /// 2. [ConcurrencyError]: when an write conflict (or the risk of it) is detedcted.
     ///
     /// If you get a [ConcurrencyError]; you should resolver the most recent packet again,
     /// and repeat the steps in the previous example.
@@ -252,92 +249,6 @@ impl Client {
         execute(self.clone(), signed_packet, cas).await
     }
 
-    /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
-    ///
-    /// # Lost Update Problem
-    ///
-    /// Mainline DHT and remote relays form a distributed network, and like all distributed networks,
-    /// it is vulnerable to [Write–write conflict](https://en.wikipedia.org/wiki/Write-write_conflict).
-    ///
-    /// ## Read first
-    ///
-    /// To mitigate the risk of lost updates, you should call the [Self::resolve_most_recent] method
-    /// then start authoring the new [SignedPacket] based on the most recent as in the following example:
-    ///
-    ///```rust
-    /// use mainline::Testnet;
-    /// use pkarr::{Client, SignedPacket, Keypair};
-    ///
-    /// fn run() -> anyhow::Result<()> {
-    ///     let testnet = Testnet::new(3)?;
-    ///     let client = Client::builder()
-    ///         // Disable the default network settings (builtin relays and mainline bootstrap nodes).
-    ///         .no_relays()
-    ///         .bootstrap(&testnet.bootstrap)
-    ///         .build()?;
-    ///
-    ///     let keypair = Keypair::random();
-    ///
-    ///     let (signed_packet, cas) = if let Some(most_recent) = client
-    ///         .resolve_most_recent_sync(&keypair.public_key())?
-    ///     {
-    ///
-    ///         let mut builder = SignedPacket::builder();
-    ///
-    ///         // 1. Optionally inherit all or some of the existing records.
-    ///         for record in most_recent.all_resource_records() {
-    ///             let name = record.name.to_string();
-    ///
-    ///             if name != "foo" && name != "sercert" {
-    ///                 builder = builder.record(record.clone());
-    ///             }
-    ///         };
-    ///
-    ///         // 2. Optionally add more new records.
-    ///         let signed_packet = builder
-    ///             .txt("foo".try_into()?, "bar".try_into()?, 30)
-    ///             .a("secret".try_into()?, 42.into(), 30)
-    ///             .sign(&keypair)?;
-    ///
-    ///         (
-    ///             signed_packet,
-    ///             // 3. Use the most recent [SignedPacket::timestamp] as a `CAS`.
-    ///             Some(most_recent.timestamp())
-    ///         )
-    ///     } else {
-    ///         (
-    ///             SignedPacket::builder()
-    ///                 .txt("foo".try_into()?, "bar".try_into()?, 30)
-    ///                 .a("secret".try_into()?, 42.into(), 30)
-    ///                 .sign(&keypair)?,
-    ///             None
-    ///         )
-    ///     };
-    ///
-    ///     client.publish_sync(&signed_packet, cas)?;
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
-    ///
-    /// ## Errors
-    ///
-    /// This method may return on of these errors:
-    ///
-    /// 1. [Shutdown][PublishError::ClientWasShutdown].
-    /// 2. [QueryError]: when the query fails, and you need to retry or debug the network.
-    /// 3. [ConcurrencyError]: when an write conflict (or the risk of it) is detedcted.
-    ///
-    /// If you get a [ConcurrencyError]; you should resolver the most recent packet again,
-    /// and repeat the steps in the previous example.
-    pub fn publish_sync(
-        &self,
-        signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
-    ) -> Result<(), PublishError> {
-        futures_lite::future::block_on(self.publish(signed_packet, cas))
-    }
-
     // === Resolve ===
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
@@ -346,71 +257,13 @@ impl Client {
     ///
     /// If you want to get the most recent version of a [SignedPacket],
     /// you should use [Self::resolve_most_recent].
-    pub async fn resolve(
-        &self,
-        public_key: &PublicKey,
-    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        async fn execute(
-            client: Client,
-            public_key: &PublicKey,
-        ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-            let public_key = public_key.clone();
-
-            let cache_key: CacheKey = public_key.as_ref().into();
-
-            let cached_packet = client
-                .cache()
-                .as_ref()
-                .and_then(|cache| cache.get(&cache_key));
-
-            // Stream is a future, so it won't run until we await or spawn it.
-            let mut stream = client.resolve_stream(
-                public_key,
-                cache_key,
-                cached_packet.as_ref().map(|s| s.timestamp()),
-            )?;
-
-            if let Some(cached_packet) = cached_packet {
-                if cached_packet.is_expired(client.0.minimum_ttl, client.0.maximum_ttl) {
-                    #[cfg(not(target_family = "wasm"))]
-                    tokio::spawn(async move { while stream.next().await.is_some() {} });
-                    #[cfg(target_family = "wasm")]
-                    wasm_bindgen_futures::spawn_local(async move {
-                        while stream.next().await.is_some() {}
-                    });
-                }
-
-                cross_debug!(
-                    "responding with cached packet even if expired. public_key: {}",
-                    cached_packet.public_key()
-                );
-            } else {
-                // Wait for the earliest positive response.
-                let _ = stream.next().await;
-            };
-
-            Ok(client.cache().and_then(|cache| cache.get(&cache_key)))
-        }
-
+    pub async fn resolve(&self, public_key: &PublicKey) -> Option<SignedPacket> {
         #[cfg(not(target_family = "wasm"))]
         {
-            async_compat::Compat::new(execute(self.clone(), public_key)).await
+            async_compat::Compat::new(self.resolve_inner(public_key)).await
         }
         #[cfg(target_family = "wasm")]
-        execute(self.clone(), public_key).await
-    }
-
-    /// Returns a [SignedPacket] from the cache even if it is expired.
-    /// If there is no packet in the cache, or if the cached packet is expired,
-    /// it will make a DHT query in a background query and caches any more recent packets it receieves.
-    ///
-    /// If you want to get the most recent version of a [SignedPacket],
-    /// you should use [Self::resolve_most_recent_sync].
-    pub fn resolve_sync(
-        &self,
-        public_key: &PublicKey,
-    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        futures_lite::future::block_on(self.resolve(public_key))
+        self.resolve_inner(public_key).await
     }
 
     /// Returns the most recent [SignedPacket] found after querying all
@@ -420,10 +273,7 @@ impl Client {
     /// a new packet.
     ///
     /// This is a best effort, and doesn't guarantee consistency.
-    pub async fn resolve_most_recent(
-        &self,
-        public_key: &PublicKey,
-    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
+    pub async fn resolve_most_recent(&self, public_key: &PublicKey) -> Option<SignedPacket> {
         let cache_key: CacheKey = public_key.as_ref().into();
 
         let cached_packet = self
@@ -435,24 +285,10 @@ impl Client {
             public_key.clone(),
             cache_key,
             cached_packet.map(|s| s.timestamp()),
-        )?;
+        );
         while stream.next().await.is_some() {}
 
-        Ok(self.cache().and_then(|cache| cache.get(&public_key.into())))
-    }
-
-    /// Returns the most recent [SignedPacket] found after querying all
-    /// [mainline] Dht nodes and or [Relays](https:://pkarr.org/relays).
-    ///
-    /// Useful if you want to read the most recent packet before publishing
-    /// a new packet.
-    ///
-    /// This is a best effort, and doesn't guarantee consistency.
-    pub fn resolve_most_recent_sync(
-        &self,
-        public_key: &PublicKey,
-    ) -> Result<Option<SignedPacket>, ClientWasShutdown> {
-        futures_lite::future::block_on(self.resolve_most_recent(public_key))
+        self.cache().and_then(|cache| cache.get(&public_key.into()))
     }
 
     // === Private Methods ===
@@ -531,13 +367,52 @@ impl Client {
         result
     }
 
+    pub(crate) async fn resolve_inner(&self, public_key: &PublicKey) -> Option<SignedPacket> {
+        let public_key = public_key.clone();
+
+        let cache_key: CacheKey = public_key.as_ref().into();
+
+        let cached_packet = self
+            .cache()
+            .as_ref()
+            .and_then(|cache| cache.get(&cache_key));
+
+        // Stream is a future, so it won't run until we await or spawn it.
+        let mut stream = self.resolve_stream(
+            public_key,
+            cache_key,
+            cached_packet.as_ref().map(|s| s.timestamp()),
+        );
+
+        if let Some(cached_packet) = cached_packet {
+            if cached_packet.is_expired(self.0.minimum_ttl, self.0.maximum_ttl) {
+                #[cfg(not(target_family = "wasm"))]
+                tokio::spawn(async move { while stream.next().await.is_some() {} });
+                #[cfg(target_family = "wasm")]
+                wasm_bindgen_futures::spawn_local(
+                    async move { while stream.next().await.is_some() {} },
+                );
+            }
+
+            cross_debug!(
+                "responding with cached packet even if expired. public_key: {}",
+                cached_packet.public_key()
+            );
+        } else {
+            // Wait for the earliest positive response.
+            let _ = stream.next().await;
+        };
+
+        self.cache().and_then(|cache| cache.get(&cache_key))
+    }
+
     #[cfg(target_family = "wasm")]
     fn resolve_stream(
         &self,
         public_key: PublicKey,
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
-    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket>>>, ClientWasShutdown> {
+    ) -> Pin<Box<dyn Stream<Item = SignedPacket>>> {
         let cache = self.0.cache.clone();
 
         let stream = self
@@ -551,7 +426,7 @@ impl Client {
                 filter_incoming_signed_packet(&public_key, cache.clone(), &cache_key, signed_packet)
             });
 
-        Ok(Box::pin(stream))
+        Box::pin(stream)
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -561,15 +436,14 @@ impl Client {
         public_key: PublicKey,
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
-    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
+    ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
         let cache = self.0.cache.clone();
 
-        Ok(self
-            .merged_resolve_stream(&public_key, more_recent_than)?
+        self.merged_resolve_stream(&public_key, more_recent_than)
             .filter_map(move |signed_packet| {
                 filter_incoming_signed_packet(&public_key, cache.clone(), &cache_key, signed_packet)
             })
-            .boxed())
+            .boxed()
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -578,7 +452,7 @@ impl Client {
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
-    ) -> Result<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>, ClientWasShutdown> {
+    ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
         // TODO: support other modes than Parallel.
         //
         #[cfg(feature = "dht")]
@@ -587,7 +461,7 @@ impl Client {
                 public_key.as_bytes(),
                 None,
                 more_recent_than.map(|t| t.as_u64() as i64),
-            )?),
+            )),
             None => None,
         };
 
@@ -612,7 +486,7 @@ impl Client {
             (None, None) => unreachable!("should not create a client with no network"),
         };
 
-        Ok(Box::pin(stream))
+        Box::pin(stream)
     }
 }
 
@@ -647,15 +521,6 @@ fn filter_incoming_signed_packet(
         Some(packet)
     } else {
         None
-    }
-}
-
-impl Drop for Inner {
-    fn drop(&mut self) {
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-        if let Some(ref mut dht) = self.dht {
-            dht.shutdown();
-        };
     }
 }
 
@@ -696,25 +561,6 @@ pub enum BuildError {
     EmptyListOfRelays,
 }
 
-#[derive(Debug)]
-// TODO: can we avoid this entirely, by restarting the dht node if shutdown?
-pub struct ClientWasShutdown;
-
-impl std::error::Error for ClientWasShutdown {}
-
-impl std::fmt::Display for ClientWasShutdown {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Pkarr Client was shutdown")
-    }
-}
-
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
-impl From<DhtWasShutdown> for ClientWasShutdown {
-    fn from(_: DhtWasShutdown) -> Self {
-        Self
-    }
-}
-
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 /// Errors occuring during publishing a [SignedPacket]
 pub enum PublishError {
@@ -723,9 +569,6 @@ pub enum PublishError {
 
     #[error(transparent)]
     Concurrency(#[from] ConcurrencyError),
-
-    #[error("Client was shutdown")]
-    ClientWasShutdown,
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -745,7 +588,7 @@ pub enum QueryError {
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Publishing SignedPacket to Mainline failed.")]
     ///Publishing SignedPacket to Mainline failed, received an error response.
-    DhtErrorResponse(mainline::rpc::messages::ErrorSpecific),
+    DhtErrorResponse(mainline::errors::ErrorSpecific),
 }
 
 impl Eq for QueryError {
@@ -804,28 +647,23 @@ pub enum ConcurrencyError {
     CasFailed,
 }
 
-impl From<ClientWasShutdown> for PublishError {
-    fn from(_: ClientWasShutdown) -> Self {
-        Self::ClientWasShutdown
-    }
-}
-
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
 impl From<PutMutableError> for PublishError {
     fn from(value: PutMutableError) -> Self {
         match value {
-            PutMutableError::Shutdown(_) => PublishError::ClientWasShutdown,
             PutMutableError::Query(error) => PublishError::Query(match error {
-                mainline::rpc::PutQueryError::Timeout => QueryError::Timeout,
-                mainline::rpc::PutQueryError::NoClosestNodes => QueryError::NoClosestNodes,
-                mainline::rpc::PutQueryError::ErrorResponse(error) => {
+                mainline::errors::PutQueryError::Timeout => QueryError::Timeout,
+                mainline::errors::PutQueryError::NoClosestNodes => QueryError::NoClosestNodes,
+                mainline::errors::PutQueryError::ErrorResponse(error) => {
                     QueryError::DhtErrorResponse(error)
                 }
             }),
             PutMutableError::Concurrency(error) => PublishError::Concurrency(match error {
-                mainline::rpc::ConcurrencyError::ConflictRisk => ConcurrencyError::ConflictRisk,
-                mainline::rpc::ConcurrencyError::NotMostRecent => ConcurrencyError::NotMostRecent,
-                mainline::rpc::ConcurrencyError::CasFailed => ConcurrencyError::CasFailed,
+                mainline::errors::ConcurrencyError::ConflictRisk => ConcurrencyError::ConflictRisk,
+                mainline::errors::ConcurrencyError::NotMostRecent => {
+                    ConcurrencyError::NotMostRecent
+                }
+                mainline::errors::ConcurrencyError::CasFailed => ConcurrencyError::CasFailed,
             }),
         }
     }

@@ -82,7 +82,7 @@ impl crate::Client {
 
             // Initialize the stack with endpoints from the starting domain.
             if let Ok(tld) = PublicKey::try_from(qname) {
-                if let Ok(Some(signed_packet)) = self.resolve(&tld).await {
+                if let Some(signed_packet) = self.resolve(&tld).await {
                     depth += 1;
                     stack.extend(Endpoint::parse(&signed_packet, qname, https));
                 }
@@ -94,7 +94,7 @@ impl crate::Client {
                 // Attempt to resolve the domain as a public key.
                 match PublicKey::try_from(current) {
                     Ok(tld) => match self.resolve(&tld).await {
-                        Ok(Some(signed_packet)) if depth < DEFAULT_MAX_CHAIN_LENGTH => {
+                        Some(signed_packet) if depth < DEFAULT_MAX_CHAIN_LENGTH => {
                             depth += 1;
                             let endpoints = Endpoint::parse(&signed_packet, current, https);
 
@@ -275,7 +275,6 @@ mod tests {
 
     #[tokio::test]
     async fn max_chain_exceeded() {
-        // TODO: investigate why this is slow even if request_timeout is small?
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
             .no_default_network()

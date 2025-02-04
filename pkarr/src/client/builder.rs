@@ -13,7 +13,7 @@ use crate::DEFAULT_RESOLVERS;
 use crate::{errors::BuildError, Client};
 
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::rpc::DEFAULT_REQUEST_TIMEOUT;
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::DEFAULT_REQUEST_TIMEOUT;
 #[cfg(not(all(feature = "dht", not(target_family = "wasm"))))]
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -121,7 +121,7 @@ pub struct ClientBuilder(Config);
 
 impl ClientBuilder {
     /// Similar to crates `no-default-features`, this method will remove the default
-    /// [mainline::Config::bootstrap], [Config::resolvers], and [Config::relays],
+    /// [Self::bootstrap], [Self::resolvers], and [Self::relays],
     /// effectively disabling the use of both [mainline] and [Relays](https://pkarr.org/relays).
     ///
     /// Or you can use [Self::relays] to use custom [Relays](https://pkarr.org/relays).
@@ -146,7 +146,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Convienent method to set the [mainline::Config::bootstrap] in [Config::dht].
+    /// Convienent method to set the `bootstrap` nodes in [Self::dht].
     ///
     /// You can start a separate Dht network by setting this to an empty array.
     ///
@@ -159,8 +159,8 @@ impl ClientBuilder {
         self
     }
 
-    /// Create [Self::dht] if `None`, and allows mutating it with a callback function.
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    /// Create a [mainline::DhtBuilder] if `None`, and allows mutating it with a callback function.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut mainline::DhtBuilder) -> &mut mainline::DhtBuilder,
@@ -190,10 +190,10 @@ impl ClientBuilder {
     }
 
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    /// Extend the [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes.
+    /// Extend the DHT bootstraping nodes.
     ///
-    /// If you want to set (override) the [Config::dht_config::bootsrtap][mainline::Config::bootstrap],
-    /// use [Self::bootstrap]
+    /// If you want to set (override) the DHT bootstraping nodes,
+    /// use [Self::bootstrap] directly.
     pub fn extra_resolvers(&mut self, resolvers: Vec<String>) -> &mut Self {
         let resolvers = resolvers_to_socket_addrs(&resolvers);
 
@@ -298,10 +298,10 @@ impl ClientBuilder {
         self
     }
 
-    /// Set the maximum [Config::request_timeout] for both Dht and relays client.
+    /// Set the maximum request timeout for both Dht and relays client.
     ///
     /// Useful for testing NOT FOUND responses, where you want to reach the timeout
-    /// sooner than the default of [mainline::rpc::DEFAULT_REQUEST_TIMEOUT].
+    /// sooner than the default of [mainline::DEFAULT_REQUEST_TIMEOUT].
     pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.0.request_timeout = timeout;
         #[cfg(all(feature = "dht", not(target_family = "wasm")))]

@@ -33,7 +33,7 @@ async fn resolve(
 #[cfg(feature = "reqwest-builder")]
 mod reqwest_builder {
     impl From<crate::Client> for ::reqwest::ClientBuilder {
-        /// Create a [reqwest::ClientBuilder][::reqwest::ClientBuilder] from this Pkarr client,
+        /// Create a [reqwest::ClientBuilder] from this Pkarr client,
         /// using it as a [dns_resolver][::reqwest::ClientBuilder::dns_resolver],
         /// and a [preconfigured_tls][::reqwest::ClientBuilder::use_preconfigured_tls] client
         /// config that uses [rustls::crypto::ring::default_provider()] and follows the

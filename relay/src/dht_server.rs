@@ -7,7 +7,7 @@ use std::{
 use pkarr::{extra::lmdb_cache::LmdbCache, Cache};
 
 use mainline::{
-    rpc::messages::{
+    messages::{
         GetMutableResponseArguments, GetValueRequestArguments, MessageType, RequestSpecific,
         RequestTypeSpecific, ResponseSpecific,
     },

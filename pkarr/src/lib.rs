@@ -3,7 +3,7 @@
 #![doc = document_features::document_features!()]
 //!
 
-// TODO: deny missing_docs
+// #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
@@ -59,7 +59,7 @@ pub mod errors {
         feature = "__client",
         not(all(target_family = "wasm", not(feature = "relays")))
     ))]
-    pub use super::client::{BuildError, ClientWasShutdown, ConcurrencyError, PublishError};
+    pub use super::client::{BuildError, ConcurrencyError, PublishError};
 
     #[cfg(feature = "keys")]
     pub use super::keys::PublicKeyError;

@@ -68,10 +68,10 @@ async fn publish_resolve(#[case] networks: Networks) {
 
     let b = builder(&relay, &testnet, networks).build().unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-    let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+    let from_cache = b.resolve(&keypair.public_key()).await.unwrap();
     assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
     assert_eq!(from_cache.last_seen(), resolved.last_seen());
 }
@@ -99,10 +99,10 @@ async fn client_send(#[case] networks: Networks) {
     let b = builder(&relay, &testnet, networks).build().unwrap();
 
     tokio::spawn(async move {
-        let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+        let resolved = b.resolve(&keypair.public_key()).await.unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-        let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+        let from_cache = b.resolve(&keypair.public_key()).await.unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     })
@@ -133,7 +133,7 @@ async fn return_expired_packet_fallback(#[case] networks: Networks) {
         .unwrap()
         .put(&keypair.public_key().into(), &signed_packet);
 
-    let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = client.resolve(&keypair.public_key()).await;
 
     assert_eq!(resolved, Some(signed_packet));
 }
@@ -161,21 +161,13 @@ async fn ttl_0_test(#[case] networks: Networks) {
     client.publish(&signed_packet, None).await.unwrap();
 
     // First Call
-    let resolved = client
-        .resolve(&signed_packet.public_key())
-        .await
-        .unwrap()
-        .unwrap();
+    let resolved = client.resolve(&signed_packet.public_key()).await.unwrap();
 
     assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
 
     thread::sleep(Duration::from_millis(10));
 
-    let second = client
-        .resolve(&signed_packet.public_key())
-        .await
-        .unwrap()
-        .unwrap();
+    let second = client.resolve(&signed_packet.public_key()).await.unwrap();
     assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
 }
 
@@ -192,7 +184,7 @@ async fn not_found(#[case] networks: Networks) {
 
     let keypair = Keypair::random();
 
-    let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = client.resolve(&keypair.public_key()).await;
 
     assert_eq!(resolved, None);
 }
@@ -251,11 +243,7 @@ async fn concurrent_resolve(#[case] networks: Networks) {
     let bclone = b.clone();
     let _stream = tokio::spawn(async move { bclone.resolve(&public_key).await.unwrap() });
 
-    let response_second = b
-        .resolve(&signed_packet.public_key())
-        .await
-        .unwrap()
-        .unwrap();
+    let response_second = b.resolve(&signed_packet.public_key()).await.unwrap();
 
     assert_eq!(&response_second.as_bytes(), &signed_packet.as_bytes());
 
@@ -478,7 +466,7 @@ async fn conflict_301_cas(#[case] networks: Networks) {
 #[case::both_networks(Networks::Both)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[test]
-fn sync(#[case] networks: Networks) {
+fn blocking(#[case] networks: Networks) {
     let (relay, testnet) = futures_lite::future::block_on(async_compat::Compat::new(async {
         let testnet = mainline::Testnet::new(10).unwrap();
         let relay = Relay::start_test(&testnet).await.unwrap();
@@ -486,7 +474,10 @@ fn sync(#[case] networks: Networks) {
         (relay, testnet)
     }));
 
-    let a = builder(&relay, &testnet, networks).build().unwrap();
+    let a = builder(&relay, &testnet, networks)
+        .build()
+        .unwrap()
+        .as_blocking();
 
     let keypair = Keypair::random();
 
@@ -495,14 +486,17 @@ fn sync(#[case] networks: Networks) {
         .sign(&keypair)
         .unwrap();
 
-    a.publish_sync(&signed_packet, None).unwrap();
+    a.publish(&signed_packet, None).unwrap();
 
-    let b = builder(&relay, &testnet, networks).build().unwrap();
+    let b = builder(&relay, &testnet, networks)
+        .build()
+        .unwrap()
+        .as_blocking();
 
-    let resolved = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+    let resolved = b.resolve(&keypair.public_key()).unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-    let from_cache = b.resolve_sync(&keypair.public_key()).unwrap().unwrap();
+    let from_cache = b.resolve(&keypair.public_key()).unwrap();
     assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
     assert_eq!(from_cache.last_seen(), resolved.last_seen());
 }
@@ -535,10 +529,10 @@ fn no_tokio(#[case] networks: Networks) {
 
         let b = builder(&relay, &testnet, networks).build().unwrap();
 
-        let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+        let resolved = b.resolve(&keypair.public_key()).await.unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-        let from_cache = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+        let from_cache = b.resolve(&keypair.public_key()).await.unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     });

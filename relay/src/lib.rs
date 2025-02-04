@@ -4,7 +4,7 @@
 //! You can run this relay as a binary or a crate for testing purposes.
 //!
 
-// TODO: deny missing_docs
+// #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
@@ -141,7 +141,7 @@ impl Relay {
         let resolver_address = client
             .dht()
             .expect("dht network is enabled")
-            .info()?
+            .info()
             .local_addr();
         let relay_address = listener.local_addr()?;
 
