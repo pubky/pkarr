@@ -176,15 +176,15 @@ impl ClientBuilder {
         self
     }
 
-    /// Set custom set of [resolvers](Config::resolvers).
+    /// Set custom set of [resolvers](https://pkarr.org/resolvers).
     ///
-    /// You can disable using resolvers by passing `None`.
+    /// You can disable resolvers using [Self::no_resolvers].
     ///
     /// If you want to extend the [Config::resolvers] with more nodes, you can
     /// use [Self::extra_resolvers].
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    pub fn resolvers(&mut self, resolvers: Option<Vec<String>>) -> &mut Self {
-        self.0.resolvers = resolvers.map(|resolvers| resolvers_to_socket_addrs(&resolvers));
+    pub fn resolvers<T: ToSocketAddrs>(&mut self, resolvers: Vec<T>) -> &mut Self {
+        self.0.resolvers = Some(resolvers_to_socket_addrs(&resolvers));
 
         self
     }
