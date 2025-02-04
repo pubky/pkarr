@@ -18,6 +18,7 @@ use std::{
     net::{SocketAddr, SocketAddrV4, TcpListener},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 
 use axum::{extract::DefaultBodyLimit, Router};
@@ -188,7 +189,10 @@ impl Relay {
         config
             .pkarr
             .bootstrap(&testnet.bootstrap)
-            .dht(|builder| builder.bootstrap(&testnet.bootstrap).server_mode());
+            .request_timeout(Duration::from_millis(100))
+            .bootstrap(&testnet.bootstrap)
+            // TODO: use separate server node?
+            .dht(|builder| builder.server_mode());
 
         Ok(unsafe { Self::start(config).await? })
     }
@@ -199,6 +203,11 @@ impl Relay {
     /// See [Self::start]
     pub async fn start_testnet() -> anyhow::Result<Self> {
         let testnet = mainline::Testnet::new(10)?;
+
+        // Leaking the testnet otherwise to avoid dropping and shutting them down.
+        for node in testnet.nodes {
+            Box::leak(Box::new(node));
+        }
 
         let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
 
@@ -211,7 +220,9 @@ impl Relay {
 
         config
             .pkarr
+            .request_timeout(Duration::from_millis(100))
             .bootstrap(&testnet.bootstrap)
+            // TODO: use separate server node?
             .dht(|builder| builder.server_mode());
 
         unsafe { Self::start(config).await }

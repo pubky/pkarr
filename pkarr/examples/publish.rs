@@ -28,7 +28,9 @@ enum Mode {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_env_filter("debug").init();
+    tracing_subscriber::fmt()
+        .with_env_filter("pkarr=info")
+        .init();
 
     let cli = Cli::parse();
 

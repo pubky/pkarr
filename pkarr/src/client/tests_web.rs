@@ -25,7 +25,7 @@ async fn publish_resolve() {
 
     a.publish(&signed_packet, None).await.unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap().unwrap();
+    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
 
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
@@ -38,7 +38,7 @@ async fn not_found() {
 
     let client = Client::builder().relays(relays).build().unwrap();
 
-    let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = client.resolve(&keypair.public_key()).await;
 
     assert!(resolved.is_none());
 }
@@ -62,7 +62,7 @@ async fn return_expired_packet_fallback() {
         .unwrap()
         .put(&keypair.public_key().into(), &signed_packet);
 
-    let resolved = client.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = client.resolve(&keypair.public_key()).await;
 
     assert_eq!(resolved, Some(signed_packet));
 }

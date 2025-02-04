@@ -225,28 +225,12 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        async fn execute(
-            client: Client,
-            signed_packet: &SignedPacket,
-            cas: Option<Timestamp>,
-        ) -> Result<(), PublishError> {
-            let cache_key: CacheKey = signed_packet.public_key().into();
-
-            client.check_conflict(signed_packet, &cache_key, cas)?;
-
-            if let Some(cache) = client.cache() {
-                cache.put(&cache_key, signed_packet);
-            }
-
-            client.select_publish_future(signed_packet, cas).await
-        }
-
         #[cfg(not(target_family = "wasm"))]
         {
-            async_compat::Compat::new(execute(self.clone(), signed_packet, cas)).await
+            async_compat::Compat::new(self.publish_inner(signed_packet, cas)).await
         }
         #[cfg(target_family = "wasm")]
-        execute(self.clone(), signed_packet, cas).await
+        self.publish_inner(signed_packet, cas).await
     }
 
     // === Resolve ===
@@ -293,26 +277,39 @@ impl Client {
 
     // === Private Methods ===
 
-    /// Check if there is any conflict with existing (cached) packet.
-    fn check_conflict(
+    async fn publish_inner(
         &self,
         signed_packet: &SignedPacket,
-        cache_key: &CacheKey,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        if let Some(cached) = self.cache().as_ref().and_then(|cache| cache.get(cache_key)) {
+        let cache_key: CacheKey = signed_packet.public_key().into();
+
+        // Check conflict
+        if let Some(cached) = self
+            .cache()
+            .as_ref()
+            .and_then(|cache| cache.get(&cache_key))
+        {
             if cached.more_recent_than(signed_packet) {
                 return Err(ConcurrencyError::NotMostRecent)?;
             }
         } else if let Some(cas) = cas {
-            if let Some(cached) = self.cache().as_ref().and_then(|cache| cache.get(cache_key)) {
+            if let Some(cached) = self
+                .cache()
+                .as_ref()
+                .and_then(|cache| cache.get(&cache_key))
+            {
                 if cached.timestamp() != cas {
                     return Err(ConcurrencyError::CasFailed)?;
                 }
             }
         }
 
-        Ok(())
+        if let Some(cache) = self.cache() {
+            cache.put(&cache_key, signed_packet);
+        }
+
+        self.select_publish_future(signed_packet, cas).await
     }
 
     /// Returns the first result from either the DHT or the Relays client or both.
@@ -565,7 +562,7 @@ pub enum BuildError {
 /// Errors occuring during publishing a [SignedPacket]
 pub enum PublishError {
     #[error(transparent)]
-    Query(QueryError),
+    Query(#[from] QueryError),
 
     #[error(transparent)]
     Concurrency(#[from] ConcurrencyError),
