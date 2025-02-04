@@ -153,7 +153,7 @@ impl ClientBuilder {
     /// If you want to extend [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes with more nodes, you can
     /// use [Self::extra_bootstrap].
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    pub fn bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
+    pub fn bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
         self.dht(|b| b.bootstrap(bootstrap));
 
         self
@@ -183,8 +183,8 @@ impl ClientBuilder {
     /// If you want to extend the [Config::resolvers] with more nodes, you can
     /// use [Self::extra_resolvers].
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    pub fn resolvers<T: ToSocketAddrs>(&mut self, resolvers: Vec<T>) -> &mut Self {
-        self.0.resolvers = Some(resolvers_to_socket_addrs(&resolvers));
+    pub fn resolvers<T: ToSocketAddrs>(&mut self, resolvers: &[T]) -> &mut Self {
+        self.0.resolvers = Some(resolvers_to_socket_addrs(resolvers));
 
         self
     }
@@ -194,8 +194,8 @@ impl ClientBuilder {
     ///
     /// If you want to set (override) the DHT bootstraping nodes,
     /// use [Self::bootstrap] directly.
-    pub fn extra_resolvers(&mut self, resolvers: Vec<String>) -> &mut Self {
-        let resolvers = resolvers_to_socket_addrs(&resolvers);
+    pub fn extra_resolvers<T: ToSocketAddrs>(&mut self, resolvers: &[T]) -> &mut Self {
+        let resolvers = resolvers_to_socket_addrs(resolvers);
 
         if let Some(ref mut existing) = self.0.resolvers {
             existing.extend_from_slice(&resolvers);
@@ -220,7 +220,7 @@ impl ClientBuilder {
     /// Extend the current [Config::resolvers] with extra resolvers.
     ///
     /// If you want to set (override) the [Config::resolvers], use [Self::resolvers]
-    pub fn extra_bootstrap(&mut self, bootstrap: &[String]) -> &mut Self {
+    pub fn extra_bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
         self.dht(|b| b.extra_bootstrap(bootstrap));
 
         self

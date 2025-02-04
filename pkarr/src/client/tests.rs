@@ -26,7 +26,7 @@ fn builder(relay: &Relay, testnet: &mainline::Testnet, networks: Networks) -> Cl
         .no_default_network()
         // Because of pkarr_relay crate, dht is always enabled.
         .bootstrap(&testnet.bootstrap)
-        .resolvers(vec![relay.resolver_address()])
+        .resolvers(&[relay.resolver_address()])
         .request_timeout(Duration::from_millis(100));
 
     match networks {
@@ -214,9 +214,9 @@ async fn repeated_publish_query(#[case] networks: Networks) {
         .sign(&keypair)
         .unwrap();
 
-    let id = client.publish(&signed_packet, None).await.unwrap();
+    client.publish(&signed_packet, None).await.unwrap();
 
-    assert_eq!(client.publish(&signed_packet, None).await.unwrap(), id);
+    client.publish(&signed_packet, None).await.unwrap()
 }
 
 #[rstest]
