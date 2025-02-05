@@ -31,6 +31,7 @@ jobs:
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-registry-
+
     - name: Cache cargo index
       uses: actions/cache@v2
       with:
@@ -38,6 +39,7 @@ jobs:
         key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-index-
+
     - name: Cache cargo build
       id: cargo-build-cache
       uses: actions/cache@v2
@@ -46,6 +48,7 @@ jobs:
         key: ${{ runner.os }}-cargo-build-${{ hashFiles('./Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-build-
+
     - name: Cache Nextest installation
       uses: actions/cache@v2
       with:

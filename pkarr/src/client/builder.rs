@@ -21,7 +21,7 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// [Client]'s Config
 #[derive(Clone)]
-pub struct Config {
+pub(crate) struct Config {
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: usize,
     /// Used in the `min` parameter in [crate::SignedPacket::expires_in].
@@ -150,7 +150,7 @@ impl ClientBuilder {
     ///
     /// You can start a separate Dht network by setting this to an empty array.
     ///
-    /// If you want to extend [Config::dht_config::bootstrap][mainline::Config::bootstrap] nodes with more nodes, you can
+    /// If you want to extend [bootstrap][mainline::DhtBuilder::bootstrap] nodes with more nodes, you can
     /// use [Self::extra_bootstrap].
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub fn bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
@@ -176,13 +176,13 @@ impl ClientBuilder {
         self
     }
 
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     /// Set custom set of [resolvers](https://pkarr.org/resolvers).
     ///
     /// You can disable resolvers using [Self::no_resolvers].
     ///
-    /// If you want to extend the [Config::resolvers] with more nodes, you can
+    /// If you want to extend the resolvers with more nodes, you can
     /// use [Self::extra_resolvers].
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub fn resolvers<T: ToSocketAddrs>(&mut self, resolvers: &[T]) -> &mut Self {
         self.0.resolvers = Some(resolvers_to_socket_addrs(resolvers));
 

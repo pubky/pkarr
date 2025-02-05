@@ -340,10 +340,6 @@ async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_publish_different_with_cas(#[case] networks: Networks) {
-    tracing_subscriber::fmt()
-        .with_env_filter("tower_http=debug")
-        .init();
-
     let testnet = mainline::Testnet::new(10).unwrap();
     let relay = Relay::start_test(&testnet).await.unwrap();
 
