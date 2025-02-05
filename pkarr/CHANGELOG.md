@@ -21,7 +21,6 @@ All notable changes to pkarr will be documented in this file.
 - Add `ClientBuilder::no_default_network()` to disable both the `Dht` and `relays` settings, and allow you to choose what to add back.
 - Add `ClientBuilder::no_dht()` to disable using the DHT, relaying only on relays. 
 - Add `ClientBuilder::dht()` to access `mainline::DhtBuilder` and control the internal dht node.
-- Add `ClientBuilder::extra_resolvers()` to use extra resolvers nodes to the default resolvers.
 - Add `ClientBuilder::extra_bootstrap()` to add extra nodes to the default bootstrap nodes.
 - Add `ClientBuilder::no_relays()` to disable using relays and relay only on the DHT. 
 - Add `ClientBuilder::relays()` to set (override) the relays to be used.
@@ -45,7 +44,7 @@ All notable changes to pkarr will be documented in this file.
 - Make `rand` non-optional, and remove the feature flag.
 - Replace `ureq` with `reqwest` to work with HTTP/2 relays, and Wasm, but you can still use the client outside tokio.
 - Update `simple-dns` so you can't use `Name::new("@")`, instead you should use `Name::new(".")`, `SignedPacket::resource_records("@")` still works.
-- `Client::resolve`, `BlockingClient::resolve` return expired cached `SignedPacket` _before_ making query to the network (Relays/Resolvers/Dht) in the background.
+- `Client::resolve`, `BlockingClient::resolve` return expired cached `SignedPacket` _before_ making query to the network (Relays/Dht) in the background.
 - Replace `ClientBuilder::testnet()` with `ClientBuilder::bootstrap()`.
 - `Client::cache()` returns an option, in case the cache size is set to zero.
 - Rename feature `relay` to `relays`.
@@ -62,3 +61,4 @@ All notable changes to pkarr will be documented in this file.
 - Removed rexported `mainline`
 - Removed `Client::shutdown` and `Client::shutdown_sync`.
 - Removed crate level `Error` enum, and replaced with more granular error types.
+- Removed resolvers and replaced by contacting relays over http(s).

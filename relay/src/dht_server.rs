@@ -27,7 +27,6 @@ pub struct DhtServer {
     minimum_ttl: u32,
     maximum_ttl: u32,
     rate_limiter: Option<IpRateLimiter>,
-    resolvers: Option<Box<[SocketAddrV4]>>,
 }
 
 impl Debug for DhtServer {
@@ -42,7 +41,6 @@ impl DhtServer {
         minimum_ttl: u32,
         maximum_ttl: u32,
         rate_limiter: Option<IpRateLimiter>,
-        resolvers: Option<Vec<SocketAddrV4>>,
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
@@ -51,7 +49,6 @@ impl DhtServer {
             minimum_ttl,
             maximum_ttl,
             rate_limiter,
-            resolvers: resolvers.map(|r| r.into()),
         }
     }
 }
@@ -103,7 +100,7 @@ impl Server for DhtServer {
                                 salt: None,
                             }),
                         }),
-                        self.resolvers.clone(),
+                        None,
                     );
                 }
 

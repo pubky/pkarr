@@ -78,7 +78,6 @@ impl Default for Config {
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
         };
 
-        this.pkarr.no_resolvers();
         this.pkarr.no_relays();
 
         this

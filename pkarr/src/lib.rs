@@ -28,9 +28,6 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 /// Default [relay](https://pkarr.org/relays)s
 pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.org"];
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-/// Default [resolver](https://pkarr.org/resolvers)s
-pub const DEFAULT_RESOLVERS: [&str; 2] = ["resolver.pkarr.org:6881", "pkarr.pubky.org:6881"];
-
 // Exports
 #[cfg(all(
     feature = "__client",

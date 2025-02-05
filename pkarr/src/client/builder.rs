@@ -1,5 +1,5 @@
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-use std::net::{SocketAddr, SocketAddrV4, ToSocketAddrs};
+use std::net::ToSocketAddrs;
 use std::{sync::Arc, time::Duration};
 
 #[cfg(feature = "relays")]
@@ -7,17 +7,12 @@ use url::Url;
 
 use crate::{Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
-use crate::DEFAULT_RESOLVERS;
-
 use crate::{errors::BuildError, Client};
 
 #[cfg(all(feature = "dht", not(target_family = "wasm")))]
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::DEFAULT_REQUEST_TIMEOUT;
 #[cfg(not(all(feature = "dht", not(target_family = "wasm"))))]
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
-
-// TODO: default to not using both resolvers and relays.
 
 /// [Client]'s Config
 #[derive(Clone)]
@@ -37,14 +32,6 @@ pub(crate) struct Config {
 
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub dht: Option<mainline::DhtBuilder>,
-    /// A set of [resolver](https://pkarr.org/resolvers)s
-    /// to be queried alongside the Dht routing table, to
-    /// lower the latency on cold starts, and help if the
-    /// Dht is missing values not't republished often enough.
-    ///
-    /// Defaults to [DEFAULT_RESOLVERS]
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    pub resolvers: Option<Vec<SocketAddrV4>>,
 
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
     #[cfg(feature = "relays")]
@@ -69,8 +56,6 @@ impl Default for Config {
 
             #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             dht: Some(mainline::Dht::builder()),
-            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-            resolvers: Some(resolvers_to_socket_addrs(&DEFAULT_RESOLVERS)),
 
             #[cfg(feature = "relays")]
             relays: Some(
@@ -99,8 +84,6 @@ impl std::fmt::Debug for Config {
         #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         debug_struct.field("dht", &self.dht);
         #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-        debug_struct.field("resolvers", &self.resolvers);
-
         #[cfg(feature = "relays")]
         debug_struct.field(
             "relays",
@@ -120,17 +103,14 @@ impl std::fmt::Debug for Config {
 pub struct ClientBuilder(Config);
 
 impl ClientBuilder {
-    /// Similar to crates `no-default-features`, this method will remove the default
-    /// [Self::bootstrap], [Self::resolvers], and [Self::relays],
+    /// Similar to crates `no-default-features`, this method will remove the default [Self::bootstrap], and [Self::relays]
     /// effectively disabling the use of both [mainline] and [Relays](https://pkarr.org/relays).
     ///
     /// Or you can use [Self::relays] to use custom [Relays](https://pkarr.org/relays).
     ///
-    /// Similarly you can use [Self::resolvers] and / or [Self::bootstrap] to use [mainline]
-    /// with custom configurations.
+    /// Similarly you can use [Self::bootstrap] or [Self::dht] to use [mainline] with custom configurations.
     pub fn no_default_network(&mut self) -> &mut Self {
         self.no_dht();
-        self.no_resolvers();
         self.no_relays();
 
         self
@@ -183,46 +163,6 @@ impl ClientBuilder {
     /// use [Self::bootstrap] directly.
     pub fn extra_bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
         self.dht(|b| b.extra_bootstrap(bootstrap));
-
-        self
-    }
-
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    /// Set custom set of [resolvers](https://pkarr.org/resolvers).
-    ///
-    /// You can disable resolvers using [Self::no_resolvers].
-    ///
-    /// If you want to extend the resolvers with more nodes, you can
-    /// use [Self::extra_resolvers].
-    pub fn resolvers<T: ToSocketAddrs>(&mut self, resolvers: &[T]) -> &mut Self {
-        self.0.resolvers = Some(resolvers_to_socket_addrs(resolvers));
-
-        self
-    }
-
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    /// Extend the DHT bootstraping nodes.
-    ///
-    /// If you want to set (override) the DHT bootstraping nodes,
-    /// use [Self::bootstrap] directly.
-    pub fn extra_resolvers<T: ToSocketAddrs>(&mut self, resolvers: &[T]) -> &mut Self {
-        let resolvers = resolvers_to_socket_addrs(resolvers);
-
-        if let Some(ref mut existing) = self.0.resolvers {
-            existing.extend_from_slice(&resolvers);
-        } else {
-            self.0.resolvers = Some(resolvers);
-        };
-
-        self
-    }
-
-    /// Disable [Self::resolvers]
-    pub fn no_resolvers(&mut self) -> &mut Self {
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-        {
-            self.0.resolvers = None;
-        }
 
         self
     }
@@ -312,20 +252,4 @@ impl ClientBuilder {
     pub fn build(&self) -> Result<Client, BuildError> {
         Client::new(self.0.clone())
     }
-}
-
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
-fn resolvers_to_socket_addrs<T: ToSocketAddrs>(resolvers: &[T]) -> Vec<SocketAddrV4> {
-    resolvers
-        .iter()
-        .flat_map(|resolver| resolver.to_socket_addrs().ok())
-        .flatten()
-        .flat_map(|addr| {
-            if let SocketAddr::V4(addr) = addr {
-                Some(addr)
-            } else {
-                None
-            }
-        })
-        .collect()
 }

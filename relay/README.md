@@ -1,7 +1,6 @@
 # Pkarr Relay
 
-A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays) and
-[resolver](https://pkarr.org/resolvers).
+A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays).
 
 ## Usage
 

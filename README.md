@@ -68,7 +68,7 @@ To support existing applications totally oblivious of Pkarr, users will have to 
 
 Pkarr relays are optional but they:
 1. Act as [relays](https://pkarr.org/relays) to enable web applications to query the DHT.
-2. Act as [resolvers](https://pkarr.org/resolvers) to provide lower latency, more reliability and scalability.
+2. Act as large caching layer for many users to provide lower latency, more reliability and scalability.
 
 Relays are very light and cheap to operate, that they can easily run altruistically, but private, and paid relays are possible too.
 

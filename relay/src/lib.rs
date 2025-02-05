@@ -1,5 +1,4 @@
-//! A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays) and
-//! [resolver](https://pkarr.org/resolvers).
+//! A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays).
 //!
 //! You can run this relay as a binary or a crate for testing purposes.
 //!
@@ -15,7 +14,7 @@ mod handlers;
 mod rate_limiting;
 
 use std::{
-    net::{SocketAddr, SocketAddrV4, TcpListener},
+    net::{SocketAddr, TcpListener},
     path::PathBuf,
     sync::Arc,
     time::Duration,
@@ -72,7 +71,7 @@ impl RelayBuilder {
         self
     }
 
-    /// Start a Pkarr [relay](https://pkarr.org/relays) http server as well as dht [resolver](https://pkarr.org/resolvers).
+    /// Start a Pkarr [relay](https://pkarr.org/relays).
     ///
     /// # Safety
     /// Relay uses LmdbCache, [opening][pkarr::extra::lmdb_cache::LmdbCache::open] which is marked unsafe,
@@ -84,7 +83,6 @@ impl RelayBuilder {
 
 pub struct Relay {
     handle: Handle,
-    resolver_address: SocketAddrV4,
     relay_address: SocketAddr,
 }
 
@@ -93,7 +91,7 @@ impl Relay {
         RelayBuilder::default()
     }
 
-    /// Start a Pkarr [relay](https://pkarr.org/relays) http server as well as dht [resolver](https://pkarr.org/resolvers).
+    /// Start a Pkarr [relay](https://pkarr.org/relays).
     ///
     /// # Safety
     /// Relay uses LmdbCache, [opening][pkarr::extra::lmdb_cache::LmdbCache::open] which is marked unsafe,
@@ -126,7 +124,6 @@ impl Relay {
             config.minimum_ttl.min(config.maximum_ttl),
             config.maximum_ttl.max(config.minimum_ttl),
             rate_limiter.clone(),
-            None,
         ));
 
         config
@@ -138,14 +135,14 @@ impl Relay {
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
 
-        let resolver_address = client
+        let node_address = client
             .dht()
             .expect("dht network is enabled")
             .info()
             .local_addr();
         let relay_address = listener.local_addr()?;
 
-        info!("Running as a resolver on UDP socket {resolver_address}");
+        info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
         let app = create_app(AppState { client }, rate_limiter);
@@ -160,7 +157,6 @@ impl Relay {
 
         Ok(Relay {
             handle,
-            resolver_address,
             relay_address,
         })
     }
@@ -223,12 +219,6 @@ impl Relay {
             .dht(|builder| builder.server_mode());
 
         unsafe { Self::start(config).await }
-    }
-
-    /// Returns the address of the internal [mainline] Dht node
-    /// acting as bootstrapping node an a [resolver](https://pkarr.org/resolvers)
-    pub fn resolver_address(&self) -> SocketAddrV4 {
-        self.resolver_address
     }
 
     /// Returns the HTTP socket address

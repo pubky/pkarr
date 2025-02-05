@@ -82,7 +82,3 @@ signature   = 64 OCTET ; ed25519 signature over encoded DNS packet
 timestamp   =  8 OCTET ; big-endian UNIX timestamp in microseconds
 dns-packet  =  * OCTET ; compressed encoded DNS answer packet, less than 1000 bytes
 ```
-
-## Relation to resolvers
-
-Organizations that elect to run a Relay, may choose to run their DHT node as [Resolver](./resolvers.md) as well.

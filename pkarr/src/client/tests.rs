@@ -26,7 +26,6 @@ fn builder(relay: &Relay, testnet: &mainline::Testnet, networks: Networks) -> Cl
         .no_default_network()
         // Because of pkarr_relay crate, dht is always enabled.
         .bootstrap(&testnet.bootstrap)
-        .resolvers(&[relay.resolver_address()])
         .request_timeout(Duration::from_millis(100));
 
     match networks {
