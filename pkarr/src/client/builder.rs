@@ -146,6 +146,23 @@ impl ClientBuilder {
         self
     }
 
+    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    /// Create a [mainline::DhtBuilder] if `None`, and allows mutating it with a callback function.
+    pub fn dht<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut mainline::DhtBuilder) -> &mut mainline::DhtBuilder,
+    {
+        if self.0.dht.is_none() {
+            self.0.dht = Some(Default::default());
+        }
+
+        if let Some(ref mut builder) = self.0.dht {
+            f(builder);
+        };
+
+        self
+    }
+
     /// Convienent method to set the `bootstrap` nodes in [Self::dht].
     ///
     /// You can start a separate Dht network by setting this to an empty array.
@@ -160,18 +177,12 @@ impl ClientBuilder {
     }
 
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    /// Create a [mainline::DhtBuilder] if `None`, and allows mutating it with a callback function.
-    pub fn dht<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut mainline::DhtBuilder) -> &mut mainline::DhtBuilder,
-    {
-        if self.0.dht.is_none() {
-            self.0.dht = Some(Default::default());
-        }
-
-        if let Some(ref mut builder) = self.0.dht {
-            f(builder);
-        };
+    /// Extend the DHT bootstraping nodes.
+    ///
+    /// If you want to set (override) the DHT bootstraping nodes,
+    /// use [Self::bootstrap] directly.
+    pub fn extra_bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
+        self.dht(|b| b.extra_bootstrap(bootstrap));
 
         self
     }
@@ -206,7 +217,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Disable [Config::resolvers]
+    /// Disable [Self::resolvers]
     pub fn no_resolvers(&mut self) -> &mut Self {
         #[cfg(all(feature = "dht", not(target_family = "wasm")))]
         {
@@ -216,17 +227,7 @@ impl ClientBuilder {
         self
     }
 
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-    /// Extend the current [Config::resolvers] with extra resolvers.
-    ///
-    /// If you want to set (override) the [Config::resolvers], use [Self::resolvers]
-    pub fn extra_bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
-        self.dht(|b| b.extra_bootstrap(bootstrap));
-
-        self
-    }
-
-    /// Set custom set of [relays](Config::relays)
+    /// Set custom set of [Relays](https://pkarr.org/relays).
     ///
     /// If you want to disable relays use [Self::no_relays] instead.
     #[cfg(feature = "relays")]
@@ -247,9 +248,9 @@ impl ClientBuilder {
     }
 
     #[cfg(feature = "relays")]
-    /// Extend the current [Config::relays] with extra relays.
+    /// Extend the current [Self::relays] with extra relays.
     ///
-    /// If you want to set (override) the [Config::relays], use [Self::relays]
+    /// If you want to set (override) relays instead, use [Self::relays]
     pub fn extra_relays(&mut self, relays: Vec<Url>) -> &mut Self {
         if let Some(ref mut existing) = self.0.relays {
             for relay in relays {
@@ -262,9 +263,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Set the [Config::cache_size].
-    ///
-    /// Controls the capacity of [Cache].
+    /// Set the size of the capacity of the [Self::cache] implementation.
     ///
     /// If set to `0` cache will be disabled.
     pub fn cache_size(&mut self, cache_size: usize) -> &mut Self {
@@ -273,7 +272,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Set the [Config::minimum_ttl] value.
+    /// Set the minimum TTL value.
     ///
     /// Limits how soon a [crate::SignedPacket] is considered expired.
     pub fn minimum_ttl(&mut self, ttl: u32) -> &mut Self {
@@ -282,7 +281,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Set the [Config::maximum_ttl] value.
+    /// Set the maximum TTL value.
     ///
     /// Limits how long it takes before a [crate::SignedPacket] is considered expired.
     pub fn maximum_ttl(&mut self, ttl: u32) -> &mut Self {
