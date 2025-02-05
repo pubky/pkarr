@@ -370,7 +370,10 @@ fn map_reqwest_error(error: reqwest::Error) -> PublishError {
             .expect("previously verified that it is a status error")
         {
             StatusCode::BAD_REQUEST => {
-                todo!("an error for both dht error sepcifi and relay bad request")
+                // This should be very unlikely unless relays are misbehaving, still worth
+                // returning to the user to know that relays are misbehaving, and not just a
+                // network issue.
+                PublishError::Query(QueryError::BadRequest)
             }
             StatusCode::CONFLICT => PublishError::Concurrency(ConcurrencyError::NotMostRecent),
             StatusCode::PRECONDITION_FAILED => {
@@ -379,16 +382,10 @@ fn map_reqwest_error(error: reqwest::Error) -> PublishError {
             StatusCode::PRECONDITION_REQUIRED => {
                 PublishError::Concurrency(ConcurrencyError::ConflictRisk)
             }
-            StatusCode::INTERNAL_SERVER_ERROR => {
-                todo!()
-            }
-            _ => {
-                todo!()
-            }
+            _ => PublishError::UnexpectedResponses,
         }
     } else {
-        // TODO: better error, a generic fail
-        PublishError::Query(QueryError::Timeout)
+        PublishError::UnexpectedResponses
     }
 }
 
@@ -417,7 +414,6 @@ pub async fn resolve_from_relay(
 
     let mut request = http_client.get(url.clone());
 
-    // TODO: enable for wasm after reqwest release
     #[cfg(not(target_family = "wasm"))]
     {
         request = request.timeout(timeout);

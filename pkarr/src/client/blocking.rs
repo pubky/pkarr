@@ -117,10 +117,10 @@ impl ClientBlocking {
     ///
     /// This method may return on of these errors:
     ///
-    /// 1. [QueryError]: when the query fails, and you need to retry or debug the network.
-    /// 2. [ConcurrencyError]: when an write conflict (or the risk of it) is detedcted.
+    /// 1. [super::QueryError]: when the query fails, and you need to retry or debug the network.
+    /// 2. [super::ConcurrencyError]: when an write conflict (or the risk of it) is detedcted.
     ///
-    /// If you get a [ConcurrencyError]; you should resolver the most recent packet again,
+    /// If you get a [super::ConcurrencyError]; you should resolver the most recent packet again,
     /// and repeat the steps in the previous example.
     pub fn publish(
         &self,
