@@ -577,8 +577,6 @@ pub enum PublishError {
     Concurrency(#[from] ConcurrencyError),
 
     // === Relays only errors ===
-    //
-    #[cfg(feature = "relays")]
     #[error("All relays responded with unexpected responses, check debug logs.")]
     /// All relays responded with unexpected responses, check debug logs.
     UnexpectedResponses,
@@ -591,9 +589,6 @@ pub enum QueryError {
     #[error("Publish query timed out with no responses neither success or errors.")]
     Timeout,
 
-    // === Mainline only errors ===
-    //
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Publishing SignedPacket to Mainline failed.")]
     /// Publishing SignedPacket to Mainline failed.
     NoClosestNodes,
@@ -603,9 +598,6 @@ pub enum QueryError {
     /// Publishing SignedPacket to Mainline failed, received an error response.
     DhtErrorResponse(mainline::errors::ErrorSpecific),
 
-    // === Relays only errors ===
-    //
-    #[cfg(feature = "relays")]
     #[error("Most relays responded with bad request")]
     /// Most relays responded with bad request
     BadRequest,
@@ -632,7 +624,6 @@ impl Hash for QueryError {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
             QueryError::Timeout => 0.hash(state),
-            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             QueryError::NoClosestNodes => 1.hash(state),
             #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             QueryError::DhtErrorResponse(error) => {
