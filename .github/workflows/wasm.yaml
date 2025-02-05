@@ -30,9 +30,6 @@ jobs:
         ./target/debug/pkarr-relay --testnet &
         SERVER_PID=$!
         
-        # Wait for server to be ready
-        timeout 30 bash -c 'until nc -z localhost 15411; do sleep 1; done'
-
         # Change the working directory to pkarr crate
         cd ./pkarr
         
