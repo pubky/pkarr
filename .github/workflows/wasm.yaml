@@ -38,3 +38,4 @@ jobs:
         
         # Kill the server
         kill $SERVER_PID
+
