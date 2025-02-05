@@ -13,16 +13,60 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Cache Rust toolchain
+      uses: actions/cache@v3
+      id: rust-cache
+      with:
+        paths:
+          - $HOME/.cargo/
+        key: ${{ runner.os }}-rust-${{ hashFiles('rust-toolchain') }}
+        restore-keys: |
+          ${{ runner.os }}-rust-
+      
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         targets: wasm32-unknown-unknown
+      id: install-rust
+
+    - name: Cache wasm-pack
+      uses: actions/cache@v3
+      id: wasm-pack-cache
+      with:
+        paths:
+          - $HOME/.wasm-pack/
+        key: ${{ runner.os }}-wasm-pack-${{ hashFiles('wasm-pack-installer.sh') }}
+        restore-keys: |
+          ${{ runner.os }}-wasm-pack-
 
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      id: install-wasm-pack
+
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      id: cargo-build-cache
+      with:
+        paths:
+          - ./target/
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('Cargo.toml', 'Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-
 
     - name: Build server
       run: cargo build
+      id: build-server
+
+    - name: Cache wasm-pack test
+      uses: actions/cache@v3
+      id: wasm-pack-test-cache
+      with:
+        paths:
+          - ./pkarr/target/
+          - ./pkarr/pkg/
+        key: ${{ runner.os }}-wasm-pack-test-${{ hashFiles('pkarr/Cargo.toml', 'pkarr/ Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-wasm-pack-test-
 
     - name: Start server and run tests
       run: |
@@ -37,7 +81,13 @@ jobs:
         cd ./pkarr
         
         # Run wasm-pack tests
-        wasm-pack test --headless --firefox
+        wasm-pack test --headless --firefox --lib
         
         # Kill the server
         kill $SERVER_PID
+      id: run-tests
+
+    - name: Upload cache sizes
+      run: |
+        echo "Cache Sizes:"
+        du -sh $HOME/.cargo/ ./target/ $HOME/.wasm-pack/ ./pkarr/target/ ./pkarr/pkg/
