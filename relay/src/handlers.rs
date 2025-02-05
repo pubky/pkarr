@@ -61,9 +61,10 @@ pub async fn put(
                     Error::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
                 }
             },
-            PublishError::Query(query_error) => {
-                debug!(?query_error, "Query error while publishing");
-                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(query_error))
+            PublishError::Query(_) | PublishError::UnexpectedResponses => {
+                debug!(?error, "Query error while publishing");
+
+                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
         })?;
 

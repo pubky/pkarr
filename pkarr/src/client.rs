@@ -462,8 +462,6 @@ impl Client {
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
-        // TODO: support other modes than Parallel.
-        //
         #[cfg(feature = "dht")]
         let dht_stream = match self.dht() {
             Some(node) => map_dht_stream(node.as_async().get_mutable(
@@ -490,7 +488,6 @@ impl Client {
         #[cfg(all(feature = "dht", feature = "relays"))]
         let stream = match (dht_stream, relays_stream) {
             (Some(s), None) | (None, Some(s)) => s,
-            // TODO: support other modes than Parallel.
             (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
         };
@@ -578,6 +575,13 @@ pub enum PublishError {
 
     #[error(transparent)]
     Concurrency(#[from] ConcurrencyError),
+
+    // === Relays only errors ===
+    //
+    #[cfg(feature = "relays")]
+    #[error("All relays responded with unexpected responses, check debug logs.")]
+    /// All relays responded with unexpected responses, check debug logs.
+    UnexpectedResponses,
 }
 
 #[derive(thiserror::Error, Debug, Clone)]
@@ -591,13 +595,20 @@ pub enum QueryError {
     //
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Publishing SignedPacket to Mainline failed.")]
-    ///Publishing SignedPacket to Mainline failed.
+    /// Publishing SignedPacket to Mainline failed.
     NoClosestNodes,
 
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Publishing SignedPacket to Mainline failed.")]
-    ///Publishing SignedPacket to Mainline failed, received an error response.
+    /// Publishing SignedPacket to Mainline failed, received an error response.
     DhtErrorResponse(mainline::errors::ErrorSpecific),
+
+    // === Relays only errors ===
+    //
+    #[cfg(feature = "relays")]
+    #[error("Most relays responded with bad request")]
+    /// Most relays responded with bad request
+    BadRequest,
 }
 
 impl Eq for QueryError {
@@ -630,6 +641,7 @@ impl Hash for QueryError {
 
                 state.write(bytes.as_slice());
             }
+            QueryError::BadRequest => 3.hash(state),
         }
     }
 }
