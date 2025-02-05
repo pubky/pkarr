@@ -6,37 +6,57 @@
 //! run this example from the project root:
 //!     $ cargo run --example publish
 
-use tracing::Level;
+use clap::Parser;
+use std::time::Instant;
 use tracing_subscriber;
 
-use std::time::Instant;
+use pkarr::{Client, Keypair, SignedPacket};
 
-use pkarr::{dns, Keypair, PkarrClient, Result, SignedPacket};
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    /// Publish to DHT only, Relays only, or default to both.
+    mode: Option<Mode>,
+}
 
-fn main() -> Result<()> {
+#[derive(Debug, Clone)]
+enum Mode {
+    Dht,
+    Relays,
+    Both,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
+        .with_env_filter("pkarr=info")
         .init();
 
-    let client = PkarrClient::builder().build().unwrap();
+    let cli = Cli::parse();
+
+    let mut builder = Client::builder();
+    match cli.mode.unwrap_or(Mode::Both) {
+        Mode::Dht => {
+            builder.no_relays();
+        }
+        Mode::Relays => {
+            builder.no_dht();
+        }
+        _ => {}
+    }
+    let client = builder.build()?;
 
     let keypair = Keypair::random();
 
-    let mut packet = dns::Packet::new_reply(0);
-    packet.answers.push(dns::ResourceRecord::new(
-        dns::Name::new("_foo").unwrap(),
-        dns::CLASS::IN,
-        30,
-        dns::rdata::RData::TXT("bar".try_into()?),
-    ));
-
-    let signed_packet = SignedPacket::from_packet(&keypair, &packet)?;
+    let signed_packet = SignedPacket::builder()
+        .txt("_foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&keypair)?;
 
     let instant = Instant::now();
 
     println!("\nPublishing {} ...", keypair.public_key());
 
-    match client.publish(&signed_packet) {
+    match client.publish(&signed_packet, None).await {
         Ok(()) => {
             println!(
                 "\nSuccessfully published {} in {:?}",
@@ -50,4 +70,14 @@ fn main() -> Result<()> {
     };
 
     Ok(())
+}
+
+impl From<String> for Mode {
+    fn from(value: String) -> Self {
+        match value.to_lowercase().as_str() {
+            "dht" => Self::Dht,
+            "relay" | "relays" => Self::Relays,
+            _ => Self::Both,
+        }
+    }
 }

@@ -3,22 +3,21 @@
 #![doc = document_features::document_features!()]
 //!
 
-macro_rules! if_dht {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
-        $item
-    )*}
-}
+// #![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 // Modules
-mod error;
+#[cfg(all(
+    feature = "__client",
+    not(all(target_family = "wasm", not(feature = "relays")))
+))]
+pub mod client;
+pub mod extra;
+#[cfg(feature = "keys")]
 mod keys;
+#[cfg(feature = "signed_packet")]
 mod signed_packet;
-
-// Common exports
-pub use crate::error::{Error, Result};
-pub use crate::keys::{Keypair, PublicKey};
-pub use crate::signed_packet::{system_time, SignedPacket};
 
 /// Default minimum TTL: 5 minutes
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -26,57 +25,42 @@ pub const DEFAULT_MINIMUM_TTL: u32 = 300;
 pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 /// Default cache size: 1000
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
+/// Default [relay](https://pkarr.org/relays)s
+pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.org"];
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+// Exports
+#[cfg(all(
+    feature = "__client",
+    not(all(target_family = "wasm", not(feature = "relays")))
+))]
+pub use client::cache::{Cache, CacheKey, InMemoryCache};
+#[cfg(feature = "keys")]
+pub use keys::{Keypair, PublicKey};
+#[cfg(feature = "signed_packet")]
+pub use signed_packet::SignedPacket;
 
-pub const DEFAULT_RELAYS: [&str; 1] = ["https://relay.pkarr.org"];
-
-pub const DEFAULT_RESOLVERS: [&str; 1] = ["resolver.pkarr.org:6881"];
+#[cfg(all(
+    feature = "__client",
+    not(all(target_family = "wasm", not(feature = "relays")))
+))]
+pub use client::{Client, ClientBuilder};
 
 // Rexports
-pub use bytes;
+#[cfg(feature = "signed_packet")]
 pub use simple_dns as dns;
 
-#[cfg(not(target_arch = "wasm32"))]
-macro_rules! if_async {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "async"))]
-        $item
-    )*}
+pub mod errors {
+    //! Exported errors
+
+    #[cfg(all(
+        feature = "__client",
+        not(all(target_family = "wasm", not(feature = "relays")))
+    ))]
+    pub use super::client::{BuildError, ConcurrencyError, PublishError};
+
+    #[cfg(feature = "keys")]
+    pub use super::keys::PublicKeyError;
+
+    #[cfg(feature = "signed_packet")]
+    pub use super::signed_packet::{SignedPacketBuildError, SignedPacketVerifyError};
 }
-
-macro_rules! if_relay {
-    ($($item:item)*) => {$(
-        #[cfg(all(not(target_arch = "wasm32"), feature = "relay"))]
-        $item
-    )*}
-}
-
-if_dht! {
-    mod cache;
-    mod client;
-
-    if_async! {
-        mod client_async;
-        pub use client_async::PkarrClientAsync;
-    }
-
-    pub use client::{PkarrClientBuilder, PkarrClient, Settings};
-    pub use cache::{PkarrCache, PkarrCacheKey, InMemoryPkarrCache};
-
-    // Rexports
-    pub use mainline;
-}
-
-if_relay! {
-    mod relay_client;
-    pub use relay_client::{PkarrRelayClient, RelaySettings};
-
-    if_async! {
-        mod relay_client_async;
-        pub use relay_client_async::PkarrRelayClientAsync;
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-mod relay_client_web;
-#[cfg(target_arch = "wasm32")]
-pub use relay_client_web::PkarrRelayClient;

@@ -28,7 +28,7 @@
           "Cargo.toml"
           "Cargo.lock"
           "pkarr"
-          "server"
+          "relay"
         ];
 
         buildSrc = flakeboxLib.filterSubPaths {
@@ -56,16 +56,16 @@
             workspaceBuild = craneLib.buildWorkspace {
               cargoArtifacts = workspaceDeps;
             };
-            "pkarr-server" =  craneLib.buildPackageGroup {
-              packages = [ "pkarr-server" ];
-              mainProgram = "pkarr-server";
+            "pkarr-relay" =  craneLib.buildPackageGroup {
+              packages = [ "pkarr-relay" ];
+              mainProgram = "pkarr-relay";
             };
           }
         );
       in
       {
         packages = {
-          pkarr-server = multiBuild.pkarr-server;
+          pkarr-relay = multiBuild.pkarr-relay;
         };
 
         legacyPackages = multiBuild;
