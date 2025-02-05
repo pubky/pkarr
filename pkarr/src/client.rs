@@ -11,6 +11,7 @@ macro_rules! cross_debug {
 
 pub mod cache;
 
+#[cfg(not(target_family = "wasm"))]
 pub mod blocking;
 mod builder;
 #[cfg(feature = "relays")]
@@ -34,7 +35,6 @@ use builder::Config;
 
 #[cfg(feature = "relays")]
 use crate::client::relays::RelaysClient;
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 use crate::{Cache, CacheKey, InMemoryCache};
 use crate::{PublicKey, SignedPacket};
 
@@ -580,9 +580,9 @@ pub enum QueryError {
     /// Publishing SignedPacket to Mainline failed.
     NoClosestNodes,
 
-    #[error("Publishing SignedPacket to Mainline failed.")]
+    #[error("Publishing SignedPacket to Mainline failed code: {0}, description: {1}.")]
     /// Publishing SignedPacket to Mainline failed, received an error response.
-    DhtErrorResponse(mainline::errors::ErrorSpecific),
+    DhtErrorResponse(i32, String),
 
     #[error("Most relays responded with bad request")]
     /// Most relays responded with bad request
@@ -598,9 +598,9 @@ impl PartialEq for QueryError {
         match (self, other) {
             #[cfg(all(feature = "dht", not(target_family = "wasm")))]
             (
-                QueryError::DhtErrorResponse(self_error),
-                QueryError::DhtErrorResponse(other_error),
-            ) => self_error.code == other_error.code,
+                QueryError::DhtErrorResponse(self_error, _),
+                QueryError::DhtErrorResponse(other_error, _),
+            ) => self_error == other_error,
             (s, o) => s == o,
         }
     }
@@ -611,10 +611,9 @@ impl Hash for QueryError {
         match self {
             QueryError::Timeout => 0.hash(state),
             QueryError::NoClosestNodes => 1.hash(state),
-            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
-            QueryError::DhtErrorResponse(error) => {
+            QueryError::DhtErrorResponse(code, _) => {
                 let mut bytes = vec![2];
-                bytes.extend_from_slice(&error.code.to_be_bytes());
+                bytes.extend_from_slice(&code.to_be_bytes());
 
                 state.write(bytes.as_slice());
             }
@@ -653,7 +652,7 @@ impl From<PutMutableError> for PublishError {
                 mainline::errors::PutQueryError::Timeout => QueryError::Timeout,
                 mainline::errors::PutQueryError::NoClosestNodes => QueryError::NoClosestNodes,
                 mainline::errors::PutQueryError::ErrorResponse(error) => {
-                    QueryError::DhtErrorResponse(error)
+                    QueryError::DhtErrorResponse(error.code, error.description)
                 }
             }),
             PutMutableError::Concurrency(error) => PublishError::Concurrency(match error {

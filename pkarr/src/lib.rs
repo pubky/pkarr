@@ -23,16 +23,14 @@ mod signed_packet;
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
 /// Default maximum TTL: 24 hours
 pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
-/// Default cache size: 1000
-pub const DEFAULT_CACHE_SIZE: usize = 1000;
 /// Default [relay](https://pkarr.org/relays)s
 pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.org"];
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+#[cfg(feature = "__client")]
+/// Default cache size: 1000
+pub const DEFAULT_CACHE_SIZE: usize = 1000;
+//
 // Exports
-#[cfg(all(
-    feature = "__client",
-    not(all(target_family = "wasm", not(feature = "relays")))
-))]
+#[cfg(feature = "__client")]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
