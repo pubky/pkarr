@@ -10,7 +10,7 @@ use std::{
 
 pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
 
-use crate::{dht_server::DhtServer, rate_limiting::RateLimiterConfig};
+use crate::rate_limiting::RateLimiterConfig;
 
 #[derive(Serialize, Deserialize, Default)]
 struct ConfigToml {
