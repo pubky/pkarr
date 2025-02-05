@@ -95,7 +95,7 @@ impl Client {
         } else {
             None
         };
-        #[cfg(not(any(feature = "relays", target_family = "wasm")))]
+        #[cfg(not(feature = "relays"))]
         let relays: Option<()> = None;
 
         if dht.is_none() && relays.is_none() {
@@ -556,12 +556,10 @@ pub enum BuildError {
     /// Client configured without Mainline node or relays.
     NoNetwork,
 
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Failed to build the Dht client {0}")]
     /// Failed to build the Dht client.
     DhtBuildError(std::io::Error),
 
-    #[cfg(any(feature = "relays", target_family = "wasm"))]
     #[error("Passed an empty list of relays")]
     /// Passed an empty list of relays
     EmptyListOfRelays,
@@ -593,7 +591,6 @@ pub enum QueryError {
     /// Publishing SignedPacket to Mainline failed.
     NoClosestNodes,
 
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     #[error("Publishing SignedPacket to Mainline failed.")]
     /// Publishing SignedPacket to Mainline failed, received an error response.
     DhtErrorResponse(mainline::errors::ErrorSpecific),
