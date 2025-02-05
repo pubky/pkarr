@@ -1,7 +1,6 @@
 //! Configuration for Pkarr relay
 
 use anyhow::{Context, Result};
-use pkarr::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -56,13 +55,6 @@ pub struct Config {
     pub cache_size: usize,
     /// IP rete limiter configuration
     pub rate_limiter: Option<RateLimiterConfig>,
-
-    /// Minimum TTL used to consider a [SignedPacket][pkarr::SignedPacket]
-    /// is [expired][pkarr::SignedPacket::is_expired]
-    pub minimum_ttl: u32,
-    /// Maximum TTL used to consider a [SignedPacket][pkarr::SignedPacket]
-    /// is [expired][pkarr::SignedPacket::is_expired]
-    pub maximum_ttl: u32,
 }
 
 impl Default for Config {
@@ -73,9 +65,6 @@ impl Default for Config {
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: Some(RateLimiterConfig::default()),
-
-            minimum_ttl: DEFAULT_MINIMUM_TTL,
-            maximum_ttl: DEFAULT_MAXIMUM_TTL,
         };
 
         this.pkarr.no_relays();
@@ -97,12 +86,10 @@ impl Config {
 
         if let Some(ttl) = config_toml.minimum_ttl {
             config.pkarr.minimum_ttl(ttl);
-            config.minimum_ttl = ttl;
         }
 
         if let Some(ttl) = config_toml.maximum_ttl {
             config.pkarr.maximum_ttl(ttl);
-            config.maximum_ttl = ttl;
         }
 
         if let Some(port) = config_toml.mainline.and_then(|m| m.port) {

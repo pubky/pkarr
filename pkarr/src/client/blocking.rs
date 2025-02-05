@@ -30,18 +30,6 @@ impl ClientBlocking {
         self.0.dht()
     }
 
-    /// Returns the minimum TTL configuration used in this client,
-    /// to determine if a [SignedPacket] [is_expired][SignedPacket::is_expired].
-    pub fn minimum_ttl(&self) -> u32 {
-        self.0.minimum_ttl()
-    }
-
-    /// Returns the maximum TTL configuration used in this client,
-    /// to determine if a [SignedPacket] [is_expired][SignedPacket::is_expired].
-    pub fn maximum_ttl(&self) -> u32 {
-        self.0.maximum_ttl()
-    }
-
     // === Publish ===
 
     /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).

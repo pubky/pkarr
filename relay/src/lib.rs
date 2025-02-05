@@ -8,7 +8,6 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 mod config;
-mod dht_server;
 mod error;
 mod handlers;
 mod rate_limiting;
@@ -23,7 +22,6 @@ use std::{
 use axum::{extract::DefaultBodyLimit, Router};
 use axum_server::Handle;
 
-use dht_server::DhtServer;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
@@ -119,17 +117,16 @@ impl Relay {
             .rate_limiter
             .map(|rate_limiter| rate_limiting::IpRateLimiter::new(&rate_limiter));
 
-        let server = Box::new(DhtServer::new(
-            cache.clone(),
-            config.minimum_ttl.min(config.maximum_ttl),
-            config.maximum_ttl.max(config.minimum_ttl),
-            rate_limiter.clone(),
-        ));
+        config.pkarr.cache(cache);
 
-        config
-            .pkarr
-            .dht(|builder| builder.custom_server(server))
-            .cache(cache);
+        if let Some(ref rate_limiter) = rate_limiter {
+            config.pkarr.dht(|builder| {
+                builder.server_settings(mainline::ServerSettings {
+                    filter: Box::new(rate_limiter.clone()),
+                    ..Default::default()
+                })
+            });
+        }
 
         let client = config.pkarr.build()?;
 

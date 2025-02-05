@@ -34,6 +34,7 @@ use builder::Config;
 
 #[cfg(feature = "relays")]
 use crate::client::relays::RelaysClient;
+#[cfg(all(feature = "dht", not(target_family = "wasm")))]
 use crate::{Cache, CacheKey, InMemoryCache};
 use crate::{PublicKey, SignedPacket};
 
@@ -138,18 +139,6 @@ impl Client {
     #[cfg(all(feature = "dht", not(target_family = "wasm")))]
     pub fn dht(&self) -> Option<mainline::Dht> {
         self.0.dht.as_ref().cloned()
-    }
-
-    /// Returns the minimum TTL configuration used in this client,
-    /// to determine if a [SignedPacket] [is_expired][SignedPacket::is_expired].
-    pub fn minimum_ttl(&self) -> u32 {
-        self.0.minimum_ttl
-    }
-
-    /// Returns the maximum TTL configuration used in this client,
-    /// to determine if a [SignedPacket] [is_expired][SignedPacket::is_expired].
-    pub fn maximum_ttl(&self) -> u32 {
-        self.0.maximum_ttl
     }
 
     // === Publish ===
