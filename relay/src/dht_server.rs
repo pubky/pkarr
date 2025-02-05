@@ -23,11 +23,11 @@ use crate::rate_limiting::IpRateLimiter;
 #[derive(Clone)]
 pub struct DhtServer {
     default_server: DefaultServer,
-    resolvers: Option<Box<[SocketAddrV4]>>,
     cache: Arc<LmdbCache>,
     minimum_ttl: u32,
     maximum_ttl: u32,
     rate_limiter: Option<IpRateLimiter>,
+    resolvers: Option<Box<[SocketAddrV4]>>,
 }
 
 impl Debug for DhtServer {
@@ -39,19 +39,19 @@ impl Debug for DhtServer {
 impl DhtServer {
     pub fn new(
         cache: Arc<LmdbCache>,
-        resolvers: Option<Vec<SocketAddrV4>>,
         minimum_ttl: u32,
         maximum_ttl: u32,
         rate_limiter: Option<IpRateLimiter>,
+        resolvers: Option<Vec<SocketAddrV4>>,
     ) -> Self {
         Self {
             // Default DhtServer used to stay a good citizen servicing the Dht.
             default_server: DefaultServer::default(),
             cache,
-            resolvers: resolvers.map(|r| r.into()),
             minimum_ttl,
             maximum_ttl,
             rate_limiter,
+            resolvers: resolvers.map(|r| r.into()),
         }
     }
 }

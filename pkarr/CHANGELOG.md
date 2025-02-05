@@ -34,6 +34,7 @@ All notable changes to pkarr will be documented in this file.
 - Add feature `tls` to create `rustls::ClientConfig` from `Client` and `relay::client::Client` and create `rustls::ServerCongif` from `KeyPair`.
 - Add feature `reqwest-builder` to create a `reqwest::ClientBuilder` from `Client` and `relay::client::Client` using custom dns resolver and preconfigured rustls client config.
 - Add `BlockingClient` wrapper accessed by calling `Client::as_blocking()`.
+- Add `Client::minimum_ttl()` and `Client::maximum_ttl()` getters.
 
 ### Changed
 

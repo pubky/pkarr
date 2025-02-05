@@ -123,11 +123,10 @@ impl Relay {
 
         let server = Box::new(DhtServer::new(
             cache.clone(),
-            None,
-            // TODO: move ttl logic to Cache trait.
-            0,
-            100000,
+            config.minimum_ttl.min(config.maximum_ttl),
+            config.maximum_ttl.max(config.minimum_ttl),
             rate_limiter.clone(),
+            None,
         ));
 
         config
@@ -191,7 +190,6 @@ impl Relay {
             .bootstrap(&testnet.bootstrap)
             .request_timeout(Duration::from_millis(100))
             .bootstrap(&testnet.bootstrap)
-            // TODO: use separate server node?
             .dht(|builder| builder.server_mode());
 
         Ok(unsafe { Self::start(config).await? })
@@ -222,7 +220,6 @@ impl Relay {
             .pkarr
             .request_timeout(Duration::from_millis(100))
             .bootstrap(&testnet.bootstrap)
-            // TODO: use separate server node?
             .dht(|builder| builder.server_mode());
 
         unsafe { Self::start(config).await }

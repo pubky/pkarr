@@ -474,7 +474,7 @@ impl SignedPacket {
     }
 
     /// Returns whether or not this packet is considered expired according to
-    /// a given `min` and `max` TTLs
+    /// a given `min` and `max` TTLs, by comparing it to this [SignedPacket::ttl].
     pub fn is_expired(&self, min: u32, max: u32) -> bool {
         self.expires_in(min, max) == 0
     }
