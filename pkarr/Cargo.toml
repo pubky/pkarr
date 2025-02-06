@@ -33,18 +33,16 @@ lru = { version = "0.12.5", default-features = false , optional = true }
 
 #feat: relay dependencies
 sha1_smol = { version = "1.0.1", optional = true }
+url = { version = "2.5.4", optional = true }
 
 # feat: endpoints dependencies
 genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"], optional = true }
-
-# feat: reqwest-builder
-url = { version = "2.5.4", optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 tracing = "0.1.41"
 
 # feat: dht dependencies
-mainline = { git = "https://github.com/pubky/mainline", branch="v5", optional = true }
+mainline = { version = "5.0.0-rc.1", optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"], optional = true }
@@ -81,7 +79,7 @@ rstest = "0.24.0"
 pkarr-relay = { path = "../relay" }
 clap = { version = "4.5.28", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-mainline = { git = "https://github.com/pubky/mainline", branch="v5" }
+mainline = "5.0.0-rc.1"
 tokio-rustls = "0.26.1"
 axum = "0.8.1"
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
@@ -127,7 +125,6 @@ reqwest-resolve = ["endpoints", "dep:reqwest"]
 reqwest-builder = ["tls", "reqwest-resolve"]
 
 # Combinations
-
 ## Use all features
 full-client = ["dht", "relays"]
 ## Extra features that might benefit most but not all developers building apps using Pkarr.
@@ -137,7 +134,7 @@ extra = ["endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
 ## Use all features including the `full-client` and `extra` features.
 full = ["full-client", "extra"]
 
-default = ["full"]
+default = ["full-client"]
 
 ## Enable client dependencies.
 ##

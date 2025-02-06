@@ -31,9 +31,9 @@ clap = { version = "4.5.28", features = ["derive"] }
 dirs-next = "2.0.0"
 pkarr = { version = "3.0.0", path = "../pkarr", default-features = false, features = ["dht", "lmdb-cache"] }
 httpdate = "1.0.3"
-pubky-timestamp = { version = "0.3.0" }
-mainline = { git = "https://github.com/pubky/mainline", branch="v5" }
+pubky-timestamp = "0.3.0"
 url = "2.5.4"
+mainline = "5.0.0-rc.1"
 
 [package.metadata.docs.rs]
 all-features = true
