@@ -569,12 +569,12 @@ fn normalize_name(origin: &str, name: String) -> String {
     format!("{}.{}", name, origin)
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+#[cfg(dht)]
 use mainline::MutableItem;
 
 use super::keys::PublicKeyError;
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+#[cfg(dht)]
 impl From<&SignedPacket> for MutableItem {
     fn from(s: &SignedPacket) -> Self {
         Self::new_signed_unchecked(
@@ -588,7 +588,7 @@ impl From<&SignedPacket> for MutableItem {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+#[cfg(dht)]
 impl TryFrom<&MutableItem> for SignedPacket {
     type Error = SignedPacketVerifyError;
 
@@ -604,7 +604,7 @@ impl TryFrom<&MutableItem> for SignedPacket {
     }
 }
 
-#[cfg(all(not(target_arch = "wasm32"), feature = "dht"))]
+#[cfg(dht)]
 impl TryFrom<MutableItem> for SignedPacket {
     type Error = SignedPacketVerifyError;
 
@@ -862,7 +862,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     #[test]
     fn to_mutable() {
         let keypair = Keypair::random();

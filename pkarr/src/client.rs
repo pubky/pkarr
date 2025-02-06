@@ -11,15 +11,15 @@ macro_rules! cross_debug {
 
 pub mod cache;
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(not(wasm_browser))]
 pub mod blocking;
-mod builder;
-#[cfg(feature = "relays")]
+pub mod builder;
+#[cfg(relays)]
 mod relays;
 
-#[cfg(all(test, not(target_family = "wasm")))]
+#[cfg(all(test, not(wasm_browser)))]
 mod tests;
-#[cfg(all(test, target_family = "wasm"))]
+#[cfg(all(test, wasm_browser))]
 mod tests_web;
 
 use futures_lite::{Stream, StreamExt};
@@ -28,26 +28,24 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::{hash::Hash, num::NonZeroUsize};
 
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+#[cfg(dht)]
 use mainline::{errors::PutMutableError, Dht};
 
-use builder::Config;
+use builder::{ClientBuilder, Config};
 
-#[cfg(feature = "relays")]
+#[cfg(relays)]
 use crate::client::relays::RelaysClient;
 use crate::{Cache, CacheKey, InMemoryCache};
 use crate::{PublicKey, SignedPacket};
-
-pub use builder::ClientBuilder;
 
 #[derive(Debug)]
 pub struct Inner {
     minimum_ttl: u32,
     maximum_ttl: u32,
     cache: Option<Arc<dyn Cache>>,
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     dht: Option<Dht>,
-    #[cfg(feature = "relays")]
+    #[cfg(relays)]
     relays: Option<RelaysClient>,
 }
 
@@ -71,16 +69,16 @@ impl Client {
 
         cross_debug!("Starting Pkarr Client {:?}", config);
 
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+        #[cfg(dht)]
         let dht = if let Some(builder) = config.dht {
             Some(builder.build().map_err(BuildError::DhtBuildError)?)
         } else {
             None
         };
-        #[cfg(not(all(feature = "dht", not(target_family = "wasm"))))]
+        #[cfg(not(dht))]
         let dht: Option<()> = None;
 
-        #[cfg(any(feature = "relays", target_family = "wasm"))]
+        #[cfg(relays)]
         let relays = if let Some(ref relays) = config.relays {
             if relays.is_empty() {
                 return Err(BuildError::EmptyListOfRelays);
@@ -88,7 +86,7 @@ impl Client {
 
             let relays_client = RelaysClient::new(
                 relays.clone().into_boxed_slice(),
-                #[cfg(not(target_family = "wasm"))]
+                #[cfg(not(wasm_browser))]
                 config.request_timeout,
             );
 
@@ -96,7 +94,7 @@ impl Client {
         } else {
             None
         };
-        #[cfg(not(feature = "relays"))]
+        #[cfg(not(relays))]
         let relays: Option<()> = None;
 
         if dht.is_none() && relays.is_none() {
@@ -107,9 +105,9 @@ impl Client {
             minimum_ttl: config.minimum_ttl.min(config.maximum_ttl),
             maximum_ttl: config.maximum_ttl.max(config.minimum_ttl),
             cache,
-            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+            #[cfg(dht)]
             dht,
-            #[cfg(feature = "relays")]
+            #[cfg(relays)]
             relays,
         }));
 
@@ -136,7 +134,7 @@ impl Client {
     /// Gives you access to methods like [mainline::Dht::info],
     /// [mainline::Dht::bootstrapped], and [mainline::Dht::to_bootstrap]
     /// among ther rest of the API.
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     pub fn dht(&self) -> Option<mainline::Dht> {
         self.0.dht.as_ref().cloned()
     }
@@ -226,11 +224,11 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(not(wasm_browser))]
         {
             async_compat::Compat::new(self.publish_inner(signed_packet, cas)).await
         }
-        #[cfg(target_family = "wasm")]
+        #[cfg(wasm_browser)]
         self.publish_inner(signed_packet, cas).await
     }
 
@@ -243,11 +241,11 @@ impl Client {
     /// If you want to get the most recent version of a [SignedPacket],
     /// you should use [Self::resolve_most_recent].
     pub async fn resolve(&self, public_key: &PublicKey) -> Option<SignedPacket> {
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(not(wasm_browser))]
         {
             async_compat::Compat::new(self.resolve_inner(public_key)).await
         }
-        #[cfg(target_family = "wasm")]
+        #[cfg(wasm_browser)]
         self.resolve_inner(public_key).await
     }
 
@@ -319,10 +317,8 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        // TODO: support other modes than Parallel.
-
         // Handle DHT and Relay futures based on feature flags and target family
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+        #[cfg(dht)]
         let dht_future = self.dht().map(|node| async {
             node.as_async()
                 .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
@@ -330,27 +326,21 @@ impl Client {
                 .map(|_| Ok(()))?
         });
 
-        #[cfg(feature = "relays")]
+        #[cfg(relays)]
         let relays_future = self
             .0
             .relays
             .as_ref()
             .map(|relays| relays.publish(signed_packet, cas));
 
-        #[cfg(all(
-            all(feature = "dht", not(target_family = "wasm")),
-            not(feature = "relays")
-        ))]
-        let result = dht_future.expect("infallible").await;
+        #[cfg(all(dht, not(relays)))]
+        return dht_future.expect("infallible").await;
 
-        #[cfg(all(
-            feature = "relays",
-            not(all(feature = "dht", not(target_family = "wasm")))
-        ))]
-        let result = relays_future.expect("infallible").await;
+        #[cfg(all(relays, not(dht)))]
+        return relays_future.expect("infallible").await;
 
-        #[cfg(all(all(feature = "dht", not(target_family = "wasm")), feature = "relays"))]
-        let result = if dht_future.is_some() && relays_future.is_some() {
+        #[cfg(all(dht, relays))]
+        return if dht_future.is_some() && relays_future.is_some() {
             futures_lite::future::or(
                 dht_future.expect("infallible"),
                 relays_future.expect("infallible"),
@@ -361,8 +351,6 @@ impl Client {
         } else {
             relays_future.expect("infallible").await
         };
-
-        result
     }
 
     pub(crate) async fn resolve_inner(&self, public_key: &PublicKey) -> Option<SignedPacket> {
@@ -384,9 +372,9 @@ impl Client {
 
         if let Some(cached_packet) = cached_packet {
             if cached_packet.is_expired(self.0.minimum_ttl, self.0.maximum_ttl) {
-                #[cfg(not(target_family = "wasm"))]
+                #[cfg(not(wasm_browser))]
                 tokio::spawn(async move { while stream.next().await.is_some() {} });
-                #[cfg(target_family = "wasm")]
+                #[cfg(wasm_browser)]
                 wasm_bindgen_futures::spawn_local(
                     async move { while stream.next().await.is_some() {} },
                 );
@@ -404,7 +392,7 @@ impl Client {
         self.cache().and_then(|cache| cache.get(&cache_key))
     }
 
-    #[cfg(target_family = "wasm")]
+    #[cfg(wasm_browser)]
     fn resolve_stream(
         &self,
         public_key: PublicKey,
@@ -427,7 +415,7 @@ impl Client {
         Box::pin(stream)
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(not(wasm_browser))]
     /// Returns a [Stream] of incoming [SignedPacket]s.
     fn resolve_stream(
         &self,
@@ -444,14 +432,14 @@ impl Client {
             .boxed()
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(not(wasm_browser))]
     /// Returns a Stream from both the DHT and Relays client.
     fn merged_resolve_stream(
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
-        #[cfg(feature = "dht")]
+        #[cfg(dht)]
         let dht_stream = match self.dht() {
             Some(node) => map_dht_stream(node.as_async().get_mutable(
                 public_key.as_bytes(),
@@ -461,27 +449,25 @@ impl Client {
             None => None,
         };
 
-        #[cfg(feature = "relays")]
+        #[cfg(relays)]
         let relays_stream = self
             .0
             .relays
             .as_ref()
             .map(|relays| relays.resolve(public_key, more_recent_than));
 
-        #[cfg(all(feature = "dht", not(feature = "relays")))]
-        let stream = dht_stream.expect("infallible");
+        #[cfg(all(dht, not(relays)))]
+        return dht_stream.expect("infallible");
 
-        #[cfg(all(feature = "relays", not(feature = "dht")))]
-        let stream = relays_stream.expect("infallible");
+        #[cfg(all(relays, not(dht)))]
+        return relays_stream.expect("infallible");
 
-        #[cfg(all(feature = "dht", feature = "relays"))]
-        let stream = match (dht_stream, relays_stream) {
+        #[cfg(all(dht, relays))]
+        Box::pin(match (dht_stream, relays_stream) {
             (Some(s), None) | (None, Some(s)) => s,
             (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
-        };
-
-        Box::pin(stream)
+        })
     }
 }
 
@@ -519,7 +505,7 @@ fn filter_incoming_signed_packet(
     }
 }
 
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+#[cfg(dht)]
 fn map_dht_stream(
     stream: mainline::async_dht::GetStream<mainline::MutableItem>,
 ) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
@@ -596,7 +582,7 @@ impl Eq for QueryError {
 impl PartialEq for QueryError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+            #[cfg(dht)]
             (
                 QueryError::DhtErrorResponse(self_error, _),
                 QueryError::DhtErrorResponse(other_error, _),
@@ -644,7 +630,7 @@ pub enum ConcurrencyError {
     CasFailed,
 }
 
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+#[cfg(dht)]
 impl From<PutMutableError> for PublishError {
     fn from(value: PutMutableError) -> Self {
         match value {

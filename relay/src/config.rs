@@ -44,12 +44,12 @@ pub struct Config {
     /// Defaults to `6881`
     pub http_port: u16,
     /// Pkarr client builder
-    pub pkarr: pkarr::client::ClientBuilder,
+    pub pkarr: pkarr::ClientBuilder,
     /// Path to cache database
     ///
     /// Defaults to a directory in the OS data directory
     pub cache_path: Option<PathBuf>,
-    /// See [pkarr::client::ClientBuilder::cache_size]
+    /// See [pkarr::ClientBuilder::cache_size]
     ///
     /// Defaults to 1000_000
     pub cache_size: usize,

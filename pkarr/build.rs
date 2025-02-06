@@ -1,25 +1,22 @@
+use cfg_aliases::cfg_aliases;
+
 fn main() {
-    #[cfg(any(
-        feature = "endpoints",
-        feature = "reqwest-resolve",
-        feature = "tls",
-        feature = "reqwest-builder"
-    ))]
-    {
-        if std::env::var("TARGET")
-            .ok()
-            .map(|t| t.starts_with("wasm32"))
-            .unwrap_or_default()
-        {
-            if !cfg!(feature = "relays") {
-                eprintln!("Pkarr Build Error: `relays` feature must be enabled for WASM builds.");
-                std::process::exit(1);
-            }
-        } else if !cfg!(any(feature = "dht", feature = "relays")) {
-            eprintln!(
-                "Pkarr Build Error: At least one of `dht` or `relays` features must be enabled."
-            );
-            std::process::exit(1);
-        }
+    // Convenience aliases
+    cfg_aliases! {
+        wasm_browser: { all(target_family = "wasm", target_os = "unknown") },
+        dht: { all(feature = "dht", not(target_family = "wasm")) },
+        relays: { feature = "relays" },
+        client: {
+            any(
+                all(
+                    not(target_family = "wasm"),
+                    any(feature = "dht", feature = "relays")
+                ),
+                all(
+                    target_family = "wasm",
+                    feature = "relays"
+                )
+            )
+        },
     }
 }

@@ -1,4 +1,4 @@
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+#[cfg(dht)]
 use std::net::ToSocketAddrs;
 use std::{sync::Arc, time::Duration};
 
@@ -9,9 +9,9 @@ use crate::{Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL}
 
 use crate::{errors::BuildError, Client};
 
-#[cfg(all(feature = "dht", not(target_family = "wasm")))]
+#[cfg(dht)]
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::DEFAULT_REQUEST_TIMEOUT;
-#[cfg(not(all(feature = "dht", not(target_family = "wasm"))))]
+#[cfg(not(dht))]
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// [Client]'s Config
@@ -30,7 +30,7 @@ pub(crate) struct Config {
     /// Custom [Cache] implementation, defaults to [crate::InMemoryCache]
     pub cache: Option<Arc<dyn Cache>>,
 
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     pub dht: Option<mainline::DhtBuilder>,
 
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
@@ -54,7 +54,7 @@ impl Default for Config {
             maximum_ttl: DEFAULT_MAXIMUM_TTL,
             cache: None,
 
-            #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+            #[cfg(dht)]
             dht: Some(mainline::Dht::builder()),
 
             #[cfg(feature = "relays")]
@@ -81,9 +81,9 @@ impl std::fmt::Debug for Config {
         debug_struct.field("maximum_ttl", &self.maximum_ttl);
         debug_struct.field("cache", &self.cache);
 
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+        #[cfg(dht)]
         debug_struct.field("dht", &self.dht);
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+        #[cfg(dht)]
         #[cfg(feature = "relays")]
         debug_struct.field(
             "relays",
@@ -118,7 +118,7 @@ impl ClientBuilder {
 
     /// Disable relays, and use the Dht only.
     pub fn no_dht(&mut self) -> &mut Self {
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+        #[cfg(dht)]
         {
             self.0.dht = None;
         }
@@ -126,7 +126,7 @@ impl ClientBuilder {
         self
     }
 
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     /// Create a [mainline::DhtBuilder] if `None`, and allows mutating it with a callback function.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
@@ -149,14 +149,14 @@ impl ClientBuilder {
     ///
     /// If you want to extend [bootstrap][mainline::DhtBuilder::bootstrap] nodes with more nodes, you can
     /// use [Self::extra_bootstrap].
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     pub fn bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
         self.dht(|b| b.bootstrap(bootstrap));
 
         self
     }
 
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     /// Extend the DHT bootstraping nodes.
     ///
     /// If you want to set (override) the DHT bootstraping nodes,
@@ -243,7 +243,7 @@ impl ClientBuilder {
     /// sooner than the default of [mainline::DEFAULT_REQUEST_TIMEOUT].
     pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.0.request_timeout = timeout;
-        #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+        #[cfg(dht)]
         self.0.dht.as_mut().map(|b| b.request_timeout(timeout));
 
         self

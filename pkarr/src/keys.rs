@@ -1,16 +1,9 @@
 //! Utility structs for Ed25519 keys.
 
-#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
-use ed25519_dalek::pkcs8::{Document, EncodePrivateKey, EncodePublicKey};
 use ed25519_dalek::{
     SecretKey, Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey,
 };
 use rand::rngs::OsRng;
-#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
-use rustls::{
-    crypto::ring::sign::any_eddsa_type, pki_types::CertificateDer,
-    server::AlwaysResolvesServerRawPublicKeys, sign::CertifiedKey, ServerConfig,
-};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
@@ -21,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq)]
 /// Ed25519 keypair to sign dns [Packet](crate::SignedPacket)s.
-pub struct Keypair(SigningKey);
+pub struct Keypair(pub(crate) SigningKey);
 
 impl Keypair {
     pub fn random() -> Keypair {
@@ -57,57 +50,6 @@ impl Keypair {
 
     pub fn to_uri_string(&self) -> String {
         self.public_key().to_uri_string()
-    }
-
-    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
-    /// Return a RawPublicKey certified key according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
-    /// useful to use with [rustls::ConfigBuilder::with_cert_resolver] and [rustls::server::AlwaysResolvesServerRawPublicKeys]
-    pub fn to_rpk_certified_key(&self) -> CertifiedKey {
-        let client_private_key = any_eddsa_type(
-            &self
-                .0
-                .to_pkcs8_der()
-                .expect("Keypair::to_rpk_certificate: convert secret key to pkcs8 der")
-                .as_bytes()
-                .into(),
-        )
-        .expect("Keypair::to_rpk_certificate: convert KeyPair to rustls SigningKey");
-
-        let client_public_key = client_private_key
-            .public_key()
-            .expect("Keypair::to_rpk_certificate: load SPKI");
-        let client_public_key_as_cert = CertificateDer::from(client_public_key.to_vec());
-
-        CertifiedKey::new(vec![client_public_key_as_cert], client_private_key)
-    }
-
-    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
-    /// Create a [rustls::ServerConfig] using this keypair as a RawPublicKey certificate according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
-    pub fn to_rpk_rustls_server_config(&self) -> ServerConfig {
-        let cert_resolver =
-            AlwaysResolvesServerRawPublicKeys::new(self.to_rpk_certified_key().into());
-
-        ServerConfig::builder_with_provider(rustls::crypto::ring::default_provider().into())
-            .with_safe_default_protocol_versions()
-            .expect("version supported by ring")
-            .with_no_client_auth()
-            .with_cert_resolver(std::sync::Arc::new(cert_resolver))
-    }
-}
-
-#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
-impl From<Keypair> for ServerConfig {
-    /// calls [Keypair::to_rpk_rustls_server_config]
-    fn from(keypair: Keypair) -> Self {
-        keypair.to_rpk_rustls_server_config()
-    }
-}
-
-#[cfg(all(not(target_family = "wasm"), feature = "tls"))]
-impl From<&Keypair> for ServerConfig {
-    /// calls [Keypair::to_rpk_rustls_server_config]
-    fn from(keypair: &Keypair) -> Self {
-        keypair.to_rpk_rustls_server_config()
     }
 }
 
@@ -146,11 +88,6 @@ impl PublicKey {
     /// Return a reference to the underlying [u8; 32] bytes.
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.0.as_bytes()
-    }
-
-    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
-    pub fn to_public_key_der(&self) -> Document {
-        self.0.to_public_key_der().expect("to_public_key_der")
     }
 }
 

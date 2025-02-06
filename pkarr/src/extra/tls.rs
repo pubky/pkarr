@@ -1,15 +1,20 @@
 use std::{fmt::Debug, sync::Arc};
 
+use ed25519_dalek::pkcs8::{Document, EncodePrivateKey, EncodePublicKey};
 use futures_lite::{pin, stream::block_on};
 use rustls::{
     client::danger::{DangerousClientConfigBuilder, ServerCertVerified, ServerCertVerifier},
+    crypto::ring::sign::any_eddsa_type,
     crypto::{verify_tls13_signature_with_raw_key, WebPkiSupportedAlgorithms},
+    pki_types::CertificateDer,
     pki_types::SubjectPublicKeyInfoDer,
-    CertificateError, SignatureScheme,
+    server::AlwaysResolvesServerRawPublicKeys,
+    sign::CertifiedKey,
+    CertificateError, ServerConfig, SignatureScheme,
 };
 use tracing::{instrument, Level};
 
-use crate::Client;
+use crate::{Client, Keypair, PublicKey};
 
 #[derive(Debug)]
 pub struct CertVerifier(Client);
@@ -140,4 +145,60 @@ fn create_client_config_with_ring() -> DangerousClientConfigBuilder {
         .with_safe_default_protocol_versions()
         .expect("version supported by ring")
         .dangerous()
+}
+
+impl Keypair {
+    /// Return a RawPublicKey certified key according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
+    /// useful to use with [rustls::ConfigBuilder::with_cert_resolver] and [rustls::server::AlwaysResolvesServerRawPublicKeys]
+    pub fn to_rpk_certified_key(&self) -> CertifiedKey {
+        let client_private_key = any_eddsa_type(
+            &self
+                .0
+                .to_pkcs8_der()
+                .expect("Keypair::to_rpk_certificate: convert secret key to pkcs8 der")
+                .as_bytes()
+                .into(),
+        )
+        .expect("Keypair::to_rpk_certificate: convert KeyPair to rustls SigningKey");
+
+        let client_public_key = client_private_key
+            .public_key()
+            .expect("Keypair::to_rpk_certificate: load SPKI");
+        let client_public_key_as_cert = CertificateDer::from(client_public_key.to_vec());
+
+        CertifiedKey::new(vec![client_public_key_as_cert], client_private_key)
+    }
+
+    #[cfg(all(not(target_family = "wasm"), feature = "tls"))]
+    /// Create a [rustls::ServerConfig] using this keypair as a RawPublicKey certificate according to [RFC 7250](https://tools.ietf.org/html/rfc7250)
+    pub fn to_rpk_rustls_server_config(&self) -> ServerConfig {
+        let cert_resolver =
+            AlwaysResolvesServerRawPublicKeys::new(self.to_rpk_certified_key().into());
+
+        ServerConfig::builder_with_provider(rustls::crypto::ring::default_provider().into())
+            .with_safe_default_protocol_versions()
+            .expect("version supported by ring")
+            .with_no_client_auth()
+            .with_cert_resolver(std::sync::Arc::new(cert_resolver))
+    }
+}
+
+impl From<Keypair> for ServerConfig {
+    /// calls [Keypair::to_rpk_rustls_server_config]
+    fn from(keypair: Keypair) -> Self {
+        keypair.to_rpk_rustls_server_config()
+    }
+}
+
+impl From<&Keypair> for ServerConfig {
+    /// calls [Keypair::to_rpk_rustls_server_config]
+    fn from(keypair: &Keypair) -> Self {
+        keypair.to_rpk_rustls_server_config()
+    }
+}
+
+impl PublicKey {
+    pub fn to_public_key_der(&self) -> Document {
+        self.0.to_public_key_der().expect("to_public_key_der")
+    }
 }

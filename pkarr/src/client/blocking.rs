@@ -25,7 +25,7 @@ impl ClientBlocking {
     /// Gives you access to methods like [mainline::Dht::info],
     /// [mainline::Dht::bootstrapped], and [mainline::Dht::to_bootstrap]
     /// among ther rest of the API.
-    #[cfg(all(feature = "dht", not(target_family = "wasm")))]
+    #[cfg(dht)]
     pub fn dht(&self) -> Option<mainline::Dht> {
         self.0.dht()
     }
