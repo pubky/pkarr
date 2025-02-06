@@ -108,6 +108,7 @@ impl std::fmt::Debug for Config {
     }
 }
 
+/// A builder for constructing a [`Client`] with custom configuration.
 #[derive(Debug, Default, Clone)]
 pub struct ClientBuilder(Config);
 
@@ -270,6 +271,7 @@ impl ClientBuilder {
         self
     }
 
+    /// Try building a [Client] with the configuration in this builder.
     pub fn build(&self) -> Result<Client, BuildError> {
         Client::new(self.0.clone())
     }

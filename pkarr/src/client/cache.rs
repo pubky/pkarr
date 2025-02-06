@@ -29,8 +29,11 @@ impl From<crate::PublicKey> for CacheKey {
     }
 }
 
+/// A trait for a [SignedPacket]s cache for Pkarr [Client][crate::Client].
 pub trait Cache: Debug + Send + Sync + DynClone {
+    /// Returns the number of [SignedPacket]s in this cache.
     fn len(&self) -> usize;
+    /// Returns true if this cache is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }

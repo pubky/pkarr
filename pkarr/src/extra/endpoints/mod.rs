@@ -1,4 +1,5 @@
-//! implementation of EndpointResolver trait for different clients
+//! implementation of [Endpoints](https://pkarr.org/endpoints) spec.
+//!
 
 mod endpoint;
 
@@ -109,6 +110,7 @@ impl crate::Client {
 }
 
 #[derive(Debug)]
+/// pkarr could not resolve endpoint
 pub struct CouldNotResolveEndpoint;
 
 impl std::error::Error for CouldNotResolveEndpoint {}

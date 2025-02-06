@@ -1,3 +1,6 @@
+//! Extra features that might benefit most but not all developers building apps using Pkarr.
+//!
+
 #[cfg(feature = "endpoints")]
 pub mod endpoints;
 

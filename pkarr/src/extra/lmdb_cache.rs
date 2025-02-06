@@ -27,10 +27,11 @@ const SIGNED_PACKET_TABLE: &str = "pkarrcache:signed_packet";
 const KEY_TO_TIME_TABLE: &str = "pkarrcache:key_to_time";
 const TIME_TO_KEY_TABLE: &str = "pkarrcache:time_to_key";
 
-type SignedPacketsTable = Database<CacheKeyCodec, SignedPacketCodec>;
+type SignedPacketsTable = Database<CacheKeyCodec, SignedPacket>;
 type KeyToTimeTable = Database<CacheKeyCodec, U64<BigEndian>>;
 type TimeToKeyTable = Database<U64<BigEndian>, CacheKeyCodec>;
 
+/// A wrapper for [CacheKey] to implement [BytesEncode] and [BytesDecode].
 pub struct CacheKeyCodec;
 
 impl<'a> BytesEncode<'a> for CacheKeyCodec {
@@ -50,9 +51,7 @@ impl<'a> BytesDecode<'a> for CacheKeyCodec {
     }
 }
 
-pub struct SignedPacketCodec;
-
-impl<'a> BytesEncode<'a> for SignedPacketCodec {
+impl<'a> BytesEncode<'a> for SignedPacket {
     type EItem = SignedPacket;
 
     fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
@@ -60,7 +59,7 @@ impl<'a> BytesEncode<'a> for SignedPacketCodec {
     }
 }
 
-impl<'a> BytesDecode<'a> for SignedPacketCodec {
+impl<'a> BytesDecode<'a> for SignedPacket {
     type DItem = SignedPacket;
 
     fn bytes_decode(bytes: &'a [u8]) -> Result<Self::DItem, BoxedError> {
@@ -153,7 +152,7 @@ impl LmdbCache {
         unsafe { Self::open(env_path, capacity) }
     }
 
-    pub fn internal_len(&self) -> Result<usize, heed::Error> {
+    fn internal_len(&self) -> Result<usize, heed::Error> {
         let rtxn = self.env.read_txn()?;
         let len = self.signed_packets_table.len(&rtxn)? as usize;
         rtxn.commit()?;
@@ -161,7 +160,7 @@ impl LmdbCache {
         Ok(len)
     }
 
-    pub fn internal_put(
+    fn internal_put(
         &self,
         key: &CacheKey,
         signed_packet: &SignedPacket,
@@ -213,7 +212,7 @@ impl LmdbCache {
         Ok(())
     }
 
-    pub fn internal_get(&self, key: &CacheKey) -> Result<Option<SignedPacket>, heed::Error> {
+    fn internal_get(&self, key: &CacheKey) -> Result<Option<SignedPacket>, heed::Error> {
         self.batch
             .write()
             .expect("LmdbCache::batch.write()")
@@ -222,10 +221,7 @@ impl LmdbCache {
         self.internal_get_read_only(key)
     }
 
-    pub fn internal_get_read_only(
-        &self,
-        key: &CacheKey,
-    ) -> Result<Option<SignedPacket>, heed::Error> {
+    fn internal_get_read_only(&self, key: &CacheKey) -> Result<Option<SignedPacket>, heed::Error> {
         let rtxn = self.env.read_txn()?;
 
         if let Some(signed_packet) = self.signed_packets_table.get(&rtxn, key)? {

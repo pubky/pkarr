@@ -1,3 +1,6 @@
+//! implementation of Reqwest [Resolve] using Pkarr's [Endpoints](https://pkarr.org/endpoints) spec.
+//!
+
 use reqwest::dns::{Addrs, Resolve};
 
 use crate::{Client, PublicKey};
@@ -34,6 +37,7 @@ async fn resolve(
 }
 
 #[derive(Debug)]
+/// pkarr could not resolve host.
 pub struct CouldNotResolveHost;
 
 impl std::error::Error for CouldNotResolveHost {}

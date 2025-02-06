@@ -160,7 +160,7 @@ impl Endpoint {
         }
     }
 
-    // Returns a service parameter.
+    /// Returns a service parameter.
     pub fn get_param(&self, key: u16) -> Option<&[u8]> {
         self.params.get(&key).map(|v| v.as_ref())
     }

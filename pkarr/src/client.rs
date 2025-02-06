@@ -548,9 +548,13 @@ pub enum BuildError {
 /// Errors occuring during publishing a [SignedPacket]
 pub enum PublishError {
     #[error(transparent)]
+    /// Errors that requires either a retry or debugging the network condition.
     Query(#[from] QueryError),
 
     #[error(transparent)]
+    /// A different [SignedPacket] is being concurrently published for the same [PublicKey].
+    ///
+    /// This risks a lost update, you should resolve most recent [SignedPacket] before publishing again.
     Concurrency(#[from] ConcurrencyError),
 
     // === Relays only errors ===

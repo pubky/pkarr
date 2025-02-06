@@ -179,6 +179,10 @@ pub struct SignedPacket {
 }
 
 impl SignedPacket {
+    /// Maximum legal size of the binary representation of a SignedPacket.
+    ///
+    /// Calculated from the maximum size of a value in Mainline DHT's mutable values; 1000 bytes,
+    /// plus the number of bytes in a Signature (64), and a [Timestamp] (8) and a public key (32).
     pub const MAX_BYTES: u64 = 1104;
 
     /// Create a [SignedPacket] using a builder.
@@ -719,6 +723,7 @@ impl<'de> Deserialize<'de> for SignedPacket {
 /// Errors trying to parse or create a [SignedPacket]
 pub enum SignedPacketVerifyError {
     #[error(transparent)]
+    /// Errors which may occur while processing signatures and keypairs.
     SignatureError(#[from] SignatureError),
 
     #[error(transparent)]
@@ -731,10 +736,11 @@ pub enum SignedPacketVerifyError {
     InvalidSignedPacketBytesLength(usize),
 
     #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
-    // DNS packet endocded and compressed is larger than 1000 bytes
+    /// DNS packet endocded and compressed is larger than 1000 bytes
     PacketTooLarge(usize),
 
     #[error(transparent)]
+    /// Errors while trying to create a [PublicKey]
     PublicKeyError(#[from] PublicKeyError),
 }
 
@@ -742,11 +748,11 @@ pub enum SignedPacketVerifyError {
 /// Errors trying to create a new [SignedPacket]
 pub enum SignedPacketBuildError {
     #[error("DNS Packet is too large, expected max 1000 bytes but got: {0}")]
-    // DNS packet endocded and compressed is larger than 1000 bytes
+    /// DNS packet endocded and compressed is larger than 1000 bytes
     PacketTooLarge(usize),
 
     #[error("Failed to write encoded DNS packet due to I/O error: {0}")]
-    // Failed to write encoded DNS packet due to I/O error
+    /// Failed to write encoded DNS packet due to I/O error
     FailedToWrite(#[from] SimpleDnsError),
 }
 

@@ -1,3 +1,6 @@
+//! Implementation of [Tls](https://pkarr.org/tls) spec.
+//!
+
 use std::{fmt::Debug, sync::Arc};
 
 use ed25519_dalek::pkcs8::{Document, EncodePrivateKey, EncodePublicKey};
@@ -15,6 +18,9 @@ use rustls::{
 
 use crate::{Client, Keypair, PublicKey};
 
+/// A custom certificate verifier for Pkarr public keys.
+///
+/// This verifier checks if the server's certificate matches the public key of a Pkarr endpoint.
 #[derive(Debug)]
 pub struct CertVerifier(Client);
 
@@ -24,7 +30,10 @@ static SUPPORTED_ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorith
 };
 
 impl ServerCertVerifier for CertVerifier {
-    /// Verify Pkarr public keys
+    /// Verify Pkarr public keys.
+    ///
+    /// This method checks if the `endpoint_certificate` matches the public key of a Pkarr endpoint
+    /// resolvalbe from the `host_name`.
     fn verify_server_cert(
         &self,
         endpoint_certificate: &rustls::pki_types::CertificateDer<'_>,
@@ -48,7 +57,7 @@ impl ServerCertVerifier for CertVerifier {
         // since the last time we resolved endpoints to establish the connection in the
         // first place.
         //
-        // This won't be neccessary if Reqwest enabled us to createa rustls configuration
+        // This won't be necessary if Reqwest enabled us to create a rustls configuration
         // per connection.
         //
         // TODO: update this Reqwest enabled this.
@@ -185,20 +194,19 @@ impl Keypair {
 }
 
 impl From<Keypair> for ServerConfig {
-    /// calls [Keypair::to_rpk_rustls_server_config]
     fn from(keypair: Keypair) -> Self {
         keypair.to_rpk_rustls_server_config()
     }
 }
 
 impl From<&Keypair> for ServerConfig {
-    /// calls [Keypair::to_rpk_rustls_server_config]
     fn from(keypair: &Keypair) -> Self {
         keypair.to_rpk_rustls_server_config()
     }
 }
 
 impl PublicKey {
+    /// Converts the public key to a DER-encoded document.
     pub fn to_public_key_der(&self) -> Document {
         self.0.to_public_key_der().expect("to_public_key_der")
     }

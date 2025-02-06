@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct Keypair(pub(crate) SigningKey);
 
 impl Keypair {
+    /// Generates a new random `Keypair` using the operating system's CSPRNG.
     pub fn random() -> Keypair {
         let mut csprng = OsRng;
         let signing_key: SigningKey = SigningKey::generate(&mut csprng);
@@ -24,30 +25,37 @@ impl Keypair {
         Keypair(signing_key)
     }
 
+    /// Creates a `Keypair` from a given `SecretKey`.
     pub fn from_secret_key(secret_key: &SecretKey) -> Keypair {
         Keypair(SigningKey::from_bytes(secret_key))
     }
 
+    /// Signs a message with the private key of this `Keypair`.
     pub fn sign(&self, message: &[u8]) -> Signature {
         self.0.sign(message)
     }
 
+    /// Verifies a message against a given signature using this `Keypair`.
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<(), SignatureError> {
         self.0.verify(message, signature)
     }
 
+    /// Returns the secret part of this `Keypair`.
     pub fn secret_key(&self) -> SecretKey {
         self.0.to_bytes()
     }
 
+    /// Returns the [PublicKey] of this `Keypair`.
     pub fn public_key(&self) -> PublicKey {
         PublicKey(self.0.verifying_key())
     }
 
+    /// Converts the public key of this `Keypair` to a z-base32 encoded string.
     pub fn to_z32(&self) -> String {
         self.public_key().to_string()
     }
 
+    /// Converts the public key of this `Keypair` to a URI string.
     pub fn to_uri_string(&self) -> String {
         self.public_key().to_uri_string()
     }
@@ -280,12 +288,15 @@ impl<'de> Deserialize<'de> for PublicKey {
 /// Errors while trying to create a [PublicKey]
 pub enum PublicKeyError {
     #[error("Invalid PublicKey length, expected 32 bytes but got: {0}")]
+    /// Invalid PublicKey length.
     InvalidPublicKeyLength(usize),
 
     #[error("Invalid Ed25519 publickey; Cannot decompress Edwards point")]
+    /// Cannot decompress Edwards point
     InvalidEd25519PublicKey,
 
     #[error("Invalid PublicKey encoding")]
+    /// Invalid PublicKey encoding
     InvalidPublicKeyEncoding,
 }
 
