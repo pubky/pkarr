@@ -423,21 +423,31 @@ impl SignedPacket {
     /// that matches the given name. The name will be normalized to the origin TLD of this packet.
     ///
     /// You can use `@` to filter the resource records at the Apex (the public key).
+    ///
+    /// Wildcards are also supported, so `*.foo.<key>` will match `bar.foo.<key>`.
     pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
-        self.all_resource_records()
-            .filter(move |rr| rr.name.to_string() == normalized_name)
+        let is_wildcard = normalized_name.starts_with('*');
+
+        self.all_resource_records().filter(move |rr| {
+            if is_wildcard {
+                rr.name
+                    .to_string()
+                    .strip_suffix(&normalized_name[1..])
+                    .map(|m| !m.contains('.'))
+                    .unwrap_or_default()
+            } else {
+                rr.name.to_string() == normalized_name
+            }
+        })
     }
 
     /// Similar to [resource_records](SignedPacket::resource_records), but filters out
     /// expired records, according the the [Self::last_seen] value and each record's `ttl`.
     pub fn fresh_resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
-        let origin = self.public_key().to_z32();
-        let normalized_name = normalize_name(&origin, name.to_string());
-
-        self.all_resource_records()
-            .filter(move |rr| rr.name.to_string() == normalized_name && rr.ttl > self.elapsed())
+        self.resource_records(name)
+            .filter(move |rr| rr.ttl > self.elapsed())
     }
 
     /// Returns all resource records in this packet
@@ -1001,6 +1011,7 @@ mod tests {
         let mut signed_packet = SignedPacket::builder()
             .txt("_foo".try_into().unwrap(), "hello".try_into().unwrap(), 30)
             .txt("_foo".try_into().unwrap(), "world".try_into().unwrap(), 60)
+            .txt("_bar".try_into().unwrap(), "world".try_into().unwrap(), 60)
             .sign(&keypair)
             .unwrap();
 
@@ -1112,5 +1123,19 @@ mod tests {
             assert_eq!(deserialized.as_bytes(), signed_packet.as_bytes());
             assert_eq!(deserialized.last_seen(), &Timestamp::from(0));
         }
+    }
+
+    #[test]
+    fn wildcards() {
+        let keypair = Keypair::random();
+
+        let signed_packet = SignedPacket::builder()
+            .txt("bar.foo.".try_into().unwrap(), "_".try_into().unwrap(), 30)
+            .txt("x.bar.foo".try_into().unwrap(), "_".try_into().unwrap(), 30)
+            .txt("foo".try_into().unwrap(), "_".try_into().unwrap(), 60)
+            .sign(&keypair)
+            .unwrap();
+
+        assert_eq!(signed_packet.fresh_resource_records("*.foo.").count(), 1);
     }
 }

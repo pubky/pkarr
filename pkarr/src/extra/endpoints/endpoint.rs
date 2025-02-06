@@ -36,8 +36,6 @@ impl Endpoint {
             .filter_map(|record| get_svcb(record, https))
             .collect::<Vec<_>>();
 
-        // TODO: support wildcard?
-
         // Shuffle the vector first
         let mut rng = thread_rng();
         records.shuffle(&mut rng);
