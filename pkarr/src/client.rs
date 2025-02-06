@@ -173,7 +173,7 @@ impl Client {
     ///     let keypair = Keypair::random();
     ///
     ///     let (signed_packet, cas) = if let Some(most_recent) = client
-    ///         .resolve_most_recent(&keypair.public_key()).await?
+    ///         .resolve_most_recent(&keypair.public_key()).await
     ///     {
     ///
     ///         let mut builder = SignedPacket::builder();
