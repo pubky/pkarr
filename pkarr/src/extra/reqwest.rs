@@ -18,7 +18,10 @@ async fn resolve(
     let name = name.as_str();
 
     if PublicKey::try_from(name).is_ok() {
-        let endpoint = client.resolve_https_endpoint(name).await?;
+        let endpoint = client
+            .resolve_https_endpoint(name)
+            .await
+            .map_err(|_| CouldNotResolveHost)?;
 
         let addrs = endpoint.to_socket_addrs().into_iter();
 
@@ -28,6 +31,17 @@ async fn resolve(
     };
 
     Ok(Box::new(format!("{name}:0").to_socket_addrs()?))
+}
+
+#[derive(Debug)]
+pub struct CouldNotResolveHost;
+
+impl std::error::Error for CouldNotResolveHost {}
+
+impl std::fmt::Display for CouldNotResolveHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "pkarr could not resolve host")
+    }
 }
 
 #[cfg(feature = "reqwest-builder")]

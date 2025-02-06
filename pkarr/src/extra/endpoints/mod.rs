@@ -32,7 +32,7 @@ impl crate::Client {
     pub async fn resolve_https_endpoint(
         &self,
         qname: &str,
-    ) -> Result<Endpoint, FailedToResolveEndpoint> {
+    ) -> Result<Endpoint, CouldNotResolveEndpoint> {
         let stream = self.resolve_https_endpoints(qname);
 
         pin!(stream);
@@ -45,7 +45,7 @@ impl crate::Client {
                 #[cfg(target_arch = "wasm32")]
                 log::trace!("failed to resolve endpoint {qname}");
 
-                Err(FailedToResolveEndpoint)
+                Err(CouldNotResolveEndpoint)
             }
         }
     }
@@ -54,14 +54,14 @@ impl crate::Client {
     pub async fn resolve_svcb_endpoint(
         &self,
         qname: &str,
-    ) -> Result<Endpoint, FailedToResolveEndpoint> {
+    ) -> Result<Endpoint, CouldNotResolveEndpoint> {
         let stream = self.resolve_https_endpoints(qname);
 
         pin!(stream);
 
         match stream.next().await {
             Some(endpoint) => Ok(endpoint),
-            None => Err(FailedToResolveEndpoint),
+            None => Err(CouldNotResolveEndpoint),
         }
     }
 
@@ -116,16 +116,13 @@ impl crate::Client {
 }
 
 #[derive(Debug)]
-pub struct FailedToResolveEndpoint;
+pub struct CouldNotResolveEndpoint;
 
-impl std::error::Error for FailedToResolveEndpoint {}
+impl std::error::Error for CouldNotResolveEndpoint {}
 
-impl std::fmt::Display for FailedToResolveEndpoint {
+impl std::fmt::Display for CouldNotResolveEndpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Could not resolve clear net endpoint for the Pkarr domain"
-        )
+        write!(f, "pkarr could not resolve endpoint")
     }
 }
 
