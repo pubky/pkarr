@@ -33,11 +33,11 @@ async fn main() -> Result<()> {
 
     let relay = unsafe {
         if args.testnet {
-            Relay::start_testnet().await?
+            Relay::run_testnet().await?
         } else if let Some(config_path) = args.config {
-            Relay::start(Config::load(config_path).await?).await?
+            Relay::run(Config::load(config_path).await?).await?
         } else {
-            Relay::builder().start().await?
+            Relay::run(Default::default()).await?
         }
     };
 

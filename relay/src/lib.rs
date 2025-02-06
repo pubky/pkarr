@@ -3,7 +3,7 @@
 //! You can run this relay as a binary or a crate for testing purposes.
 //!
 
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
@@ -14,7 +14,6 @@ mod rate_limiting;
 
 use std::{
     net::{SocketAddr, TcpListener},
-    path::PathBuf,
     sync::Arc,
     time::Duration,
 };
@@ -26,75 +25,32 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
 use pkarr::{extra::lmdb_cache::LmdbCache, Client};
-
-pub use config::Config;
 use url::Url;
 
-#[derive(Debug, Default)]
-pub struct RelayBuilder(Config);
+pub use config::Config;
 
-impl RelayBuilder {
-    // Configure the port for the HTTP server to listen on
-    pub fn http_port(mut self, port: u16) -> Self {
-        self.0.http_port = port;
-
-        self
-    }
-
-    // Configure the port for the internal Mainline DHT node to listen on
-    pub fn dht_port(mut self, port: u16) -> Self {
-        self.0.pkarr.dht(|builder| builder.port(port));
-
-        self
-    }
-
-    // Configure the path to store the persistent cache at.
-    pub fn cache_path(mut self, path: PathBuf) -> Self {
-        self.0.cache_path = Some(path);
-
-        self
-    }
-
-    // Configure the maximum number of SignedPackets in the LRU cache
-    pub fn cache_size(mut self, size: usize) -> Self {
-        self.0.cache_size = size;
-
-        self
-    }
-
-    /// Disable rate limiting
-    pub fn disable_rate_limiting(mut self) -> Self {
-        self.0.rate_limiter = None;
-
-        self
-    }
-
-    /// Start a Pkarr [relay](https://pkarr.org/relays).
-    ///
-    /// # Safety
-    /// Relay uses LmdbCache, [opening][pkarr::extra::lmdb_cache::LmdbCache::open] which is marked unsafe,
-    /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async unsafe fn start(self) -> anyhow::Result<Relay> {
-        Ok(unsafe { Relay::start(self.0).await? })
-    }
-}
-
+/// A running instance of a Pkarr relay server.
+///
+/// This struct represents a running relay server and provides methods to interact with it,
+/// such as retrieving the server's address or shutting it down.
 pub struct Relay {
     handle: Handle,
     relay_address: SocketAddr,
 }
 
 impl Relay {
-    pub fn builder() -> RelayBuilder {
-        RelayBuilder::default()
-    }
-
-    /// Start a Pkarr [relay](https://pkarr.org/relays).
+    /// Run a Pkarr relay with the provided configuration.
     ///
     /// # Safety
-    /// Relay uses LmdbCache, [opening][pkarr::extra::lmdb_cache::LmdbCache::open] which is marked unsafe,
-    /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async unsafe fn start(config: Config) -> anyhow::Result<Self> {
+    /// This method is marked as unsafe because it uses `LmdbCache`, which can lead to
+    /// undefined behavior if the lock file is corrupted or improperly handled.
+    ///
+    /// # Arguments
+    /// * `config` - The configuration for the relay.
+    ///
+    /// # Returns
+    /// A `Result` containing the `Relay` instance or an error.
+    pub async unsafe fn run(config: Config) -> anyhow::Result<Self> {
         let mut config = config;
 
         tracing::debug!(?config, "Pkarr server config");
@@ -158,18 +114,22 @@ impl Relay {
         })
     }
 
-    /// Convenient wrapper around [Self::start].
-    ///
-    /// Make sure to read the safety section in [Self::start]
-    pub async fn start_unsafe(config: Config) -> anyhow::Result<Self> {
-        unsafe { Self::start(config).await }
-    }
-
-    /// Start an ephemeral Pkarr relay on a random port number.
+    /// Convenient wrapper around [`Self::run`].
     ///
     /// # Safety
-    /// See [Self::start]
-    pub async fn start_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
+    /// See [`Self::run`].
+    pub async fn run_unsafe(config: Config) -> anyhow::Result<Self> {
+        unsafe { Self::run(config).await }
+    }
+
+    /// Run an ephemeral Pkarr relay on a random port number for testing purposes.
+    ///
+    /// # Arguments
+    /// * `testnet` - A reference to a `mainline::Testnet` for bootstrapping the DHT.
+    ///
+    /// # Safety
+    /// See [`Self::run`].
+    pub async fn run_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
         let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
 
         let mut config = Config {
@@ -185,17 +145,17 @@ impl Relay {
             .bootstrap(&testnet.bootstrap)
             .dht(|builder| builder.server_mode());
 
-        Ok(unsafe { Self::start(config).await? })
+        Ok(unsafe { Self::run(config).await? })
     }
 
     /// Run a Pkarr relay in a Testnet mode (on port 15411).
     ///
     /// # Safety
-    /// See [Self::start]
-    pub async fn start_testnet() -> anyhow::Result<Self> {
+    /// See [`Self::run`].
+    pub async fn run_testnet() -> anyhow::Result<Self> {
         let testnet = mainline::Testnet::new(10)?;
 
-        // Leaking the testnet otherwise to avoid dropping and shutting them down.
+        // Leaking the testnet to avoid dropping and shutting them down.
         for node in testnet.nodes {
             Box::leak(Box::new(node));
         }
@@ -215,26 +175,27 @@ impl Relay {
             .bootstrap(&testnet.bootstrap)
             .dht(|builder| builder.server_mode());
 
-        unsafe { Self::start(config).await }
+        unsafe { Self::run(config).await }
     }
 
-    /// Returns the HTTP socket address
+    /// Returns the HTTP socket address of the relay.
     pub fn relay_address(&self) -> SocketAddr {
         self.relay_address
     }
 
-    /// Returns the localhost Url of this http server.
+    /// Returns the localhost URL of the HTTP server.
     pub fn local_url(&self) -> Url {
         Url::parse(&format!("http://localhost:{}", self.relay_address.port()))
             .expect("local_url should be formatted fine")
     }
 
+    /// Shutdown the relay server.
     pub fn shutdown(&self) {
         self.handle.shutdown();
     }
 }
 
-pub fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
+fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -257,6 +218,7 @@ pub fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLim
 }
 
 #[derive(Debug, Clone)]
-pub struct AppState {
-    pub client: Client,
+struct AppState {
+    /// The Pkarr client for DHT operations.
+    client: Client,
 }
