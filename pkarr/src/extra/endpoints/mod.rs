@@ -9,8 +9,6 @@ use genawaiter::sync::Gen;
 
 use crate::PublicKey;
 
-const DEFAULT_MAX_CHAIN_LENGTH: u8 = 3;
-
 impl crate::Client {
     /// Returns an async stream of [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint]s
     pub fn resolve_https_endpoints<'a>(
@@ -72,11 +70,6 @@ impl crate::Client {
         https: bool,
     ) -> impl Stream<Item = Endpoint> + 'a {
         Gen::new(|co| async move {
-            // TODO: cache the result of this function?
-            // TODO: test load balancing
-            // TODO: test failover
-            // TODO: custom max_chain_length
-
             let mut depth = 0;
             let mut stack: Vec<Endpoint> = Vec::new();
 
@@ -94,7 +87,7 @@ impl crate::Client {
                 // Attempt to resolve the domain as a public key.
                 match PublicKey::try_from(current) {
                     Ok(tld) => match self.resolve(&tld).await {
-                        Some(signed_packet) if depth < DEFAULT_MAX_CHAIN_LENGTH => {
+                        Some(signed_packet) if depth < self.0.max_recursion_depth => {
                             depth += 1;
                             let endpoints = Endpoint::parse(&signed_packet, current, https);
 
@@ -105,7 +98,7 @@ impl crate::Client {
 
                             stack.extend(endpoints);
                         }
-                        _ => break, // Stop on resolution failure or chain length exceeded.
+                        _ => break, // Stop on resolution failure or recursion depth exceeded.
                     },
                     // Yield if the domain is not pointing to another Pkarr TLD domain.
                     Err(_) => co.yield_(next).await,
@@ -140,8 +133,6 @@ mod tests {
     use std::time::Duration;
 
     use mainline::Testnet;
-
-    // TODO: test SVCB too.
 
     fn generate_subtree(
         client: Client,
@@ -271,11 +262,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn max_chain_exceeded() {
+    async fn max_recursion_exceeded() {
         let testnet = Testnet::new(3).unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .max_recursion_depth(3)
             .build()
             .unwrap();
 

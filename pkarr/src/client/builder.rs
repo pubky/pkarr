@@ -9,6 +9,9 @@ use crate::{Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL}
 
 use crate::{errors::BuildError, Client};
 
+#[cfg(feature = "endpoints")]
+pub const DEFAULT_MAX_RECURSION_DEPTH: u8 = 7;
+
 #[cfg(dht)]
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::DEFAULT_REQUEST_TIMEOUT;
 #[cfg(not(dht))]
@@ -44,6 +47,9 @@ pub(crate) struct Config {
     ///
     /// Defaults to [DEFAULT_REQUEST_TIMEOUT]
     pub request_timeout: Duration,
+
+    #[cfg(feature = "endpoints")]
+    pub max_recursion_depth: u8,
 }
 
 impl Default for Config {
@@ -68,6 +74,9 @@ impl Default for Config {
             ),
 
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
+
+            #[cfg(feature = "endpoints")]
+            max_recursion_depth: DEFAULT_MAX_RECURSION_DEPTH,
         }
     }
 }
@@ -245,6 +254,18 @@ impl ClientBuilder {
         self.0.request_timeout = timeout;
         #[cfg(dht)]
         self.0.dht.as_mut().map(|b| b.request_timeout(timeout));
+
+        self
+    }
+
+    #[cfg(feature = "endpoints")]
+    /// Sets the maximum depth of recursion in [Endpoints](https://pkarr.org/endpoints) resolution.
+    ///
+    /// Similar to `bind9`'s [opiton](https://bind9.readthedocs.io/en/latest/reference.html#namedconf-statement-max-recursion-depth)
+    ///
+    /// Defaults to `7`
+    pub fn max_recursion_depth(&mut self, max_recursion_depth: u8) -> &mut Self {
+        self.0.max_recursion_depth = max_recursion_depth;
 
         self
     }

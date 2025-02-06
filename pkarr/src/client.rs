@@ -39,7 +39,7 @@ use crate::{Cache, CacheKey, InMemoryCache};
 use crate::{PublicKey, SignedPacket};
 
 #[derive(Debug)]
-pub struct Inner {
+pub(crate) struct Inner {
     minimum_ttl: u32,
     maximum_ttl: u32,
     cache: Option<Arc<dyn Cache>>,
@@ -47,12 +47,14 @@ pub struct Inner {
     dht: Option<Dht>,
     #[cfg(relays)]
     relays: Option<RelaysClient>,
+    #[cfg(feature = "endpoints")]
+    pub(crate) max_recursion_depth: u8,
 }
 
 /// Pkarr client for publishing and resolving [SignedPacket]s over
 /// [mainline] Dht and/or [Relays](https://pkarr.org/relays).
 #[derive(Clone, Debug)]
-pub struct Client(Arc<Inner>);
+pub struct Client(pub(crate) Arc<Inner>);
 
 impl Client {
     pub(crate) fn new(config: Config) -> Result<Client, BuildError> {
@@ -109,6 +111,8 @@ impl Client {
             dht,
             #[cfg(relays)]
             relays,
+            #[cfg(feature = "endpoints")]
+            max_recursion_depth: config.max_recursion_depth,
         }));
 
         Ok(client)

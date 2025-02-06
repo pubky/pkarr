@@ -44,9 +44,14 @@ impl ServerCertVerifier for CertVerifier {
 
         let qname = host_name.to_str();
 
-        // Resolve HTTPS endpoints and hope that the cached SignedPackets didn't chance
+        // Resolve HTTPS endpoints and hope that the cached SignedPackets didn't change
         // since the last time we resolved endpoints to establish the connection in the
         // first place.
+        //
+        // This won't be neccessary if Reqwest enabled us to createa rustls configuration
+        // per connection.
+        //
+        // TODO: update this Reqwest enabled this.
         let stream = self.0.resolve_https_endpoints(&qname);
         pin!(stream);
         for endpoint in block_on(stream) {
