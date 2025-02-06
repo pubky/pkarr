@@ -8,4 +8,10 @@ Publish and resolve DNS packets over Mainline DHT.
 
 ## Get started
 
-Check the [Examples](https://github.com/Nuhvi/pkarr/tree/main/pkarr/examples).
+Check the [Examples](https://github.com/Pubky/pkarr/tree/main/pkarr/examples).
+
+## WebAssembly support
+
+This version of Pkarr assumes that you are running Wasm in a JavaScript environment,
+and calling relays over thew web browser Fetch API, so you can't use it in Wasi for example, 
+nor can you use some Wasi bindings to use the DHT directly.

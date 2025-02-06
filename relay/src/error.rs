@@ -6,8 +6,6 @@ use axum::{
     response::IntoResponse,
 };
 
-pub type Result<T, E = Error> = core::result::Result<T, E>;
-
 #[derive(Debug, Clone)]
 pub struct Error {
     // #[serde(with = "serde_status_code")]

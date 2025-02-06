@@ -109,3 +109,13 @@ impl IpRateLimiter {
         }
     }
 }
+
+impl mainline::RequestFilter for IpRateLimiter {
+    fn allow_request(
+        &self,
+        _request: &mainline::RequestSpecific,
+        from: std::net::SocketAddrV4,
+    ) -> bool {
+        !self.is_limited(&IpAddr::from(*from.ip()))
+    }
+}

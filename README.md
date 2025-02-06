@@ -7,17 +7,17 @@ The simplest possible streamlined integration between the Domain Name System and
 Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
-- To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT) (through a relay if necessary).
-- To resolve some key's resources, applications query the DHT directly, or through a relay, and verify the signature themselves. 
-- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT.
-- Clients and Pkarr servers cache records extensively using the `TTL` values in them to minimize DHT traffic as much as possible for improved scalability and reliability. 
-- Existing applications unaware of Pkarr can still resolve Pkarr TLDs, if the DNS server they query recognize Pkarr TLDs and use Mainline as a parallel root server to ICANN. 
+- To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
+- To resolve some key's resources, applications query the DHT directly, or through a [relay](./design/relays.md), and verify the signature themselves. 
+- Clients and Relays cache records extensively and minimize DHT traffic as much as possible for improved scalability. 
+- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT. Also Pkarr relays could republish records recently requested, to keep popular records alive too.
+- Optional: Existing applications unaware of Pkarr can still function if the user added a Pkarr-aware DNS servers to their operating system DNS servers. 
 
 ## DEMO 
 
 Try the [web app demo](https://app.pkarr.org).
 
-Or if you prefer Rust [Examples](./pkarr/examples) 
+Or if you prefer Rust [Examples](./pkarr/examples/README.md) 
 
 ## TOC
 - [Architecture](#Architecture)
@@ -30,14 +30,14 @@ Or if you prefer Rust [Examples](./pkarr/examples)
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Server
+    participant Relay
     participant DHT
     participant Republisher
 
-    Client->>Server: Publish
-    note over Server: Optional Pkarr Server
-    Server->>DHT: Put
-    Note over Server,DHT: Store signed DNS packet
+    Client->>Relay: Publish
+    note over Relay: Optional Pkarr Relay
+    Relay->>DHT: Put
+    Note over Relay,DHT: Store signed DNS packet
 
     Client->>Republisher: Republish request
     note over Client, Republisher: Notify Hosting provider mentioned in RRs
@@ -46,31 +46,31 @@ sequenceDiagram
         Republisher->>DHT: Republish
     end
 
-    Client->>Server: Resolve
-    Server->>DHT: Get
-    DHT->>Server: Response
-    Server->>Client: Response
+    Client->>Relay: Resolve
+    Relay->>DHT: Get
+    DHT->>Relay: Response
+    Relay->>Client: Response
 ```
 
 ### Clients
 #### Pkarr enabled applications.
  
-Native applications, can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr server as a relay.
+Native applications, can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr Relay.
 
-Browser web apps should try calling local Pkarr server at the default port `6881`, if not accessible, they have to query a remote server instead. Eitherway, these apps should allow users to configure servers of their choice.
+Browser web apps should try calling local Pkarr relay at the default port `6881`, if not accessible, they have to query a remote relay in parallel to fallback on. Eitherway, these apps should allow users to configure relays of their choice.
  
-Clients with private keys are also capable of submitting signed records either to the DHT directly, or through Pkarr relay server, to update user's records when needed.
+Clients with private keys are also capable of submitting signed records either to the DHT directly, or through Pkarr relay, to update user's records when needed.
  
 #### Existing applications
 To support existing applications totally oblivious of Pkarr, users will have to (manually or programatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT to resolve packets from there. However, the best outcome would be adoption from existing widely used resolvers like `1.1.1.1` and `8.8.8.8`.
 
-### Servers
+### Relays
 
 Pkarr relays are optional but they:
 1. Act as [relays](https://pkarr.org/relays) to enable web applications to query the DHT.
-2. Act as [resolvers](https://pkarr.org/resolvers) to provide lower latency, more reliability and scalability.
+2. Act as large caching layer for many users to provide lower latency, more reliability and scalability.
 
-Relays are very light and cheap to operate, that they can easily run altruistically, but private, and paid servers are possible too.
+Relays are very light and cheap to operate, that they can easily run altruistically, but private, and paid relays are possible too.
 
 ### Republishers
 
@@ -96,7 +96,7 @@ To ensure a good chance of scalability and resilience, a few expectations need t
     - Popular records may or may not be refreshed by the DNS servers as they get queries for them.
 2. This is **not a realtime communication** medium
     - Records are heavily cached like in any DNS system.
-    - You are expected to update your records rarely, so you should expect servers to enforce harsh rate-limiting and maybe demand proof of work.
+    - You are expected to update your records rarely, so you should expect relays to enforce harsh rate-limiting.
     - Records are going to be cached heavily to reduce traffic on the DHT, so updates might take some time to propagate, even if you set TTL to 1 second.
     - In case of a chache miss, traversing the DHT might take few seconds.
 
