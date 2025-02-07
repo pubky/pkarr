@@ -177,16 +177,6 @@ impl ClientBuilder {
         self
     }
 
-    /// Set custom set of [Relays](https://pkarr.org/relays).
-    ///
-    /// If you want to disable relays use [Self::no_relays] instead.
-    #[cfg(feature = "relays")]
-    pub fn relays(&mut self, relays: Vec<Url>) -> &mut Self {
-        self.0.relays = Some(relays);
-
-        self
-    }
-
     /// Disable relays, and use the Dht only.
     pub fn no_relays(&mut self) -> &mut Self {
         #[cfg(feature = "relays")]
@@ -197,20 +187,36 @@ impl ClientBuilder {
         self
     }
 
+    /// Set custom set of [Relays](https://pkarr.org/relays).
+    ///
+    /// If you want to disable relays use [Self::no_relays] instead.
+    #[cfg(feature = "relays")]
+    pub fn relays<T: reqwest::IntoUrl + Clone>(
+        &mut self,
+        relays: &[T],
+    ) -> Result<&mut Self, InvalidRelayUrl> {
+        self.0.relays = Some(into_urls(relays)?);
+
+        Ok(self)
+    }
+
     #[cfg(feature = "relays")]
     /// Extend the current [Self::relays] with extra relays.
     ///
     /// If you want to set (override) relays instead, use [Self::relays]
-    pub fn extra_relays(&mut self, relays: Vec<Url>) -> &mut Self {
+    pub fn extra_relays<T: reqwest::IntoUrl + Clone>(
+        &mut self,
+        relays: &[T],
+    ) -> Result<&mut Self, InvalidRelayUrl> {
         if let Some(ref mut existing) = self.0.relays {
-            for relay in relays {
+            for relay in into_urls(relays)? {
                 if !existing.contains(&relay) {
                     existing.push(relay)
                 }
             }
         }
 
-        self
+        Ok(self)
     }
 
     /// Set the size of the capacity of the [Self::cache] implementation.
@@ -227,6 +233,7 @@ impl ClientBuilder {
     /// Limits how soon a [crate::SignedPacket] is considered expired.
     pub fn minimum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.minimum_ttl = ttl;
+        self.0.maximum_ttl = self.0.maximum_ttl.max(ttl);
 
         self
     }
@@ -236,6 +243,7 @@ impl ClientBuilder {
     /// Limits how long it takes before a [crate::SignedPacket] is considered expired.
     pub fn maximum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.maximum_ttl = ttl;
+        self.0.minimum_ttl = self.0.minimum_ttl.min(ttl);
 
         self
     }
@@ -275,4 +283,34 @@ impl ClientBuilder {
     pub fn build(&self) -> Result<Client, BuildError> {
         Client::new(self.0.clone())
     }
+}
+
+#[cfg(relays)]
+fn into_urls<T: reqwest::IntoUrl + Clone>(relays: &[T]) -> Result<Vec<Url>, InvalidRelayUrl> {
+    relays
+        .iter()
+        .map(|url| match url.clone().into_url() {
+            Err(e) => Err(InvalidRelayUrl::Parse(e)),
+            Ok(url) => {
+                if url.scheme() != "http" && url.scheme() != "https" {
+                    Err(InvalidRelayUrl::NotHttp(url.to_string()))
+                } else {
+                    Ok(url)
+                }
+            }
+        })
+        .collect::<Result<Vec<Url>, InvalidRelayUrl>>()
+}
+
+#[cfg(relays)]
+#[derive(thiserror::Error, Debug)]
+/// Errors occuring during building a [Client]
+pub enum InvalidRelayUrl {
+    #[error("Failed to parse into a Url: {0}")]
+    /// Failed to parse into a Url.
+    Parse(reqwest::Error),
+
+    #[error("Relays Urls should have `http` or `https`: {0}")]
+    /// Relays Urls should have `http` or `https`.
+    NotHttp(String),
 }

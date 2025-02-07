@@ -6,7 +6,7 @@
 //! run this example from the project root:
 //!     $ cargo run --example publish
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::time::Instant;
 use tracing_subscriber;
 
@@ -16,10 +16,11 @@ use pkarr::{Client, Keypair, SignedPacket};
 #[command(author, version, about, long_about = None)]
 struct Cli {
     /// Publish to DHT only, Relays only, or default to both.
+    #[arg(value_enum)]
     mode: Option<Mode>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ValueEnum)]
 enum Mode {
     Dht,
     Relays,
@@ -70,14 +71,4 @@ async fn main() -> anyhow::Result<()> {
     };
 
     Ok(())
-}
-
-impl From<String> for Mode {
-    fn from(value: String) -> Self {
-        match value.to_lowercase().as_str() {
-            "dht" => Self::Dht,
-            "relay" | "relays" => Self::Relays,
-            _ => Self::Both,
-        }
-    }
 }
