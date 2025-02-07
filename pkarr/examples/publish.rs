@@ -18,6 +18,9 @@ struct Cli {
     /// Publish to DHT only, Relays only, or default to both.
     #[arg(value_enum)]
     mode: Option<Mode>,
+    /// List of relays (only valid if mode is 'relays')
+    #[arg(requires = "mode")]
+    relays: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -42,6 +45,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Mode::Relays => {
             builder.no_dht();
+
+            if let Some(relays) = cli.relays {
+                builder.relays(&relays).unwrap();
+            }
         }
         _ => {}
     }

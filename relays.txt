@@ -1,2 +1,2 @@
 https://relay.pkarr.org
-https://relay.pkarr.lnrouter.app
+https://pkarr.pubky.org

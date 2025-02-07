@@ -68,7 +68,7 @@ pub async fn put(
             }
         })?;
 
-    Ok(StatusCode::OK)
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn get(

@@ -19,13 +19,21 @@ If-Unmodified-Since: Fri, 18 Oct 2024 13:24:21 GMT
 <body>
 ```
 
+#### Response
+
+```
+HTTP/2 204 NO CONTENT
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, PUT, OPTIONS	
+```
+
 Body is described at [Payload](#Payload) encoding section.
 
 On receiving a PUT request, the relay server should:
 1. Encode the `seq` and `v` to a *bencode* message as follows: `3:seqi<sequence>e1:v<v's length>:<v's bytes>`
 2. Verify that the `sig` matches the encoded message from step 1, if it is invalid, return a `400 Bad Request` response.
 3. Perform the DHT Put request as defined in [BEP0044](https://www.bittorrent.org/beps/bep_0044.html), optionally using the `If-Unmodified-Since` as the CAS field.
-4. If the DHT request is successful, return a `200 OK` response, otherwise if any error occured return a `500 Internal Server Error` response.
+4. If the DHT request is successful, return a `204 No Content` response, otherwise if any error occurred return a `500 Internal Server Error` response.
 
 #### Errors
 
@@ -37,6 +45,8 @@ On receiving a PUT request, the relay server should:
 - `429 Too Many Requests` if the server is rate limiting requests from the same IP.
 
 ### GET
+
+#### Request
 
 ```
 GET /:z-base32-encoded-key HTTP/2
@@ -51,6 +61,7 @@ Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, PUT, OPTIONS
 Content-Type: application/pkarr.org/relays#payload
 Cache-Control: public, max-age=300
+
 Last-Modified: Fri, 18 Oct 2024 13:24:21 GMT
 
 <body>
