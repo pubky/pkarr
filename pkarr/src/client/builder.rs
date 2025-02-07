@@ -153,7 +153,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Convienent method to set the `bootstrap` nodes in [Self::dht].
+    /// Convenient method to set the `bootstrap` nodes in [Self::dht].
     ///
     /// You can start a separate Dht network by setting this to an empty array.
     ///
@@ -167,9 +167,9 @@ impl ClientBuilder {
     }
 
     #[cfg(dht)]
-    /// Extend the DHT bootstraping nodes.
+    /// Extend the DHT bootstrapping nodes.
     ///
-    /// If you want to set (override) the DHT bootstraping nodes,
+    /// If you want to set (override) the DHT bootstrapping nodes,
     /// use [Self::bootstrap] directly.
     pub fn extra_bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
         self.dht(|b| b.extra_bootstrap(bootstrap));
@@ -270,7 +270,7 @@ impl ClientBuilder {
     #[cfg(feature = "endpoints")]
     /// Sets the maximum depth of recursion in [Endpoints](https://pkarr.org/endpoints) resolution.
     ///
-    /// Similar to `bind9`'s [opiton](https://bind9.readthedocs.io/en/latest/reference.html#namedconf-statement-max-recursion-depth)
+    /// Similar to `bind9`'s [option](https://bind9.readthedocs.io/en/latest/reference.html#namedconf-statement-max-recursion-depth)
     ///
     /// Defaults to `7`
     pub fn max_recursion_depth(&mut self, max_recursion_depth: u8) -> &mut Self {
@@ -304,7 +304,7 @@ fn into_urls<T: reqwest::IntoUrl + Clone>(relays: &[T]) -> Result<Vec<Url>, Inva
 
 #[cfg(relays)]
 #[derive(thiserror::Error, Debug)]
-/// Errors occuring during building a [Client]
+/// Errors occurring during building a [Client]
 pub enum InvalidRelayUrl {
     #[error("Failed to parse into a Url: {0}")]
     /// Failed to parse into a Url.

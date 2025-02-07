@@ -64,7 +64,7 @@ pub struct InMemoryCache {
 }
 
 impl InMemoryCache {
-    /// Creats a new `LRU` cache that holds at most `cap` items.
+    /// Creates a new `LRU` cache that holds at most `cap` items.
     pub fn new(capacity: NonZeroUsize) -> Self {
         Self {
             inner: Arc::new(Mutex::new(LruCache::new(capacity))),

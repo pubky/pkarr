@@ -7,7 +7,7 @@ Resolvers are a special kind of DHT nodes. Like to bootstrapping nodes they are 
 
 ## Behavior
 
-Once a resolver receieve a `get` request for a mutable value, it checks its big cache of Signed Pkarr packets.
+Once a resolver receive a `get` request for a mutable value, it checks its big cache of Signed Pkarr packets.
 
 On cache hit, the resolver returns the packet encoded as defined in [Bep_0044](https://www.bittorrent.org/beps/bep_0044.html).
 

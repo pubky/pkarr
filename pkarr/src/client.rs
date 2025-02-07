@@ -134,7 +134,7 @@ impl Client {
     ///
     /// Gives you access to methods like [mainline::Dht::info],
     /// [mainline::Dht::bootstrapped], and [mainline::Dht::to_bootstrap]
-    /// among ther rest of the API.
+    /// among the rest of the API.
     #[cfg(dht)]
     pub fn dht(&self) -> Option<mainline::Dht> {
         self.0.dht.as_ref().cloned()
@@ -237,7 +237,7 @@ impl Client {
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
     /// If there is no packet in the cache, or if the cached packet is expired,
-    /// it will make a DHT query in a background query and caches any more recent packets it receieves.
+    /// it will make a DHT query in a background query and caches any more recent packets it receives.
     ///
     /// If you want to get the most recent version of a [SignedPacket],
     /// you should use [Self::resolve_most_recent].
@@ -532,7 +532,7 @@ fn map_dht_stream(
 }
 
 #[derive(thiserror::Error, Debug)]
-/// Errors occuring during building a [Client]
+/// Errors occurring during building a [Client]
 pub enum BuildError {
     #[error("Client configured without Mainline node or relays.")]
     /// Client configured without Mainline node or relays.
@@ -548,7 +548,7 @@ pub enum BuildError {
 }
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
-/// Errors occuring during publishing a [SignedPacket]
+/// Errors occurring during publishing a [SignedPacket]
 pub enum PublishError {
     #[error(transparent)]
     /// Errors that requires either a retry or debugging the network condition.

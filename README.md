@@ -62,7 +62,7 @@ Browser web apps should try calling local Pkarr relay at the default port `6881`
 Clients with private keys are also capable of submitting signed records either to the DHT directly, or through Pkarr relay, to update user's records when needed.
  
 #### Existing applications
-To support existing applications totally oblivious of Pkarr, users will have to (manually or programatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT to resolve packets from there. However, the best outcome would be adoption from existing widely used resolvers like `1.1.1.1` and `8.8.8.8`.
+To support existing applications totally oblivious of Pkarr, users will have to (manually or programmatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT to resolve packets from there. However, the best outcome would be adoption from existing widely used resolvers like `1.1.1.1` and `8.8.8.8`.
 
 ### Relays
 
@@ -85,7 +85,7 @@ Reasons for choosing Mainline include:
 1. 15 years of proven track record facilitating trackerless torrent for people around the world.
 2. Biggest DHT in existence with estimated 10 million nodes.
 3. It is fairly generous with its retaining of mutable data, reducing the need to frequently refresh records, thus reducing traffic.
-4. It has implementation in most languagues, well understood (by many smart people, that may be willing to guide us), and stable enough to make a minimal implementation from scratch if we need to.
+4. It has implementation in most languages, well understood (by many smart people, that may be willing to guide us), and stable enough to make a minimal implementation from scratch if we need to.
 
 ## Expectations
 
@@ -98,7 +98,7 @@ To ensure a good chance of scalability and resilience, a few expectations need t
     - Records are heavily cached like in any DNS system.
     - You are expected to update your records rarely, so you should expect relays to enforce harsh rate-limiting.
     - Records are going to be cached heavily to reduce traffic on the DHT, so updates might take some time to propagate, even if you set TTL to 1 second.
-    - In case of a chache miss, traversing the DHT might take few seconds.
+    - In case of a cache miss, traversing the DHT might take few seconds.
 
 ## Why?
 
@@ -148,7 +148,7 @@ Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 ye
 
     The GNU net is exciting and impressive, but I didn't have enough time to test it or understand how hard it would be to build a PoC on top of it.
     
-    GNU name system seems to support [Petname system](http://www.skyhunter.com/marcs/petnames/IntroPetNames.html)  natively, which means it does require more storage and bandwith from the DHT than a 1000 bytes max size enforced by Mainline DHT. I believe that petnameing should be left to application layer. 
+    GNU name system seems to support [Petname system](http://www.skyhunter.com/marcs/petnames/IntroPetNames.html)  natively, which means it does require more storage and bandwidth from the DHT than a 1000 bytes max size enforced by Mainline DHT. I believe that petnameing should be left to application layer. 
 
     Luckily GNU net uses ed25519 key as well, so there is always a path for migration if we are careful.
 

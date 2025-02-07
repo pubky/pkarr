@@ -10,7 +10,7 @@ Build
 cargo build --release
 ```
 
-Optinally Copy config file
+Optionally Copy config file
 
 ```bash
 cp src/config.example.toml config.toml

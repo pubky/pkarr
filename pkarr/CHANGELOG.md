@@ -14,7 +14,7 @@ All notable changes to pkarr will be documented in this file.
 - Add `SignedPacket::elapsed()` to return the number of seconds since this packet was last seen from remote network. 
 - Add `SignedPacket::all_resource_records()` to access all resource records without accessing the dns packet.
 - Add `SignedPacket::builder()` and convenient methods to create `A`, `AAAA`, `CNAME`, `TXT`, `SVCB`, and `HTTPS` records.
-- Add `SignedPacket` implemention of `TryFrom<MutableItem>`.
+- Add `SignedPacket` implementation of `TryFrom<MutableItem>`.
 - Add `pkarr::LmdbCache` for persistent cache using lmdb.
 - Add `pkarr.pubky.org` as an extra default Relay and Resolver.
 - Implement `FromStr` for `PublicKey`
@@ -52,11 +52,11 @@ All notable changes to pkarr will be documented in this file.
 - Default client uses both `mainline` and `relays`, and each can be disabled with feature flags or the builder methods.
 - Improve `Debug` and `Display` implementations for `SignedPacket`.
 - update to `mainline` v5.
-- `Client::publish()` and `BlockingClien` take an optional `cas` argument.
+- `Client::publish()` and `BlockingClient` take an optional `cas` argument.
 
 ### Removed
 
-- Remvoed `relay_client_web`, replaced with *(pkarr::Client)*.
+- Removed `relay_client_web`, replaced with *(pkarr::Client)*.
 - Removed `SignedPacket::from_packet`.
 - Removed `SignedPacket::packet` getter.
 - Removed rexported `mainline`

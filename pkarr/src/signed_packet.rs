@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use pubky_timestamp::Timestamp;
 
 #[derive(Debug, Clone, Default)]
-/// A builder for [SignedPacket] with many convinient methods,
+/// A builder for [SignedPacket] with many convenient methods,
 /// see [SignedPacket::builder] documentation for examples of how to use this builder.
 pub struct SignedPacketBuilder {
     records: Vec<ResourceRecord<'static>>,
@@ -35,7 +35,7 @@ impl SignedPacketBuilder {
 
     /// Insert any type of [RData]
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn rdata(self, name: Name<'_>, rdata: RData, ttl: u32) -> Self {
         self.record(ResourceRecord::new(name.to_owned(), CLASS::IN, ttl, rdata))
@@ -43,7 +43,7 @@ impl SignedPacketBuilder {
 
     /// Insert an `A` record.
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn a(self, name: Name<'_>, address: Ipv4Addr, ttl: u32) -> Self {
         self.rdata(
@@ -57,7 +57,7 @@ impl SignedPacketBuilder {
 
     /// Insert an `AAAA` record.
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn aaaa(self, name: Name<'_>, address: Ipv6Addr, ttl: u32) -> Self {
         self.rdata(
@@ -71,7 +71,7 @@ impl SignedPacketBuilder {
 
     /// Insert an `A` or `AAAA` record.
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn address(self, name: Name<'_>, address: IpAddr, ttl: u32) -> Self {
         match address {
@@ -82,7 +82,7 @@ impl SignedPacketBuilder {
 
     /// Insert a `CNAME` record.
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn cname(self, name: Name<'_>, cname: Name<'_>, ttl: u32) -> Self {
         self.rdata(name, RData::CNAME(cname.into()), ttl)
@@ -90,7 +90,7 @@ impl SignedPacketBuilder {
 
     /// Insert a `TXT` record.
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn txt(self, name: Name<'_>, text: TXT<'_>, ttl: u32) -> Self {
         self.rdata(name, RData::TXT(text), ttl)
@@ -98,7 +98,7 @@ impl SignedPacketBuilder {
 
     /// Insert an `HTTPS` record
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn https(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
         self.rdata(name, RData::HTTPS(HTTPS(svcb)), ttl)
@@ -106,7 +106,7 @@ impl SignedPacketBuilder {
 
     /// Insert an `SVCB record
     ///
-    /// You can set the name to `.` to point ot the Apex
+    /// You can set the name to `.` to point or the Apex
     /// (the public key, of the keypair used in [Self::sign])
     pub fn svcb(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
         self.rdata(name, RData::SVCB(svcb), ttl)
@@ -410,7 +410,7 @@ impl SignedPacket {
     /// Assumes that both packets have the same [PublicKey], you shouldn't compare packets from
     /// different keys.
     pub fn more_recent_than(&self, other: &SignedPacket) -> bool {
-        // In the rare ocasion of timestamp collission,
+        // In the rare occasion of timestamp collision,
         // we use the one with the largest value
         if self.timestamp() == other.timestamp() {
             self.encoded_packet() > other.encoded_packet()

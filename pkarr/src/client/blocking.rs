@@ -26,7 +26,7 @@ impl ClientBlocking {
     ///
     /// Gives you access to methods like [mainline::Dht::info],
     /// [mainline::Dht::bootstrapped], and [mainline::Dht::to_bootstrap]
-    /// among ther rest of the API.
+    /// among the rest of the API.
     #[cfg(dht)]
     pub fn dht(&self) -> Option<mainline::Dht> {
         self.0.dht()
@@ -124,7 +124,7 @@ impl ClientBlocking {
 
     /// Returns a [SignedPacket] from the cache even if it is expired.
     /// If there is no packet in the cache, or if the cached packet is expired,
-    /// it will make a DHT query in a background query and caches any more recent packets it receieves.
+    /// it will make a DHT query in a background query and caches any more recent packets it receives.
     ///
     /// If you want to get the most recent version of a [SignedPacket],
     /// you should use [Self::resolve_most_recent].
