@@ -233,6 +233,7 @@ impl ClientBuilder {
     /// Limits how soon a [crate::SignedPacket] is considered expired.
     pub fn minimum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.minimum_ttl = ttl;
+        self.0.maximum_ttl = self.0.maximum_ttl.max(ttl);
 
         self
     }
@@ -242,6 +243,7 @@ impl ClientBuilder {
     /// Limits how long it takes before a [crate::SignedPacket] is considered expired.
     pub fn maximum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.maximum_ttl = ttl;
+        self.0.minimum_ttl = self.0.minimum_ttl.min(ttl);
 
         self
     }
