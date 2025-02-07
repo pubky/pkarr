@@ -28,10 +28,12 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
 // Exports
+#[cfg(all(client, not(wasm_browser)))]
+pub use client::blocking::ClientBlocking;
 #[cfg(client)]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
-pub use client::{blocking::ClientBlocking, builder::ClientBuilder, Client};
+pub use client::{builder::ClientBuilder, Client};
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
 #[cfg(feature = "signed_packet")]
