@@ -121,7 +121,10 @@ async fn return_expired_packet_fallback(#[case] networks: Networks) {
     let testnet = mainline::Testnet::new(10).unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
-    let client = builder(&relay, &testnet, networks).build().unwrap();
+    let client = builder(&relay, &testnet, networks)
+        .maximum_ttl(0)
+        .build()
+        .unwrap();
 
     let keypair = Keypair::random();
 
@@ -534,4 +537,30 @@ fn no_tokio(#[case] networks: Networks) {
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     });
+}
+
+#[rstest]
+#[case::dht(Networks::Dht)]
+#[case::both_networks(Networks::Both)]
+#[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+#[tokio::test]
+async fn zero_cache_size(#[case] networks: Networks) {
+    let testnet = mainline::Testnet::new(10).unwrap();
+    let relay = Relay::run_test(&testnet).await.unwrap();
+
+    let a = builder(&relay, &testnet, networks).build().unwrap();
+
+    let keypair = Keypair::random();
+
+    let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+
+    a.publish(&signed_packet, None).await.unwrap();
+
+    let b = builder(&relay, &testnet, networks)
+        .cache_size(0)
+        .build()
+        .unwrap();
+
+    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }

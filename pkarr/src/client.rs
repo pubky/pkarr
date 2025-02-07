@@ -104,8 +104,8 @@ impl Client {
         }
 
         let client = Client(Arc::new(Inner {
-            minimum_ttl: config.minimum_ttl.min(config.maximum_ttl),
-            maximum_ttl: config.maximum_ttl.max(config.minimum_ttl),
+            minimum_ttl: config.minimum_ttl,
+            maximum_ttl: config.maximum_ttl,
             cache,
             #[cfg(dht)]
             dht,
@@ -369,7 +369,7 @@ impl Client {
 
         // Stream is a future, so it won't run until we await or spawn it.
         let mut stream = self.resolve_stream(
-            public_key,
+            public_key.clone(),
             cache_key,
             cached_packet.as_ref().map(|s| s.timestamp()),
         );
@@ -386,14 +386,20 @@ impl Client {
 
             cross_debug!(
                 "responding with cached packet even if expired. public_key: {}",
-                cached_packet.public_key()
+                &public_key
             );
+
+            self.cache().expect("infallible").get(&cache_key)
         } else {
             // Wait for the earliest positive response.
-            let _ = stream.next().await;
-        };
+            let first = stream.next().await;
 
-        self.cache().and_then(|cache| cache.get(&cache_key))
+            if let Some(cache) = self.cache() {
+                cache.get(&cache_key)
+            } else {
+                first
+            }
+        }
     }
 
     #[cfg(wasm_browser)]
