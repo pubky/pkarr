@@ -39,6 +39,7 @@ All notable changes to pkarr will be documented in this file.
 
 - Replace `Settings` with non-consuming `ClientBuilder`.
 - `SignedPacket::last_seen` is a `Timestamp` instead of u64.
+- `SignedPacket::resource_records()` and `SignedPacket::fresh_resource_records()` support wildcard names.
 - Replace `z32` with `base32`.
 - Update `mainline` to v5.0.0.
 - Make `rand` non-optional, and remove the feature flag.
