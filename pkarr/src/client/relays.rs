@@ -442,17 +442,10 @@ pub async fn resolve_from_relay(
             &status,
             response.content_length(),
         ) {
-            request.headers_mut().insert(
-                header::CACHE_CONTROL,
-                "no-cache, no-store, must-revalidate"
-                    .try_into()
-                    .expect("cache control is valid http header value"),
-            );
-
             continue;
+        } else {
+            break response;
         }
-
-        break response;
     };
 
     if response.content_length().unwrap_or_default() > SignedPacket::MAX_BYTES {
@@ -498,5 +491,16 @@ fn should_retry_with_cache_disabled(
     let havent_retried_with_cache_disabled_already =
         request.headers().get(header::CACHE_CONTROL).is_none();
 
-    needs_retry_with_cache_disabled && havent_retried_with_cache_disabled_already
+    if needs_retry_with_cache_disabled && havent_retried_with_cache_disabled_already {
+        request.headers_mut().insert(
+            header::CACHE_CONTROL,
+            "no-cache, no-store, must-revalidate"
+                .try_into()
+                .expect("cache control is valid http header value"),
+        );
+
+        return true;
+    }
+
+    false
 }
