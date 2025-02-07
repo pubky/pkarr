@@ -86,11 +86,8 @@ impl Client {
                 return Err(BuildError::EmptyListOfRelays);
             }
 
-            let relays_client = RelaysClient::new(
-                relays.clone().into_boxed_slice(),
-                #[cfg(not(wasm_browser))]
-                config.request_timeout,
-            );
+            let relays_client =
+                RelaysClient::new(relays.clone().into_boxed_slice(), config.request_timeout);
 
             Some(relays_client)
         } else {

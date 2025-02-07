@@ -20,8 +20,8 @@ async fn publish_resolve() {
 
     let relays = vec![Url::parse("http://localhost:15411").unwrap()];
 
-    let a = Client::builder().relays(relays.clone()).build().unwrap();
-    let b = Client::builder().relays(relays).build().unwrap();
+    let a = Client::builder().relays(&relays).unwrap().build().unwrap();
+    let b = Client::builder().relays(&relays).unwrap().build().unwrap();
 
     a.publish(&signed_packet, None).await.unwrap();
 
@@ -36,7 +36,7 @@ async fn not_found() {
 
     let relays = vec![Url::parse("http://localhost:15411").unwrap()];
 
-    let client = Client::builder().relays(relays).build().unwrap();
+    let client = Client::builder().relays(&relays).unwrap().build().unwrap();
 
     let resolved = client.resolve(&keypair.public_key()).await;
 
@@ -50,7 +50,8 @@ async fn return_expired_packet_fallback() {
     let relays = vec![Url::parse("http://localhost:15411").unwrap()];
 
     let client = Client::builder()
-        .relays(relays)
+        .relays(&relays)
+        .unwrap()
         .maximum_ttl(0)
         .build()
         .unwrap();
@@ -65,4 +66,64 @@ async fn return_expired_packet_fallback() {
     let resolved = client.resolve(&keypair.public_key()).await;
 
     assert_eq!(resolved, Some(signed_packet));
+}
+
+#[wasm_bindgen_test]
+async fn from_disk_cache() {
+    let keypair = Keypair::random();
+
+    let signed_packet = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&keypair)
+        .unwrap();
+
+    let relays = vec![Url::parse("http://localhost:15411").unwrap()];
+
+    let a = Client::builder().relays(&relays).unwrap().build().unwrap();
+    let b = Client::builder()
+        .relays(&relays)
+        .unwrap()
+        // Always invalidate cache.
+        .maximum_ttl(0)
+        // No cache  in memory, but there is maybe cache in browser!
+        .cache_size(0)
+        .build()
+        .unwrap();
+
+    a.publish(&signed_packet, None).await.unwrap();
+
+    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+
+    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+}
+
+#[wasm_bindgen_test]
+async fn not_modified() {
+    let keypair = Keypair::random();
+
+    let signed_packet = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&keypair)
+        .unwrap();
+
+    let relays = vec![Url::parse("http://localhost:15411").unwrap()];
+
+    let a = Client::builder().relays(&relays).unwrap().build().unwrap();
+    let b = Client::builder()
+        .relays(&relays)
+        .unwrap()
+        // Always invalidate cache.
+        .maximum_ttl(0)
+        .build()
+        .unwrap();
+
+    a.publish(&signed_packet, None).await.unwrap();
+
+    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+
+    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
