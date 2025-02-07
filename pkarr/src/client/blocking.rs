@@ -5,12 +5,13 @@ use crate::{Cache, PublicKey, SignedPacket};
 use super::{Client, PublishError};
 
 impl Client {
-    /// Returns a synchronous (blocking) version of [Client].
+    /// Returns a blocking (synchronous ) version of [Client].
     pub fn as_blocking(&self) -> ClientBlocking {
         ClientBlocking(self.clone())
     }
 }
 
+/// A blocking (synchronous) version of [Client].
 pub struct ClientBlocking(Client);
 
 impl ClientBlocking {

@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use pubky_timestamp::Timestamp;
 
 #[derive(Debug, Clone, Default)]
+/// A builder for [SignedPacket] with many convinient methods,
+/// see [SignedPacket::builder] documentation for examples of how to use this builder.
 pub struct SignedPacketBuilder {
     records: Vec<ResourceRecord<'static>>,
     timestamp: Option<Timestamp>,

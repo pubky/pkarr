@@ -31,11 +31,11 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 #[cfg(client)]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
-pub use client::{builder::ClientBuilder, Client};
+pub use client::{blocking::ClientBlocking, builder::ClientBuilder, Client};
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
 #[cfg(feature = "signed_packet")]
-pub use signed_packet::SignedPacket;
+pub use signed_packet::{SignedPacket, SignedPacketBuilder};
 
 // Rexports
 #[cfg(feature = "signed_packet")]
