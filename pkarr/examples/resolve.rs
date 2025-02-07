@@ -3,7 +3,7 @@
 //! run this example from the project root:
 //!     $ cargo run --example resolve <zbase32 encoded key>
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::time::Instant;
 use tracing_subscriber;
 
@@ -15,10 +15,14 @@ struct Cli {
     /// Mutable data public key.
     public_key: String,
     /// Resolve from DHT only, Relays only, or default to both.
+    #[arg(value_enum)]
     mode: Option<Mode>,
+    /// List of relays (only valid if mode is 'relays')
+    #[arg(requires = "mode")]
+    relays: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ValueEnum)]
 enum Mode {
     Dht,
     Relays,
@@ -47,6 +51,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Mode::Relays => {
             builder.no_dht();
+
+            if let Some(relays) = cli.relays {
+                builder.relays(&relays).unwrap();
+            }
         }
         _ => {}
     }
@@ -83,16 +91,6 @@ async fn resolve(client: &Client, public_key: &PublicKey, most_recent: bool) {
         }
         None => {
             println!("\nFailed to resolve {}", public_key);
-        }
-    }
-}
-
-impl From<String> for Mode {
-    fn from(value: String) -> Self {
-        match value.to_lowercase().as_str() {
-            "dht" => Self::Dht,
-            "relay" | "relays" => Self::Relays,
-            _ => Self::Both,
         }
     }
 }

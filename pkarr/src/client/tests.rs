@@ -32,12 +32,15 @@ fn builder(relay: &Relay, testnet: &mainline::Testnet, networks: Networks) -> Cl
         Networks::Dht => {}
         #[cfg(feature = "relays")]
         Networks::Relays => {
-            builder.no_default_network().relays(vec![relay.local_url()]);
+            builder
+                .no_default_network()
+                .relays(&[relay.local_url()])
+                .unwrap();
         }
         Networks::Both => {
             #[cfg(feature = "relays")]
             {
-                builder.relays(vec![relay.local_url()]);
+                builder.relays(&[relay.local_url()]).unwrap();
             }
         }
     }
