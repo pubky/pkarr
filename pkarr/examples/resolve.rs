@@ -12,7 +12,7 @@ use pkarr::{Client, PublicKey};
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Mutable data public key.
+    /// Pkarr public key (z-base32 encoded) or a url where the TLD is a Pkarr key.
     public_key: String,
     /// Resolve from DHT only, Relays only, or default to both.
     #[arg(value_enum)]
