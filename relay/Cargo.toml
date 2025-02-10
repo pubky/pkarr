@@ -33,7 +33,7 @@ httpdate = "1.0.3"
 pubky-timestamp = "0.3.0"
 url = "2.5.4"
 mainline = "5.0.0"
-pkarr = { version = "3.0.0-rc.1", default-features = false, features = ["dht", "lmdb-cache"] }
+pkarr = { version = "3.0.0", default-features = false, features = ["dht", "lmdb-cache"] }
 
 [package.metadata.docs.rs]
 all-features = true
