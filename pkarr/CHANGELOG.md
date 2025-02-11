@@ -2,7 +2,7 @@
 
 All notable changes to pkarr will be documented in this file.
 
-## [Unreleased]
+## [3.0.0](https://github.com/pubky/pkarr/compare/v2.0.0...pkarr-v3.0.0) - 2025-02-11
 
 ### Added
 
