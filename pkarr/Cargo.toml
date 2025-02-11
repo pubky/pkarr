@@ -61,7 +61,7 @@ webpki-roots = { version = "0.26.8", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
 webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
-[target.'cfg(target_family = "wasm")'.dependencies]
+[target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.2", features = ["js"] }
 log = "0.4.25"
 wasm-bindgen-futures = "0.4.50"
@@ -79,13 +79,13 @@ rstest = "0.24.0"
 pkarr-relay = { path = "../relay" }
 clap = { version = "4.5.28", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-mainline = "5.0.0"
+mainline = "5.1.0"
 tokio-rustls = "0.26.1"
 axum = "0.8.1"
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 
-[target.'cfg(target_family = "wasm")'.dev-dependencies]
+[target.wasm32-unknown-unknown.dev-dependencies]
 wasm-bindgen = { version = "0.2.100", features = ["serde-serialize"] }
 wasm-bindgen-test = "0.3"
 console_log = { version = "1.0.0", features = ["color"] }
@@ -114,7 +114,7 @@ endpoints = ["__client", "dep:genawaiter"]
 ## Enables [tls](https://pkarr.org/tls) spec.
 ##
 ## Only available if the `client` module is enabled.
-tls = ["endpoints", "rustls", "ed25519-dalek/pkcs8", "dep:webpki"]
+tls = ["endpoints", "ed25519-dalek/pkcs8", "dep:webpki", "dep:rustls"]
 ## Use [reqwest::dns::Resolve] trait implementation for [Client].
 ##
 ## Only available if the `client` module is enabled.
