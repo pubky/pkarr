@@ -24,7 +24,7 @@ The canonical serialization then for Signed Pkarr packet is as follows:
 SignedPacket = public-key signature timestamp dns-packet
 
 public-key  = 32 OCTET ; ed25519 public key
-signature   = 64 OCTET ; ed25519 signature over encoded DNS packet
+signature   = 64 OCTET ; ed25519 signature over the timestamp and encoded DNS packet
 timestamp   =  8 OCTET ; big-endian UNIX timestamp in microseconds
 dns-packet  =  * OCTET ; compressed encoded DNS answer packet, less than 1000 bytes
 ```
@@ -42,12 +42,28 @@ foo.o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy 300 A 104.21.59.30
 
 Because the TLD in Pkarr is so long, packets should be [compressed](https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.4) when encoded. But implementations should however be able to parse uncompressed packets.
 
+### Signing
+
+Signing follows the [bep_0044](https://www.bittorrent.org/beps/bep_0044.html) specification for signing Mutable Items, enabling SignedPackets to be published on the Mainline DHT.
+
+The signable timestamp and dns packet is bencoded as follows:
+
+```abnf
+signable          = prefix dns-packet
+
+prefix            = "3:seqi" timestamp "e1:v" dns-packet-length ":"
+dns-packet        = * OCTET ; compressed encoded DNS answer packet, less than 1000 bytes
+
+timestamp         = 1*DIGIT ; Integer representing the timestamp
+dns-packet-length = 1*DIGIT ; Integer representing the length of the encoded DNS packet
+```
+
 ### Verification
 
 Implementations should verify the following upon receiving a candidate signed packet for public key:
 
 1. Timestamp is more recent than what they already have in cache
-2. Signature over the encoded dns packet (trailing after the first 104 bytes) is valid for the public key
+2. Signature over the signable bencoded timestamp and dns packet, is valid for the public key
 3. DNS packet can be parsed correctly
 
 ## Publishing and resolving
