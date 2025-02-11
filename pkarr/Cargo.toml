@@ -15,7 +15,7 @@ base32 = "0.5.1"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 thiserror = "2.0.11"
 serde = { version = "1.0.217", features = ["derive"] }
-rand = "0.8.5"
+rand = "0.9.0"
 
 document-features = "0.2.10"
 
@@ -23,7 +23,7 @@ document-features = "0.2.10"
 simple-dns = { version = "0.9.3", optional = true }
 bytes = { version = "1.10.0", optional = true }
 self_cell = { version = "1.1.0" }
-pubky-timestamp = { version = "0.3.0", features = ["full"], optional = true }
+pubky-timestamp = { version = "0.4.0", features = ["full"], optional = true }
 
 #feat: client dependencies
 futures-lite = { version = "2.6.0", default-features = false, optional = true , features =["std"]}
@@ -42,7 +42,7 @@ genawaiter = { version = "0.99.1", default-features = false, features = ["future
 tracing = "0.1.41"
 
 # feat: dht dependencies
-mainline = { version = "5.1.0", optional = true }
+mainline = { version = "5.2.0", optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"], optional = true }
@@ -59,7 +59,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.3.1", features = ["wasm_js"] }
 log = "0.4.25"
 wasm-bindgen-futures = "0.4.50"
 
@@ -74,9 +74,9 @@ rstest = "0.24.0"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 pkarr-relay = { path = "../relay" }
-clap = { version = "4.5.28", features = ["derive"] }
+clap = { version = "4.5.29", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-mainline = "5.1.0"
+mainline = "5.2.0"
 tokio-rustls = "0.26.1"
 axum = "0.8.1"
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }

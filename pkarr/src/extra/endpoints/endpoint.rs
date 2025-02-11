@@ -10,7 +10,7 @@ use std::{
     net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{rng, seq::SliceRandom};
 
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
@@ -37,7 +37,7 @@ impl Endpoint {
             .collect::<Vec<_>>();
 
         // Shuffle the vector first
-        let mut rng = thread_rng();
+        let mut rng = rng();
         records.shuffle(&mut rng);
         // Sort by priority
         records.sort_by(|a, b| b.priority.cmp(&a.priority));
