@@ -1832,6 +1832,39 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pkarr"
 version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1e77ba80d75120dbcdd92a9855dd9aa0f3a17d50679441e28daf1f5493bfa21"
+dependencies = [
+ "async-compat",
+ "base32",
+ "byteorder",
+ "bytes",
+ "cfg_aliases",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek",
+ "futures-lite",
+ "getrandom 0.2.15",
+ "heed",
+ "log",
+ "lru 0.12.5",
+ "mainline",
+ "page_size",
+ "pubky-timestamp 0.3.0",
+ "rand 0.8.5",
+ "self_cell",
+ "serde",
+ "sha1_smol",
+ "simple-dns",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "pkarr"
+version = "3.1.0"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -1879,39 +1912,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pkarr"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1e77ba80d75120dbcdd92a9855dd9aa0f3a17d50679441e28daf1f5493bfa21"
-dependencies = [
- "async-compat",
- "base32",
- "byteorder",
- "bytes",
- "cfg_aliases",
- "document-features",
- "dyn-clone",
- "ed25519-dalek",
- "futures-lite",
- "getrandom 0.2.15",
- "heed",
- "log",
- "lru 0.12.5",
- "mainline",
- "page_size",
- "pubky-timestamp 0.3.0",
- "rand 0.8.5",
- "self_cell",
- "serde",
- "sha1_smol",
- "simple-dns",
- "thiserror 2.0.11",
- "tokio",
- "tracing",
- "wasm-bindgen-futures",
-]
-
-[[package]]
 name = "pkarr-relay"
 version = "0.1.0"
 dependencies = [
@@ -1925,7 +1925,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pkarr 3.0.0",
  "pubky-timestamp 0.3.0",
  "rustls",
  "serde",
