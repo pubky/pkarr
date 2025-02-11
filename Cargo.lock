@@ -1489,12 +1489,6 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.12.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
-
-[[package]]
-name = "lru"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
@@ -1511,7 +1505,7 @@ dependencies = [
  "ed25519-dalek",
  "flume",
  "futures-lite",
- "lru 0.13.0",
+ "lru",
  "rand 0.9.0",
  "serde",
  "serde_bencode",
@@ -1831,39 +1825,6 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1e77ba80d75120dbcdd92a9855dd9aa0f3a17d50679441e28daf1f5493bfa21"
-dependencies = [
- "async-compat",
- "base32",
- "byteorder",
- "bytes",
- "cfg_aliases",
- "document-features",
- "dyn-clone",
- "ed25519-dalek",
- "futures-lite",
- "getrandom 0.2.15",
- "heed",
- "log",
- "lru 0.12.5",
- "mainline",
- "page_size",
- "pubky-timestamp 0.3.0",
- "rand 0.8.5",
- "self_cell",
- "serde",
- "sha1_smol",
- "simple-dns",
- "thiserror 2.0.11",
- "tokio",
- "tracing",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "pkarr"
 version = "3.1.1"
 dependencies = [
  "anyhow",
@@ -1885,12 +1846,12 @@ dependencies = [
  "getrandom 0.3.1",
  "heed",
  "log",
- "lru 0.13.0",
+ "lru",
  "mainline",
  "page_size",
  "pkarr-relay",
  "postcard",
- "pubky-timestamp 0.4.0",
+ "pubky-timestamp",
  "rand 0.9.0",
  "reqwest",
  "rstest",
@@ -1912,6 +1873,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "pkarr"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "519d78e59fc7884d0009a1e405ab04661c087cbb98ba984e0c010884a36efc0c"
+dependencies = [
+ "async-compat",
+ "base32",
+ "byteorder",
+ "bytes",
+ "cfg_aliases",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek",
+ "futures-lite",
+ "getrandom 0.3.1",
+ "heed",
+ "log",
+ "lru",
+ "mainline",
+ "page_size",
+ "pubky-timestamp",
+ "rand 0.9.0",
+ "self_cell",
+ "serde",
+ "sha1_smol",
+ "simple-dns",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "pkarr-relay"
 version = "0.1.0"
 dependencies = [
@@ -1925,8 +1919,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.0.0",
- "pubky-timestamp 0.3.0",
+ "pkarr 3.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls",
  "serde",
  "thiserror 2.0.11",
@@ -2009,21 +2002,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37d3544b3f2748c54e147655edb5025752e2303145b5aefb3c3ea2c78b973bb0"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "pubky-timestamp"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4869545866057b802cdfe69f7d6e3db0783741b74c46caa11434a82f523f61ca"
-dependencies = [
- "base32",
- "document-features",
- "getrandom 0.2.15",
- "httpdate",
- "js-sys",
- "once_cell",
- "serde",
 ]
 
 [[package]]

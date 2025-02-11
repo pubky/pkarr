@@ -30,10 +30,9 @@ toml = "0.8.20"
 clap = { version = "4.5.28", features = ["derive"] }
 dirs-next = "2.0.0"
 httpdate = "1.0.3"
-pubky-timestamp = "0.3.0"
 url = "2.5.4"
 mainline = "5.1.0"
-pkarr = { version = "3.0.0", default-features = false, features = ["dht", "lmdb-cache"] }
+pkarr = { version = "3.1.1", default-features = false, features = ["dht", "lmdb-cache"] }
 
 [package.metadata.docs.rs]
 all-features = true

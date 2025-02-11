@@ -8,7 +8,7 @@ use bytes::Bytes;
 use http::{header, StatusCode};
 use httpdate::HttpDate;
 use pkarr::errors::{ConcurrencyError, PublishError};
-use pubky_timestamp::Timestamp;
+use pkarr::Timestamp;
 use tracing::debug;
 
 use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};

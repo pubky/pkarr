@@ -24,7 +24,7 @@ use axum_server::Handle;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{extra::lmdb_cache::LmdbCache, Client};
+use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
 use url::Url;
 
 pub use config::Config;
@@ -130,7 +130,7 @@ impl Relay {
     /// # Safety
     /// See [`Self::run`].
     pub async fn run_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
-        let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
+        let storage = std::env::temp_dir().join(Timestamp::now().to_string());
 
         let mut config = Config {
             cache_path: Some(storage.join("pkarr-relay")),
@@ -160,7 +160,7 @@ impl Relay {
             Box::leak(Box::new(node));
         }
 
-        let storage = std::env::temp_dir().join(pubky_timestamp::Timestamp::now().to_string());
+        let storage = std::env::temp_dir().join(Timestamp::now().to_string());
 
         let mut config = Config {
             http_port: 15411,
