@@ -1850,7 +1850,7 @@ dependencies = [
  "getrandom 0.2.15",
  "heed",
  "log",
- "lru 0.12.5",
+ "lru 0.13.0",
  "mainline",
  "page_size",
  "pkarr-relay",
