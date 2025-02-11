@@ -140,7 +140,7 @@ impl TryFrom<&[u8; 32]> for PublicKey {
 impl FromStr for PublicKey {
     type Err = PublicKeyError;
 
-    /// Convert the TLD in a `&str` to a [PublicKey].
+    /// Convert the last valid domain in a `&str` to a [PublicKey].
     ///
     /// # Examples
     ///
@@ -185,13 +185,12 @@ impl FromStr for PublicKey {
                                     // Remove hash
                                     s = s.split_once('#').map(|tuple| tuple.0).unwrap_or(s);
 
-                                    if s.len() > 52 {
-                                        if s.ends_with('.') {
-                                            // Remove trailing dot
-                                            s = s.trim_matches('.');
-                                        }
+                                    // Remove hash
+                                    s = s.split_once('#').map(|tuple| tuple.0).unwrap_or(s);
 
-                                        s = s.rsplit_once('.').map(|tuple| tuple.1).unwrap_or(s);
+                                    if s.len() > 52 && s.ends_with('.') {
+                                        // Remove trailing dot
+                                        s = s.trim_matches('.');
                                     }
                                 }
                             }
@@ -201,13 +200,15 @@ impl FromStr for PublicKey {
             }
         }
 
-        let bytes = if let Some(v) = base32::decode(base32::Alphabet::Z, s) {
-            Ok(v)
-        } else {
-            Err(PublicKeyError::InvalidPublicKeyEncoding)
-        }?;
+        for s in s.rsplit('.') {
+            if s.len() == 52 {
+                if let Some(last_valid_label) = base32::decode(base32::Alphabet::Z, s) {
+                    return last_valid_label.as_slice().try_into();
+                }
+            }
+        }
 
-        bytes.as_slice().try_into()
+        Err(PublicKeyError::InvalidPublicKeyEncoding)
     }
 }
 
@@ -467,6 +468,18 @@ mod tests {
 
         let public_key: PublicKey = str.try_into().unwrap();
         assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
+
+    #[test]
+    fn from_last_valid_label() {
+        let str = "https://foo@pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy.bar.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.not-valid.ig4gxe7z1r7m06orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.dns.iroh.link./pkarr:8888?q=v&a=b#foo";
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+
+        let public_key: PublicKey = str.parse().unwrap();
+        assert_eq!(public_key.as_bytes(), &expected);
     }
 
     #[test]
