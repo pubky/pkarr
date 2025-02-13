@@ -3,7 +3,7 @@ use clap::Parser;
 use std::path::PathBuf;
 use tracing::info;
 
-use pkarr_relay::{Config, Relay};
+use pkarr_relay::Relay;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -35,9 +35,9 @@ async fn main() -> Result<()> {
         if args.testnet {
             Relay::run_testnet().await?
         } else if let Some(config_path) = args.config {
-            Relay::run(Config::load(config_path).await?).await?
+            Relay::run_with_config_file(config_path).await?
         } else {
-            Relay::run(Default::default()).await?
+            Relay::builder().run().await?
         }
     };
 

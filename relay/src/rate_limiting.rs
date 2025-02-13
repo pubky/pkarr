@@ -12,10 +12,24 @@ use tower_governor::{
 pub use tower_governor::GovernorLayer;
 
 #[derive(Serialize, Deserialize, Debug)]
+/// Configurations for rate limitng.
 pub struct RateLimiterConfig {
-    pub(crate) behind_proxy: bool,
-    pub(crate) per_second: u64,
-    pub(crate) burst_size: u32,
+    /// Enable rate limit based on headers commonly used by reverse proxies.
+    ///
+    /// Uses headers commonly used by reverse proxies to extract the original IP address,
+    /// falling back to the connection's peer IP address.
+    /// <https://docs.rs/tower_governor/latest/tower_governor/key_extractor/struct.SmartIpKeyExtractor.html>
+    pub behind_proxy: bool,
+    /// Set the interval after which one element of the quota is replenished in seconds.
+    ///
+    /// **The interval must not be zero.**
+    pub per_second: u64,
+    /// Set quota size that defines how many requests can occur
+    /// before the governor middleware starts blocking requests from an IP address and
+    /// clients have to wait until the elements of the quota are replenished.
+    ///
+    /// **The burst_size must not be zero.**
+    pub burst_size: u32,
 }
 
 impl Default for RateLimiterConfig {

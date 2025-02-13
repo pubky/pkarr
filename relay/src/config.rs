@@ -8,6 +8,7 @@ use std::{
 };
 
 pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
+pub const CACHE_DIR: &str = "pkarr-cache";
 
 use crate::rate_limiting::RateLimiterConfig;
 
@@ -101,7 +102,7 @@ impl Config {
         }
 
         if let Some(path) = config_toml.cache_path {
-            config.cache_path = Some(PathBuf::from(path).join("pkarr-cache"));
+            config.cache_path = Some(PathBuf::from(path).join(CACHE_DIR));
         }
 
         config.cache_size = config_toml.cache_size.unwrap_or(DEFAULT_CACHE_SIZE);

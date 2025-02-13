@@ -14,6 +14,7 @@ mod rate_limiting;
 
 use std::{
     net::{SocketAddr, TcpListener},
+    path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
@@ -27,7 +28,79 @@ use tracing::info;
 use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
 use url::Url;
 
-pub use config::Config;
+use config::{Config, CACHE_DIR};
+
+pub use rate_limiting::RateLimiterConfig;
+
+/// A builder for Pkarr [Relay]
+pub struct RelayBuilder(Config);
+
+impl RelayBuilder {
+    /// Set the port for the HTTP endpoint.
+    pub fn http_port(&mut self, port: u16) -> &mut Self {
+        self.0.http_port = port;
+
+        self
+    }
+
+    /// Set the storage directory.
+    ///
+    /// This Relay's cache will be stored in a subdirectory (`pkarr-cache`) inside
+    /// that storage directory
+    ///
+    /// Defaults to the path to the user's data directory
+    pub fn storage(&mut self, storage: PathBuf) -> &mut Self {
+        self.0.cache_path = Some(storage.join(CACHE_DIR));
+
+        self
+    }
+
+    /// See [pkarr::ClientBuilder::cache_size]
+    ///
+    /// Defaults to `1_000_000`
+    pub fn cache_size(&mut self, size: usize) -> &mut Self {
+        self.0.cache_size = size;
+
+        self
+    }
+
+    /// Disable the rate limiter.
+    ///
+    /// Useful when running in a local test network.
+    pub fn disable_rate_limiter(&mut self) -> &mut Self {
+        self.0.rate_limiter = None;
+
+        self
+    }
+
+    /// Set the [RateLimiterConfig].
+    ///
+    /// Defaults to [RateLimiterConfig::default].
+    pub fn rate_limiter_config(&mut self, config: RateLimiterConfig) -> &mut Self {
+        self.0.rate_limiter = Some(config);
+
+        self
+    }
+
+    /// Allows mutating the internal [pkarr::ClientBuilder] with a callback function.
+    pub fn pkarr<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut pkarr::ClientBuilder) -> &mut pkarr::ClientBuilder,
+    {
+        f(&mut self.0.pkarr);
+
+        self
+    }
+
+    /// Run a Pkarr relay with the provided configuration.
+    ///
+    /// # Safety
+    /// This method is marked as unsafe because it uses `LmdbCache`, which can lead to
+    /// undefined behavior if the lock file is corrupted or improperly handled.
+    pub async unsafe fn run(self) -> anyhow::Result<Relay> {
+        unsafe { Relay::run(self.0) }.await
+    }
+}
 
 /// A running instance of a Pkarr relay server.
 ///
@@ -50,7 +123,7 @@ impl Relay {
     ///
     /// # Returns
     /// A `Result` containing the `Relay` instance or an error.
-    pub async unsafe fn run(config: Config) -> anyhow::Result<Self> {
+    async unsafe fn run(config: Config) -> anyhow::Result<Self> {
         let mut config = config;
 
         tracing::debug!(?config, "Pkarr server config");
@@ -63,7 +136,7 @@ impl Relay {
                         "operating environment provides no directory for application data"
                     )
                 })?;
-                path.join("pkarr-relay")
+                path.join(CACHE_DIR)
             }
         };
 
@@ -114,12 +187,20 @@ impl Relay {
         })
     }
 
-    /// Convenient wrapper around [`Self::run`].
+    /// Create a builder for running a [Relay]
+    pub fn builder() -> RelayBuilder {
+        RelayBuilder(Default::default())
+    }
+
+    /// Run a [Relay] with a configuration file path.
     ///
     /// # Safety
-    /// See [`Self::run`].
-    pub async fn run_unsafe(config: Config) -> anyhow::Result<Self> {
-        unsafe { Self::run(config).await }
+    /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
+    /// because the possible Undefined Behavior (UB) if the lock file is broken.
+    pub async unsafe fn run_with_config_file(
+        config_path: impl AsRef<Path>,
+    ) -> anyhow::Result<Self> {
+        unsafe { Self::run(Config::load(config_path).await?) }.await
     }
 
     /// Run an ephemeral Pkarr relay on a random port number for testing purposes.
@@ -128,12 +209,13 @@ impl Relay {
     /// * `testnet` - A reference to a `mainline::Testnet` for bootstrapping the DHT.
     ///
     /// # Safety
-    /// See [`Self::run`].
+    /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
+    /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async fn run_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
         let storage = std::env::temp_dir().join(Timestamp::now().to_string());
 
         let mut config = Config {
-            cache_path: Some(storage.join("pkarr-relay")),
+            cache_path: Some(storage.join(CACHE_DIR)),
             http_port: 0,
             ..Default::default()
         };
@@ -151,8 +233,9 @@ impl Relay {
     /// Run a Pkarr relay in a Testnet mode (on port 15411).
     ///
     /// # Safety
-    /// See [`Self::run`].
-    pub async fn run_testnet() -> anyhow::Result<Self> {
+    /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
+    /// because the possible Undefined Behavior (UB) if the lock file is broken.
+    pub async unsafe fn run_testnet() -> anyhow::Result<Self> {
         let testnet = mainline::Testnet::new(10)?;
 
         // Leaking the testnet to avoid dropping and shutting them down.
@@ -164,7 +247,7 @@ impl Relay {
 
         let mut config = Config {
             http_port: 15411,
-            cache_path: Some(storage.join("pkarr-relay")),
+            cache_path: Some(storage.join(CACHE_DIR)),
             rate_limiter: None,
             ..Default::default()
         };
@@ -175,7 +258,7 @@ impl Relay {
             .bootstrap(&testnet.bootstrap)
             .dht(|builder| builder.server_mode());
 
-        unsafe { Self::run(config).await }
+        Self::run(config).await
     }
 
     /// Returns the HTTP socket address of the relay.
