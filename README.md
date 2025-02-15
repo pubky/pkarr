@@ -2,16 +2,16 @@
 
 > Public-Key Addressable Resource Records
 
-The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable, censorship-resistant top-level domains. This system would be accessible to anyone capable of maintaining a private key.
+The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable, censorship-resistant top-level domains. This system is accessible to anyone capable of maintaining a private key.
 
 Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
 - To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
-- To resolve some key's resources, applications query the DHT directly, or through a [relay](./design/relays.md), and verify the signature themselves. 
-- Clients and Relays cache records extensively and minimize DHT traffic as much as possible for improved scalability. 
-- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT. Also Pkarr relays could republish records recently requested, to keep popular records alive too.
-- Optional: Existing applications unaware of Pkarr can still function if the user added a Pkarr-aware DNS servers to their operating system DNS servers. 
+- To resolve a key's resources, applications query the DHT directly or through a [relay](./design/relays.md), and verify the signature themselves. 
+- Clients and Relays extensively cache records and minimize DHT traffic for improved scalability. 
+- The DHT drops records after a few hours, so users, their friends, or service providers need to periodically republish their records to the DHT. Additionally, Pkarr relays can republish recently requested records to keep popular records alive.
+- Optional: Existing applications unaware of Pkarr can still function if the user adds Pkarr-aware DNS servers to their operating system's DNS configuration. 
 
 ## DEMO 
 
@@ -53,16 +53,16 @@ sequenceDiagram
 ```
 
 ### Clients
-#### Pkarr enabled applications.
- 
-Native applications, can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr Relay.
+#### Pkarr-enabled applications
 
-Browser web apps should try calling local Pkarr relay at the default port `6881`, if not accessible, they have to query a remote relay in parallel to fallback on. Eitherway, these apps should allow users to configure relays of their choice.
+Native applications can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr Relay.
+
+Browser web apps should try calling the local Pkarr relay at the default port `6881`. If not accessible, they must query a remote relay as a fallback. In either case, these apps should allow users to configure relays of their choice.
  
-Clients with private keys are also capable of submitting signed records either to the DHT directly, or through Pkarr relay, to update user's records when needed.
+Clients with private keys can also submit signed records either directly to the DHT or through a Pkarr relay to update their records when needed.
  
 #### Existing applications
-To support existing applications totally oblivious of Pkarr, users will have to (manually or programmatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT to resolve packets from there. However, the best outcome would be adoption from existing widely used resolvers like `1.1.1.1` and `8.8.8.8`.
+To support existing applications that are unaware of Pkarr, users will need to (manually or programmatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT. However, the ideal outcome would be adoption by existing widely used resolvers like `1.1.1.1` (Cloudflare) and `8.8.8.8` (Google).
 
 ### Relays
 
@@ -74,7 +74,7 @@ Relays are very light and cheap to operate, that they can easily run altruistica
 
 ### Republishers
 
-Services and hosting providers mentioned in Resource Records of a user, are incentivized to republish these records and keep them alive on the DHT, for the same reasons they are incentivized to gain that user in the first place.
+Services and hosting providers mentioned in a user's Resource Records are incentivized to republish these records and keep them alive on the DHT, for the same reasons they are incentivized to gain that user in the first place.
 
 ### DHT
 
@@ -102,18 +102,18 @@ To ensure a good chance of scalability and resilience, a few expectations need t
 
 ## Why?
 
-> Why would you need resource records for keys
+> Why would you need resource records for keys?
 
 In pursuit of a sovereign, distributed, and open web, we identify three challenges:
 
-1. **Distributed Semantics** `Everything expressed as keys and metadata`
-Developing interoperable semantics for verifiable metadata about a set of public-keys that form a digital identity, complete with reputation, social graph, credentials, and more.
+1. **Distributed Semantics**: `Everything expressed as keys and metadata`
+Developing interoperable semantics for verifiable metadata about a set of public keys that form a digital identity, complete with reputation, social graph, credentials, and more.
 
-2. **Distributed Database(s)** `Anyone can host the data`
+2. **Distributed Database(s)**: `Anyone can host the data`
 Verifiable data alone is insufficient; a host-agnostic database is essential for an open web, as opposed to walled gardens.
 
-3. **Distributed Discovery** `Where is the data?`
-But before that, you need to efficiently and consistently discover the multiple hosts for a given data-set.
+3. **Distributed Discovery**: `Where is the data?`
+Before anything else, you need to efficiently and consistently discover the multiple hosts for a given dataset.
 
 Addressing Distributed Discovery first makes the most sense for several reasons:
 
@@ -124,40 +124,50 @@ Addressing Distributed Discovery first makes the most sense for several reasons:
 
 - Distributed Discovery offers the greatest assured leverage by abstracting over current and emerging solutions for (1) and (2) as they compete, complement, and develop independently, all while maintaining the same long lasting identifier, so you don't have to start from scratch or be locked in.
 
-### leverage
+### Leverage
 
 **Solve the most issues...**
 
-Pkarr solves **unavailability** by turning public-keys to resolvable URL: resource **locator**.
-Pkarr solves **censorship and deplatforming** by allowing users to conveniently change DNS records to point to other providers or platforms. While there are other ways to do that, it is never as reliable and authoritative as DNS.
-Pkarr help with **key management** by enabling users to maintain a long lasting identity tied to one key, rarely used, and hopefully kept offline at all times.
+Pkarr solves **unavailability** by turning public keys into resolvable URLs: resource **locator**.
+Pkarr solves **censorship and deplatforming** by allowing users to conveniently change DNS records to point to other providers or platforms. While there are other ways to do this, it is never as reliable and authoritative as DNS.
+Pkarr helps with **key management** by enabling users to maintain a long-lasting identity tied to one key, rarely used, and hopefully kept offline at all times.
 
-Finally, by solving censorship and deplatforming ina sovereign way, the need for signed data becomes less urgent, and we buy more time to figure out the UX of signing everything everywhere all the time.
+Finally, by solving censorship and deplatforming in a sovereign way, the need for signed data becomes less urgent, and we buy more time to figure out the UX of signing everything everywhere all the time.
 
-**with least work**
+**... with least work possible ...**
 
-Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table with millions of nodes, and good old web servers.
+Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table (Mainline DHT) with millions of nodes, and good old web servers.
 
 ## FAQ
 
-1. **Why not human readable domains on a blockchain?**
+<details>
+<summary><strong>Why not human readable domains on a blockchain?</strong></summary>
 
-    Introducing scarcity to names, arguably the most subjective and personal thing in our lives, serves noone except rent seekers. We already know how to use phonebooks, we just need to upgrade small numbers, to bigger sovereign keys.
-    
-1. **Why not GNU Name System?**
+Introducing scarcity to names, arguably the most subjective and personal thing in our lives, serves noone except rent seekers. We already know how to use phonebooks, we just need to upgrade small numbers, to bigger sovereign keys.
+</details>
 
-    The GNU net is exciting and impressive, but I didn't have enough time to test it or understand how hard it would be to build a PoC on top of it.
-    
-    GNU name system seems to support [Petname system](http://www.skyhunter.com/marcs/petnames/IntroPetNames.html)  natively, which means it does require more storage and bandwidth from the DHT than a 1000 bytes max size enforced by Mainline DHT. I believe that petnameing should be left to application layer. 
+<details>
+<summary><strong>Why not GNU Name System?</strong></summary>
 
-    Luckily GNU net uses ed25519 key as well, so there is always a path for migration if we are careful.
+The GNU net is exciting and impressive, but I didn't have enough time to test it or understand how hard it would be to build a PoC on top of it.
 
-2. **Why not [insert ad hoc solution] instead?**
+GNU name system seems to support [Petname system](http://www.skyhunter.com/marcs/petnames/IntroPetNames.html) natively, which means it does require more storage and bandwidth from the DHT than a 1000 bytes max size enforced by Mainline DHT. I believe that petnameing should be left to application layer. 
+
+Luckily GNU net uses ed25519 key as well, so there is always a path for migration if we are careful.
+</details>
+
+<details>
+<summary><strong>Why not [insert ad hoc solution] instead?</strong></summary>
+
 Open social networks often attempt to solve discovery natively within their network of participants. However, this approach has several issues:
-    - It may conflict with participants' (usually service providers) self-interest in keeping users locked in.
-    - Their infrastructure would need to become a gossip overlay network, which may not be desirable.
-    - Achieving consistency and load balancing would require further optimization, effectively reinventing a DHT.
-    - If an overlay network is developed that surpasses the performance of a 10-million-node DHT with a 15-year track record, Pkarr should still be capable of utilizing your network as a backend, either as an alternative or alongside existing solutions.
+- It may conflict with participants' (usually service providers) self-interest in keeping users locked in.
+- Their infrastructure would need to become a gossip overlay network, which may not be desirable.
+- Achieving consistency and load balancing would require further optimization, effectively reinventing a DHT.
+- If an overlay network is developed that surpasses the performance of a 10-million-node DHT with a 15-year track record, Pkarr should still be capable of utilizing your network as a backend, either as an alternative or alongside existing solutions.
+</details>
 
-3. **How can I run the Pkarr server?**
+<details>
+<summary><strong>How can I run the Pkarr server?</strong></summary>
+
 You can find building instruction [here](./server/README.md).
+</details>
