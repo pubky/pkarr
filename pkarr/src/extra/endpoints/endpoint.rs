@@ -10,8 +10,6 @@ use std::{
     net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
-use rand::{rng, seq::SliceRandom};
-
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
 pub struct Endpoint {
@@ -37,8 +35,7 @@ impl Endpoint {
             .collect::<Vec<_>>();
 
         // Shuffle the vector first
-        let mut rng = rng();
-        records.shuffle(&mut rng);
+        shuffle(&mut records);
         // Sort by priority
         records.sort_by(|a, b| b.priority.cmp(&a.priority));
 
@@ -184,6 +181,17 @@ fn get_svcb<'a>(record: &'a ResourceRecord, get_https: bool) -> Option<&'a SVCB<
             }
         }
         _ => None,
+    }
+}
+
+/// Shuffles a slice randomly.
+fn shuffle(slice: &mut [&SVCB<'_>]) {
+    for i in 1..slice.len() {
+        let mut buf = [0u8; 8];
+        getrandom::getrandom(&mut buf).expect("getrandom failed");
+        let rand_pos = (u64::from_le_bytes(buf) as usize) % (i + 1);
+
+        slice.swap(i, rand_pos);
     }
 }
 

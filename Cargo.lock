@@ -1416,7 +1416,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -1826,55 +1826,6 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 [[package]]
 name = "pkarr"
 version = "3.1.1"
-dependencies = [
- "anyhow",
- "async-compat",
- "axum",
- "axum-server",
- "base32",
- "byteorder",
- "bytes",
- "cfg_aliases",
- "clap",
- "console_log",
- "document-features",
- "dyn-clone",
- "ed25519-dalek",
- "futures-buffered",
- "futures-lite",
- "genawaiter",
- "getrandom 0.3.1",
- "heed",
- "log",
- "lru",
- "mainline",
- "page_size",
- "pkarr-relay",
- "postcard",
- "pubky-timestamp",
- "rand 0.9.0",
- "reqwest",
- "rstest",
- "rustls",
- "rustls-webpki",
- "self_cell",
- "serde",
- "sha1_smol",
- "simple-dns",
- "thiserror 2.0.11",
- "tokio",
- "tokio-rustls",
- "tracing",
- "tracing-subscriber",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
-]
-
-[[package]]
-name = "pkarr"
-version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "519d78e59fc7884d0009a1e405ab04661c087cbb98ba984e0c010884a36efc0c"
 dependencies = [
@@ -1906,6 +1857,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "pkarr"
+version = "3.1.2"
+dependencies = [
+ "anyhow",
+ "async-compat",
+ "axum",
+ "axum-server",
+ "base32",
+ "byteorder",
+ "bytes",
+ "cfg_aliases",
+ "clap",
+ "console_log",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek",
+ "futures-buffered",
+ "futures-lite",
+ "genawaiter",
+ "getrandom 0.2.15",
+ "heed",
+ "log",
+ "lru",
+ "mainline",
+ "page_size",
+ "pkarr-relay",
+ "postcard",
+ "pubky-timestamp",
+ "reqwest",
+ "rstest",
+ "rustls",
+ "rustls-webpki",
+ "self_cell",
+ "serde",
+ "sha1_smol",
+ "simple-dns",
+ "thiserror 2.0.11",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "pkarr-relay"
 version = "0.3.0"
 dependencies = [
@@ -1919,7 +1918,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pkarr 3.1.1",
  "rustls",
  "serde",
  "thiserror 2.0.11",
@@ -2006,13 +2005,13 @@ dependencies = [
 
 [[package]]
 name = "pubky-timestamp"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab61f82c6343aecd77364c3c1c4e9e8288adfb11d2775640395344b8078aa315"
+checksum = "44aafc63c1eab1905e8a8378d2b085500540c9935b6d028908c8a50a5a246a3d"
 dependencies = [
  "base32",
  "document-features",
- "getrandom 0.3.1",
+ "getrandom 0.2.15",
  "httpdate",
  "js-sys",
  "once_cell",
