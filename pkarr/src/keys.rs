@@ -3,7 +3,6 @@
 use ed25519_dalek::{
     SecretKey, Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey,
 };
-use rand::random;
 use std::{
     fmt::{self, Debug, Display, Formatter},
     hash::Hash,
@@ -19,7 +18,11 @@ pub struct Keypair(pub(crate) SigningKey);
 impl Keypair {
     /// Generates a new random `Keypair` using the operating system's CSPRNG.
     pub fn random() -> Keypair {
-        let signing_key: SigningKey = SigningKey::from_bytes(&random());
+        let mut bytes = [0u8; 32];
+
+        getrandom::getrandom(&mut bytes).expect("getrandom failed");
+
+        let signing_key: SigningKey = SigningKey::from_bytes(&bytes);
 
         Keypair(signing_key)
     }
