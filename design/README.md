@@ -1,13 +1,19 @@
 # Design
 
+## Specifications
+
 ### 1. [Base](./base.md)
-Required spec
+Required specification for core functionality.
 
 ### 2. [Relays](./relays.md)
-Optional HTTP servers to support web browsers and environments with similar constraints
+Optional HTTP servers to support web browsers and environments with similar constraints.
 
 ### 3. [Endpoints](./endpoints.md)
-Optional spec for resolving query names to endpoints details using RFC 9460 (HTTPS and SVCB records).
+Optional specification for resolving query names to endpoint details using RFC 9460 (HTTPS and SVCB records).
 
 ### 4. [TLS](./tls.md)
-Optional spec for end to end encryption of connections to Pkarr domains.
+Optional specification for end-to-end encryption of connections to Pkarr domains.
+
+---
+
+> **Note**: Only the Base specification is required. All other specifications are optional extensions that provide additional functionality.
