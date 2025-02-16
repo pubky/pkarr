@@ -1,37 +1,41 @@
 # Pkarr Relay
 
-A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays).
+A server that functions as a [pkarr relay](https://pkarr.org/relays).
 
-## Usage
+## Installation & Usage
 
-Build
+### Local Installation
 
+1. Build the binary:
 ```bash
 cargo build --release
 ```
 
-Optionally Copy config file
-
+2. Copy and customize the config file (optional):
 ```bash
 cp src/config.example.toml config.toml
 ```
 
-Run with an optional config file
+### Running the Relay
 
+#### Basic Usage
 ```bash
 ../target/release/pkarr-relay --config=./config.toml
 ```
 
-You can customize logging levels
-
+#### With Custom Logging
 ```bash
 ../target/release/pkarr-relay --config=./config.toml -t=pkarr=debug,tower_http=debug
 ```
 
-## Using Docker
-To build and run the Pkarr relay using Docker, this repository has a `Dockerfile` in the top level. You could use a small `docker-compose.yml` such as:
+Once running, the Pkarr relay will be accessible at http://localhost:6881.
 
-```
+### Using Docker
+
+Alternatively, you can run the relay using Docker. This repository includes a `Dockerfile` and you can run it in two ways:
+
+1. Using docker-compose (recommended):
+```yaml
 services:
   pkarr:
     container_name: pkarr
@@ -41,8 +45,8 @@ services:
       - .pkarr_cache:/cache
     command: pkarr-relay --config=/config.toml
 ```
-Alternatively, lunch docker correctly attaching the `config.toml` as a volume in the right location. In the example above `.pkarr_cache` relative directory is used to permanently store pkarr cached keys.
 
-An example `./config.toml` can be copied from `./src/config.example.toml` and customized as needed.
-
-This will make the Pkarr relay accessible at http://localhost:6881.
+2. Using Docker directly:
+   - Copy the example config: `cp src/config.example.toml config.toml`
+   - Mount the config file and cache directory as volumes
+   - The `.pkarr_cache` directory will store cached keys permanently
