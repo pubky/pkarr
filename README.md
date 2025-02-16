@@ -2,6 +2,14 @@
 
 > Public-Key Addressable Resource Records
 
+[![Try the demo](https://img.shields.io/badge/Try%20the-Demo-blue)](https://app.pkarr.org) [![View Examples](https://img.shields.io/badge/View-Examples-green)](./pkarr/examples/README.md) [![Crates.io](https://img.shields.io/crates/v/pkarr)](https://crates.io/crates/pkarr) [![Documentation](https://img.shields.io/badge/docs-design-orange)](./design/README.md) [![License](https://img.shields.io/badge/license-MIT-purple)](./LICENSE)
+
+*The simplest possible integration between DNS and P2P networks, enabling self-issued public keys to function as sovereign, censorship-resistant top-level domains.*
+
+[Quick Start](#tldr) • [Architecture](#architecture) • [Documentation](./design/README.md) • [FAQ](#faq)
+
+--- 
+
 The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable, censorship-resistant top-level domains. This system is accessible to anyone capable of maintaining a private key.
 
 Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
@@ -106,8 +114,7 @@ To ensure a good chance of scalability and resilience, a few expectations need t
 
 In pursuit of a sovereign, distributed, and open web, we identify three challenges:
 
-1. **Distributed Semantics**: `Everything expressed as keys and metadata`
-Developing interoperable semantics for verifiable metadata about a set of public keys that form a digital identity, complete with reputation, social graph, credentials, and more.
+1. **Distributed Semantics**: `Everything expressed as keys and metadata`Developing interoperable semantics for verifiable metadata about a set of public keys that form a digital identity, complete with reputation, social graph, credentials, and more.
 
 2. **Distributed Database(s)**: `Anyone can host the data`
 Verifiable data alone is insufficient; a host-agnostic database is essential for an open web, as opposed to walled gardens.
@@ -171,3 +178,4 @@ Open social networks often attempt to solve discovery natively within their netw
 
 You can find building instruction [here](./server/README.md).
 </details>
+
