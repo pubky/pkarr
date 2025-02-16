@@ -1,6 +1,6 @@
 # Pkarr
 
-Rust implementation of [Pkarr](pkarr.org) for publishing and resolving DNS packets over [Mainline DHT](https://github.com/Pubky/mainline).
+Rust implementation of [Pkarr](https://pkarr.org) for publishing and resolving DNS packets over [Mainline DHT](https://github.com/Pubky/mainline).
 
 ## Documentation
 
