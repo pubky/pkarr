@@ -21,7 +21,7 @@ document-features = "0.2.10"
 #feat: signed_packet dependencies
 simple-dns = { version = "0.9.3", optional = true }
 bytes = { version = "1.10.0", optional = true }
-self_cell = { version = "1.1.0" }
+self_cell = { version = "1.1.0", optional = true }
 pubky-timestamp = { version = "0.4.1", features = ["full"], optional = true }
 
 #feat: client dependencies
@@ -38,16 +38,17 @@ url = { version = "2.5.4", optional = true }
 genawaiter = { version = "0.99.1", default-features = false, features = ["futures03"], optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-tracing = "0.1.41"
-
 getrandom = { version = "0.2.15", default-features = false }
+
+#feat: client dependencies
+tracing = { version = "0.1.41", optional = true }
 
 # feat: dht dependencies
 mainline = { version = "5.2.0", optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"], optional = true }
-tokio = { version = "1.43.0", optional = true, default-features = false }
+tokio = { version = "1.43.0", default-features = false, optional = true }
 async-compat = { version = "0.2.4", optional = true }
 
 # feat: lmdb-cache defendencies
@@ -61,8 +62,10 @@ webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
-log = "0.4.25"
-wasm-bindgen-futures = "0.4.50"
+
+#feat: client dependencies
+log = { version = "0.4.25", optional = true}
+wasm-bindgen-futures = { version = "0.4.50", optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.12", default-features = false, optional = true }
@@ -94,7 +97,7 @@ cfg_aliases = "0.2.1"
 [features]
 # Basic types
 keys = []
-signed_packet = ["keys", "dep:simple-dns", "dep:pubky-timestamp", "dep:bytes"]
+signed_packet = ["keys", "dep:simple-dns", "dep:pubky-timestamp", "dep:bytes", 'dep:self_cell']
 
 # Clients 
 ## Enable the [Client] with [mainline] support.
@@ -139,7 +142,10 @@ default = ["full-client"]
 ## Does not enable anything on its own you need to enable either `dht` and/or `relays` to enable the [Client].
 ##
 ## Except in WASM where you have to enable `relays`, while `dht` does not do anything.
-__client = ["signed_packet", "dep:dyn-clone", "dep:lru", "dep:sha1_smol", "dep:futures-lite", "dep:async-compat", "dep:tokio"]
+__client = [
+  "signed_packet", "dep:dyn-clone", "dep:lru", "dep:sha1_smol", "dep:futures-lite", "dep:async-compat", "dep:tokio",
+  "dep:log", "dep:tracing", "dep:wasm-bindgen-futures", 
+]
 
 [package.metadata.docs.rs]
 all-features = true
