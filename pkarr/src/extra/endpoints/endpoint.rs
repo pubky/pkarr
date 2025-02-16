@@ -185,11 +185,29 @@ fn get_svcb<'a>(record: &'a ResourceRecord, get_https: bool) -> Option<&'a SVCB<
 }
 
 /// Shuffles a slice randomly.
-fn shuffle(slice: &mut [&SVCB<'_>]) {
+fn shuffle<T>(slice: &mut [T]) {
+    if slice.len() <= 1 {
+        return;
+    }
+
+    let mut chunk = 0;
+    let mut chunk_remaining: u32 = 0;
+
     for i in 1..slice.len() {
-        let mut buf = [0u8; 8];
-        getrandom::getrandom(&mut buf).expect("getrandom failed");
-        let rand_pos = (u64::from_le_bytes(buf) as usize) % (i + 1);
+        if chunk_remaining == 0 {
+            let mut buf = [0u8; 8];
+            getrandom::getrandom(&mut buf).expect("getrandom failed");
+            chunk = u64::from_le_bytes(buf);
+            chunk_remaining = 64;
+        }
+
+        let j = i + 1;
+
+        let rand_pos = (chunk % j as u64) as usize;
+        chunk /= j as u64;
+
+        let bits_used = j.next_power_of_two().trailing_zeros();
+        chunk_remaining = chunk_remaining.saturating_sub(bits_used);
 
         slice.swap(i, rand_pos);
     }
