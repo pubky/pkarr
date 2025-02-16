@@ -18,20 +18,20 @@ Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89u
 - To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
 - To resolve a key's resources, applications query the DHT directly or through a [relay](./design/relays.md), and verify the signature themselves. 
 - Clients and Relays extensively cache records and minimize DHT traffic for improved scalability. 
-- The DHT drops records after a few hours, so users, their friends, or service providers need to periodically republish their records to the DHT. Additionally, Pkarr relays can republish recently requested records to keep popular records alive.
+- The DHT drops records after a few hours, so users, their friends, or service providers need to periodically republish their records. Additionally, Pkarr relays can republish recently requested records to keep popular records alive.
 - Optional: Existing applications unaware of Pkarr can still function if the user adds Pkarr-aware DNS servers to their operating system's DNS configuration. 
 
-## DEMO 
+## Demo
 
-Try the [web app demo](https://app.pkarr.org).
+Try the [web app demo](https://app.pkarr.org)
 
-Or if you prefer Rust [Examples](./pkarr/examples/README.md) 
+Or if you prefer Rust, check out our [Examples](./pkarr/examples/README.md) 
 
-## TOC
-- [Architecture](#Architecture)
-- [Expectations](#Expectations)
-- [Why](#Why)
-- [FAQ](#FAQ)
+## Contents
+- [Architecture](#architecture)
+- [Expectations](#expectations)
+- [Why](#why)
+- [FAQ](#faq)
  
 ## Architecture
 
@@ -61,7 +61,7 @@ sequenceDiagram
 ```
 
 ### Clients
-#### Pkarr-enabled applications
+#### Pkarr-enabled Applications
 
 Native applications can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr Relay.
 
@@ -69,16 +69,16 @@ Browser web apps should try calling the local Pkarr relay at the default port `6
  
 Clients with private keys can also submit signed records either directly to the DHT or through a Pkarr relay to update their records when needed.
  
-#### Existing applications
+#### Existing Applications
 To support existing applications that are unaware of Pkarr, users will need to (manually or programmatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT. However, the ideal outcome would be adoption by existing widely used resolvers like `1.1.1.1` (Cloudflare) and `8.8.8.8` (Google).
 
 ### Relays
 
 Pkarr relays are optional but they:
-1. Act as [relays](https://pkarr.org/relays) to enable web applications to query the DHT.
-2. Act as large caching layer for many users to provide lower latency, more reliability and scalability.
+1. Enable web applications to query the DHT through [relays](https://pkarr.org/relays)
+2. Act as a large caching layer for many users to provide lower latency, better reliability, and improved scalability
 
-Relays are very light and cheap to operate, that they can easily run altruistically, but private, and paid relays are possible too.
+Relays are very light and cheap to operate, making them easy to run altruistically. Private and paid relays are also possible.
 
 ### Republishers
 
@@ -86,26 +86,26 @@ Services and hosting providers mentioned in a user's Resource Records are incent
 
 ### DHT
 
-Pkarr will use [Mainline_DHT](https://en.wikipedia.org/wiki/Mainline_DHT) as the overlay network.
-Specifically [BEP44](https://www.bittorrent.org/beps/bep_0044.html) for storing ephemeral arbitrary data.
+Pkarr uses [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT) as the overlay network,
+specifically [BEP44](https://www.bittorrent.org/beps/bep_0044.html) for storing ephemeral arbitrary data.
 
 Reasons for choosing Mainline include:
-1. 15 years of proven track record facilitating trackerless torrent for people around the world.
-2. Biggest DHT in existence with estimated 10 million nodes.
-3. It is fairly generous with its retaining of mutable data, reducing the need to frequently refresh records, thus reducing traffic.
-4. It has implementation in most languages, well understood (by many smart people, that may be willing to guide us), and stable enough to make a minimal implementation from scratch if we need to.
+1. 15 years of proven track record facilitating trackerless torrents worldwide
+2. Largest DHT in existence with an estimated 10 million nodes
+3. Generous retention of mutable data, reducing the need for frequent record refreshes
+4. Implementations available in most languages, well understood by many experts, and stable enough for minimal custom implementation if needed
 
 ## Expectations
 
-To ensure a good chance of scalability and resilience, a few expectations need to be set straight:
+To ensure good scalability and resilience, a few expectations need to be set:
 
 1. This is **not a storage platform**
-    - Records are ephemeral, and without refreshing them regularly they will be dropped by the DHT.
-    - Popular records may or may not be refreshed by the DNS servers as they get queries for them.
+    - Records are ephemeral and will be dropped by the DHT without regular refreshing
+    - Popular records may be refreshed by DNS servers as they receive queries
 2. This is **not a realtime communication** medium
-    - Records are heavily cached like in any DNS system.
-    - You are expected to update your records rarely, so you should expect relays to enforce harsh rate-limiting.
-    - Records are going to be cached heavily to reduce traffic on the DHT, so updates might take some time to propagate, even if you set TTL to 1 second.
+    - Records are heavily cached like in any DNS system
+    - Record updates should be infrequent, and relays enforce strict rate-limiting
+    - Record updates may take time to propagate due to extensive caching, even with a 1-second TTL
     - In case of a cache miss, traversing the DHT might take few seconds.
 
 ## Why?
