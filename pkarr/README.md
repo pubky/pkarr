@@ -1,27 +1,24 @@
 # Pkarr
 
-Rust implementation of [Pkarr](pkarr.org).
+Rust implementation of [Pkarr](https://pkarr.org) for publishing and resolving DNS packets over [Mainline DHT](https://github.com/Pubky/mainline).
 
-Publish and resolve DNS packets over Mainline DHT.
+## Documentation
 
-**[API Docs](https://docs.rs/pkarr/latest/pkarr/)**
+- **[API Documentation](https://docs.rs/pkarr/latest/pkarr/)**
+- **[Examples](https://github.com/Pubky/pkarr/tree/main/pkarr/examples)**
 
-## Get started
+## Features
 
-Check the [Examples](https://github.com/Pubky/pkarr/tree/main/pkarr/examples).
+### Runtime Support
 
-## Using the Pkarr Client
+- **Asynchronous by Default**: Built on async/await for optimal performance
+- **Blocking API Available**: Use `Client::as_blocking()` for synchronous operations
+- **Runtime Agnostic**: Compatible with non-Tokio runtimes via `async_compat`
 
-#### Blocking API Support
+### WebAssembly
 
-By default, Pkarr client is designed to be asynchronous. However, if you prefer, you can easily obtain a blocking version of all methods by calling `Client::as_blocking()`. 
-
-#### Compatibility with Non-Tokio Runtimes
-
-This client utilizes Tokio, but it remains compatible with other futures-based libraries thanks to the `async_compat` crate. This ensures seamless integration with various asynchronous runtimes.
-
-#### WebAssembly support
-
-This version of Pkarr assumes that you are running Wasm in a JavaScript environment,
-and calling relays over thew web browser Fetch API, so you can't use it in Wasi for example, 
-nor can you use some Wasi bindings to use the DHT directly.
+- **Browser Environment**: Designed for JavaScript/Wasm integration
+- **Relay Communication**: Uses browser's Fetch API for relay calls
+- **Limitations**: 
+  - Not compatible with WASI
+  - Cannot use WASI bindings for direct DHT access
