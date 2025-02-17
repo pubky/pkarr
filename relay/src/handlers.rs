@@ -170,7 +170,6 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
     <h2>Versioning</h2>
     <pre>
     version : {version}
-    commit  : {commit}
     </pre>
 
     <h2>Cache stats</h2>
@@ -189,7 +188,6 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
 </body>
 </html>"#,
         version = env!("CARGO_PKG_VERSION"),
-        commit = env!("GIT_HASH"),
         size = format_number(size),
         capacity = format_number(capacity),
         utilization = utilization,
