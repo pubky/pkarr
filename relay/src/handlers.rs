@@ -182,10 +182,10 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
     </pre>
 </body>
 </html>"#,
-        size = size,
-        capacity = capacity,
+        size = format_number(size),
+        capacity = format_number(capacity),
         utilization = utilization,
-        confidence = info.dht_size_estimate().1,
+        confidence = format!("{:.0}", info.dht_size_estimate().1),
         dht_size = format_number(info.dht_size_estimate().0),
         node_port = info
             .public_address()
