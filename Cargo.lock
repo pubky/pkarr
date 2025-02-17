@@ -1493,9 +1493,9 @@ checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
 
 [[package]]
 name = "mainline"
-version = "5.2.0"
+version = "5.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed4c696a31f9ac71d7a1c7e10945cc041758b9b6a716ea48c18f2372e067e9db"
+checksum = "fb915972046c6df12b1292ed24f7382ed21facd440f9f6ca9c38e0b702217009"
 dependencies = [
  "crc",
  "document-features",
@@ -1823,7 +1823,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.3.0"
+version = "3.3.1"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -1871,9 +1871,9 @@ dependencies = [
 
 [[package]]
 name = "pkarr"
-version = "3.3.0"
+version = "3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e314b1f8490a5b423ec7b8cb715319f50ce3d4cca425dda7cba96a61c8dc73a7"
+checksum = "fb8be2e97e822e41c6e254706e732e02ca2c49f4da038042c11d5a5e5961a164"
 dependencies = [
  "async-compat",
  "base32",
@@ -1903,7 +1903,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -1915,7 +1915,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pkarr 3.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls",
  "serde",
  "thiserror 2.0.11",
@@ -2768,9 +2768,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.17.0"
+version = "3.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a40f762a77d2afa88c2d919489e390a12bdd261ed568e60cfa7e48d4e20f0d33"
+checksum = "22e5a0acb1f3f55f65cc4a866c361b2fb2a0ff6366785ae6fbb5f85df07ba230"
 dependencies = [
  "cfg-if",
  "fastrand",
