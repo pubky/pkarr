@@ -5,9 +5,9 @@ use std::{
     fmt::Debug,
     fs,
     path::Path,
+    sync::atomic::{AtomicBool, Ordering},
     sync::{Arc, RwLock},
     time::Duration,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use byteorder::BigEndian;
@@ -458,12 +458,12 @@ mod tests {
     fn test_stats_thread_leak() {
         let thread_running = Arc::new(AtomicBool::new(false));
         let thread_running_clone = thread_running.clone();
-        
+
         {
             // Create a cache in a new scope
             let env_path = std::env::temp_dir().join(Timestamp::now().to_string());
             let cache = LmdbCache::open_unsafe(&env_path, 2).unwrap();
-            
+
             // Modify the thread to update our control variable
             let clone = cache.clone();
             std::thread::spawn(move || {
@@ -473,16 +473,22 @@ mod tests {
                 }
                 thread_running_clone.store(false, Ordering::SeqCst);
             });
-            
+
             // Wait for the thread to start
             std::thread::sleep(Duration::from_millis(100));
-            assert!(thread_running.load(Ordering::SeqCst), "Thread should be running");
+            assert!(
+                thread_running.load(Ordering::SeqCst),
+                "Thread should be running"
+            );
         } // cache is dropped here
-        
+
         // Wait a bit for the thread to finish
         std::thread::sleep(Duration::from_secs(1));
-        
+
         // Check if the thread has actually stopped
-        assert!(!thread_running.load(Ordering::SeqCst), "Thread should have stopped");
+        assert!(
+            !thread_running.load(Ordering::SeqCst),
+            "Thread should have stopped"
+        );
     }
 }
