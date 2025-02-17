@@ -7,6 +7,7 @@ use std::{
     path::Path,
     sync::{Arc, RwLock},
     time::Duration,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use byteorder::BigEndian;
@@ -76,6 +77,7 @@ pub struct LmdbCache {
     key_to_time_table: KeyToTimeTable,
     time_to_key_table: TimeToKeyTable,
     batch: Arc<RwLock<Vec<CacheKey>>>,
+    running: Arc<AtomicBool>,
 }
 
 impl Debug for LmdbCache {
@@ -134,12 +136,15 @@ impl LmdbCache {
             key_to_time_table,
             time_to_key_table,
             batch: Arc::new(RwLock::new(vec![])),
+            running: Arc::new(AtomicBool::new(true)),
         };
 
         let clone = instance.clone();
-        std::thread::spawn(move || loop {
-            debug!(size = ?clone.len(), "Cache stats");
-            std::thread::sleep(Duration::from_secs(60));
+        std::thread::spawn(move || {
+            while clone.running.load(Ordering::SeqCst) {
+                debug!(size = ?clone.len(), "Cache stats");
+                std::thread::sleep(Duration::from_secs(60));
+            }
         });
 
         Ok(instance)
@@ -297,6 +302,12 @@ impl Cache for LmdbCache {
     }
 }
 
+impl Drop for LmdbCache {
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::SeqCst);
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 /// Pkarr crate error enum.
 pub enum Error {
@@ -441,5 +452,37 @@ mod tests {
             signed_packet,
             "most recent key survived"
         )
+    }
+
+    #[test]
+    fn test_stats_thread_leak() {
+        let thread_running = Arc::new(AtomicBool::new(false));
+        let thread_running_clone = thread_running.clone();
+        
+        {
+            // Create a cache in a new scope
+            let env_path = std::env::temp_dir().join(Timestamp::now().to_string());
+            let cache = LmdbCache::open_unsafe(&env_path, 2).unwrap();
+            
+            // Modify the thread to update our control variable
+            let clone = cache.clone();
+            std::thread::spawn(move || {
+                thread_running_clone.store(true, Ordering::SeqCst);
+                while clone.running.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+                thread_running_clone.store(false, Ordering::SeqCst);
+            });
+            
+            // Wait for the thread to start
+            std::thread::sleep(Duration::from_millis(100));
+            assert!(thread_running.load(Ordering::SeqCst), "Thread should be running");
+        } // cache is dropped here
+        
+        // Wait a bit for the thread to finish
+        std::thread::sleep(Duration::from_secs(1));
+        
+        // Check if the thread has actually stopped
+        assert!(!thread_running.load(Ordering::SeqCst), "Thread should have stopped");
     }
 }
