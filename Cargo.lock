@@ -1414,7 +1414,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -1823,38 +1823,6 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e314b1f8490a5b423ec7b8cb715319f50ce3d4cca425dda7cba96a61c8dc73a7"
-dependencies = [
- "async-compat",
- "base32",
- "byteorder",
- "bytes",
- "cfg_aliases",
- "document-features",
- "dyn-clone",
- "ed25519-dalek",
- "futures-lite",
- "getrandom 0.2.15",
- "heed",
- "log",
- "lru",
- "mainline",
- "page_size",
- "pubky-timestamp",
- "self_cell",
- "serde",
- "sha1_smol",
- "simple-dns",
- "thiserror 2.0.11",
- "tokio",
- "tracing",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "pkarr"
 version = "3.3.1"
 dependencies = [
  "anyhow",
@@ -1902,6 +1870,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "pkarr"
+version = "3.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb8be2e97e822e41c6e254706e732e02ca2c49f4da038042c11d5a5e5961a164"
+dependencies = [
+ "async-compat",
+ "base32",
+ "byteorder",
+ "bytes",
+ "cfg_aliases",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek",
+ "futures-lite",
+ "getrandom 0.2.15",
+ "heed",
+ "log",
+ "lru",
+ "mainline",
+ "page_size",
+ "pubky-timestamp",
+ "self_cell",
+ "serde",
+ "sha1_smol",
+ "simple-dns",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "pkarr-relay"
 version = "0.5.5"
 dependencies = [
@@ -1915,7 +1915,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.3.0",
+ "pkarr 3.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls",
  "serde",
  "thiserror 2.0.11",
@@ -2768,9 +2768,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.17.0"
+version = "3.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a40f762a77d2afa88c2d919489e390a12bdd261ed568e60cfa7e48d4e20f0d33"
+checksum = "22e5a0acb1f3f55f65cc4a866c361b2fb2a0ff6366785ae6fbb5f85df07ba230"
 dependencies = [
  "cfg-if",
  "fastrand",
