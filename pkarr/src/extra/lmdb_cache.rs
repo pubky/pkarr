@@ -251,6 +251,10 @@ fn update_lru(
 }
 
 impl Cache for LmdbCache {
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     fn len(&self) -> usize {
         match self.internal_len() {
             Ok(result) => result,

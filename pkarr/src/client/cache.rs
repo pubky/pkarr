@@ -31,6 +31,11 @@ impl From<crate::PublicKey> for CacheKey {
 
 /// A trait for a [SignedPacket]s cache for Pkarr [Client][crate::Client].
 pub trait Cache: Debug + Send + Sync + DynClone {
+    /// Returns the maximum capacity of [SignedPacket]s allowed in this cache.
+    fn capacity(&self) -> usize {
+        // backward compatibility
+        0
+    }
     /// Returns the number of [SignedPacket]s in this cache.
     fn len(&self) -> usize;
     /// Returns true if this cache is empty.
@@ -73,6 +78,14 @@ impl InMemoryCache {
 }
 
 impl Cache for InMemoryCache {
+    fn capacity(&self) -> usize {
+        self.inner
+            .read()
+            .expect("InMemoryCache RwLock")
+            .cap()
+            .into()
+    }
+
     fn len(&self) -> usize {
         self.inner.read().expect("InMemoryCache RwLock").len()
     }
