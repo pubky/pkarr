@@ -147,7 +147,7 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cache Stats</title>
+    <title>Pkarr Relay</title>
     <style>
         body {{
             background-color: black;
