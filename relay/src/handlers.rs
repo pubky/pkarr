@@ -147,7 +147,7 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cache Stats</title>
+    <title>Pkarr Relay</title>
     <style>
         body {{
             background-color: black;
@@ -176,14 +176,14 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
     <pre>
     size:       : {size}
     capacity:   : {capacity}
-    utilization : {utilization}%
+    utilization : {utilization:.2}%
     </pre>
 
     <h2>Dht Info</h2>
     <pre>
     node port         : {node_port}
     node firewalled   : {firewalled}
-    dht size estimate : {dht_size} Nodes +-{confidence}% 
+    dht size estimate : {dht_size} Nodes +-{confidence:.2}% 
     </pre>
 </body>
 </html>"#,
@@ -191,7 +191,7 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
         size = format_number(size),
         capacity = format_number(capacity),
         utilization = utilization,
-        confidence = format!("{:.0}", info.dht_size_estimate().1),
+        confidence = info.dht_size_estimate().1,
         dht_size = format_number(info.dht_size_estimate().0),
         node_port = info
             .public_address()
