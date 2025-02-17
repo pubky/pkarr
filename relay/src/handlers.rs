@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use axum::extract::Path;
 use axum::http::HeaderMap;
+use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 
 use bytes::Bytes;
@@ -129,4 +130,101 @@ pub async fn get(
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
     }
+}
+
+pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
+    let cache = state.client.cache().expect("lmdb_cache");
+
+    let size = cache.len();
+    let capacity = cache.capacity();
+    let utilization = 100.0 * size as f32 / capacity as f32;
+
+    let info = state.client.dht().expect("dht node").info();
+
+    let html_content = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache Stats</title>
+    <style>
+        body {{
+            background-color: black;
+            color: white;
+            font-family: monospace;
+            margin: 20px;
+        }}
+        pre {{
+            margin: 0;
+        }}
+        a {{
+            color: white;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Pkarr Relay</h1>
+    <p>This server is a <a href="https://pkarr.org">Pkarr</a> <a href="https://pkarr.org/relays">relay</a>.</p>
+
+    <h2>Versioning</h2>
+    <pre>
+    version : {version}
+    </pre>
+
+    <h2>Cache stats</h2>
+    <pre>
+    size:       : {size}
+    capacity:   : {capacity}
+    utilization : {utilization}%
+    </pre>
+
+    <h2>Dht Info</h2>
+    <pre>
+    node port         : {node_port}
+    node firewalled   : {firewalled}
+    dht size estimate : {dht_size} Nodes +-{confidence}% 
+    </pre>
+</body>
+</html>"#,
+        version = env!("CARGO_PKG_VERSION"),
+        size = format_number(size),
+        capacity = format_number(capacity),
+        utilization = utilization,
+        confidence = format!("{:.0}", info.dht_size_estimate().1),
+        dht_size = format_number(info.dht_size_estimate().0),
+        node_port = info
+            .public_address()
+            .map(|addr| addr.port())
+            .unwrap_or(info.local_addr().port()),
+        firewalled = info.firewalled(),
+    );
+
+    Ok(Html(html_content))
+}
+
+fn format_number(num: usize) -> String {
+    // Handle large numbers and format with suffixes
+    if num >= 1_000_000_000 {
+        return format!("{:.1}B", num as f64 / 1_000_000_000.0);
+    } else if num >= 1_000_000 {
+        return format!("{:.1}M", num as f64 / 1_000_000.0);
+    } else if num >= 1_000 {
+        return format!("{:.1}K", num as f64 / 1_000.0);
+    }
+
+    // Format with commas for thousands
+    let num_str = num.to_string();
+    let mut result = String::new();
+    let len = num_str.len();
+
+    for (i, c) in num_str.chars().enumerate() {
+        // Add a comma before every three digits, except for the first part
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+
+    result
 }

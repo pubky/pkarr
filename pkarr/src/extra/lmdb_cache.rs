@@ -6,7 +6,6 @@ use std::{
     fs,
     path::Path,
     sync::{Arc, RwLock},
-    time::Duration,
 };
 
 use byteorder::BigEndian;
@@ -136,12 +135,6 @@ impl LmdbCache {
             batch: Arc::new(RwLock::new(vec![])),
         };
 
-        let clone = instance.clone();
-        std::thread::spawn(move || loop {
-            debug!(size = ?clone.len(), "Cache stats");
-            std::thread::sleep(Duration::from_secs(60));
-        });
-
         Ok(instance)
     }
 
@@ -258,6 +251,10 @@ fn update_lru(
 }
 
 impl Cache for LmdbCache {
+    fn capacity(&self) -> usize {
+        self.capacity
+    }
+
     fn len(&self) -> usize {
         match self.internal_len() {
             Ok(result) => result,

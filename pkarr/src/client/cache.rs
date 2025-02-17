@@ -4,7 +4,7 @@ use dyn_clone::DynClone;
 use lru::LruCache;
 use std::fmt::Debug;
 use std::num::NonZeroUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use crate::SignedPacket;
 
@@ -31,6 +31,11 @@ impl From<crate::PublicKey> for CacheKey {
 
 /// A trait for a [SignedPacket]s cache for Pkarr [Client][crate::Client].
 pub trait Cache: Debug + Send + Sync + DynClone {
+    /// Returns the maximum capacity of [SignedPacket]s allowed in this cache.
+    fn capacity(&self) -> usize {
+        // backward compatibility
+        0
+    }
     /// Returns the number of [SignedPacket]s in this cache.
     fn len(&self) -> usize;
     /// Returns true if this cache is empty.
@@ -60,28 +65,36 @@ dyn_clone::clone_trait_object!(Cache);
 /// A thread safe wrapper around [lru::LruCache]
 #[derive(Debug, Clone)]
 pub struct InMemoryCache {
-    inner: Arc<Mutex<LruCache<CacheKey, SignedPacket>>>,
+    inner: Arc<RwLock<LruCache<CacheKey, SignedPacket>>>,
 }
 
 impl InMemoryCache {
     /// Creates a new `LRU` cache that holds at most `cap` items.
     pub fn new(capacity: NonZeroUsize) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(LruCache::new(capacity))),
+            inner: Arc::new(RwLock::new(LruCache::new(capacity))),
         }
     }
 }
 
 impl Cache for InMemoryCache {
+    fn capacity(&self) -> usize {
+        self.inner
+            .read()
+            .expect("InMemoryCache RwLock")
+            .cap()
+            .into()
+    }
+
     fn len(&self) -> usize {
-        self.inner.lock().expect("mutex lock").len()
+        self.inner.read().expect("InMemoryCache RwLock").len()
     }
 
     /// Puts [SignedPacket], if a version of the  packet already exists,
     /// and it has the same [SignedPacket::as_bytes], then only [SignedPacket::last_seen] will be
     /// updated, otherwise the input will be cloned.
     fn put(&self, key: &CacheKey, signed_packet: &SignedPacket) {
-        let mut lock = self.inner.lock().expect("mutex lock");
+        let mut lock = self.inner.write().expect("InMemoryCache RwLock");
 
         match lock.get_mut(key) {
             Some(existing) => {
@@ -99,6 +112,18 @@ impl Cache for InMemoryCache {
     }
 
     fn get(&self, key: &CacheKey) -> Option<SignedPacket> {
-        self.inner.lock().expect("mutex lock").get(key).cloned()
+        self.inner
+            .write()
+            .expect("InMemoryCache RwLock")
+            .get(key)
+            .cloned()
+    }
+
+    fn get_read_only(&self, key: &CacheKey) -> Option<SignedPacket> {
+        self.inner
+            .read()
+            .expect("InMemoryCache RwLock")
+            .peek(key)
+            .cloned()
     }
 }

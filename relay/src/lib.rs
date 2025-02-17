@@ -128,17 +128,14 @@ impl Relay {
 
         tracing::debug!(?config, "Pkarr server config");
 
-        let cache_path = match config.cache_path {
-            Some(path) => path,
-            None => {
-                let path = dirs_next::data_dir().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "operating environment provides no directory for application data"
-                    )
-                })?;
-                path.join(CACHE_DIR)
-            }
-        };
+        let cache_path = config
+            .cache_path
+            .unwrap_or({
+                tracing::warn!("Cache path is not configured, running ephemeral Relay");
+
+                std::env::temp_dir().join(Timestamp::now().to_string())
+            })
+            .join(CACHE_DIR);
 
         let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
@@ -168,6 +165,7 @@ impl Relay {
             .local_addr();
         let relay_address = listener.local_addr()?;
 
+        info!("Cache path: {:?}", cache_path);
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
@@ -212,10 +210,8 @@ impl Relay {
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async fn run_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
-        let storage = std::env::temp_dir().join(Timestamp::now().to_string());
-
         let mut config = Config {
-            cache_path: Some(storage.join(CACHE_DIR)),
+            cache_path: None,
             http_port: 0,
             ..Default::default()
         };
@@ -243,11 +239,9 @@ impl Relay {
             Box::leak(Box::new(node));
         }
 
-        let storage = std::env::temp_dir().join(Timestamp::now().to_string());
-
         let mut config = Config {
             http_port: 15411,
-            cache_path: Some(storage.join(CACHE_DIR)),
+            cache_path: None,
             rate_limiter: None,
             ..Default::default()
         };
@@ -284,10 +278,7 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
             "/{key}",
             axum::routing::get(crate::handlers::get).put(crate::handlers::put),
         )
-        .route(
-            "/",
-            axum::routing::get(|| async { "This is a Pkarr relay: pkarr.org/relays.\n" }),
-        )
+        .route("/", axum::routing::get(crate::handlers::index))
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
         .layer(CorsLayer::very_permissive())
