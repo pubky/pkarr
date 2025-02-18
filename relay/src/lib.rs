@@ -279,6 +279,7 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
             axum::routing::get(crate::handlers::get).put(crate::handlers::put),
         )
         .route("/", axum::routing::get(crate::handlers::index))
+        .route("/info", axum::routing::get(crate::handlers::info))
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
         .layer(CorsLayer::very_permissive())

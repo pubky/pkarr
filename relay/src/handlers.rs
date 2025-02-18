@@ -4,6 +4,7 @@ use axum::extract::Path;
 use axum::http::HeaderMap;
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
+use serde::Serialize;
 
 use bytes::Bytes;
 use http::{header, StatusCode};
@@ -17,6 +18,31 @@ use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use crate::error::Error;
 
 use crate::AppState;
+
+use axum::response::Response;
+use axum::body::Body;
+
+#[derive(Serialize)]
+struct RelayInfo {
+    version: String,
+    cache: CacheStats,
+    dht: DhtInfo,
+}
+
+#[derive(Serialize)]
+struct CacheStats {
+    size: usize,
+    capacity: usize,
+    utilization: f32,
+}
+
+#[derive(Serialize)]
+struct DhtInfo {
+    node_port: u16,
+    firewalled: bool,
+    dht_size: usize,
+    confidence: f32,
+}
 
 pub async fn put(
     State(state): State<AppState>,
@@ -130,6 +156,38 @@ pub async fn get(
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
     }
+}
+
+pub async fn info(
+    State(state): State<AppState>,
+) -> Result<Response<Body>, Error> {
+    let cache = state.client.cache().expect("lmdb_cache");
+
+    let size = cache.len();
+    let capacity = cache.capacity();
+    let utilization = 100.0 * size as f32 / capacity as f32;
+
+    let dht_info = state.client.dht().expect("dht node").info();
+
+    let info = RelayInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        cache: CacheStats {
+            size,
+            capacity,
+            utilization,
+        },
+        dht: DhtInfo {
+            node_port: dht_info
+                .public_address()
+                .map(|addr| addr.port())
+                .unwrap_or(dht_info.local_addr().port()),
+            firewalled: dht_info.firewalled(),
+            dht_size: dht_info.dht_size_estimate().0,
+            confidence: dht_info.dht_size_estimate().1 as f32,
+        },
+    };
+
+    Ok(axum::Json(info).into_response())
 }
 
 pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
