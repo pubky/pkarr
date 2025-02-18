@@ -213,6 +213,7 @@ impl Relay {
         let mut config = Config {
             cache_path: None,
             http_port: 0,
+            rate_limiter: None,
             ..Default::default()
         };
 
