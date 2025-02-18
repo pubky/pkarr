@@ -19,8 +19,8 @@ use crate::error::Error;
 
 use crate::AppState;
 
-use axum::response::Response;
 use axum::body::Body;
+use axum::response::Response;
 
 #[derive(Serialize)]
 struct RelayInfo {
@@ -158,9 +158,7 @@ pub async fn get(
     }
 }
 
-pub async fn info(
-    State(state): State<AppState>,
-) -> Result<Response<Body>, Error> {
+pub async fn info(State(state): State<AppState>) -> Result<Response<Body>, Error> {
     let cache = state.client.cache().expect("lmdb_cache");
 
     let size = cache.len();
