@@ -1916,6 +1916,7 @@ dependencies = [
  "httpdate",
  "mainline",
  "pkarr 3.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",

@@ -4,7 +4,7 @@ use axum::extract::Path;
 use axum::http::HeaderMap;
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 
 use bytes::Bytes;
 use http::{header, StatusCode};
@@ -22,26 +22,26 @@ use crate::AppState;
 use axum::body::Body;
 use axum::response::Response;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct RelayInfo {
     version: String,
     cache: CacheStats,
     dht: DhtInfo,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct CacheStats {
     size: usize,
     capacity: usize,
     utilization: f32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct DhtInfo {
     node_port: u16,
     firewalled: bool,
     dht_size: usize,
-    confidence: f32,
+    confidence: Option<f32>,
 }
 
 pub async fn put(
@@ -166,6 +166,7 @@ pub async fn info(State(state): State<AppState>) -> Result<Response<Body>, Error
     let utilization = 100.0 * size as f32 / capacity as f32;
 
     let dht_info = state.client.dht().expect("dht node").info();
+    let (dht_size, confidence) = dht_info.dht_size_estimate();
 
     let info = RelayInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -180,8 +181,8 @@ pub async fn info(State(state): State<AppState>) -> Result<Response<Body>, Error
                 .map(|addr| addr.port())
                 .unwrap_or(dht_info.local_addr().port()),
             firewalled: dht_info.firewalled(),
-            dht_size: dht_info.dht_size_estimate().0,
-            confidence: dht_info.dht_size_estimate().1 as f32,
+            dht_size,
+            confidence: Some(confidence as f32),
         },
     };
 
@@ -283,4 +284,53 @@ fn format_number(num: usize) -> String {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::StatusCode;
+    use tokio::time::sleep;
+    use std::time::Duration;
+    use crate::Relay;
+
+    #[tokio::test]
+    async fn test_info_endpoint() {
+        // Initialize relay in test mode
+        let testnet = mainline::Testnet::new(10).unwrap();
+        let relay = Relay::run_test(&testnet).await.unwrap();
+        
+        // Small delay to ensure relay is ready
+        sleep(Duration::from_millis(100)).await;
+        
+        // Create HTTP client for making requests
+        let client = reqwest::Client::new();
+        
+        // Make a GET request to /info route
+        let response = client
+            .get(relay.local_url().join("/info").unwrap())
+            .send()
+            .await
+            .unwrap();
+        
+        // Verify status code is 200
+        assert_eq!(response.status(), StatusCode::OK);
+        
+        // First let's see what's coming in the response
+        let body = response.text().await.unwrap();
+        println!("Response body: {}", body);
+        
+        // Now try to parse the JSON
+        let info: RelayInfo = serde_json::from_str(&body).unwrap();
+        
+        // Verify required fields are present and valid
+        assert!(!info.version.is_empty());
+        assert!(info.cache.size <= info.cache.capacity);
+        assert!(info.cache.utilization >= 0.0 && info.cache.utilization <= 100.0);
+
+        // Check confidence only if present
+        if let Some(confidence) = info.dht.confidence {
+            assert!(confidence >= 0.0 && confidence <= 100.0);
+        }
+    }
 }
