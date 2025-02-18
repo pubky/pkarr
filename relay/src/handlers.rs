@@ -4,7 +4,7 @@ use axum::extract::Path;
 use axum::http::HeaderMap;
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use bytes::Bytes;
 use http::{header, StatusCode};
@@ -289,40 +289,40 @@ fn format_number(num: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use http::StatusCode;
-    use tokio::time::sleep;
-    use std::time::Duration;
     use crate::Relay;
+    use http::StatusCode;
+    use std::time::Duration;
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_info_endpoint() {
         // Initialize relay in test mode
         let testnet = mainline::Testnet::new(10).unwrap();
         let relay = Relay::run_test(&testnet).await.unwrap();
-        
+
         // Small delay to ensure relay is ready
         sleep(Duration::from_millis(100)).await;
-        
+
         // Create HTTP client for making requests
         let client = reqwest::Client::new();
-        
+
         // Make a GET request to /info route
         let response = client
             .get(relay.local_url().join("/info").unwrap())
             .send()
             .await
             .unwrap();
-        
+
         // Verify status code is 200
         assert_eq!(response.status(), StatusCode::OK);
-        
+
         // First let's see what's coming in the response
         let body = response.text().await.unwrap();
         println!("Response body: {}", body);
-        
+
         // Now try to parse the JSON
         let info: RelayInfo = serde_json::from_str(&body).unwrap();
-        
+
         // Verify required fields are present and valid
         assert!(!info.version.is_empty());
         assert!(info.cache.size <= info.cache.capacity);
