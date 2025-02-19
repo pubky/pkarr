@@ -24,6 +24,7 @@ mod tests_web;
 
 use futures_lite::{Stream, StreamExt};
 use pubky_timestamp::Timestamp;
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::{hash::Hash, num::NonZeroUsize};
@@ -225,12 +226,7 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        #[cfg(not(wasm_browser))]
-        {
-            async_compat::Compat::new(self.publish_inner(signed_packet, cas)).await
-        }
-        #[cfg(wasm_browser)]
-        self.publish_inner(signed_packet, cas).await
+        async_compat_if_necessary(self.publish_inner(signed_packet, cas)).await
     }
 
     // === Resolve ===
@@ -242,12 +238,7 @@ impl Client {
     /// If you want to get the most recent version of a [SignedPacket],
     /// you should use [Self::resolve_most_recent].
     pub async fn resolve(&self, public_key: &PublicKey) -> Option<SignedPacket> {
-        #[cfg(not(wasm_browser))]
-        {
-            async_compat::Compat::new(self.resolve_inner(public_key)).await
-        }
-        #[cfg(wasm_browser)]
-        self.resolve_inner(public_key).await
+        async_compat_if_necessary(self.resolve_inner(public_key)).await
     }
 
     /// Returns the most recent [SignedPacket] found after querying all
@@ -661,4 +652,18 @@ impl From<PutMutableError> for PublishError {
             }),
         }
     }
+}
+
+async fn async_compat_if_necessary<T, O>(fut: T) -> O
+where
+    T: Future<Output = O>,
+{
+    #[cfg(not(wasm_browser))]
+    {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return async_compat::Compat::new(fut).await;
+        }
+    }
+
+    fut.await
 }
