@@ -333,11 +333,19 @@ impl Client {
 
         #[cfg(all(dht, relays))]
         return if dht_future.is_some() && relays_future.is_some() {
-            futures_lite::future::or(
+            let result = futures_lite::future::or(
                 dht_future.expect("infallible"),
                 relays_future.expect("infallible"),
             )
-            .await
+            .await;
+
+            self.0
+                .relays
+                .as_ref()
+                .expect("infallible")
+                .cancel_publish(&signed_packet.public_key());
+
+            result
         } else if dht_future.is_some() {
             dht_future.expect("infallible").await
         } else {

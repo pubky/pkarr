@@ -109,6 +109,11 @@ impl RelaysClient {
             .expect("infallible")
     }
 
+    /// Cancel an inflight publish request.
+    pub fn cancel_publish(&self, public_key: &PublicKey) {
+        self.inflight_publish.cancel_request(public_key);
+    }
+
     #[cfg(not(wasm_browser))]
     pub fn resolve(
         &self,
@@ -208,6 +213,15 @@ impl InflightPublishRequests {
         Ok(())
     }
 
+    pub fn cancel_request(&self, public_key: &PublicKey) {
+        let mut inflight = self
+            .requests
+            .write()
+            .expect("InflightPublishRequests write lock");
+
+        inflight.remove(public_key);
+    }
+
     pub fn add_result(
         &mut self,
         public_key: &PublicKey,
@@ -219,28 +233,31 @@ impl InflightPublishRequests {
         }
     }
 
+    /// Returns true if request is done.
     fn add_success(&self, public_key: &PublicKey) -> Result<bool, PublishError> {
         let mut inflight = self
             .requests
             .write()
             .expect("InflightPublishRequests write lock");
 
-        let request = inflight.get_mut(public_key).expect("infallible");
-        let majority = (self.relays_count / 2) + 1;
+        if let Some(request) = inflight.get_mut(public_key) {
+            let majority = (self.relays_count / 2) + 1;
 
-        request.success_count += 1;
+            request.success_count += 1;
 
-        if self.done(request) {
-            return Ok(true);
-        } else if request.success_count >= majority {
-            inflight.remove(public_key);
+            if self.done(request) || request.success_count >= majority {
+                inflight.remove(public_key);
 
-            return Ok(true);
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        } else {
+            Ok(true)
         }
-
-        Ok(false)
     }
 
+    /// Returns true if request is done.
     fn add_error(
         &mut self,
         public_key: &PublicKey,
@@ -251,47 +268,50 @@ impl InflightPublishRequests {
             .write()
             .expect("InflightPublishRequests write lock");
 
-        let request = inflight.get_mut(public_key).expect("infallible");
-        let majority = (self.relays_count / 2) + 1;
+        if let Some(request) = inflight.get_mut(public_key) {
+            let majority = (self.relays_count / 2) + 1;
 
-        // Add error, and return early error if necessary.
-        {
-            let count = request.errors.get(&error).unwrap_or(&0) + 1;
-
-            if count >= majority
-                && matches!(
-                    error,
-                    PublishError::Concurrency(ConcurrencyError::NotMostRecent)
-                ) | matches!(
-                    error,
-                    PublishError::Concurrency(ConcurrencyError::CasFailed)
-                )
+            // Add error, and return early error if necessary.
             {
-                inflight.remove(public_key);
+                let count = request.errors.get(&error).unwrap_or(&0) + 1;
 
-                return Err(error);
+                if count >= majority
+                    && matches!(
+                        error,
+                        PublishError::Concurrency(ConcurrencyError::NotMostRecent)
+                    ) | matches!(
+                        error,
+                        PublishError::Concurrency(ConcurrencyError::CasFailed)
+                    )
+                {
+                    inflight.remove(public_key);
+
+                    return Err(error);
+                }
+
+                request.errors.insert(error, count);
             }
 
-            request.errors.insert(error, count);
-        }
+            if self.done(request) {
+                let request = inflight.remove(public_key).expect("infallible");
 
-        if self.done(request) {
-            let request = inflight.remove(public_key).expect("infallible");
+                if request.success_count >= majority {
+                    Ok(true)
+                } else {
+                    let most_common_error = request
+                        .errors
+                        .into_iter()
+                        .max_by_key(|&(_, count)| count)
+                        .map(|(error, _)| error)
+                        .expect("infallible");
 
-            if request.success_count >= majority {
-                Ok(true)
+                    Err(most_common_error)
+                }
             } else {
-                let most_common_error = request
-                    .errors
-                    .into_iter()
-                    .max_by_key(|&(_, count)| count)
-                    .map(|(error, _)| error)
-                    .expect("infallible");
-
-                Err(most_common_error)
+                Ok(false)
             }
         } else {
-            Ok(false)
+            Ok(true)
         }
     }
 
