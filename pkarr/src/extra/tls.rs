@@ -60,7 +60,7 @@ impl ServerCertVerifier for CertVerifier {
         // This won't be necessary if Reqwest enabled us to create a rustls configuration
         // per connection.
         //
-        // TODO: update this Reqwest enabled this.
+        // TODO: update after Reqwest enables this.
         let stream = self.0.resolve_https_endpoints(&qname);
         pin!(stream);
         for endpoint in block_on(stream) {
