@@ -585,6 +585,8 @@ async fn clear_inflight_requests(#[case] networks: Networks) {
         .await
         .unwrap();
 
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
     // If there was a memory leak, we would get a `ConflictRisk` error instead.
     client
         .publish(&signed_packet_builder.sign(&keypair).unwrap(), None)
