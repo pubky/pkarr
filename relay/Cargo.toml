@@ -31,7 +31,7 @@ clap = { version = "4.5.28", features = ["derive"] }
 dirs-next = "2.0.0"
 httpdate = "1.0.3"
 url = "2.5.4"
-mainline = "5.1.0"
+mainline = "5.3.1"
 pkarr = { version = "3.3.1", default-features = false, features = ["dht", "lmdb-cache"] }
 
 [package.metadata.docs.rs]
