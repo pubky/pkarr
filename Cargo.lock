@@ -1838,38 +1838,6 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "453379a59cb020743a64857c42466c2e8848470ebc1f9a26bd6f5155cb312d65"
-dependencies = [
- "async-compat",
- "base32",
- "byteorder",
- "bytes",
- "cfg_aliases",
- "document-features",
- "dyn-clone",
- "ed25519-dalek",
- "futures-lite",
- "getrandom 0.2.15",
- "heed",
- "log",
- "lru",
- "mainline",
- "page_size",
- "pubky-timestamp",
- "self_cell",
- "serde",
- "sha1_smol",
- "simple-dns",
- "thiserror 2.0.11",
- "tokio",
- "tracing",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "pkarr"
 version = "3.5.0"
 dependencies = [
  "anyhow",
@@ -1917,6 +1885,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "pkarr"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704cb19796c23eb116785fcbed4384187c4e7d4e78384f224221eed840a352b4"
+dependencies = [
+ "async-compat",
+ "base32",
+ "byteorder",
+ "bytes",
+ "cfg_aliases",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek",
+ "futures-lite",
+ "getrandom 0.2.15",
+ "heed",
+ "log",
+ "lru",
+ "mainline",
+ "ntimestamp",
+ "page_size",
+ "self_cell",
+ "serde",
+ "sha1_smol",
+ "simple-dns",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "pkarr-relay"
 version = "0.5.7"
 dependencies = [
@@ -1930,7 +1930,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.4.0",
+ "pkarr 3.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustls",
  "serde",
  "thiserror 2.0.11",
@@ -2013,21 +2013,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60946a68e5f9d28b0dc1c21bb8a97ee7d018a8b322fa57838ba31cc878e22d99"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "pubky-timestamp"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44aafc63c1eab1905e8a8378d2b085500540c9935b6d028908c8a50a5a246a3d"
-dependencies = [
- "base32",
- "document-features",
- "getrandom 0.2.15",
- "httpdate",
- "js-sys",
- "once_cell",
- "serde",
 ]
 
 [[package]]
