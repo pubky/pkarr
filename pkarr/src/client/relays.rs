@@ -109,6 +109,7 @@ impl RelaysClient {
             .expect("infallible")
     }
 
+    #[cfg(not(wasm_browser))]
     /// Cancel an inflight publish request.
     pub fn cancel_publish(&self, public_key: &PublicKey) {
         self.inflight_publish.cancel_request(public_key);
@@ -213,6 +214,7 @@ impl InflightPublishRequests {
         Ok(())
     }
 
+    #[cfg(not(wasm_browser))]
     pub fn cancel_request(&self, public_key: &PublicKey) {
         let mut inflight = self
             .requests
