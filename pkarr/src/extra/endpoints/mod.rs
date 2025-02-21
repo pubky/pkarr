@@ -125,6 +125,7 @@ impl std::fmt::Display for CouldNotResolveEndpoint {
 mod tests {
 
     use crate::dns::rdata::SVCB;
+    use crate::mainline::Testnet;
     use crate::{Client, Keypair};
     use crate::{PublicKey, SignedPacket};
 
@@ -133,8 +134,6 @@ mod tests {
     use std::pin::Pin;
     use std::str::FromStr;
     use std::time::Duration;
-
-    use mainline::Testnet;
 
     fn generate_subtree(
         client: Client,

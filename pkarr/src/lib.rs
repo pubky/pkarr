@@ -40,6 +40,8 @@ pub use keys::{Keypair, PublicKey};
 pub use signed_packet::{SignedPacket, SignedPacketBuilder};
 
 // Rexports
+#[cfg(dht)]
+pub use mainline;
 #[cfg(feature = "signed_packet")]
 pub use pubky_timestamp::Timestamp;
 #[cfg(feature = "signed_packet")]

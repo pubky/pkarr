@@ -156,8 +156,9 @@ impl Client {
     /// then start authoring the new [SignedPacket] based on the most recent as in the following example:
     ///
     ///```rust
-    /// use mainline::Testnet;
     /// use pkarr::{Client, SignedPacket, Keypair};
+    /// // For local testing
+    /// use pkarr::mainline::Testnet;
     ///
     /// #[tokio::main]
     /// async fn run() -> anyhow::Result<()> {
