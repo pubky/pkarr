@@ -18,6 +18,12 @@ jobs:
       with:
         targets: wasm32-unknown-unknown
 
+    - name: Workaround for spurious network errors in curl
+      run: |
+        if rustc +stable --version --verbose | grep -q '^release: 1\.7[01]\.'; then
+          echo CARGO_HTTP_MULTIPLEXING=false >> $GITHUB_ENV
+        fi
+
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
@@ -38,4 +44,3 @@ jobs:
         
         # Kill the server
         kill $SERVER_PID
-
