@@ -255,9 +255,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let pubky = Keypair::random().public_key();
+        let public_key = Keypair::random().public_key();
 
-        let endpoint = client.resolve_https_endpoint(&pubky.to_string()).await;
+        let endpoint = client.resolve_https_endpoint(&public_key.to_string()).await;
 
         assert!(endpoint.is_err());
     }

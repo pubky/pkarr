@@ -4,11 +4,11 @@ version = "3.4.0"
 authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
-homepage = "https://github.com/pubky/pkarr"
+homepage = "https://pkarr.org"
+repository = "https://git.pkarr.org"
 license = "MIT"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 categories = ["network-programming"]
-repository = "https://github.com/pubky/pkarr"
 
 [dependencies]
 base32 = "0.5.1"
@@ -22,7 +22,7 @@ document-features = "0.2.10"
 simple-dns = { version = "0.9.3", optional = true }
 bytes = { version = "1.10.0", optional = true }
 self_cell = { version = "1.1.0", optional = true }
-pubky-timestamp = { version = "0.4.1", features = ["full"], optional = true }
+ntimestamp = { version = "1.0.0", features = ["full"], optional = true }
 
 #feat: client dependencies
 futures-lite = { version = "2.6.0", default-features = false, optional = true , features =["std"]}
@@ -97,7 +97,7 @@ cfg_aliases = "0.2.1"
 [features]
 # Basic types
 keys = []
-signed_packet = ["keys", "dep:simple-dns", "dep:pubky-timestamp", "dep:bytes", 'dep:self_cell']
+signed_packet = ["keys", "dep:simple-dns", "dep:ntimestamp", "dep:bytes", 'dep:self_cell']
 
 # Clients 
 ## Enable the [Client] with [mainline] support.

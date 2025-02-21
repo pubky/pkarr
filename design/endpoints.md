@@ -8,7 +8,7 @@ This approach enables servers to be accessible via URLs such as `https://<pkarr 
 
 Clients can resolve the `SignedPacket` for a `<pkarr key>` to obtain the server's IP address through `A` or `AAAA` records. Additionally, the `HTTPS` record can provide the server's port number and other useful parameters, such as Encrypted Client Hello (ECH) and Application-Layer Protocol Negotiation (ALPN), which support HTTP/2 and HTTP/3.
 
-Similarly, resolving a URL like `pubky://<pkarr key>` involves fetching the `SignedPacket` for `<pkarr key>` and searching for the `HTTPS` resource record named `_pubky.pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy`.
+Similarly, resolving a URL like `foo://<pkarr key>` involves fetching the `SignedPacket` for `<pkarr key>` and searching for the `HTTPS` resource record named `_foo.pxnu33x7jtpx9ar1ytsi4yxbp6a5o36gwhffs8zoxmbuptici1jy`.
 
 ### Resolution Algorithm
 

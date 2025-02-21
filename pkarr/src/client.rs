@@ -23,7 +23,7 @@ mod tests;
 mod tests_web;
 
 use futures_lite::{Stream, StreamExt};
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

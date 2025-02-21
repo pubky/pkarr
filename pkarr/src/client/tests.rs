@@ -2,8 +2,8 @@
 
 use std::{thread, time::Duration};
 
+use ntimestamp::Timestamp;
 use pkarr_relay::Relay;
-use pubky_timestamp::Timestamp;
 use rstest::rstest;
 
 use crate::errors::{BuildError, ConcurrencyError, PublishError};

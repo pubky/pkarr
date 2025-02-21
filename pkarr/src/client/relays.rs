@@ -10,7 +10,7 @@ use futures_buffered::FuturesUnorderedBounded;
 #[cfg(not(wasm_browser))]
 use futures_lite::Stream;
 use futures_lite::StreamExt;
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 use reqwest::Method;
 use url::Url;
 

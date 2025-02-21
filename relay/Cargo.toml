@@ -5,7 +5,8 @@ authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
 description = "Pkarr relay (https://pkarr.org/relays)"
 license = "MIT"
-repository = "https://github.com/pubky/pkarr"
+homepage = "https://pkarr.org"
+repository = "https://git.pkarr.org"
 keywords = ["pkarr", "relay", "mainline", "dht"]
 categories = ["network-programming"]
 

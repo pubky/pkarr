@@ -1,4 +1,4 @@
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 
 use crate::{Cache, PublicKey, SignedPacket};
 
