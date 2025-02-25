@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 #[cfg(not(wasm_browser))]
 use std::pin::Pin;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -106,7 +106,7 @@ impl RelaysClient {
             })
             .next()
             .await
-            .expect("infallible")
+            .expect("relays inflight publish requests done with no success or error!")
     }
 
     /// Cancel an inflight publish request.
@@ -165,14 +165,14 @@ struct InflightPublishRequest {
 #[derive(Clone, Debug)]
 pub(crate) struct InflightPublishRequests {
     relays_count: usize,
-    requests: Arc<RwLock<HashMap<PublicKey, InflightPublishRequest>>>,
+    requests: Arc<Mutex<HashMap<PublicKey, InflightPublishRequest>>>,
 }
 
 impl InflightPublishRequests {
     fn new(relays_count: usize) -> Self {
         Self {
             relays_count,
-            requests: Arc::new(RwLock::new(HashMap::new())),
+            requests: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -182,10 +182,7 @@ impl InflightPublishRequests {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
-        let mut requests = self
-            .requests
-            .write()
-            .expect("InflightPublishRequests write lock");
+        let mut requests = self.requests.lock().expect("InflightPublishRequests lock");
 
         if let Some(inflight_request) = requests.get_mut(public_key) {
             if signed_packet.signature() == inflight_request.signed_packet.signature() {
@@ -214,10 +211,7 @@ impl InflightPublishRequests {
     }
 
     pub fn cancel_request(&self, public_key: &PublicKey) {
-        let mut inflight = self
-            .requests
-            .write()
-            .expect("InflightPublishRequests write lock");
+        let mut inflight = self.requests.lock().expect("InflightPublishRequests lock");
 
         inflight.remove(public_key);
     }
@@ -235,13 +229,10 @@ impl InflightPublishRequests {
 
     /// Returns true if request is done.
     fn add_success(&self, public_key: &PublicKey) -> Result<bool, PublishError> {
-        let mut inflight = self
-            .requests
-            .write()
-            .expect("InflightPublishRequests write lock");
+        let mut inflight = self.requests.lock().expect("InflightPublishRequests lock");
 
         if let Some(request) = inflight.get_mut(public_key) {
-            let majority = (self.relays_count / 2) + 1;
+            let majority = self.relays_count / 2 + self.relays_count % 2;
 
             request.success_count += 1;
 
@@ -263,13 +254,10 @@ impl InflightPublishRequests {
         public_key: &PublicKey,
         error: PublishError,
     ) -> Result<bool, PublishError> {
-        let mut inflight = self
-            .requests
-            .write()
-            .expect("InflightPublishRequests write lock");
+        let mut inflight = self.requests.lock().expect("InflightPublishRequests lock");
 
         if let Some(request) = inflight.get_mut(public_key) {
-            let majority = (self.relays_count / 2) + 1;
+            let majority = self.relays_count / 2 + self.relays_count % 2;
 
             // Add error, and return early error if necessary.
             {
@@ -316,7 +304,8 @@ impl InflightPublishRequests {
     }
 
     fn done(&self, request: &InflightPublishRequest) -> bool {
-        (request.errors.len() + request.success_count) == self.relays_count
+        let total_errors: usize = request.errors.values().sum();
+        (total_errors + request.success_count) >= self.relays_count
     }
 }
 
