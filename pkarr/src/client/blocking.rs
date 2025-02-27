@@ -1,4 +1,4 @@
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 
 use crate::{Cache, PublicKey, SignedPacket};
 
@@ -47,8 +47,9 @@ impl ClientBlocking {
     /// then start authoring the new [SignedPacket] based on the most recent as in the following example:
     ///
     ///```rust
-    /// use mainline::Testnet;
     /// use pkarr::{Client, SignedPacket, Keypair};
+    /// // For local testing
+    /// use pkarr::mainline::Testnet;
     ///
     /// fn run() -> anyhow::Result<()> {
     ///     let testnet = Testnet::new(3)?;

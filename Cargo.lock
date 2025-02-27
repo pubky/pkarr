@@ -1414,7 +1414,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -1493,9 +1493,9 @@ checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
 
 [[package]]
 name = "mainline"
-version = "5.3.0"
+version = "5.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d20596de02883daff9a64c0c02bb4371c44dc7988cd07ecb61d166281c7733d3"
+checksum = "2fae24c3d129b92c8cfea92a9e2014052371a2835e4a6d66dfdb00238e389e56"
 dependencies = [
  "crc",
  "document-features",
@@ -1620,6 +1620,21 @@ name = "nonzero_ext"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
+
+[[package]]
+name = "ntimestamp"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c50f94c405726d3e0095e89e72f75ce7f6587b94a8bd8dc8054b73f65c0fd68c"
+dependencies = [
+ "base32",
+ "document-features",
+ "getrandom 0.2.15",
+ "httpdate",
+ "js-sys",
+ "once_cell",
+ "serde",
+]
 
 [[package]]
 name = "nu-ansi-term"
@@ -1823,9 +1838,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.3.1"
+version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb8be2e97e822e41c6e254706e732e02ca2c49f4da038042c11d5a5e5961a164"
+checksum = "704cb19796c23eb116785fcbed4384187c4e7d4e78384f224221eed840a352b4"
 dependencies = [
  "async-compat",
  "base32",
@@ -1841,8 +1856,8 @@ dependencies = [
  "log",
  "lru",
  "mainline",
+ "ntimestamp",
  "page_size",
- "pubky-timestamp",
  "self_cell",
  "serde",
  "sha1_smol",
@@ -1855,7 +1870,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr"
-version = "3.4.0"
+version = "3.5.2"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -1878,10 +1893,10 @@ dependencies = [
  "log",
  "lru",
  "mainline",
+ "ntimestamp",
  "page_size",
  "pkarr-relay",
  "postcard",
- "pubky-timestamp",
  "reqwest",
  "rstest",
  "rustls",
@@ -1903,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.5.7"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1915,7 +1930,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.3.1",
+ "pkarr 3.5.0",
  "rustls",
  "serde",
  "thiserror 2.0.11",
@@ -1998,21 +2013,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60946a68e5f9d28b0dc1c21bb8a97ee7d018a8b322fa57838ba31cc878e22d99"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "pubky-timestamp"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44aafc63c1eab1905e8a8378d2b085500540c9935b6d028908c8a50a5a246a3d"
-dependencies = [
- "base32",
- "document-features",
- "getrandom 0.2.15",
- "httpdate",
- "js-sys",
- "once_cell",
- "serde",
 ]
 
 [[package]]

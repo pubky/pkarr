@@ -15,7 +15,7 @@ use heed::{
 
 use tracing::debug;
 
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 
 use crate::{Cache, CacheKey, SignedPacket};
 

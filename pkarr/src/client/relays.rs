@@ -10,7 +10,7 @@ use futures_buffered::FuturesUnorderedBounded;
 #[cfg(not(wasm_browser))]
 use futures_lite::Stream;
 use futures_lite::StreamExt;
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 use reqwest::Method;
 use url::Url;
 
@@ -109,6 +109,7 @@ impl RelaysClient {
             .expect("relays inflight publish requests done with no success or error!")
     }
 
+    #[cfg(not(wasm_browser))]
     /// Cancel an inflight publish request.
     pub fn cancel_publish(&self, public_key: &PublicKey) {
         self.inflight_publish.cancel_request(public_key);
@@ -210,6 +211,7 @@ impl InflightPublishRequests {
         Ok(())
     }
 
+    #[cfg(not(wasm_browser))]
     pub fn cancel_request(&self, public_key: &PublicKey) {
         let mut inflight = self.requests.lock().expect("InflightPublishRequests lock");
 

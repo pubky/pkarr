@@ -23,7 +23,7 @@ mod tests;
 mod tests_web;
 
 use futures_lite::{Stream, StreamExt};
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -156,8 +156,9 @@ impl Client {
     /// then start authoring the new [SignedPacket] based on the most recent as in the following example:
     ///
     ///```rust
-    /// use mainline::Testnet;
     /// use pkarr::{Client, SignedPacket, Keypair};
+    /// // For local testing
+    /// use pkarr::mainline::Testnet;
     ///
     /// #[tokio::main]
     /// async fn run() -> anyhow::Result<()> {
@@ -249,21 +250,24 @@ impl Client {
     ///
     /// This is a best effort, and doesn't guarantee consistency.
     pub async fn resolve_most_recent(&self, public_key: &PublicKey) -> Option<SignedPacket> {
-        let cache_key: CacheKey = public_key.as_ref().into();
+        async_compat_if_necessary(async move {
+            let cache_key: CacheKey = public_key.as_ref().into();
 
-        let cached_packet = self
-            .cache()
-            .as_ref()
-            .and_then(|cache| cache.get(&cache_key));
+            let cache = self.0.cache.clone().unwrap_or(Arc::new(InMemoryCache::new(
+                1.try_into().expect("infallible"),
+            )));
 
-        let mut stream = self.resolve_stream(
-            public_key.clone(),
-            cache_key,
-            cached_packet.map(|s| s.timestamp()),
-        );
-        while stream.next().await.is_some() {}
+            let mut stream = self.resolve_stream(
+                public_key.clone(),
+                Some(cache.clone()),
+                cache_key,
+                cache.get(&cache_key).map(|s| s.timestamp()),
+            );
+            while stream.next().await.is_some() {}
 
-        self.cache().and_then(|cache| cache.get(&public_key.into()))
+            cache.get(&public_key.into())
+        })
+        .await
     }
 
     // === Private Methods ===
@@ -366,6 +370,7 @@ impl Client {
         // Stream is a future, so it won't run until we await or spawn it.
         let mut stream = self.resolve_stream(
             public_key.clone(),
+            self.0.cache.clone(),
             cache_key,
             cached_packet.as_ref().map(|s| s.timestamp()),
         );
@@ -402,11 +407,10 @@ impl Client {
     fn resolve_stream(
         &self,
         public_key: PublicKey,
+        cache: Option<Arc<dyn Cache>>,
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket>>> {
-        let cache = self.0.cache.clone();
-
         let stream = self
             .0
             .relays
@@ -426,11 +430,10 @@ impl Client {
     fn resolve_stream(
         &self,
         public_key: PublicKey,
+        cache: Option<Arc<dyn Cache>>,
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
-        let cache = self.0.cache.clone();
-
         self.merged_resolve_stream(&public_key, more_recent_than)
             .filter_map(move |signed_packet| {
                 filter_incoming_signed_packet(&public_key, cache.clone(), &cache_key, signed_packet)

@@ -125,6 +125,7 @@ impl std::fmt::Display for CouldNotResolveEndpoint {
 mod tests {
 
     use crate::dns::rdata::SVCB;
+    use crate::mainline::Testnet;
     use crate::{Client, Keypair};
     use crate::{PublicKey, SignedPacket};
 
@@ -133,8 +134,6 @@ mod tests {
     use std::pin::Pin;
     use std::str::FromStr;
     use std::time::Duration;
-
-    use mainline::Testnet;
 
     fn generate_subtree(
         client: Client,
@@ -256,9 +255,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let pubky = Keypair::random().public_key();
+        let public_key = Keypair::random().public_key();
 
-        let endpoint = client.resolve_https_endpoint(&pubky.to_string()).await;
+        let endpoint = client.resolve_https_endpoint(&public_key.to_string()).await;
 
         assert!(endpoint.is_err());
     }

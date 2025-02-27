@@ -88,7 +88,7 @@ mod reqwest_builder {
 
         #[tokio::test]
         async fn reqwest_pkarr_domain() {
-            use mainline::Testnet;
+            use crate::mainline::Testnet;
             use std::net::TcpListener;
             use std::sync::Arc;
             use std::time::Duration;

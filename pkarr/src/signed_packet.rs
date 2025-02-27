@@ -16,7 +16,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use pubky_timestamp::Timestamp;
+use ntimestamp::Timestamp;
 
 #[derive(Debug, Clone, Default)]
 /// A builder for [SignedPacket] with many convenient methods,

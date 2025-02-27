@@ -2,11 +2,11 @@
 
 All notable changes to pkarr will be documented in this file.
 
-## [3.0.0](https://github.com/pubky/pkarr/compare/v2.0.0...pkarr-v3.0.0) - 2025-02-11
+## [3.5.0](https://github.com/nuhvi/pkarr/compare/v2.0.0...pkarr-v3.5.0) - 2025-02-21
 
 ### Added
 
-- Use `pubky_timestamp::Timestamp` 
+- Use `n_timestamp::Timestamp` 
 - Impl `PartialEq, Eq` for `SignedPacket`.
 - Impl `From<PublicKey>` for `CacheKey`.
 - Derive `serde::Serialize` and `serde::Deserialize` for `SignedPacket`.

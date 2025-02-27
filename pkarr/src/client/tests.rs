@@ -2,8 +2,8 @@
 
 use std::{thread, time::Duration};
 
+use ntimestamp::Timestamp;
 use pkarr_relay::Relay;
-use pubky_timestamp::Timestamp;
 use rstest::rstest;
 
 use crate::errors::{BuildError, ConcurrencyError, PublishError};
@@ -592,4 +592,33 @@ async fn clear_inflight_requests(#[case] networks: Networks) {
         .publish(&signed_packet_builder.sign(&keypair).unwrap(), None)
         .await
         .unwrap();
+}
+
+#[rstest]
+#[case::dht(Networks::Dht)]
+#[case::both_networks(Networks::Both)]
+#[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+#[tokio::test]
+async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
+    let testnet = mainline::Testnet::new(10).unwrap();
+    let relay = Relay::run_test(&testnet).await.unwrap();
+
+    let a = builder(&relay, &testnet, networks).build().unwrap();
+
+    let keypair = Keypair::random();
+
+    let signed_packet = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&keypair)
+        .unwrap();
+
+    a.publish(&signed_packet, None).await.unwrap();
+
+    let b = builder(&relay, &testnet, networks)
+        .cache_size(0)
+        .build()
+        .unwrap();
+
+    let resolved = b.resolve_most_recent(&keypair.public_key()).await.unwrap();
+    assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
