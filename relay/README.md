@@ -4,42 +4,24 @@ A server that functions as a [pkarr relay](https://pkarr.org/relays).
 
 ## Installation & Usage
 
-### Local Installation
+### Installation
 
-Build the binary:
 ```bash
-cargo build --release
+cargo install pkarr-relay
 ```
 
 ### Running the Relay
 
-#### Basic Usage
+#### With Custom Configuration
 ```bash
-../target/release/pkarr-relay
+pkarr-relay --config=./config.toml
 ```
+
+You can find an example configuration file [here](https://github.com/pubky/pkarr/blob/main/relay/src/config.example.toml).
 
 #### With Custom Logging
 ```bash
-../target/release/pkarr-relay -t=pkarr=debug,tower_http=debug
+pkarr-relay  -t=pkarr=debug,tower_http=debug
 ```
 
-Once running, the Pkarr relay will be accessible at http://localhost:6881.
-
-### Using Docker
-
-Alternatively, you can run the relay using Docker. This repository includes a `Dockerfile` and you can run it in two ways:
-
-1. Using docker-compose (recommended):
-```yaml
-services:
-  pkarr:
-    container_name: pkarr
-    build: .
-    volumes: 
-      - .pkarr_cache:/cache
-    command: pkarr-relay
-```
-
-2. Using Docker directly:
-   - Mount the cache directory as a volume
-   - The `.pkarr_cache` directory will store cached keys permanently
+Once running, the Pkarr relay will be accessible at http://localhost:6881 (unless the config file specifies another port number).
