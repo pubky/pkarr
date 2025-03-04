@@ -75,7 +75,7 @@ impl RelaysClient {
         let mut futures = futures_buffered::FuturesUnorderedBounded::new(self.relays.len());
 
         let body = signed_packet.to_relay_payload();
-        let cas = cas.map(|timestamp| timestamp.format_http_date());
+        let cas = cas.map(|timestamp| timestamp.as_u64().to_string());
 
         for relay in &self.relays {
             let http_client = self.http_client.clone();
@@ -332,8 +332,8 @@ pub async fn publish_to_relay(
             .timeout(timeout * 3);
     }
 
-    if let Some(date) = cas {
-        request = request.header(header::IF_UNMODIFIED_SINCE, date);
+    if let Some(cas) = cas {
+        request = request.header(header::IF_MATCH, cas);
     }
 
     let response = request.body(body).send().await.inspect_err(|error| {

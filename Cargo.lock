@@ -1838,9 +1838,9 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "3.5.0"
+version = "3.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "704cb19796c23eb116785fcbed4384187c4e7d4e78384f224221eed840a352b4"
+checksum = "12b412ba762f89ba115076d8b5417d3582f4ef9a1956c8024c1e730c0edc4014"
 dependencies = [
  "async-compat",
  "base32",
@@ -1870,7 +1870,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr"
-version = "3.5.2"
+version = "3.5.3"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.6.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1930,7 +1930,7 @@ dependencies = [
  "http",
  "httpdate",
  "mainline",
- "pkarr 3.5.0",
+ "pkarr 3.5.2",
  "rustls",
  "serde",
  "thiserror 2.0.11",

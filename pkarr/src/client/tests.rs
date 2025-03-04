@@ -622,3 +622,38 @@ async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
     let resolved = b.resolve_most_recent(&keypair.public_key()).await.unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
+
+#[rstest]
+#[case::dht(Networks::Dht)]
+#[case::both_networks(Networks::Both)]
+#[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+#[tokio::test]
+async fn regression_relay_cas(#[case] networks: Networks) {
+    let testnet = mainline::Testnet::new(10).unwrap();
+    let relay = Relay::run_test(&testnet).await.unwrap();
+
+    let keypair = Keypair::random();
+    let signed_packet = SignedPacket::builder()
+        .cname("test".try_into().unwrap(), "test2".try_into().unwrap(), 600)
+        .sign(&keypair)
+        .unwrap();
+
+    let client = builder(&relay, &testnet, networks).build().unwrap();
+
+    client.publish(&signed_packet, None).await.unwrap();
+
+    let most_recent = client
+        .resolve_most_recent(&keypair.public_key())
+        .await
+        .expect("valid packet");
+
+    let new_packet = SignedPacket::builder()
+        .cname("test".try_into().unwrap(), "test2".try_into().unwrap(), 600)
+        .sign(&keypair)
+        .unwrap();
+
+    client
+        .publish(&new_packet, Some(most_recent.timestamp()))
+        .await
+        .unwrap();
+}
