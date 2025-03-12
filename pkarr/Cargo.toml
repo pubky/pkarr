@@ -47,7 +47,7 @@ tracing = { version = "0.1.41", optional = true }
 mainline = { version = "5.3.1", optional = true }
 
 # feat: relay dependencies
-reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls"], optional = true }
+reqwest = { version = "0.12.13", default-features = false, features = ["rustls-tls"], optional = true }
 tokio = { version = "1.43.0", default-features = false, optional = true }
 async-compat = { version = "0.2.4", optional = true }
 
@@ -68,12 +68,12 @@ log = { version = "0.4.25", optional = true}
 wasm-bindgen-futures = { version = "0.4.50", optional = true }
 
 # feat: relay dependencies
-reqwest = { version = "0.12.12", default-features = false, optional = true }
+reqwest = { version = "0.12.13", default-features = false, optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.95"
 postcard = { version = "1.1.1", features = ["alloc"] }
-reqwest = "0.12.12"
+reqwest = "0.12.13"
 rstest = "0.24.0"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
