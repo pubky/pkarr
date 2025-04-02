@@ -96,7 +96,7 @@ mod reqwest_builder {
             use axum::{routing::get, Router};
             use axum_server::tls_rustls::RustlsConfig;
 
-            let testnet = Testnet::new(3).unwrap();
+            let testnet = Testnet::new_async(3).await.unwrap();
 
             let keypair = Keypair::random();
 

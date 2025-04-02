@@ -162,7 +162,7 @@ impl Client {
     ///
     /// #[tokio::main]
     /// async fn run() -> anyhow::Result<()> {
-    ///     let testnet = Testnet::new(3)?;
+    ///     let testnet = Testnet::new_async(3).await?;
     ///     let client = Client::builder()
     ///         // Disable the default network settings (builtin relays and mainline bootstrap nodes).
     ///         .no_default_network()
