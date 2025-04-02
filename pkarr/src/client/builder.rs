@@ -39,7 +39,6 @@ pub(crate) struct Config {
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
     #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
-    /// Tokio runtime to use in relyas client.
 
     /// Timeout for both Dht and Relays requests.
     ///

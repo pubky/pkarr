@@ -518,7 +518,7 @@ fn filter_incoming_signed_packet(
 fn map_dht_stream(
     stream: mainline::async_dht::GetStream<mainline::MutableItem>,
 ) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
-    return Some(
+    Some(
         stream
             .filter_map(
                 move |mutable_item| match SignedPacket::try_from(mutable_item) {
@@ -530,7 +530,7 @@ fn map_dht_stream(
                 },
             )
             .boxed(),
-    );
+    )
 }
 
 #[derive(thiserror::Error, Debug)]
