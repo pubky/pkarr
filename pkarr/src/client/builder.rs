@@ -20,6 +20,8 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 /// [Client]'s Config
 #[derive(Clone)]
 pub(crate) struct Config {
+    /// Configures the [crate::InMemoryCache] size, if no [Self::cache] is set.
+    ///
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: usize,
     /// Used in the `min` parameter in [crate::SignedPacket::expires_in].

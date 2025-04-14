@@ -62,12 +62,22 @@ impl Client {
         let cache = if config.cache_size == 0 {
             None
         } else {
-            Some(
-                config.cache.clone().unwrap_or(Arc::new(InMemoryCache::new(
-                    NonZeroUsize::new(config.cache_size)
-                        .expect("if cache size is zero cache should be disabled."),
-                ))),
-            )
+            let cache = config.cache.clone();
+
+            if let Some(cache) = cache {
+                if cache.capacity() == 0 {
+                    None
+                } else {
+                    Some(cache)
+                }
+            } else {
+                Some(
+                    cache.unwrap_or(Arc::new(InMemoryCache::new(
+                        NonZeroUsize::new(config.cache_size)
+                            .expect("if cache size is zero cache should be disabled."),
+                    ))),
+                )
+            }
         };
 
         cross_debug!("Starting Pkarr Client {:?}", config);

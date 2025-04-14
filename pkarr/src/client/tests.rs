@@ -663,3 +663,56 @@ async fn regression_relay_cas(#[case] networks: Networks) {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn discard_cache_with_zero_capacity() {
+    let testnet = crate::mainline::Testnet::new_async(2).await.unwrap();
+
+    // Create relay
+    let storage = std::env::temp_dir().join(Timestamp::now().to_string());
+    let mut builder = pkarr_relay::Relay::builder();
+    builder
+        .disable_rate_limiter()
+        .cache_size(0) // Comment this line out and it works
+        .http_port(0)
+        .storage(storage)
+        .pkarr(|builder| {
+            builder.no_default_network();
+            builder.bootstrap(&testnet.bootstrap);
+            builder
+        });
+    let relay = unsafe { builder.run().await.unwrap() };
+    let relay_url = relay.local_url();
+
+    let keypair = Keypair::random();
+
+    // Publish packet on the DHT without using the relay.
+    let client = Client::builder()
+        .no_default_network()
+        .bootstrap(&testnet.bootstrap)
+        .build()
+        .unwrap();
+
+    let signed_packet = SignedPacket::builder()
+        .txt(
+            "example.com".try_into().unwrap(),
+            "foo".try_into().unwrap(),
+            300,
+        )
+        .sign(&keypair)
+        .unwrap();
+    client.publish(&signed_packet, None).await.unwrap();
+
+    // Resolve packet with only the relay, no DHT
+    let client = Client::builder()
+        .no_default_network()
+        .relays(&[relay_url])
+        .unwrap()
+        .build()
+        .unwrap();
+    let packet = client.resolve(&keypair.public_key()).await;
+    assert!(
+        packet.is_some(),
+        "Published packet is not available over the relay only."
+    );
+}
