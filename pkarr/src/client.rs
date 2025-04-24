@@ -62,12 +62,22 @@ impl Client {
         let cache = if config.cache_size == 0 {
             None
         } else {
-            Some(
-                config.cache.clone().unwrap_or(Arc::new(InMemoryCache::new(
-                    NonZeroUsize::new(config.cache_size)
-                        .expect("if cache size is zero cache should be disabled."),
-                ))),
-            )
+            let cache = config.cache.clone();
+
+            if let Some(cache) = cache {
+                if cache.capacity() == 0 {
+                    None
+                } else {
+                    Some(cache)
+                }
+            } else {
+                Some(
+                    cache.unwrap_or(Arc::new(InMemoryCache::new(
+                        NonZeroUsize::new(config.cache_size)
+                            .expect("if cache size is zero cache should be disabled."),
+                    ))),
+                )
+            }
         };
 
         cross_debug!("Starting Pkarr Client {:?}", config);
@@ -162,7 +172,7 @@ impl Client {
     ///
     /// #[tokio::main]
     /// async fn run() -> anyhow::Result<()> {
-    ///     let testnet = Testnet::new(3)?;
+    ///     let testnet = Testnet::new_async(3).await?;
     ///     let client = Client::builder()
     ///         // Disable the default network settings (builtin relays and mainline bootstrap nodes).
     ///         .no_default_network()
@@ -518,7 +528,7 @@ fn filter_incoming_signed_packet(
 fn map_dht_stream(
     stream: mainline::async_dht::GetStream<mainline::MutableItem>,
 ) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
-    return Some(
+    Some(
         stream
             .filter_map(
                 move |mutable_item| match SignedPacket::try_from(mutable_item) {
@@ -530,7 +540,7 @@ fn map_dht_stream(
                 },
             )
             .boxed(),
-    );
+    )
 }
 
 #[derive(thiserror::Error, Debug)]

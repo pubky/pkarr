@@ -20,6 +20,8 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 /// [Client]'s Config
 #[derive(Clone)]
 pub(crate) struct Config {
+    /// Configures the [crate::InMemoryCache] size, if no [Self::cache] is set.
+    ///
     /// Defaults to [DEFAULT_CACHE_SIZE]
     pub cache_size: usize,
     /// Used in the `min` parameter in [crate::SignedPacket::expires_in].
@@ -39,7 +41,6 @@ pub(crate) struct Config {
     /// Pkarr [Relays](https://pkarr.org/relays) Urls
     #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
-    /// Tokio runtime to use in relyas client.
 
     /// Timeout for both Dht and Relays requests.
     ///

@@ -147,7 +147,7 @@ impl Relay {
 
         if let Some(ref rate_limiter) = rate_limiter {
             config.pkarr.dht(|builder| {
-                builder.server_settings(mainline::ServerSettings {
+                builder.server_settings(pkarr::mainline::ServerSettings {
                     filter: Box::new(rate_limiter.clone()),
                     ..Default::default()
                 })
@@ -209,7 +209,7 @@ impl Relay {
     /// # Safety
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async fn run_test(testnet: &mainline::Testnet) -> anyhow::Result<Self> {
+    pub async fn run_test(testnet: &pkarr::mainline::Testnet) -> anyhow::Result<Self> {
         let mut config = Config {
             cache_path: None,
             http_port: 0,
@@ -233,7 +233,7 @@ impl Relay {
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async unsafe fn run_testnet() -> anyhow::Result<Self> {
-        let testnet = mainline::Testnet::new(10)?;
+        let testnet = pkarr::mainline::Testnet::new(10)?;
 
         // Leaking the testnet to avoid dropping and shutting them down.
         for node in testnet.nodes {
