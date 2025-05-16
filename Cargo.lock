@@ -1855,6 +1855,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-buffered",
  "futures-lite",
+ "futures-util",
  "genawaiter",
  "getrandom 0.2.15",
  "heed",
