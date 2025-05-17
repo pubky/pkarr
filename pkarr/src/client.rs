@@ -299,13 +299,7 @@ impl Client {
         {
             if cached.more_recent_than(signed_packet) {
                 return Err(ConcurrencyError::NotMostRecent)?;
-            }
-        } else if let Some(cas) = cas {
-            if let Some(cached) = self
-                .cache()
-                .as_ref()
-                .and_then(|cache| cache.get(&cache_key))
-            {
+            } else if let Some(cas) = cas {
                 if cached.timestamp() != cas {
                     return Err(ConcurrencyError::CasFailed)?;
                 }

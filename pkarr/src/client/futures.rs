@@ -1,25 +1,87 @@
-use futures_lite::{Stream, StreamExt};
+use futures_lite::{FutureExt, Stream, StreamExt};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::client::ConcurrencyError;
 use crate::SignedPacket;
 
 use super::PublishError;
 
-/// Run both futures in the background, return the earliest success response,
-/// preferring the DHT future if both ready, but complete the other future regardless.
+/// Publish to both DHT and configured Relays, resolve after queries on both network are complete.
+///
+/// If Relays network completes succeeds first, it is possible for the query to the
+/// DHT to fail because CAS is outdated, in that case, we should ignore that error.
 pub async fn spawn_and_select(
     dht_future: impl Future<Output = Result<(), PublishError>> + Send + 'static,
     relays_future: impl Future<Output = Result<(), PublishError>> + Send + 'static,
 ) -> Result<(), PublishError> {
-    let dht_task = tokio::spawn(dht_future);
-    let relays_task = tokio::spawn(relays_future);
-
-    futures_lite::future::or(dht_task, relays_task)
-        .await
-        .expect("tokio join error")
+    SelectFuture {
+        first_result: None,
+        dht_future: dht_future.boxed(),
+        relays_future: relays_future.boxed(),
+    }
+    .await
 }
+
+pub struct SelectFuture {
+    first_result: Option<(Network, Result<(), PublishError>)>,
+    dht_future: Pin<Box<dyn Future<Output = Result<(), PublishError>> + Send>>,
+    relays_future: Pin<Box<dyn Future<Output = Result<(), PublishError>> + Send>>,
+}
+
+impl SelectFuture {
+    /// Process a completed future result based on what we've seen before
+    fn process_result(
+        &mut self,
+        network: Network,
+        result: Result<(), PublishError>,
+    ) -> Poll<Result<(), PublishError>> {
+        match self.first_result {
+            // We already have a success, ignore CAS failures
+            Some((_, Ok(()))) => Poll::Ready(match result {
+                Err(PublishError::Concurrency(ConcurrencyError::CasFailed)) => Ok(()),
+                _ => result,
+            }),
+            // We already have a failure, return the later network's result
+            Some(_) => Poll::Ready(result),
+            // This is our first result, store it and continue polling
+            None => {
+                self.first_result = Some((network, result));
+
+                Poll::Pending
+            }
+        }
+    }
+}
+
+impl Future for SelectFuture {
+    type Output = Result<(), PublishError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        let done_network = this.first_result.as_ref().map(|r| r.0);
+
+        // Poll DHT future if not completed yet
+        if !matches!(done_network, Some(Network::Dht)) {
+            if let Poll::Ready(result) = this.dht_future.as_mut().poll(cx) {
+                return this.process_result(Network::Dht, result);
+            }
+        }
+
+        // Poll Relays future if not completed yet
+        if !matches!(done_network, Some(Network::Relays)) {
+            if let Poll::Ready(result) = this.relays_future.as_mut().poll(cx) {
+                return this.process_result(Network::Relays, result);
+            }
+        }
+
+        Poll::Pending
+    }
+}
+
+// ==== Stream ====
 
 /// Returns a stream combinator that yields items from two inner streams in a round-robin fashion.
 ///
@@ -32,7 +94,7 @@ pub fn select_stream(
     relays_stream: Pin<Box<dyn Stream<Item = SignedPacket> + Send>>,
 ) -> SelectStream {
     SelectStream {
-        mode: Mode::RoundRobin(Toggle::DhtStream),
+        mode: Mode::RoundRobin(Network::Dht),
         dht_stream,
         relays_stream,
     }
@@ -46,14 +108,14 @@ pub struct SelectStream {
 
 #[derive(Clone, Debug)]
 enum Mode {
-    RoundRobin(Toggle),
-    Exhausted(Toggle),
+    RoundRobin(Network),
+    Exhausted(Network),
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Toggle {
-    DhtStream,
-    RelaysStream,
+enum Network {
+    Dht,
+    Relays,
 }
 
 impl Stream for SelectStream {
@@ -66,14 +128,14 @@ impl Stream for SelectStream {
             Mode::RoundRobin(current) => {
                 // Alternate which stream to poll next
                 let (primary, secondary) = match current {
-                    Toggle::DhtStream => (this.dht_stream.as_mut(), this.relays_stream.as_mut()),
-                    Toggle::RelaysStream => (this.relays_stream.as_mut(), this.dht_stream.as_mut()),
+                    Network::Dht => (this.dht_stream.as_mut(), this.relays_stream.as_mut()),
+                    Network::Relays => (this.relays_stream.as_mut(), this.dht_stream.as_mut()),
                 };
 
-                // Update the toggle for next poll
+                // Update the Network for next poll
                 this.mode = Mode::RoundRobin(match current {
-                    Toggle::DhtStream => Toggle::RelaysStream,
-                    Toggle::RelaysStream => Toggle::DhtStream,
+                    Network::Dht => Network::Relays,
+                    Network::Relays => Network::Dht,
                 });
 
                 // Try polling the current primary stream
@@ -88,8 +150,8 @@ impl Stream for SelectStream {
                 }
             }
             Mode::Exhausted(exhausted) => match exhausted {
-                Toggle::DhtStream => this.relays_stream.poll_next(cx),
-                Toggle::RelaysStream => this.dht_stream.poll_next(cx),
+                Network::Dht => this.relays_stream.poll_next(cx),
+                Network::Relays => this.dht_stream.poll_next(cx),
             },
         }
     }
