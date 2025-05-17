@@ -23,7 +23,7 @@ mod tests;
 #[cfg(all(test, wasm_browser))]
 mod tests_web;
 
-use futures::spawn_and_select;
+use futures::publish_both_networks;
 use futures_lite::{Stream, StreamExt};
 use ntimestamp::Timestamp;
 use std::future::Future;
@@ -348,7 +348,7 @@ impl Client {
 
         #[cfg(all(dht, relays))]
         return if dht_future.is_some() && relays_future.is_some() {
-            let result = spawn_and_select(
+            let result = publish_both_networks(
                 dht_future.expect("infallible"),
                 relays_future.expect("infallible"),
             )

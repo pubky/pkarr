@@ -12,7 +12,7 @@ use super::PublishError;
 ///
 /// If Relays network completes succeeds first, it is possible for the query to the
 /// DHT to fail because CAS is outdated, in that case, we should ignore that error.
-pub async fn spawn_and_select(
+pub async fn publish_both_networks(
     dht_future: impl Future<Output = Result<(), PublishError>> + Send + 'static,
     relays_future: impl Future<Output = Result<(), PublishError>> + Send + 'static,
 ) -> Result<(), PublishError> {
