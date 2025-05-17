@@ -14,6 +14,7 @@ pub mod cache;
 #[cfg(not(wasm_browser))]
 pub mod blocking;
 pub mod builder;
+mod futures;
 #[cfg(relays)]
 mod relays;
 
@@ -22,6 +23,7 @@ mod tests;
 #[cfg(all(test, wasm_browser))]
 mod tests_web;
 
+use futures::spawn_and_select;
 use futures_lite::{Stream, StreamExt};
 use ntimestamp::Timestamp;
 use std::future::Future;
@@ -325,19 +327,24 @@ impl Client {
     ) -> Result<(), PublishError> {
         // Handle DHT and Relay futures based on feature flags and target family
         #[cfg(dht)]
-        let dht_future = self.dht().map(|node| async {
-            node.as_async()
-                .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
-                .await
-                .map(|_| Ok(()))?
-        });
+        let dht_future = {
+            let signed_packet = signed_packet.clone();
+            self.dht().clone().map(|node| async move {
+                node.as_async()
+                    .put_mutable((&signed_packet).into(), cas.map(|t| t.as_u64() as i64))
+                    .await
+                    .map(|_| Ok(()))?
+            })
+        };
 
         #[cfg(relays)]
-        let relays_future = self
-            .0
-            .relays
-            .as_ref()
-            .map(|relays| relays.publish(signed_packet, cas));
+        let relays_future = {
+            let signed_packet = signed_packet.clone();
+            self.0
+                .relays
+                .clone()
+                .map(|relays| async move { relays.publish(&signed_packet, cas).await })
+        };
 
         #[cfg(all(dht, not(relays)))]
         return dht_future.expect("infallible").await;
@@ -347,7 +354,7 @@ impl Client {
 
         #[cfg(all(dht, relays))]
         return if dht_future.is_some() && relays_future.is_some() {
-            let result = futures_lite::future::or(
+            let result = spawn_and_select(
                 dht_future.expect("infallible"),
                 relays_future.expect("infallible"),
             )
