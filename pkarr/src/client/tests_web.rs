@@ -18,14 +18,17 @@ async fn publish_resolve() {
         .sign(&keypair)
         .unwrap();
 
-    let relays = vec![Url::parse("http://localhost:15411").unwrap()];
+    let relays = vec![
+        Url::parse("http://localhost:8080").unwrap(),
+        Url::parse("http://localhost:15411").unwrap(),
+    ];
 
     let a = Client::builder().relays(&relays).unwrap().build().unwrap();
     let b = Client::builder().relays(&relays).unwrap().build().unwrap();
 
     a.publish(&signed_packet, None).await.unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b.resolve_most_recent(&keypair.public_key()).await.unwrap();
 
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
@@ -34,7 +37,10 @@ async fn publish_resolve() {
 async fn not_found() {
     let keypair = Keypair::random();
 
-    let relays = vec![Url::parse("http://localhost:15411").unwrap()];
+    let relays = vec![
+        Url::parse("http://localhost:8080").unwrap(),
+        Url::parse("http://localhost:15411").unwrap(),
+    ];
 
     let client = Client::builder().relays(&relays).unwrap().build().unwrap();
 
@@ -47,7 +53,10 @@ async fn not_found() {
 async fn return_expired_packet_fallback() {
     let keypair = Keypair::random();
 
-    let relays = vec![Url::parse("http://localhost:15411").unwrap()];
+    let relays = vec![
+        Url::parse("http://localhost:8080").unwrap(),
+        Url::parse("http://localhost:15411").unwrap(),
+    ];
 
     let client = Client::builder()
         .relays(&relays)
@@ -77,7 +86,10 @@ async fn from_disk_cache() {
         .sign(&keypair)
         .unwrap();
 
-    let relays = vec![Url::parse("http://localhost:15411").unwrap()];
+    let relays = vec![
+        Url::parse("http://localhost:8080").unwrap(),
+        Url::parse("http://localhost:15411").unwrap(),
+    ];
 
     let a = Client::builder().relays(&relays).unwrap().build().unwrap();
     let b = Client::builder()
@@ -108,7 +120,10 @@ async fn not_modified() {
         .sign(&keypair)
         .unwrap();
 
-    let relays = vec![Url::parse("http://localhost:15411").unwrap()];
+    let relays = vec![
+        Url::parse("http://localhost:8080").unwrap(),
+        Url::parse("http://localhost:15411").unwrap(),
+    ];
 
     let a = Client::builder().relays(&relays).unwrap().build().unwrap();
     let b = Client::builder()
