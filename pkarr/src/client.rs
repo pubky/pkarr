@@ -14,6 +14,7 @@ pub mod cache;
 #[cfg(not(wasm_browser))]
 pub mod blocking;
 pub mod builder;
+#[cfg(not(wasm_browser))]
 mod futures;
 #[cfg(relays)]
 mod relays;
@@ -23,6 +24,7 @@ mod tests;
 #[cfg(all(test, wasm_browser))]
 mod tests_web;
 
+#[cfg(not(wasm_browser))]
 use futures::publish_both_networks;
 use futures_lite::{Stream, StreamExt};
 use ntimestamp::Timestamp;
