@@ -465,6 +465,8 @@ impl Client {
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
+        use futures::select_stream;
+
         #[cfg(dht)]
         let dht_stream = match self.dht() {
             Some(node) => map_dht_stream(node.as_async().get_mutable(
@@ -491,7 +493,7 @@ impl Client {
         #[cfg(all(dht, relays))]
         Box::pin(match (dht_stream, relays_stream) {
             (Some(s), None) | (None, Some(s)) => s,
-            (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
+            (Some(a), Some(b)) => Box::pin(select_stream(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
         })
     }
