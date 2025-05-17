@@ -1,4 +1,4 @@
-use futures_lite::Stream;
+use futures_lite::{Stream, StreamExt};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -21,38 +21,76 @@ pub async fn spawn_and_select(
         .expect("tokio join error")
 }
 
-/// Run both streams, polling each in a round robin manner,
-/// and don't close the stream until both are done.
+/// Returns a stream combinator that yields items from two inner streams in a round-robin fashion.
+///
+/// This combinator will:
+/// - Alternate between the two streams on each poll.
+/// - Continue polling a stream even after the other is exhausted.
+/// - Only terminate when **both** streams have returned `None`.
 pub fn select_stream(
     dht_stream: Pin<Box<dyn Stream<Item = SignedPacket> + Send>>,
     relays_stream: Pin<Box<dyn Stream<Item = SignedPacket> + Send>>,
 ) -> SelectStream {
-    SelectStream(false, dht_stream, relays_stream)
+    SelectStream {
+        mode: Mode::RoundRobin(Toggle::DhtStream),
+        dht_stream,
+        relays_stream,
+    }
 }
 
-pub struct SelectStream(
-    bool,
-    Pin<Box<dyn Stream<Item = SignedPacket> + Send>>,
-    Pin<Box<dyn Stream<Item = SignedPacket> + Send>>,
-);
+pub struct SelectStream {
+    mode: Mode,
+    dht_stream: Pin<Box<dyn Stream<Item = SignedPacket> + Send>>,
+    relays_stream: Pin<Box<dyn Stream<Item = SignedPacket> + Send>>,
+}
+
+#[derive(Clone, Debug)]
+enum Mode {
+    RoundRobin(Toggle),
+    Exhausted(Toggle),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Toggle {
+    DhtStream,
+    RelaysStream,
+}
 
 impl Stream for SelectStream {
     type Item = SignedPacket;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        this.0 = !this.0;
 
-        let (primary, secondary) = if this.0 {
-            (this.1.as_mut(), this.2.as_mut())
-        } else {
-            (this.2.as_mut(), this.1.as_mut())
-        };
+        match this.mode {
+            Mode::RoundRobin(current) => {
+                // Alternate which stream to poll next
+                let (primary, secondary) = match current {
+                    Toggle::DhtStream => (this.dht_stream.as_mut(), this.relays_stream.as_mut()),
+                    Toggle::RelaysStream => (this.relays_stream.as_mut(), this.dht_stream.as_mut()),
+                };
 
-        match primary.poll_next(cx) {
-            Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
-            Poll::Ready(None) => secondary.poll_next(cx),
-            Poll::Pending => Poll::Pending,
+                // Update the toggle for next poll
+                this.mode = Mode::RoundRobin(match current {
+                    Toggle::DhtStream => Toggle::RelaysStream,
+                    Toggle::RelaysStream => Toggle::DhtStream,
+                });
+
+                // Try polling the current primary stream
+                match primary.poll_next(cx) {
+                    Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
+                    Poll::Ready(None) => {
+                        // Primary is exhausted, now only poll the remaining one
+                        this.mode = Mode::Exhausted(current);
+                        secondary.poll_next(cx)
+                    }
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+            Mode::Exhausted(exhausted) => match exhausted {
+                Toggle::DhtStream => this.relays_stream.poll_next(cx),
+                Toggle::RelaysStream => this.dht_stream.poll_next(cx),
+            },
         }
     }
 }
