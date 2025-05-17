@@ -14,6 +14,7 @@ pub mod cache;
 #[cfg(not(wasm_browser))]
 pub mod blocking;
 pub mod builder;
+mod futures;
 #[cfg(relays)]
 mod relays;
 
@@ -22,6 +23,7 @@ mod tests;
 #[cfg(all(test, wasm_browser))]
 mod tests_web;
 
+use futures::spawn_and_select;
 use futures_lite::{Stream, StreamExt};
 use ntimestamp::Timestamp;
 use std::future::Future;
@@ -352,11 +354,11 @@ impl Client {
 
         #[cfg(all(dht, relays))]
         return if dht_future.is_some() && relays_future.is_some() {
-            let dht_task = tokio::spawn(dht_future.expect("infallible"));
-            let relays_task = tokio::spawn(relays_future.expect("infallible"));
-            let result = futures_lite::future::or(dht_task, relays_task)
-                .await
-                .expect("tokio join error");
+            let result = spawn_and_select(
+                dht_future.expect("infallible"),
+                relays_future.expect("infallible"),
+            )
+            .await;
 
             self.0
                 .relays
