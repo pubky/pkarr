@@ -20,7 +20,7 @@ mod futures;
 mod relays;
 
 #[cfg(all(test, not(wasm_browser)))]
-pub(crate) mod tests;
+mod tests;
 #[cfg(all(test, wasm_browser))]
 mod tests_web;
 
