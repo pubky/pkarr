@@ -66,7 +66,16 @@ mod reqwest_builder {
     #[cfg(test)]
     mod tests {
         use std::net::SocketAddr;
+        use std::net::TcpListener;
+        use std::sync::Arc;
 
+        use axum::{routing::get, Router};
+        use axum_server::tls_rustls::RustlsConfig;
+
+        use pkarr_relay::Relay;
+        use rstest::rstest;
+
+        use crate::client::tests::{builder, Networks};
         use crate::{dns::rdata::SVCB, Client, Keypair, SignedPacket};
 
         async fn publish_server_pkarr(
@@ -86,17 +95,14 @@ mod reqwest_builder {
             client.publish(&signed_packet, None).await.unwrap();
         }
 
+        #[rstest]
+        #[case::dht(Networks::Dht)]
+        #[case::both_networks(Networks::Both)]
+        #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
         #[tokio::test]
-        async fn reqwest_pkarr_domain() {
-            use crate::mainline::Testnet;
-            use std::net::TcpListener;
-            use std::sync::Arc;
-            use std::time::Duration;
-
-            use axum::{routing::get, Router};
-            use axum_server::tls_rustls::RustlsConfig;
-
-            let testnet = Testnet::new_async(3).await.unwrap();
+        async fn reqwest_pkarr_domain(#[case] networks: Networks) {
+            let testnet = mainline::Testnet::new_async(5).await.unwrap();
+            let relay = Relay::run_test(&testnet).await.unwrap();
 
             let keypair = Keypair::random();
 
@@ -106,11 +112,7 @@ mod reqwest_builder {
                 let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
                 let address = listener.local_addr().unwrap();
 
-                let client = Client::builder()
-                    .bootstrap(&testnet.bootstrap)
-                    .request_timeout(Duration::from_millis(100))
-                    .build()
-                    .unwrap();
+                let client = builder(&relay, &testnet, networks).build().unwrap();
                 publish_server_pkarr(&client, &keypair, &address).await;
 
                 println!("Server running on https://{}", keypair.public_key());
@@ -124,10 +126,7 @@ mod reqwest_builder {
             }
 
             // Client setup
-            let pkarr_client = Client::builder()
-                .bootstrap(&testnet.bootstrap)
-                .build()
-                .unwrap();
+            let pkarr_client = builder(&relay, &testnet, networks).build().unwrap();
             let reqwest = reqwest::ClientBuilder::from(pkarr_client).build().unwrap();
 
             // Make a request

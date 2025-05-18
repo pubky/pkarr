@@ -10,7 +10,7 @@ use crate::errors::{BuildError, ConcurrencyError, PublishError};
 use crate::{Client, ClientBuilder, Keypair, SignedPacket};
 
 #[derive(Copy, Clone)]
-enum Networks {
+pub(crate) enum Networks {
     Dht,
     #[cfg(feature = "relays")]
     Relays,
@@ -19,7 +19,11 @@ enum Networks {
 
 /// Parametric [ClientBuilder] with no default networks,
 /// instead it uses mainline or relays depending on `networks` enum.
-fn builder(relay: &Relay, testnet: &mainline::Testnet, networks: Networks) -> ClientBuilder {
+pub(crate) fn builder(
+    relay: &Relay,
+    testnet: &mainline::Testnet,
+    networks: Networks,
+) -> ClientBuilder {
     let mut builder = Client::builder();
 
     builder
