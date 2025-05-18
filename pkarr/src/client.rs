@@ -487,11 +487,11 @@ impl Client {
         return relays_stream.expect("infallible");
 
         #[cfg(all(dht, relays))]
-        Box::pin(match (dht_stream, relays_stream) {
+        match (dht_stream, relays_stream) {
             (Some(s), None) | (None, Some(s)) => s,
             (Some(a), Some(b)) => Box::pin(select_stream(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
-        })
+        }
     }
 }
 
