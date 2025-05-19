@@ -5,6 +5,7 @@ use std::{thread, time::Duration};
 use ntimestamp::Timestamp;
 use pkarr_relay::Relay;
 use rstest::rstest;
+use simple_dns::rdata::SVCB;
 
 use crate::errors::{BuildError, ConcurrencyError, PublishError};
 use crate::{Client, ClientBuilder, Keypair, SignedPacket};
@@ -719,6 +720,33 @@ async fn discard_cache_with_zero_capacity() {
         packet.is_some(),
         "Published packet is not available over the relay only."
     );
+}
+
+#[tokio::test]
+async fn regression_relay_timeout_stack_overflow() {
+    let host: crate::dns::Name = "example.com".try_into().unwrap();
+    let svcb = SVCB::new(0, host);
+    let signed_packet_builder =
+        SignedPacket::builder().https("_pubky".try_into().unwrap(), svcb.clone(), 60 * 60);
+
+    let client = Client::builder()
+        .no_dht()
+        .request_timeout(Duration::from_millis(100))
+        .build()
+        .unwrap();
+
+    // 1) do the resolve_most_recent
+    let existing = client
+        .resolve_most_recent(&Keypair::random().public_key())
+        .await;
+
+    // 2) build a new `_pubky` packet
+    let kp = Keypair::random();
+    let pkt = signed_packet_builder.clone().sign(&kp).unwrap();
+
+    // 3) publish with CAS
+    let cas = existing.map(|p| p.timestamp());
+    let _ = client.publish(&pkt, cas).await;
 }
 
 #[cfg(feature = "reqwest-builder")]

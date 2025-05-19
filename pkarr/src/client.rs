@@ -325,7 +325,7 @@ impl Client {
         #[cfg(dht)]
         let dht_future = {
             let signed_packet = signed_packet.clone();
-            self.dht().clone().map(|node| async move {
+            self.dht().map(|node| async move {
                 node.as_async()
                     .put_mutable((&signed_packet).into(), cas.map(|t| t.as_u64() as i64))
                     .await
