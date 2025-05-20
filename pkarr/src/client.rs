@@ -583,7 +583,7 @@ pub enum PublishError {
     UnexpectedResponses,
 }
 
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 /// Errors that requires either a retry or debugging the network condition.
 pub enum QueryError {
     /// Publish query timed out with no responses neither success or errors, from Dht or relays.
@@ -601,39 +601,6 @@ pub enum QueryError {
     #[error("Most relays responded with bad request")]
     /// Most relays responded with bad request
     BadRequest,
-}
-
-impl Eq for QueryError {
-    fn assert_receiver_is_total_eq(&self) {}
-}
-
-impl PartialEq for QueryError {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            #[cfg(dht)]
-            (
-                QueryError::DhtErrorResponse(self_error, _),
-                QueryError::DhtErrorResponse(other_error, _),
-            ) => self_error == other_error,
-            (s, o) => s == o,
-        }
-    }
-}
-
-impl Hash for QueryError {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            QueryError::Timeout => 0.hash(state),
-            QueryError::NoClosestNodes => 1.hash(state),
-            QueryError::DhtErrorResponse(code, _) => {
-                let mut bytes = vec![2];
-                bytes.extend_from_slice(&code.to_be_bytes());
-
-                state.write(bytes.as_slice());
-            }
-            QueryError::BadRequest => 3.hash(state),
-        }
-    }
 }
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
