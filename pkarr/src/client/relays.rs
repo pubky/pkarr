@@ -262,25 +262,12 @@ impl InflightPublishRequests {
         if let Some(request) = inflight.get_mut(public_key) {
             let majority = self.relays_count / 2 + self.relays_count % 2;
 
-            // Add error, and return early error if necessary.
-            {
-                let count = request.errors.get(&error).unwrap_or(&0) + 1;
-
-                if count >= majority
-                    && matches!(
-                        error,
-                        PublishError::Concurrency(ConcurrencyError::NotMostRecent)
-                    ) | matches!(
-                        error,
-                        PublishError::Concurrency(ConcurrencyError::CasFailed)
-                    )
-                {
-                    inflight.remove(public_key);
-
-                    return Err(error);
-                }
-
-                request.errors.insert(error, count);
+            // Count this error; if we’ve now seen a majority, fail immediately.
+            let count = request.errors.get(&error).unwrap_or(&0) + 1;
+            request.errors.insert(error.clone(), count);
+            if count >= majority {
+                inflight.remove(public_key);
+                return Err(error);
             }
 
             if self.done(request) {
@@ -418,6 +405,8 @@ pub async fn resolve_from_relay(
         );
     }
 
+    // only ever retry once with cache disabled, to avoid unbounded looping
+    // let mut retried = false;
     let response = loop {
         let response = match http_client
             .execute(request.try_clone().expect("infallible"))
@@ -447,6 +436,11 @@ pub async fn resolve_from_relay(
             &status,
             response.content_length(),
         ) {
+            // if we've already retried once, give up here
+            // if retried {
+            //     break response;
+            // }
+            // retried = true;
             continue;
         } else {
             break response;
