@@ -5,12 +5,13 @@ use std::{thread, time::Duration};
 use ntimestamp::Timestamp;
 use pkarr_relay::Relay;
 use rstest::rstest;
+use simple_dns::rdata::SVCB;
 
 use crate::errors::{BuildError, ConcurrencyError, PublishError};
 use crate::{Client, ClientBuilder, Keypair, SignedPacket};
 
 #[derive(Copy, Clone)]
-enum Networks {
+pub(crate) enum Networks {
     Dht,
     #[cfg(feature = "relays")]
     Relays,
@@ -19,7 +20,11 @@ enum Networks {
 
 /// Parametric [ClientBuilder] with no default networks,
 /// instead it uses mainline or relays depending on `networks` enum.
-fn builder(relay: &Relay, testnet: &mainline::Testnet, networks: Networks) -> ClientBuilder {
+pub(crate) fn builder(
+    relay: &Relay,
+    testnet: &mainline::Testnet,
+    networks: Networks,
+) -> ClientBuilder {
     let mut builder = Client::builder();
 
     builder
@@ -715,4 +720,105 @@ async fn discard_cache_with_zero_capacity() {
         packet.is_some(),
         "Published packet is not available over the relay only."
     );
+}
+
+#[tokio::test]
+async fn regression_relay_timeout_stack_overflow() {
+    let host: crate::dns::Name = "example.com".try_into().unwrap();
+    let svcb = SVCB::new(0, host);
+    let signed_packet_builder =
+        SignedPacket::builder().https("_pubky".try_into().unwrap(), svcb.clone(), 60 * 60);
+
+    let client = Client::builder()
+        .no_dht()
+        .request_timeout(Duration::from_millis(100))
+        .build()
+        .unwrap();
+
+    // 1) do the resolve_most_recent
+    let existing = client
+        .resolve_most_recent(&Keypair::random().public_key())
+        .await;
+
+    // 2) build a new `_pubky` packet
+    let kp = Keypair::random();
+    let pkt = signed_packet_builder.clone().sign(&kp).unwrap();
+
+    // 3) publish with CAS
+    let cas = existing.map(|p| p.timestamp());
+    let _ = client.publish(&pkt, cas).await;
+}
+
+#[cfg(feature = "reqwest-builder")]
+mod reqwest_builder {
+    use super::*;
+
+    use std::{
+        net::{SocketAddr, TcpListener},
+        sync::Arc,
+    };
+
+    use axum::routing::get;
+    use axum::Router;
+    use axum_server::tls_rustls::RustlsConfig;
+
+    use crate::{dns::rdata::SVCB, Client, Keypair, SignedPacket};
+
+    async fn publish_server_pkarr(client: &Client, keypair: &Keypair, socket_addr: &SocketAddr) {
+        let mut svcb = SVCB::new(0, ".".try_into().unwrap());
+        svcb.set_port(socket_addr.port());
+
+        let signed_packet = SignedPacket::builder()
+            .https(".".try_into().unwrap(), svcb, 60 * 60)
+            .address(".".try_into().unwrap(), socket_addr.ip(), 60 * 60)
+            .sign(keypair)
+            .unwrap();
+
+        client.publish(&signed_packet, None).await.unwrap();
+    }
+
+    #[rstest]
+    #[case::dht(Networks::Dht)]
+    #[case::both_networks(Networks::Both)]
+    #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+    #[tokio::test]
+    async fn reqwest_pkarr_domain(#[case] networks: Networks) {
+        let testnet = mainline::Testnet::new_async(5).await.unwrap();
+        let relay = Relay::run_test(&testnet).await.unwrap();
+
+        let keypair = Keypair::random();
+
+        {
+            // Run a server on Pkarr
+            let app = Router::new().route("/", get(|| async { "Hello, world!" }));
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
+            let address = listener.local_addr().unwrap();
+
+            let client = builder(&relay, &testnet, networks).build().unwrap();
+            publish_server_pkarr(&client, &keypair, &address).await;
+
+            println!("Server running on https://{}", keypair.public_key());
+
+            let server = axum_server::from_tcp_rustls(
+                listener,
+                RustlsConfig::from_config(Arc::new((&keypair).into())),
+            );
+
+            tokio::spawn(server.serve(app.into_make_service()));
+        }
+
+        // Client setup
+        let pkarr_client = builder(&relay, &testnet, networks).build().unwrap();
+        let reqwest = reqwest::ClientBuilder::from(pkarr_client).build().unwrap();
+
+        // Make a request
+        let response = reqwest
+            .get(format!("https://{}", keypair.public_key()))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), "Hello, world!");
+    }
 }
