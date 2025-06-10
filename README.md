@@ -21,7 +21,7 @@ Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89u
 
 ## Demo 
 
-Try the [web app demo](https://app.pkarr.org)
+Try the [web ap demo](https://app.pkarr.org)
 Or if you prefer Rust, check out our [Examples](./pkarr/examples/README.md) 
  
 ## Architecture
