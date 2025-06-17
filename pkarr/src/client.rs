@@ -36,8 +36,6 @@ use std::{hash::Hash, num::NonZeroUsize};
 #[cfg(dht)]
 use mainline::{errors::PutMutableError, Dht};
 
-
-
 use builder::{ClientBuilder, Config};
 
 #[cfg(relays)]
@@ -495,8 +493,6 @@ impl Client {
             (None, None) => unreachable!("should not create a client with no network"),
         }
     }
-
-
 }
 
 fn filter_incoming_signed_packet(
@@ -664,5 +660,3 @@ where
 
     fut.await
 }
-
-

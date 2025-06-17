@@ -2,8 +2,8 @@
 
 #[cfg(feature = "wasm")]
 use {
-    wasm_bindgen::prelude::*,
     js_sys::{self},
+    wasm_bindgen::prelude::*,
 };
 
 use crate::{Keypair, PublicKey};
@@ -157,7 +157,7 @@ impl SignedPacketBuilder {
     }
 
     /// Add a TXT record to the packet
-    /// 
+    ///
     /// # Arguments
     /// * `name` - The domain name (e.g., "example" or "subdomain.example")
     /// * `text` - The text content
@@ -168,14 +168,14 @@ impl SignedPacketBuilder {
         let txt = TXT::new()
             .with_string(text)
             .map_err(|e| JsValue::from_str(&format!("Invalid TXT record: {}", e)))?;
-        
+
         let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::TXT(txt));
         self.records.push(record.into_owned());
         Ok(())
     }
 
     /// Add an A record (IPv4 address) to the packet
-    /// 
+    ///
     /// # Arguments
     /// * `name` - The domain name
     /// * `address` - The IPv4 address as a string (e.g., "192.168.1.1")
@@ -183,16 +183,24 @@ impl SignedPacketBuilder {
     #[wasm_bindgen(js_name = "addARecord")]
     pub fn add_a_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
         let name = Name::new_unchecked(name);
-        let addr: Ipv4Addr = address.parse()
+        let addr: Ipv4Addr = address
+            .parse()
             .map_err(|e| JsValue::from_str(&format!("Invalid IPv4 address: {}", e)))?;
-        
-        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::A(A { address: addr.into() }));
+
+        let record = ResourceRecord::new(
+            name,
+            CLASS::IN,
+            ttl,
+            RData::A(A {
+                address: addr.into(),
+            }),
+        );
         self.records.push(record.into_owned());
         Ok(())
     }
 
     /// Add an AAAA record (IPv6 address) to the packet
-    /// 
+    ///
     /// # Arguments
     /// * `name` - The domain name
     /// * `address` - The IPv6 address as a string (e.g., "::1")
@@ -200,16 +208,24 @@ impl SignedPacketBuilder {
     #[wasm_bindgen(js_name = "addAAAARecord")]
     pub fn add_aaaa_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
         let name = Name::new_unchecked(name);
-        let addr: Ipv6Addr = address.parse()
+        let addr: Ipv6Addr = address
+            .parse()
             .map_err(|e| JsValue::from_str(&format!("Invalid IPv6 address: {}", e)))?;
-        
-        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::AAAA(AAAA { address: addr.into() }));
+
+        let record = ResourceRecord::new(
+            name,
+            CLASS::IN,
+            ttl,
+            RData::AAAA(AAAA {
+                address: addr.into(),
+            }),
+        );
         self.records.push(record.into_owned());
         Ok(())
     }
 
     /// Add a CNAME record to the packet
-    /// 
+    ///
     /// # Arguments
     /// * `name` - The domain name
     /// * `target` - The target domain name
@@ -218,14 +234,14 @@ impl SignedPacketBuilder {
     pub fn add_cname_record(&mut self, name: &str, target: &str, ttl: u32) -> Result<(), JsValue> {
         let name = Name::new_unchecked(name);
         let target_name = Name::new_unchecked(target);
-        
+
         let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::CNAME(CNAME(target_name)));
         self.records.push(record.into_owned());
         Ok(())
     }
 
     /// Set the timestamp for the packet (optional)
-    /// 
+    ///
     /// # Arguments
     /// * `timestamp_ms` - Timestamp in milliseconds since Unix epoch
     #[wasm_bindgen(js_name = "setTimestamp")]
@@ -234,14 +250,17 @@ impl SignedPacketBuilder {
     }
 
     /// Build and sign the packet with the given keypair
-    /// 
+    ///
     /// # Arguments
     /// * `keypair` - The WasmKeypair to sign with
-    /// 
+    ///
     /// # Returns
     /// * `SignedPacket` - The signed packet ready for publishing
     #[wasm_bindgen(js_name = "buildAndSign")]
-    pub fn build_and_sign(&self, keypair: &crate::wasm::WasmKeypair) -> Result<SignedPacket, JsValue> {
+    pub fn build_and_sign(
+        &self,
+        keypair: &crate::wasm::WasmKeypair,
+    ) -> Result<SignedPacket, JsValue> {
         if self.records.is_empty() {
             return Err(JsValue::from_str("Cannot build packet with no records"));
         }
@@ -258,7 +277,8 @@ impl SignedPacketBuilder {
         }
 
         // Build and sign the packet
-        builder.build(&keypair.keypair)
+        builder
+            .build(&keypair.keypair)
             .map_err(|e| JsValue::from_str(&format!("Failed to build packet: {}", e)))
     }
 
@@ -1307,24 +1327,26 @@ impl SignedPacket {
     #[wasm_bindgen(getter)]
     pub fn records(&self) -> js_sys::Array {
         let records = js_sys::Array::new();
-        
+
         for record in self.all_resource_records() {
             let record_obj = js_sys::Object::new();
-            
+
             // Add name
             js_sys::Reflect::set(
                 &record_obj,
                 &JsValue::from_str("name"),
                 &JsValue::from_str(&record.name.to_string()),
-            ).unwrap();
-            
+            )
+            .unwrap();
+
             // Add TTL
             js_sys::Reflect::set(
                 &record_obj,
                 &JsValue::from_str("ttl"),
                 &JsValue::from_f64(record.ttl as f64),
-            ).unwrap();
-            
+            )
+            .unwrap();
+
             // Add type and data
             let rdata_obj = js_sys::Object::new();
             match &record.rdata {
@@ -1333,102 +1355,112 @@ impl SignedPacket {
                         &rdata_obj,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("A"),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("address"),
                         &JsValue::from_str(&Ipv4Addr::from(*address).to_string()),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
                 RData::AAAA(AAAA { address }) => {
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("AAAA"),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("address"),
                         &JsValue::from_str(&Ipv6Addr::from(*address).to_string()),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
                 RData::CNAME(name) => {
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("CNAME"),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("target"),
                         &JsValue::from_str(&name.to_string()),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
                 RData::TXT(txt) => {
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("TXT"),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("value"),
                         &JsValue::from_str(&format!("{:?}", txt)),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
                 RData::HTTPS(https) => {
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("HTTPS"),
-                    ).unwrap();
-                    
+                    )
+                    .unwrap();
+
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("priority"),
                         &JsValue::from_f64(https.priority as f64),
-                    ).unwrap();
-                    
+                    )
+                    .unwrap();
+
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("target"),
                         &JsValue::from_str(&https.target.to_string()),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
                 RData::SVCB(svcb) => {
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("SVCB"),
-                    ).unwrap();
-                    
+                    )
+                    .unwrap();
+
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("priority"),
                         &JsValue::from_f64(svcb.priority as f64),
-                    ).unwrap();
-                    
+                    )
+                    .unwrap();
+
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("target"),
                         &JsValue::from_str(&svcb.target.to_string()),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 }
                 _ => {
                     // Skip unsupported record types
                     continue;
                 }
             }
-            
-            js_sys::Reflect::set(
-                &record_obj,
-                &JsValue::from_str("rdata"),
-                &rdata_obj,
-            ).unwrap();
-            
+
+            js_sys::Reflect::set(&record_obj, &JsValue::from_str("rdata"), &rdata_obj).unwrap();
+
             records.push(&record_obj);
         }
-        
+
         records
     }
 
