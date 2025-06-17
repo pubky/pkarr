@@ -11,7 +11,7 @@ use bytes::{Bytes, BytesMut};
 use ed25519_dalek::{Signature, SignatureError};
 use self_cell::self_cell;
 use simple_dns::{
-    rdata::{RData, A, AAAA, HTTPS, SVCB, TXT},
+    rdata::{RData, A, AAAA, CNAME, HTTPS, SVCB, TXT},
     Name, Packet, ResourceRecord, SimpleDnsError, CLASS,
 };
 use std::{
