@@ -208,7 +208,7 @@ mod tests {
 
     #[tokio::test]
     async fn direct_endpoint_resolution() {
-        let testnet = Testnet::new(3).unwrap();
+        let testnet = Testnet::new_async(5).await.unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
@@ -228,10 +228,11 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_endpoints() {
-        let testnet = Testnet::new(3).unwrap();
+        let testnet = Testnet::new_async(5).await.unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();
 
@@ -247,7 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn empty() {
-        let testnet = Testnet::new(3).unwrap();
+        let testnet = Testnet::new_async(5).await.unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
@@ -264,10 +265,11 @@ mod tests {
 
     #[tokio::test]
     async fn max_recursion_exceeded() {
-        let testnet = Testnet::new(3).unwrap();
+        let testnet = Testnet::new_async(5).await.unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .request_timeout(Duration::from_millis(100))
             .max_recursion_depth(3)
             .build()
             .unwrap();
@@ -281,10 +283,11 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_addresses() {
-        let testnet = Testnet::new(3).unwrap();
+        let testnet = Testnet::new_async(5).await.unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();
 

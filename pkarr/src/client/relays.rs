@@ -22,6 +22,7 @@ use reqwest::{
 use super::{ConcurrencyError, PublishError, QueryError};
 use crate::{PublicKey, SignedPacket};
 
+#[derive(Clone)]
 pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,

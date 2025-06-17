@@ -139,6 +139,12 @@ impl TryFrom<&[u8; 32]> for PublicKey {
     }
 }
 
+impl From<ed25519_dalek::VerifyingKey> for PublicKey {
+    fn from(public: ed25519_dalek::VerifyingKey) -> Self {
+        Self(public)
+    }
+}
+
 impl FromStr for PublicKey {
     type Err = PublicKeyError;
 

@@ -33,7 +33,7 @@ type TimeToKeyTable = Database<U64<BigEndian>, CacheKeyCodec>;
 /// A wrapper for [CacheKey] to implement [BytesEncode] and [BytesDecode].
 pub struct CacheKeyCodec;
 
-impl<'a> BytesEncode<'a> for CacheKeyCodec {
+impl BytesEncode<'_> for CacheKeyCodec {
     type EItem = CacheKey;
 
     fn bytes_encode(key: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
@@ -50,7 +50,7 @@ impl<'a> BytesDecode<'a> for CacheKeyCodec {
     }
 }
 
-impl<'a> BytesEncode<'a> for SignedPacket {
+impl BytesEncode<'_> for SignedPacket {
     type EItem = SignedPacket;
 
     fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
