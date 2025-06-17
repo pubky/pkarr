@@ -139,6 +139,12 @@ impl TryFrom<&[u8; 32]> for PublicKey {
     }
 }
 
+impl From<VerifyingKey> for PublicKey {
+    fn from(verifying_key: VerifyingKey) -> Self {
+        Self(verifying_key)
+    }
+}
+
 impl FromStr for PublicKey {
     type Err = PublicKeyError;
 
