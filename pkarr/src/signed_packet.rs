@@ -1,5 +1,11 @@
 //! Signed DNS packet
 
+#[cfg(feature = "wasm")]
+use {
+    wasm_bindgen::prelude::*,
+    js_sys::{self},
+};
+
 use crate::{Keypair, PublicKey};
 use bytes::{Bytes, BytesMut};
 use ed25519_dalek::{Signature, SignatureError};
@@ -21,6 +27,7 @@ use ntimestamp::Timestamp;
 #[derive(Debug, Clone, Default)]
 /// A builder for [SignedPacket] with many convenient methods,
 /// see [SignedPacket::builder] documentation for examples of how to use this builder.
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct SignedPacketBuilder {
     records: Vec<ResourceRecord<'static>>,
     timestamp: Option<Timestamp>,
@@ -137,6 +144,138 @@ impl SignedPacketBuilder {
     }
 }
 
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl SignedPacketBuilder {
+    /// Create a new SignedPacketBuilder for WASM
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> SignedPacketBuilder {
+        SignedPacketBuilder {
+            records: Vec::new(),
+            timestamp: None,
+        }
+    }
+
+    /// Add a TXT record to the packet
+    /// 
+    /// # Arguments
+    /// * `name` - The domain name (e.g., "example" or "subdomain.example")
+    /// * `text` - The text content
+    /// * `ttl` - Time to live in seconds
+    #[wasm_bindgen(js_name = "addTxtRecord")]
+    pub fn add_txt_record(&mut self, name: &str, text: &str, ttl: u32) -> Result<(), JsValue> {
+        let name = Name::new_unchecked(name);
+        let txt = TXT::new()
+            .with_string(text)
+            .map_err(|e| JsValue::from_str(&format!("Invalid TXT record: {}", e)))?;
+        
+        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::TXT(txt));
+        self.records.push(record.into_owned());
+        Ok(())
+    }
+
+    /// Add an A record (IPv4 address) to the packet
+    /// 
+    /// # Arguments
+    /// * `name` - The domain name
+    /// * `address` - The IPv4 address as a string (e.g., "192.168.1.1")
+    /// * `ttl` - Time to live in seconds
+    #[wasm_bindgen(js_name = "addARecord")]
+    pub fn add_a_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
+        let name = Name::new_unchecked(name);
+        let addr: Ipv4Addr = address.parse()
+            .map_err(|e| JsValue::from_str(&format!("Invalid IPv4 address: {}", e)))?;
+        
+        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::A(A { address: addr.into() }));
+        self.records.push(record.into_owned());
+        Ok(())
+    }
+
+    /// Add an AAAA record (IPv6 address) to the packet
+    /// 
+    /// # Arguments
+    /// * `name` - The domain name
+    /// * `address` - The IPv6 address as a string (e.g., "::1")
+    /// * `ttl` - Time to live in seconds
+    #[wasm_bindgen(js_name = "addAAAARecord")]
+    pub fn add_aaaa_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
+        let name = Name::new_unchecked(name);
+        let addr: Ipv6Addr = address.parse()
+            .map_err(|e| JsValue::from_str(&format!("Invalid IPv6 address: {}", e)))?;
+        
+        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::AAAA(AAAA { address: addr.into() }));
+        self.records.push(record.into_owned());
+        Ok(())
+    }
+
+    /// Add a CNAME record to the packet
+    /// 
+    /// # Arguments
+    /// * `name` - The domain name
+    /// * `target` - The target domain name
+    /// * `ttl` - Time to live in seconds
+    #[wasm_bindgen(js_name = "addCnameRecord")]
+    pub fn add_cname_record(&mut self, name: &str, target: &str, ttl: u32) -> Result<(), JsValue> {
+        let name = Name::new_unchecked(name);
+        let target_name = Name::new_unchecked(target);
+        
+        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::CNAME(CNAME(target_name)));
+        self.records.push(record.into_owned());
+        Ok(())
+    }
+
+    /// Set the timestamp for the packet (optional)
+    /// 
+    /// # Arguments
+    /// * `timestamp_ms` - Timestamp in milliseconds since Unix epoch
+    #[wasm_bindgen(js_name = "setTimestamp")]
+    pub fn set_timestamp(&mut self, timestamp_ms: f64) {
+        self.timestamp = Some(Timestamp::from(timestamp_ms as u64 * 1000)); // Convert ms to microseconds
+    }
+
+    /// Build and sign the packet with the given keypair
+    /// 
+    /// # Arguments
+    /// * `keypair` - The WasmKeypair to sign with
+    /// 
+    /// # Returns
+    /// * `SignedPacket` - The signed packet ready for publishing
+    #[wasm_bindgen(js_name = "buildAndSign")]
+    pub fn build_and_sign(&self, keypair: &crate::wasm::WasmKeypair) -> Result<SignedPacket, JsValue> {
+        if self.records.is_empty() {
+            return Err(JsValue::from_str("Cannot build packet with no records"));
+        }
+
+        // Create a new builder with the current state
+        let mut builder = SignedPacketBuilder {
+            records: self.records.clone(),
+            timestamp: self.timestamp,
+        };
+
+        // Set timestamp if not already set
+        if builder.timestamp.is_none() {
+            builder.timestamp = Some(Timestamp::now());
+        }
+
+        // Build and sign the packet
+        builder.build(&keypair.keypair)
+            .map_err(|e| JsValue::from_str(&format!("Failed to build packet: {}", e)))
+    }
+
+    /// Get the number of records in the builder
+    #[wasm_bindgen(js_name = "recordCount")]
+    pub fn record_count(&self) -> usize {
+        self.records.len()
+    }
+
+    /// Clear all records from the builder
+    #[wasm_bindgen(js_name = "clear")]
+    pub fn clear(&mut self) {
+        self.records.clear();
+        self.timestamp = None;
+    }
+}
+
 const DOT: char = '.';
 
 self_cell!(
@@ -175,6 +314,7 @@ impl Inner {
 
 #[derive(PartialEq, Eq)]
 /// Signed DNS packet
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 pub struct SignedPacket {
     inner: Inner,
     last_seen: Timestamp,
@@ -1145,5 +1285,162 @@ mod tests {
             .unwrap();
 
         assert_eq!(signed_packet.fresh_resource_records("*.foo.").count(), 1);
+    }
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl SignedPacket {
+    /// Get the public key as a z-base32 string
+    #[wasm_bindgen(getter)]
+    pub fn public_key_string(&self) -> String {
+        self.public_key().to_string()
+    }
+
+    /// Get the timestamp in milliseconds
+    #[wasm_bindgen(getter)]
+    pub fn timestamp_ms(&self) -> f64 {
+        self.timestamp().as_u64() as f64
+    }
+
+    /// Get the DNS records
+    #[wasm_bindgen(getter)]
+    pub fn records(&self) -> js_sys::Array {
+        let records = js_sys::Array::new();
+        
+        for record in self.all_resource_records() {
+            let record_obj = js_sys::Object::new();
+            
+            // Add name
+            js_sys::Reflect::set(
+                &record_obj,
+                &JsValue::from_str("name"),
+                &JsValue::from_str(&record.name.to_string()),
+            ).unwrap();
+            
+            // Add TTL
+            js_sys::Reflect::set(
+                &record_obj,
+                &JsValue::from_str("ttl"),
+                &JsValue::from_f64(record.ttl as f64),
+            ).unwrap();
+            
+            // Add type and data
+            let rdata_obj = js_sys::Object::new();
+            match &record.rdata {
+                RData::A(A { address }) => {
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("A"),
+                    ).unwrap();
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("address"),
+                        &JsValue::from_str(&Ipv4Addr::from(*address).to_string()),
+                    ).unwrap();
+                }
+                RData::AAAA(AAAA { address }) => {
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("AAAA"),
+                    ).unwrap();
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("address"),
+                        &JsValue::from_str(&Ipv6Addr::from(*address).to_string()),
+                    ).unwrap();
+                }
+                RData::CNAME(name) => {
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("CNAME"),
+                    ).unwrap();
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("target"),
+                        &JsValue::from_str(&name.to_string()),
+                    ).unwrap();
+                }
+                RData::TXT(txt) => {
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("TXT"),
+                    ).unwrap();
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("value"),
+                        &JsValue::from_str(&format!("{:?}", txt)),
+                    ).unwrap();
+                }
+                RData::HTTPS(https) => {
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("HTTPS"),
+                    ).unwrap();
+                    
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("priority"),
+                        &JsValue::from_f64(https.priority as f64),
+                    ).unwrap();
+                    
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("target"),
+                        &JsValue::from_str(&https.target.to_string()),
+                    ).unwrap();
+                }
+                RData::SVCB(svcb) => {
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("SVCB"),
+                    ).unwrap();
+                    
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("priority"),
+                        &JsValue::from_f64(svcb.priority as f64),
+                    ).unwrap();
+                    
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("target"),
+                        &JsValue::from_str(&svcb.target.to_string()),
+                    ).unwrap();
+                }
+                _ => {
+                    // Skip unsupported record types
+                    continue;
+                }
+            }
+            
+            js_sys::Reflect::set(
+                &record_obj,
+                &JsValue::from_str("rdata"),
+                &rdata_obj,
+            ).unwrap();
+            
+            records.push(&record_obj);
+        }
+        
+        records
+    }
+
+    /// Get the raw bytes of the signed packet
+    #[wasm_bindgen]
+    pub fn to_bytes(&self) -> js_sys::Uint8Array {
+        js_sys::Uint8Array::from(&self.serialize()[..])
+    }
+
+    /// Create a new SignedPacketBuilder (static method for WASM)
+    #[wasm_bindgen(js_name = "builder")]
+    pub fn wasm_builder() -> SignedPacketBuilder {
+        SignedPacketBuilder::default()
     }
 }

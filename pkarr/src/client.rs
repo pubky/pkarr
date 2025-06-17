@@ -32,6 +32,15 @@ use std::{hash::Hash, num::NonZeroUsize};
 #[cfg(dht)]
 use mainline::{errors::PutMutableError, Dht};
 
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
+#[cfg(feature = "wasm")]
+use js_sys::{self, Array};
+#[cfg(feature = "wasm")]
+use console_error_panic_hook;
+#[cfg(feature = "wasm")]
+use url;
+
 use builder::{ClientBuilder, Config};
 
 #[cfg(relays)]
@@ -55,6 +64,7 @@ pub(crate) struct Inner {
 /// Pkarr client for publishing and resolving [SignedPacket]s over
 /// [mainline] Dht and/or [Relays](https://pkarr.org/relays).
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "wasm", wasm_bindgen(js_name = "PkarrClient"))]
 pub struct Client(pub(crate) Arc<Inner>);
 
 impl Client {
@@ -677,4 +687,130 @@ where
     }
 
     fut.await
+}
+
+// === WASM-specific implementation ===
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl Client {
+    /// Create a new client with relay endpoints (WASM version)
+    /// 
+    /// # Arguments
+    /// * `relays` - Optional array of relay URLs as strings. If not provided, default relays will be used
+    /// * `timeout_ms` - Controls the networks timeouts for DHT and relay responses (optional, defaults to 30000 ms)
+    #[wasm_bindgen(constructor)]
+    pub fn new_wasm(relays: Option<Array>, timeout_ms: Option<u32>) -> Result<Client, JsValue> {
+        console_error_panic_hook::set_once();
+        
+        let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30000) as u64);
+        
+        let relay_urls: Result<Vec<url::Url>, _> = if let Some(relays) = relays {
+            relays
+                .iter()
+                .map(|val| {
+                    let url_str = val.as_string()
+                        .ok_or_else(|| JsValue::from_str("Relay URL must be a string"))?;
+                    url::Url::parse(&url_str)
+                        .map_err(|e| JsValue::from_str(&format!("Invalid URL: {}", e)))
+                })
+                .collect()
+        } else {
+            // Use default relays
+            crate::DEFAULT_RELAYS
+                .iter()
+                .map(|&url_str| {
+                    url::Url::parse(url_str)
+                        .map_err(|e| JsValue::from_str(&format!("Invalid default URL: {}", e)))
+                })
+                .collect()
+        };
+        
+        let relay_urls = relay_urls?;
+        
+        if relay_urls.is_empty() {
+            return Err(JsValue::from_str("At least one relay URL is required"));
+        }
+        
+        let client = Client::builder()
+            .relays(&relay_urls)
+            .map_err(|e| JsValue::from_str(&format!("Failed to configure relays: {}", e)))?
+            .request_timeout(timeout)
+            .build()
+            .map_err(|e| JsValue::from_str(&format!("Failed to build client: {}", e)))?;
+        
+        Ok(client)
+    }
+
+    /// Publish a signed packet to relays (WASM version)
+    /// 
+    /// # Arguments
+    /// * `signed_packet` - The SignedPacket to publish
+    /// * `cas_timestamp` - Optional compare-and-swap timestamp in milliseconds
+    #[wasm_bindgen(js_name = "publish")]
+    pub async fn publish_wasm(&self, signed_packet: &SignedPacket, cas_timestamp: Option<f64>) -> Result<(), JsValue> {
+        let cas = cas_timestamp.map(|ts| crate::Timestamp::from(ts as u64));
+        
+        async_compat_if_necessary(self.publish_inner(signed_packet, cas))
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Publish failed: {}", e)))?;
+        
+        Ok(())
+    }
+    
+    /// Resolve a public key to get the latest signed packet (WASM version)
+    /// 
+    /// # Arguments
+    /// * `public_key_str` - The public key as a z-base32 string
+    /// 
+    /// # Returns
+    /// * `Option<SignedPacket>` - The signed packet if found
+    #[wasm_bindgen(js_name = "resolve")]
+    pub async fn resolve_wasm(&self, public_key_str: &str) -> Result<Option<SignedPacket>, JsValue> {
+        let public_key = PublicKey::try_from(public_key_str)
+            .map_err(|e| JsValue::from_str(&format!("Invalid public key: {}", e)))?;
+        
+        Ok(async_compat_if_necessary(self.resolve_inner(&public_key)).await)
+    }
+
+    /// Resolve the most recent signed packet for a public key (WASM version)
+    /// 
+    /// # Arguments
+    /// * `public_key_str` - The public key as a z-base32 string
+    /// 
+    /// # Returns
+    /// * `Option<SignedPacket>` - The most recent signed packet if found
+    #[wasm_bindgen(js_name = "resolveMostRecent")]
+    pub async fn resolve_most_recent_wasm(&self, public_key_str: &str) -> Result<Option<SignedPacket>, JsValue> {
+        let public_key = PublicKey::try_from(public_key_str)
+            .map_err(|e| JsValue::from_str(&format!("Invalid public key: {}", e)))?;
+        
+        Ok(async_compat_if_necessary(async move {
+            let cache_key: CacheKey = public_key.as_ref().into();
+
+            let cache = self.0.cache.clone().unwrap_or(Arc::new(InMemoryCache::new(
+                1.try_into().expect("infallible"),
+            )));
+
+            let mut stream = self.resolve_stream(
+                public_key.clone(),
+                Some(cache.clone()),
+                cache_key,
+                cache.get(&cache_key).map(|s| s.timestamp()),
+            );
+            while stream.next().await.is_some() {}
+
+            cache.get(&public_key.into())
+        }).await)
+    }
+
+    /// Get default relay URLs as JavaScript array
+    #[wasm_bindgen(js_name = "defaultRelays")]
+    pub fn default_relays() -> Array {
+        let relays = Array::new();
+        for relay in crate::DEFAULT_RELAYS.iter() {
+            relays.push(&JsValue::from_str(relay));
+        }
+        relays
+    }
 }
