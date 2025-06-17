@@ -17,6 +17,9 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
+        pkgs = import nixpkgs {
+          inherit system;
+        };
         flakeboxLib = flakebox.lib.${system} {
           config = {
             github.ci.buildOutputs = [ ];
@@ -70,7 +73,12 @@
 
         legacyPackages = multiBuild;
 
-        devShells = flakeboxLib.mkShells { };
+        devShells = flakeboxLib.mkShells {
+          packages = [
+            pkgs.pkg-config
+            pkgs.openssl.dev
+          ];
+        };
       }
     );
 }
