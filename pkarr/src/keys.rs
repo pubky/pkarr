@@ -77,7 +77,7 @@ impl PublicKey {
 
     /// Format the public key as `pk:` URI string.
     pub fn to_uri_string(&self) -> String {
-        format!("pk:{}", self)
+        format!("pk:{self}")
     }
 
     /// Verify a signature over a message.
@@ -267,7 +267,7 @@ impl Debug for Keypair {
 
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PublicKey({})", self)
+        write!(f, "PublicKey({self})")
     }
 }
 
