@@ -4,7 +4,7 @@
  * Benchmarks various operations for performance analysis
  */
 
-const { Client, WasmKeypair, SignedPacket } = require('../pkarr.js');
+const { Client, WasmKeypair, SignedPacket, WasmUtils } = require('../pkarr.js');
 
 async function runPerformanceTests() {
     console.log('🧪 Running Pkarr WASM Performance Tests...\n');
@@ -168,7 +168,7 @@ async function runPerformanceTests() {
             const builder = SignedPacket.builder();
             builder.addTxtRecord("perf", Date.now().toString(), 3600);
             const packet = builder.buildAndSign(new WasmKeypair());
-            await client.publish(packet);
+            await client.publish(packet.to_bytes());
         }, 5);
         
         // Publish a packet first for resolve testing
@@ -176,7 +176,7 @@ async function runPerformanceTests() {
         const resolveBuilder = SignedPacket.builder();
         resolveBuilder.addTxtRecord("resolve-test", "performance", 3600);
         const resolvePacket = resolveBuilder.buildAndSign(resolveKeypair);
-        await client.publish(resolvePacket);
+        await client.publish(resolvePacket.to_bytes());
         
         // Wait for propagation
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -226,7 +226,7 @@ async function runPerformanceTests() {
             const builder = SignedPacket.builder();
             builder.addTxtRecord("concurrent", `test-${index}`, 3600);
             const packet = builder.buildAndSign(kp);
-            await client.publish(packet);
+            await client.publish(packet.to_bytes());
             return packet;
         });
         

@@ -159,10 +159,10 @@ async function runUnitTests() {
         const keypair = new WasmKeypair();
         const publicKey = keypair.public_key_string();
         
-        const isValid = WasmUtils.validate_public_key(publicKey);
+        const isValid = WasmUtils.validatePublicKey(publicKey);
         if (!isValid) throw new Error("Valid public key marked as invalid");
         
-        const isInvalid = WasmUtils.validate_public_key("invalid-key");
+        const isInvalid = WasmUtils.validatePublicKey("invalid-key");
         if (isInvalid) throw new Error("Invalid public key marked as valid");
     });
     
@@ -174,7 +174,7 @@ async function runUnitTests() {
         
         const originalPacket = builder.buildAndSign(keypair);
         const bytes = originalPacket.to_bytes();
-        const parsedPacket = WasmUtils.parse_signed_packet(bytes);
+        const parsedPacket = WasmUtils.parseSignedPacket(bytes);
         
         if (parsedPacket.public_key_string !== originalPacket.public_key_string) {
             throw new Error("Parsed packet public key doesn't match");

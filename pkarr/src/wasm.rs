@@ -76,20 +76,22 @@ impl Client {
     /// Publish a signed packet to relays
     ///
     /// # Arguments
-    /// * `signed_packet` - The SignedPacket to publish
+    /// * `signed_packet_bytes` - The signed packet as bytes (Uint8Array)
     /// * `cas_timestamp` - Optional compare-and-swap timestamp in milliseconds
     pub async fn publish(
         &self,
-        signed_packet: &SignedPacket,
+        signed_packet_bytes: &[u8],
         cas_timestamp: Option<f64>,
     ) -> Result<(), JsValue> {
         #[cfg(feature = "relays")]
         {
             if let Some(relays) = &self.relays {
+                let signed_packet = SignedPacket::deserialize(signed_packet_bytes)
+                    .map_err(|e| JsValue::from_str(&format!("Invalid signed packet: {}", e)))?;
                 let cas = cas_timestamp.map(|ts| crate::Timestamp::from(ts as u64));
 
                 relays
-                    .publish(signed_packet, cas)
+                    .publish(&signed_packet, cas)
                     .await
                     .map_err(|e| JsValue::from_str(&format!("Publish failed: {}", e)))?;
 
@@ -111,8 +113,8 @@ impl Client {
     /// * `public_key_str` - The public key as a z-base32 string
     ///
     /// # Returns
-    /// * `Option<SignedPacket>` - The signed packet if found
-    pub async fn resolve(&self, public_key_str: &str) -> Result<Option<SignedPacket>, JsValue> {
+    /// * `Option<Uint8Array>` - The signed packet bytes if found
+    pub async fn resolve(&self, public_key_str: &str) -> Result<Option<Uint8Array>, JsValue> {
         #[cfg(feature = "relays")]
         {
             if let Some(relays) = &self.relays {
@@ -122,7 +124,7 @@ impl Client {
                 use futures_lite::StreamExt;
                 let mut futures = relays.resolve_futures(&public_key, None);
                 let result = futures.next().await.flatten();
-                Ok(result)
+                Ok(result.map(|packet| Uint8Array::from(&packet.serialize()[..])))
             } else {
                 Err(JsValue::from_str("No relays configured"))
             }
@@ -140,12 +142,12 @@ impl Client {
     /// * `public_key_str` - The public key as a z-base32 string
     ///
     /// # Returns
-    /// * `Option<SignedPacket>` - The most recent signed packet if found
+    /// * `Option<Uint8Array>` - The most recent signed packet bytes if found
     #[wasm_bindgen(js_name = "resolveMostRecent")]
     pub async fn resolve_most_recent(
         &self,
         public_key_str: &str,
-    ) -> Result<Option<SignedPacket>, JsValue> {
+    ) -> Result<Option<Uint8Array>, JsValue> {
         // For simplicity, this is the same as resolve for relay-only implementation
         self.resolve(public_key_str).await
     }
@@ -217,21 +219,22 @@ pub struct WasmUtils;
 
 #[wasm_bindgen]
 impl WasmUtils {
-    /// Parse a signed packet from bytes and return the SignedPacket
-    #[wasm_bindgen]
+    /// Parse a signed packet from bytes and validate it
+    #[wasm_bindgen(js_name = "parseSignedPacket")]
     pub fn parse_signed_packet(bytes: &[u8]) -> Result<SignedPacket, JsValue> {
-        SignedPacket::deserialize(bytes)
-            .map_err(|e| JsValue::from_str(&format!("Invalid signed packet: {}", e)))
+        let signed_packet = SignedPacket::deserialize(bytes)
+            .map_err(|e| JsValue::from_str(&format!("Invalid signed packet: {}", e)))?;
+        Ok(signed_packet)
     }
 
     /// Validate a public key string
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "validatePublicKey")]
     pub fn validate_public_key(public_key_str: &str) -> bool {
         PublicKey::try_from(public_key_str).is_ok()
     }
 
     /// Get default relay URLs
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "defaultRelays")]
     pub fn default_relays() -> Array {
         let relays = Array::new();
         for relay in crate::DEFAULT_RELAYS.iter() {

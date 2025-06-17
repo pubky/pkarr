@@ -73,10 +73,10 @@ wasm-bindgen-futures = { version = "0.4.50", optional = true }
 # feat: relay dependencies
 reqwest = { version = "0.12.13", default-features = false, optional = true }
 
-# WASM bindings dependencies
-wasm-bindgen = { version = "0.2.100", optional = true }
-js-sys = { version = "0.3.70", optional = true }
-console_error_panic_hook = { version = "0.1.7", optional = true }
+# WASM bindings dependencies - enabled by default for WASM target
+wasm-bindgen = { version = "0.2.100" }
+js-sys = { version = "0.3.70" }
+console_error_panic_hook = { version = "0.1.7" }
 
 [dev-dependencies]
 anyhow = "1.0.95"
@@ -144,7 +144,7 @@ extra = ["endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
 full = ["full-client", "extra"]
 
 ## Enable WASM bindings for relay functions
-wasm = ["relays", "dep:wasm-bindgen", "dep:js-sys", "dep:console_error_panic_hook"]
+wasm = ["relays"]
 
 default = ["full-client"]
 

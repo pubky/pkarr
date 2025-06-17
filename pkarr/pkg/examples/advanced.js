@@ -91,7 +91,7 @@ async function advancedExample() {
             attempts++;
             try {
                 console.log(`   Attempt ${attempts}/${maxAttempts}...`);
-                await client.publish(signedPacket);
+                await client.publish(signedPacket.to_bytes());
                 publishSuccess = true;
                 console.log('✅ Packet published successfully!');
             } catch (error) {
@@ -112,10 +112,15 @@ async function advancedExample() {
         console.log('📥 Resolving most recent packet...');
         await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for propagation
         
-        const mostRecentPacket = await client.resolveMostRecent(publicKey);
+        const mostRecentPacketBytes = await client.resolveMostRecent(publicKey);
+        let mostRecentPacket = null;
         
-        if (mostRecentPacket) {
+        if (mostRecentPacketBytes) {
             console.log('✅ Most recent packet resolved!');
+            console.log(`   Resolved ${mostRecentPacketBytes.length} bytes`);
+            
+            // Parse the bytes to get packet info
+            mostRecentPacket = WasmUtils.parseSignedPacket(mostRecentPacketBytes);
             console.log(`   Timestamp: ${mostRecentPacket.timestamp_ms}`);
             console.log(`   Records: ${mostRecentPacket.records.length}`);
             
@@ -145,7 +150,7 @@ async function advancedExample() {
         const casTimestamp = mostRecentPacket ? mostRecentPacket.timestamp_ms : null;
         
         try {
-            await client.publish(updatedPacket, casTimestamp);
+            await client.publish(updatedPacket.to_bytes(), casTimestamp);
             console.log('✅ Compare-and-swap publish successful!');
         } catch (error) {
             console.log(`❌ Compare-and-swap failed: ${error.message}`);
@@ -157,7 +162,7 @@ async function advancedExample() {
         console.log('🛠️  Demonstrating utility functions...');
         
         // Validate public key
-        const isValidKey = WasmUtils.validate_public_key(publicKey);
+        const isValidKey = WasmUtils.validatePublicKey(publicKey);
         console.log(`✅ Public key validation: ${isValidKey ? 'VALID' : 'INVALID'}`);
         
         // Get packet bytes and parse back
@@ -165,7 +170,7 @@ async function advancedExample() {
         console.log(`📦 Packet size: ${packetBytes.length} bytes`);
         
         try {
-            const parsedPacket = WasmUtils.parse_signed_packet(packetBytes);
+            const parsedPacket = WasmUtils.parseSignedPacket(packetBytes);
             console.log('✅ Packet parsing successful');
             console.log(`   Parsed public key: ${parsedPacket.public_key_string}`);
             console.log(`   Parsed timestamp: ${parsedPacket.timestamp_ms}`);

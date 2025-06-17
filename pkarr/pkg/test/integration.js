@@ -4,7 +4,7 @@
  * Tests complete workflows with live network operations
  */
 
-const { Client, WasmKeypair, SignedPacket } = require('../pkarr.js');
+const { Client, WasmKeypair, SignedPacket, WasmUtils } = require('../pkarr.js');
 
 async function runIntegrationTests() {
     console.log('🧪 Running Pkarr WASM Integration Tests...\n');
@@ -26,7 +26,7 @@ async function runIntegrationTests() {
         const packet = builder.buildAndSign(keypair);
         
         console.log(`   📤 Publishing packet for key: ${publicKey}`);
-        await client.publish(packet);
+        await client.publish(packet.to_bytes());
         console.log('   ✅ Packet published successfully');
         
         // Wait for propagation
@@ -35,11 +35,13 @@ async function runIntegrationTests() {
         
         // Resolve the packet
         console.log('   📥 Resolving packet...');
-        const resolvedPacket = await client.resolve(publicKey);
+        const resolvedPacketBytes = await client.resolve(publicKey);
         
-        if (!resolvedPacket) {
+        if (!resolvedPacketBytes) {
             throw new Error('Failed to resolve published packet');
         }
+        
+        const resolvedPacket = WasmUtils.parseSignedPacket(resolvedPacketBytes);
         
         if (resolvedPacket.public_key_string !== publicKey) {
             throw new Error('Resolved packet has wrong public key');
@@ -68,13 +70,17 @@ async function runIntegrationTests() {
         const packet2 = builder2.buildAndSign(keypair2);
         
         console.log(`   📤 Publishing complex packet with ${packet2.records.length} records`);
-        await client.publish(packet2);
+        await client.publish(packet2.to_bytes());
         console.log('   ✅ Complex packet published successfully');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const resolvedPacket2 = await client.resolve(publicKey2);
-        if (!resolvedPacket2 || resolvedPacket2.records.length !== 7) {
+        const resolvedPacket2Bytes = await client.resolve(publicKey2);
+        if (!resolvedPacket2Bytes) {
+            throw new Error('Complex packet resolution failed');
+        }
+        const resolvedPacket2 = WasmUtils.parseSignedPacket(resolvedPacket2Bytes);
+        if (resolvedPacket2.records.length !== 7) {
             throw new Error('Complex packet resolution failed');
         }
         
@@ -94,25 +100,28 @@ async function runIntegrationTests() {
         const packet3 = builder3.buildAndSign(keypair3);
         
         console.log('   📤 Publishing with custom relay configuration');
-        await customClient.publish(packet3);
+        await customClient.publish(packet3.to_bytes());
         console.log('   ✅ Custom relay publish successful');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const resolvedPacket3 = await customClient.resolve(keypair3.public_key_string());
-        if (!resolvedPacket3) {
+        const resolvedPacket3Bytes = await customClient.resolve(keypair3.public_key_string());
+        if (!resolvedPacket3Bytes) {
             throw new Error('Custom relay resolution failed');
         }
+        const resolvedPacket3 = WasmUtils.parseSignedPacket(resolvedPacket3Bytes);
         
         console.log('   ✅ Custom relay configuration test completed');
         
         // Test 4: resolveMostRecent functionality
         console.log('\n🔍 Test 4: resolveMostRecent functionality');
-        const mostRecent = await client.resolveMostRecent(publicKey);
+        const mostRecentBytes = await client.resolveMostRecent(publicKey);
         
-        if (!mostRecent) {
+        if (!mostRecentBytes) {
             throw new Error('resolveMostRecent failed');
         }
+        
+        const mostRecent = WasmUtils.parseSignedPacket(mostRecentBytes);
         
         if (mostRecent.public_key_string !== publicKey) {
             throw new Error('resolveMostRecent returned wrong packet');
@@ -130,15 +139,17 @@ async function runIntegrationTests() {
         const updatePacket = updateBuilder.buildAndSign(keypair);
         
         console.log('   📤 Publishing updated packet');
-        await client.publish(updatePacket);
+        await client.publish(updatePacket.to_bytes());
         console.log('   ✅ Updated packet published');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const latestPacket = await client.resolveMostRecent(publicKey);
-        if (!latestPacket) {
+        const latestPacketBytes = await client.resolveMostRecent(publicKey);
+        if (!latestPacketBytes) {
             throw new Error('Failed to resolve updated packet');
         }
+        
+        const latestPacket = WasmUtils.parseSignedPacket(latestPacketBytes);
         
         if (latestPacket.timestamp_ms <= packet.timestamp_ms) {
             throw new Error('Updated packet should have newer timestamp');
@@ -171,16 +182,21 @@ async function runIntegrationTests() {
         
         console.log(`   📤 Publishing large packet with ${largePacket.records.length} records`);
         try {
-            await client.publish(largePacket);
+            await client.publish(largePacket.to_bytes());
             console.log('   ✅ Large packet published successfully');
             
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            const resolvedLarge = await client.resolve(largeKeypair.public_key_string());
-            if (!resolvedLarge || resolvedLarge.records.length !== 10) {
-                console.log('   ⚠️  Large packet resolution returned different record count, but publish succeeded');
+            const resolvedLargeBytes = await client.resolve(largeKeypair.public_key_string());
+            if (!resolvedLargeBytes) {
+                console.log('   ⚠️  Large packet resolution returned no data, but publish succeeded');
             } else {
-                console.log('   ✅ Large packet handling test completed');
+                const resolvedLarge = WasmUtils.parseSignedPacket(resolvedLargeBytes);
+                if (resolvedLarge.records.length !== 10) {
+                    console.log('   ⚠️  Large packet resolution returned different record count, but publish succeeded');
+                } else {
+                    console.log('   ✅ Large packet handling test completed');
+                }
             }
         } catch (error) {
             // Large packets might hit network size limits, which is acceptable

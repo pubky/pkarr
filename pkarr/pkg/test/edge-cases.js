@@ -77,7 +77,7 @@ async function runEdgeCasesTests() {
         ];
         
         invalidKeys.forEach(key => {
-            const isValid = WasmUtils.validate_public_key(key);
+            const isValid = WasmUtils.validatePublicKey(key);
             if (isValid) {
                 throw new Error(`Invalid key marked as valid: ${key}`);
             }
@@ -86,7 +86,7 @@ async function runEdgeCasesTests() {
         // Test a valid key to ensure validation works
         const validKeypair = new WasmKeypair();
         const validKey = validKeypair.public_key_string();
-        const isValidKeyValid = WasmUtils.validate_public_key(validKey);
+        const isValidKeyValid = WasmUtils.validatePublicKey(validKey);
         if (!isValidKeyValid) {
             throw new Error("Valid key marked as invalid");
         }
@@ -365,7 +365,7 @@ async function runEdgeCasesTests() {
         });
         
         // Publish all concurrently
-        const publishPromises = packets.map(packet => client.publish(packet));
+        const publishPromises = packets.map(packet => client.publish(packet.to_bytes()));
         await Promise.all(publishPromises);
         
         // Wait for propagation
@@ -380,7 +380,8 @@ async function runEdgeCasesTests() {
             if (!result) {
                 throw new Error(`Concurrent operation ${index} failed to resolve`);
             }
-            if (result.public_key_string !== keypairs[index].public_key_string()) {
+            const parsedResult = WasmUtils.parseSignedPacket(result);
+            if (parsedResult.public_key_string !== keypairs[index].public_key_string()) {
                 throw new Error(`Concurrent operation ${index} returned wrong packet`);
             }
         });
@@ -398,7 +399,7 @@ async function runEdgeCasesTests() {
         
         try {
             // This might timeout, which is expected
-            await timeoutClient.publish(packet);
+            await timeoutClient.publish(packet.to_bytes());
             // If it succeeds despite short timeout, that's also okay
         } catch (error) {
             // Timeout errors are expected and acceptable
