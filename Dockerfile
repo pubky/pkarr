@@ -1,21 +1,14 @@
 # ========================
 # Build Stage
 # ========================
-FROM rust:1.82.0-alpine3.20 AS builder
+FROM rust:1.86.0-alpine3.20 AS builder
 
-# Install build dependencies, including static OpenSSL libraries
+# Install build dependencies
 RUN apk add --no-cache \
     musl-dev \
-    openssl-dev \
-    openssl-libs-static \
     pkgconfig \
     build-base \
     curl
-
-# Set environment variables for static linking with OpenSSL
-ENV OPENSSL_STATIC=yes
-ENV OPENSSL_LIB_DIR=/usr/lib
-ENV OPENSSL_INCLUDE_DIR=/usr/include
 
 # Add the MUSL target for static linking
 RUN rustup target add x86_64-unknown-linux-musl
