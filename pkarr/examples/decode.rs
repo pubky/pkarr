@@ -82,7 +82,10 @@ fn print_packet_info(packet: &SignedPacket) {
     let min_ttl = 300; // 5 minutes
     let max_ttl = 86400; // 24 hours
 
-    println!("\nCheck if TTL in between {}s min, {}s max", min_ttl, max_ttl);
+    println!(
+        "\nCheck if TTL in between {}s min, {}s max",
+        min_ttl, max_ttl
+    );
     if packet.is_expired(min_ttl, max_ttl) {
         println!("\nWarning: This packet is expired!");
     } else {
