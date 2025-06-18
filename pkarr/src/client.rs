@@ -349,22 +349,20 @@ impl Client {
         return relays_future.expect("infallible").await;
 
         #[cfg(all(dht, relays))]
-        return if dht_future.is_some() && relays_future.is_some() {
-            let result = publish_both_networks(
-                dht_future.expect("infallible"),
-                relays_future.expect("infallible"),
-            )
-            .await;
+        return if let Some(dht_future) = dht_future {
+            if let Some(relays_future) = relays_future {
+                let result = publish_both_networks(dht_future, relays_future).await;
 
-            self.0
-                .relays
-                .as_ref()
-                .expect("infallible")
-                .cancel_publish(&signed_packet.public_key());
+                self.0
+                    .relays
+                    .as_ref()
+                    .expect("infallible")
+                    .cancel_publish(&signed_packet.public_key());
 
-            result
-        } else if dht_future.is_some() {
-            dht_future.expect("infallible").await
+                result
+            } else {
+                dht_future.await
+            }
         } else {
             relays_future.expect("infallible").await
         };
