@@ -55,3 +55,41 @@ Arguments:
 ```
 
 And you should see a `Hello, World!` response.
+
+### Decode
+
+Checks whether a binary file is a `SignedPacket` from Pkarr. You can obtain such a file with:
+
+```sh
+curl --output packet.bin -X GET https://pkarr.pubky.app/57ipp7cyxoghrxqk1koh3n5bk5ke1hsz9oo3cn93n1r3htxcpz1o
+```
+
+Place `packet.bin` in the project root, or provide a custom path as an argument:
+
+```sh
+cargo run --example decode -- 57ipp7cyxoghrxqk1koh3n5bk5ke1hsz9oo3cn93n1r3htxcpz1o packet.bin
+```
+```
+Arguments:
+  <Public key ed25519>  <File with Pkarr signed packet>
+```
+
+```
+Public key: 57ipp7cyxoghrxqk1koh3n5bk5ke1hsz9oo3cn93n1r3htxcpz1o
+Reading file: packet.bin
+
+Successfully verified and deserialized packet!
+
+Public Key: 57ipp7cyxoghrxqk1koh3n5bk5ke1hsz9oo3cn93n1r3htxcpz1o
+Timestamp: 1750175589279005 (Tue, 17 Jun 2025 15:53:09 GMT)
+Last Seen: 0 seconds ago
+Signature: C8AC96B30B2879B3386AEDCACB9EAAF6A26E3066C021DB3E73EABC0C27965E84B71F5FF5C2C4947AFF6403EAC8407F64C1429BA1367D6C5B47F5E680A89AEB03
+
+DNS Records:
+_foo.57ipp7cyxoghrxqk1koh3n5bk5ke1hsz9oo3cn93n1r3htxcpz1o 30 IN IN TXT "bar"
+
+Check if TTL in between 300s min, 86400s max
+
+Packet expires in 300 seconds
+```
+
