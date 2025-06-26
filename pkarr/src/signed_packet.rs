@@ -1,6 +1,6 @@
 //! Signed DNS packet
 
-#[cfg(feature = "wasm")]
+#[cfg(all(feature = "wasm", target_family = "wasm"))]
 use {
     js_sys::{self},
     wasm_bindgen::prelude::*,
@@ -11,9 +11,12 @@ use bytes::{Bytes, BytesMut};
 use ed25519_dalek::{Signature, SignatureError};
 use self_cell::self_cell;
 use simple_dns::{
-    rdata::{RData, A, AAAA, CNAME, HTTPS, SVCB, TXT},
+    rdata::{RData, A, AAAA, HTTPS, SVCB, TXT},
     Name, Packet, ResourceRecord, SimpleDnsError, CLASS,
 };
+
+#[cfg(any(all(feature = "wasm", target_family = "wasm"), test))]
+use simple_dns::rdata::CNAME;
 use std::{
     char,
     fmt::{self, Debug, Display, Formatter},
@@ -27,7 +30,7 @@ use ntimestamp::Timestamp;
 #[derive(Debug, Clone, Default)]
 /// A builder for [SignedPacket] with many convenient methods,
 /// see [SignedPacket::builder] documentation for examples of how to use this builder.
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(all(feature = "wasm", target_family = "wasm"), wasm_bindgen)]
 pub struct SignedPacketBuilder {
     records: Vec<ResourceRecord<'static>>,
     timestamp: Option<Timestamp>,
@@ -144,7 +147,7 @@ impl SignedPacketBuilder {
     }
 }
 
-#[cfg(feature = "wasm")]
+#[cfg(all(feature = "wasm", target_family = "wasm"))]
 #[wasm_bindgen]
 impl SignedPacketBuilder {
     /// Create a new SignedPacketBuilder for WASM
@@ -334,7 +337,7 @@ impl Inner {
 
 #[derive(PartialEq, Eq)]
 /// Signed DNS packet
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
+#[cfg_attr(all(feature = "wasm", target_family = "wasm"), wasm_bindgen)]
 pub struct SignedPacket {
     inner: Inner,
     last_seen: Timestamp,
@@ -920,8 +923,6 @@ pub enum SignedPacketBuildError {
 
 #[cfg(test)]
 mod tests {
-    use simple_dns::rdata::CNAME;
-
     use super::*;
 
     use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
@@ -1308,7 +1309,7 @@ mod tests {
     }
 }
 
-#[cfg(feature = "wasm")]
+#[cfg(all(feature = "wasm", target_family = "wasm"))]
 #[wasm_bindgen]
 impl SignedPacket {
     /// Get the public key as a z-base32 string
