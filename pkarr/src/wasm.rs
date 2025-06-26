@@ -221,10 +221,10 @@ pub struct WasmUtils;
 impl WasmUtils {
     /// Parse a signed packet from bytes and validate it
     #[wasm_bindgen(js_name = "parseSignedPacket")]
-    pub fn parse_signed_packet(bytes: &[u8]) -> Result<SignedPacket, JsValue> {
+    pub fn parse_signed_packet(bytes: &[u8]) -> Result<js_sys::Uint8Array, JsValue> {
         let signed_packet = SignedPacket::deserialize(bytes)
             .map_err(|e| JsValue::from_str(&format!("Invalid signed packet: {}", e)))?;
-        Ok(signed_packet)
+        Ok(js_sys::Uint8Array::from(&signed_packet.serialize()[..]))
     }
 
     /// Validate a public key string
@@ -245,7 +245,7 @@ impl WasmUtils {
 }
 
 /// Initialize console error panic hook for better debugging
-#[wasm_bindgen(start)]
+// #[wasm_bindgen(start)]
 pub fn main() {
     console_error_panic_hook::set_once();
 }
