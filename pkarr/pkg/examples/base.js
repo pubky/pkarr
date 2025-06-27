@@ -11,6 +11,8 @@
 
 const { Client, WasmKeypair, SignedPacket, WasmUtils } = require('../pkarr.js');
 
+// Helper function moved to WasmUtils.formatRecordValue
+
 async function runTests() {
     console.log('🧪 Starting Pkarr WASM Test Suite...\n');
     console.log('=' .repeat(60));
@@ -33,17 +35,21 @@ async function runTests() {
         console.log(`✅ Generated keypair with public key: ${publicKey}`);
         
         // Test 4: Signed packet creation
-        console.log('📦 Creating signed packet...');
+        console.log('📦 Creating signed packet with all record types...');
         const builder = SignedPacket.builder();
         builder.addTxtRecord("_test", "wasm-test=true", 3600);
         builder.addARecord("www", "192.168.1.1", 3600);
         builder.addAAAARecord("www", "2001:db8::1", 3600);
+        builder.addCnameRecord("alias", "www", 3600);
+        builder.addHttpsRecord("_443._tcp", 1, "server.example.com", 3600);
+        builder.addSvcbRecord("_service._tcp", 10, "backup.example.com", 3600);
+        builder.addNsRecord("subdomain", "ns1.example.com", 3600);
         
         const signedPacket = builder.buildAndSign(keypair);
         console.log('✅ Signed packet created');
         console.log(`   - Public key: ${signedPacket.public_key_string}`);
         console.log(`   - Timestamp: ${signedPacket.timestamp_ms}`);
-        console.log(`   - Records: ${signedPacket.records.length} DNS records`);
+        console.log(`   - Records: ${signedPacket.records.length} DNS records (A, AAAA, TXT, CNAME, HTTPS, SVCB, NS)`);
         
         // Test 5: Publishing
         console.log('📤 Publishing signed packet to relays...');
@@ -64,7 +70,18 @@ async function runTests() {
             
             // Parse the resolved bytes back to a SignedPacket
             const resolvedPacketBytes2 = WasmUtils.parseSignedPacket(resolvedPacketBytes);
+            const resolvedPacket = SignedPacket.fromBytes(resolvedPacketBytes2);
+            console.log('✅ Resolved packet details:');
+            console.log(`   - Public key: ${resolvedPacket.public_key_string}`);
+            console.log(`   - Timestamp: ${resolvedPacket.timestamp_ms}`);
+            console.log(`   - Records: ${resolvedPacket.records.length} DNS records`);
             
+            // Display all DNS records
+            console.log('   - DNS Records:');
+            resolvedPacket.records.forEach((record, index) => {
+                const formattedValue = WasmUtils.formatRecordValue(record.rdata);
+                console.log(`     [${index}] ${record.name} IN ${record.ttl}s ${record.rdata.type} ${formattedValue}`);
+            });
             // For demonstration, let's create a new SignedPacket from the bytes
             // (In practice, you would have helper functions to work with the bytes)
             console.log(`   - Resolved ${resolvedPacketBytes.length} bytes`);
@@ -92,6 +109,7 @@ async function runTests() {
         console.log('   ✅ WASM initialization: SUCCESS');
         console.log('   ✅ Client creation: SUCCESS');
         console.log('   ✅ Keypair generation: SUCCESS');
+        console.log('   ✅ Complete DNS record support: A, AAAA, TXT, CNAME, HTTPS, SVCB, NS');
         console.log('   ✅ Signed packet creation: SUCCESS');
         console.log('   ✅ Methods work directly on client instance');
         console.log('   ✅ Returns SignedPacket objects correctly');

@@ -13,6 +13,7 @@ fi
 echo "🔨 Building WASM..."
 wasm-pack build --target nodejs --out-dir pkg --features wasm
 
+echo ""
 # Fix .gitignore content (wasm-pack creates it with "*" but we want "p*")
 echo "📝 Fixing .gitignore content..."
 echo "pkarr*" > pkg/.gitignore

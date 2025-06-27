@@ -227,6 +227,54 @@ impl WasmUtils {
         Ok(js_sys::Uint8Array::from(&signed_packet.serialize()[..]))
     }
 
+    /// Format a DNS record value for display
+    #[wasm_bindgen(js_name = "formatRecordValue")]
+    pub fn format_record_value(rdata: &JsValue) -> Result<String, JsValue> {
+        let record_type = js_sys::Reflect::get(rdata, &JsValue::from_str("type"))?
+            .as_string()
+            .unwrap_or_default();
+
+        match record_type.as_str() {
+            "A" | "AAAA" => {
+                let address = js_sys::Reflect::get(rdata, &JsValue::from_str("address"))?
+                    .as_string()
+                    .unwrap_or_default();
+                Ok(address)
+            }
+            "CNAME" => {
+                let target = js_sys::Reflect::get(rdata, &JsValue::from_str("target"))?
+                    .as_string()
+                    .unwrap_or_default();
+                Ok(target)
+            }
+            "TXT" => {
+                let value = js_sys::Reflect::get(rdata, &JsValue::from_str("value"))?
+                    .as_string()
+                    .unwrap_or_default();
+                Ok(value)
+            }
+            "HTTPS" | "SVCB" => {
+                let priority = js_sys::Reflect::get(rdata, &JsValue::from_str("priority"))?
+                    .as_f64()
+                    .unwrap_or(0.0) as u16;
+                let target = js_sys::Reflect::get(rdata, &JsValue::from_str("target"))?
+                    .as_string()
+                    .unwrap_or_default();
+                Ok(format!("{} {}", priority, target))
+            }
+            "NS" => {
+                let nsdname = js_sys::Reflect::get(rdata, &JsValue::from_str("nsdname"))?
+                    .as_string()
+                    .unwrap_or_default();
+                Ok(nsdname)
+            }
+            _ => {
+                // For unknown types, return a JSON-like representation
+                Ok(format!("{:?}", rdata))
+            }
+        }
+    }
+
     /// Validate a public key string
     #[wasm_bindgen(js_name = "validatePublicKey")]
     pub fn validate_public_key(public_key_str: &str) -> bool {
@@ -242,10 +290,4 @@ impl WasmUtils {
         }
         relays
     }
-}
-
-/// Initialize console error panic hook for better debugging
-// #[wasm_bindgen(start)]
-pub fn main() {
-    console_error_panic_hook::set_once();
 }

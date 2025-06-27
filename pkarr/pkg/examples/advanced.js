@@ -3,7 +3,7 @@
  * 
  * This example demonstrates advanced usage of pkarr WASM bindings:
  * - Custom relay configuration
- * - Multiple DNS record types
+ * - All 7 DNS record types (A, AAAA, TXT, CNAME, HTTPS, SVCB, NS)
  * - Error handling and retry logic
  * - Compare-and-swap publishing
  * - Resolving most recent packets
@@ -67,8 +67,21 @@ async function advancedExample() {
         builder.addCnameRecord("blog", "www", 3600);
         builder.addCnameRecord("docs", "www", 3600);
         
+        // HTTPS service records (modern service discovery)
+        builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
+        builder.addHttpsRecord("_443._tcp", 2, "backup.example.com", 7200);
+        
+        // SVCB service binding records
+        builder.addSvcbRecord("_api._tcp", 10, "api-primary.example.com", 3600);
+        builder.addSvcbRecord("_api._tcp", 20, "api-backup.example.com", 3600);
+        
+        // NS records for subdomain delegation
+        builder.addNsRecord("subdomain", "ns1.example.com", 86400);
+        builder.addNsRecord("subdomain", "ns2.example.com", 86400);
+        
         // Set custom timestamp (optional - defaults to current time)
         const customTimestamp = Date.now();
+        console.log(`   📅 Setting custom timestamp: ${new Date(customTimestamp).toISOString()}`);
         builder.setTimestamp(customTimestamp);
         
         console.log(`📝 Created packet with ${builder.recordCount()} DNS records`);
@@ -77,8 +90,15 @@ async function advancedExample() {
         const signedPacket = builder.buildAndSign(keypair);
         console.log('✅ Packet signed');
         console.log(`   Public key: ${signedPacket.public_key_string}`);
-        console.log(`   Timestamp: ${signedPacket.timestamp_ms}`);
+        console.log(`   Timestamp: ${new Date(signedPacket.timestamp_ms / 1000).toISOString()} (${signedPacket.timestamp_ms})`);
         console.log(`   Records: ${signedPacket.records.length}`);
+        
+        // Display all records in a nice format
+        console.log('   📋 DNS Records:');
+        signedPacket.records.forEach((record, index) => {
+            const formattedValue = WasmUtils.formatRecordValue(record.rdata);
+            console.log(`      [${index}] ${record.name} IN ${record.ttl}s ${record.rdata.type} ${formattedValue}`);
+        });
         console.log();
         
         // Step 4: Publish with error handling and retry logic
@@ -120,15 +140,23 @@ async function advancedExample() {
             console.log(`   Resolved ${mostRecentPacketBytes.length} bytes`);
             
             // Parse the bytes to get packet info
-            mostRecentPacket = WasmUtils.parseSignedPacket(mostRecentPacketBytes);
-            console.log(`   Timestamp: ${mostRecentPacket.timestamp_ms}`);
-            console.log(`   Records: ${mostRecentPacket.records.length}`);
-            
-            // Compare timestamps
-            if (mostRecentPacket.timestamp_ms === signedPacket.timestamp_ms) {
-                console.log('🎉 Timestamps match - this is our packet!');
-            } else {
-                console.log('📅 Different timestamp - there might be a newer packet');
+            try {
+                const parsedBytes = WasmUtils.parseSignedPacket(mostRecentPacketBytes);
+                mostRecentPacket = SignedPacket.fromBytes(parsedBytes);
+                console.log(`   Timestamp: ${new Date(mostRecentPacket.timestamp_ms / 1000).toISOString()} (${mostRecentPacket.timestamp_ms})`);
+                console.log(`   Records: ${mostRecentPacket.records.length}`);
+                
+                // Compare timestamps
+                if (mostRecentPacket.timestamp_ms === signedPacket.timestamp_ms) {
+                    console.log('🎉 Timestamps match - this is our packet!');
+                } else {
+                    console.log('📅 Different timestamp - there might be a newer packet');
+                    console.log(`   📊 Original: ${new Date(signedPacket.timestamp_ms / 1000).toISOString()}`);
+                    console.log(`   📊 Resolved: ${new Date(mostRecentPacket.timestamp_ms / 1000).toISOString()}`);
+                }
+            } catch (error) {
+                console.log(`   ❌ Failed to parse packet: ${error.message}`);
+                console.log('   📦 Raw packet bytes available for manual processing');
             }
         } else {
             console.log('❌ No packet found');
@@ -143,18 +171,22 @@ async function advancedExample() {
         updatedBuilder.addTxtRecord("_service", "v=2;type=web;updated=true", 3600);
         updatedBuilder.addTxtRecord("last-update", new Date().toISOString(), 3600);
         updatedBuilder.addARecord("www", "192.168.1.200", 3600); // Updated IP
+        updatedBuilder.addHttpsRecord("_443._tcp", 1, "new-primary.example.com", 3600); // Updated service
         
         const updatedPacket = updatedBuilder.buildAndSign(keypair);
         
         // Use the previous packet's timestamp as CAS
-        const casTimestamp = mostRecentPacket ? mostRecentPacket.timestamp_ms : null;
+        // Note: timestamp_ms is in microseconds, but CAS expects milliseconds
+        const casTimestamp = mostRecentPacket ? mostRecentPacket.timestamp_ms / 1000 : signedPacket.timestamp_ms / 1000;
+        const casDate = new Date(casTimestamp).toISOString();
+        console.log(`   Using CAS timestamp: ${casDate} (${casTimestamp})`);
         
         try {
             await client.publish(updatedPacket.to_bytes(), casTimestamp);
             console.log('✅ Compare-and-swap publish successful!');
         } catch (error) {
-            console.log(`❌ Compare-and-swap failed: ${error.message}`);
-            console.log('   This might happen if another update occurred concurrently');
+            const errorMessage = error?.message || error?.toString() || 'Unknown error';
+            console.log(`❌ Compare-and-swap failed: ${errorMessage}`);
         }
         console.log();
         
@@ -173,7 +205,7 @@ async function advancedExample() {
             const parsedPacket = WasmUtils.parseSignedPacket(packetBytes);
             console.log('✅ Packet parsing successful');
             console.log(`   Parsed public key: ${parsedPacket.public_key_string}`);
-            console.log(`   Parsed timestamp: ${parsedPacket.timestamp_ms}`);
+            console.log(`   Parsed timestamp: ${new Date(parsedPacket.timestamp_ms / 1000).toISOString()} (${parsedPacket.timestamp_ms})`);
         } catch (error) {
             console.log(`❌ Packet parsing failed: ${error.message}`);
         }
@@ -181,7 +213,7 @@ async function advancedExample() {
         console.log('\n🎉 Advanced example completed successfully!');
         console.log('\n📋 Summary of demonstrated features:');
         console.log('   ✅ Custom relay configuration');
-        console.log('   ✅ Multiple DNS record types (TXT, A, AAAA, CNAME)');
+        console.log('   ✅ All 7 DNS record types (TXT, A, AAAA, CNAME, HTTPS, SVCB, NS)');
         console.log('   ✅ Error handling and retry logic');
         console.log('   ✅ Compare-and-swap publishing');
         console.log('   ✅ Most recent packet resolution');

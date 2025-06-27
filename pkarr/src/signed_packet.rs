@@ -11,7 +11,7 @@ use bytes::{Bytes, BytesMut};
 use ed25519_dalek::{Signature, SignatureError};
 use self_cell::self_cell;
 use simple_dns::{
-    rdata::{RData, A, AAAA, HTTPS, SVCB, TXT},
+    rdata::{RData, A, AAAA, HTTPS, NS, SVCB, TXT},
     Name, Packet, ResourceRecord, SimpleDnsError, CLASS,
 };
 
@@ -120,6 +120,14 @@ impl SignedPacketBuilder {
     /// (the public key, of the keypair used in [Self::sign])
     pub fn svcb(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
         self.rdata(name, RData::SVCB(svcb), ttl)
+    }
+
+    /// Insert an `NS` record
+    ///
+    /// You can set the name to `.` to point or the Apex
+    /// (the public key, of the keypair used in [Self::sign])
+    pub fn ns(self, name: Name<'_>, nsdname: NS, ttl: u32) -> Self {
+        self.rdata(name, RData::NS(nsdname), ttl)
     }
 
     /// Add a custom [Timestamp].
@@ -296,6 +304,71 @@ impl SignedPacketBuilder {
     pub fn clear(&mut self) {
         self.records.clear();
         self.timestamp = None;
+    }
+
+    /// Add an HTTPS record to the packet
+    ///
+    /// # Arguments
+    /// * `name` - The domain name
+    /// * `priority` - Service priority (0-65535)
+    /// * `target` - The target server domain name
+    /// * `ttl` - Time to live in seconds
+    #[wasm_bindgen(js_name = "addHttpsRecord")]
+    pub fn add_https_record(
+        &mut self,
+        name: &str,
+        priority: u16,
+        target: &str,
+        ttl: u32,
+    ) -> Result<(), JsValue> {
+        let name = Name::new_unchecked(name);
+        let target_name = Name::new_unchecked(target);
+        let svcb = SVCB::new(priority, target_name);
+
+        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::HTTPS(HTTPS(svcb)));
+        self.records.push(record.into_owned());
+        Ok(())
+    }
+
+    /// Add an SVCB (Service Binding) record to the packet
+    ///
+    /// # Arguments
+    /// * `name` - The domain name
+    /// * `priority` - Service priority (0-65535)
+    /// * `target` - The target server domain name
+    /// * `ttl` - Time to live in seconds
+    #[wasm_bindgen(js_name = "addSvcbRecord")]
+    pub fn add_svcb_record(
+        &mut self,
+        name: &str,
+        priority: u16,
+        target: &str,
+        ttl: u32,
+    ) -> Result<(), JsValue> {
+        let name = Name::new_unchecked(name);
+        let target_name = Name::new_unchecked(target);
+        let svcb = SVCB::new(priority, target_name);
+
+        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::SVCB(svcb));
+        self.records.push(record.into_owned());
+        Ok(())
+    }
+
+    /// Add an NS (Name Server) record to the packet
+    ///
+    /// # Arguments
+    /// * `name` - The domain name
+    /// * `nameserver` - The nameserver domain name
+    /// * `ttl` - Time to live in seconds
+    #[wasm_bindgen(js_name = "addNsRecord")]
+    pub fn add_ns_record(&mut self, name: &str, nameserver: &str, ttl: u32) -> Result<(), JsValue> {
+        let name = Name::new_unchecked(name);
+        let ns_name = Name::new_unchecked(nameserver);
+        let ns = NS(ns_name);
+
+        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::NS(ns));
+        self.records.push(record.into_owned());
+        Ok(())
     }
 }
 
@@ -1400,10 +1473,12 @@ impl SignedPacket {
                         &JsValue::from_str("TXT"),
                     )
                     .unwrap();
+                    // Extract the actual text content from TXT record
+                    let text_content = txt.clone().try_into().unwrap_or_else(|_| "".to_string());
                     js_sys::Reflect::set(
                         &rdata_obj,
                         &JsValue::from_str("value"),
-                        &JsValue::from_str(&format!("{:?}", txt)),
+                        &JsValue::from_str(&text_content),
                     )
                     .unwrap();
                 }
@@ -1451,6 +1526,21 @@ impl SignedPacket {
                     )
                     .unwrap();
                 }
+                RData::NS(ns) => {
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("type"),
+                        &JsValue::from_str("NS"),
+                    )
+                    .unwrap();
+
+                    js_sys::Reflect::set(
+                        &rdata_obj,
+                        &JsValue::from_str("nsdname"),
+                        &JsValue::from_str(&ns.0.to_string()),
+                    )
+                    .unwrap();
+                }
                 _ => {
                     // Skip unsupported record types
                     continue;
@@ -1475,5 +1565,12 @@ impl SignedPacket {
     #[wasm_bindgen(js_name = "builder")]
     pub fn wasm_builder() -> SignedPacketBuilder {
         SignedPacketBuilder::default()
+    }
+
+    /// Create a SignedPacket from bytes (static method for WASM)
+    #[wasm_bindgen(js_name = "fromBytes")]
+    pub fn from_bytes_wasm(bytes: &[u8]) -> Result<SignedPacket, JsValue> {
+        SignedPacket::deserialize(bytes)
+            .map_err(|e| JsValue::from_str(&format!("Invalid signed packet: {}", e)))
     }
 }
