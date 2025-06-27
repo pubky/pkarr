@@ -2,6 +2,7 @@
 
 use wasm_bindgen_test::*;
 
+// Configure tests to run in browser
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 use crate::{Client, Keypair, SignedPacket};
