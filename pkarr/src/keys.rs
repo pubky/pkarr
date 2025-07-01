@@ -77,7 +77,7 @@ impl PublicKey {
 
     /// Format the public key as `pk:` URI string.
     pub fn to_uri_string(&self) -> String {
-        format!("pk:{}", self)
+        format!("pk:{self}")
     }
 
     /// Verify a signature over a message.
@@ -136,6 +136,12 @@ impl TryFrom<&[u8; 32]> for PublicKey {
             VerifyingKey::from_bytes(public)
                 .map_err(|_| PublicKeyError::InvalidEd25519PublicKey)?,
         ))
+    }
+}
+
+impl From<VerifyingKey> for PublicKey {
+    fn from(verifying_key: VerifyingKey) -> Self {
+        Self(verifying_key)
     }
 }
 
@@ -261,7 +267,7 @@ impl Debug for Keypair {
 
 impl Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PublicKey({})", self)
+        write!(f, "PublicKey({self})")
     }
 }
 

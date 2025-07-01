@@ -14,6 +14,8 @@ pub mod cache;
 #[cfg(not(wasm_browser))]
 pub mod blocking;
 pub mod builder;
+#[cfg(not(wasm_browser))]
+mod futures;
 #[cfg(relays)]
 mod relays;
 
@@ -22,6 +24,8 @@ mod tests;
 #[cfg(all(test, wasm_browser))]
 mod tests_web;
 
+#[cfg(not(wasm_browser))]
+use futures::publish_both_networks;
 use futures_lite::{Stream, StreamExt};
 use ntimestamp::Timestamp;
 use std::future::Future;
@@ -62,12 +66,22 @@ impl Client {
         let cache = if config.cache_size == 0 {
             None
         } else {
-            Some(
-                config.cache.clone().unwrap_or(Arc::new(InMemoryCache::new(
-                    NonZeroUsize::new(config.cache_size)
-                        .expect("if cache size is zero cache should be disabled."),
-                ))),
-            )
+            let cache = config.cache.clone();
+
+            if let Some(cache) = cache {
+                if cache.capacity() == 0 {
+                    None
+                } else {
+                    Some(cache)
+                }
+            } else {
+                Some(
+                    cache.unwrap_or(Arc::new(InMemoryCache::new(
+                        NonZeroUsize::new(config.cache_size)
+                            .expect("if cache size is zero cache should be disabled."),
+                    ))),
+                )
+            }
         };
 
         cross_debug!("Starting Pkarr Client {:?}", config);
@@ -162,7 +176,7 @@ impl Client {
     ///
     /// #[tokio::main]
     /// async fn run() -> anyhow::Result<()> {
-    ///     let testnet = Testnet::new(3)?;
+    ///     let testnet = Testnet::new_async(3).await?;
     ///     let client = Client::builder()
     ///         // Disable the default network settings (builtin relays and mainline bootstrap nodes).
     ///         .no_default_network()
@@ -287,13 +301,7 @@ impl Client {
         {
             if cached.more_recent_than(signed_packet) {
                 return Err(ConcurrencyError::NotMostRecent)?;
-            }
-        } else if let Some(cas) = cas {
-            if let Some(cached) = self
-                .cache()
-                .as_ref()
-                .and_then(|cache| cache.get(&cache_key))
-            {
+            } else if let Some(cas) = cas {
                 if cached.timestamp() != cas {
                     return Err(ConcurrencyError::CasFailed)?;
                 }
@@ -315,19 +323,24 @@ impl Client {
     ) -> Result<(), PublishError> {
         // Handle DHT and Relay futures based on feature flags and target family
         #[cfg(dht)]
-        let dht_future = self.dht().map(|node| async {
-            node.as_async()
-                .put_mutable(signed_packet.into(), cas.map(|t| t.as_u64() as i64))
-                .await
-                .map(|_| Ok(()))?
-        });
+        let dht_future = {
+            let signed_packet = signed_packet.clone();
+            self.dht().map(|node| async move {
+                node.as_async()
+                    .put_mutable((&signed_packet).into(), cas.map(|t| t.as_u64() as i64))
+                    .await
+                    .map(|_| Ok(()))?
+            })
+        };
 
         #[cfg(relays)]
-        let relays_future = self
-            .0
-            .relays
-            .as_ref()
-            .map(|relays| relays.publish(signed_packet, cas));
+        let relays_future = {
+            let signed_packet = signed_packet.clone();
+            self.0
+                .relays
+                .clone()
+                .map(|relays| async move { relays.publish(&signed_packet, cas).await })
+        };
 
         #[cfg(all(dht, not(relays)))]
         return dht_future.expect("infallible").await;
@@ -336,22 +349,20 @@ impl Client {
         return relays_future.expect("infallible").await;
 
         #[cfg(all(dht, relays))]
-        return if dht_future.is_some() && relays_future.is_some() {
-            let result = futures_lite::future::or(
-                dht_future.expect("infallible"),
-                relays_future.expect("infallible"),
-            )
-            .await;
+        return if let Some(dht_future) = dht_future {
+            if let Some(relays_future) = relays_future {
+                let result = publish_both_networks(dht_future, relays_future).await;
 
-            self.0
-                .relays
-                .as_ref()
-                .expect("infallible")
-                .cancel_publish(&signed_packet.public_key());
+                self.0
+                    .relays
+                    .as_ref()
+                    .expect("infallible")
+                    .cancel_publish(&signed_packet.public_key());
 
-            result
-        } else if dht_future.is_some() {
-            dht_future.expect("infallible").await
+                result
+            } else {
+                dht_future.await
+            }
         } else {
             relays_future.expect("infallible").await
         };
@@ -448,6 +459,8 @@ impl Client {
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
+        use futures::select_stream;
+
         #[cfg(dht)]
         let dht_stream = match self.dht() {
             Some(node) => map_dht_stream(node.as_async().get_mutable(
@@ -472,11 +485,11 @@ impl Client {
         return relays_stream.expect("infallible");
 
         #[cfg(all(dht, relays))]
-        Box::pin(match (dht_stream, relays_stream) {
+        match (dht_stream, relays_stream) {
             (Some(s), None) | (None, Some(s)) => s,
-            (Some(a), Some(b)) => Box::pin(futures_lite::stream::or(a, b)),
+            (Some(a), Some(b)) => Box::pin(select_stream(a, b)),
             (None, None) => unreachable!("should not create a client with no network"),
-        })
+        }
     }
 }
 
@@ -518,7 +531,7 @@ fn filter_incoming_signed_packet(
 fn map_dht_stream(
     stream: mainline::async_dht::GetStream<mainline::MutableItem>,
 ) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
-    return Some(
+    Some(
         stream
             .filter_map(
                 move |mutable_item| match SignedPacket::try_from(mutable_item) {
@@ -530,7 +543,7 @@ fn map_dht_stream(
                 },
             )
             .boxed(),
-    );
+    )
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -568,7 +581,7 @@ pub enum PublishError {
     UnexpectedResponses,
 }
 
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 /// Errors that requires either a retry or debugging the network condition.
 pub enum QueryError {
     /// Publish query timed out with no responses neither success or errors, from Dht or relays.
@@ -586,39 +599,6 @@ pub enum QueryError {
     #[error("Most relays responded with bad request")]
     /// Most relays responded with bad request
     BadRequest,
-}
-
-impl Eq for QueryError {
-    fn assert_receiver_is_total_eq(&self) {}
-}
-
-impl PartialEq for QueryError {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            #[cfg(dht)]
-            (
-                QueryError::DhtErrorResponse(self_error, _),
-                QueryError::DhtErrorResponse(other_error, _),
-            ) => self_error == other_error,
-            (s, o) => s == o,
-        }
-    }
-}
-
-impl Hash for QueryError {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            QueryError::Timeout => 0.hash(state),
-            QueryError::NoClosestNodes => 1.hash(state),
-            QueryError::DhtErrorResponse(code, _) => {
-                let mut bytes = vec![2];
-                bytes.extend_from_slice(&code.to_be_bytes());
-
-                state.write(bytes.as_slice());
-            }
-            QueryError::BadRequest => 3.hash(state),
-        }
-    }
 }
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]

@@ -4,9 +4,7 @@
 
 [![Try the demo](https://img.shields.io/badge/Try%20the-Demo-blue)](https://app.pkarr.org) [![View Examples](https://img.shields.io/badge/View-Examples-green)](./pkarr/examples/README.md) [![Crates.io](https://img.shields.io/crates/v/pkarr)](https://crates.io/crates/pkarr) [![Documentation](https://img.shields.io/badge/docs-design-orange)](./design/README.md) [![License](https://img.shields.io/badge/license-MIT-purple)](./LICENSE)
 
-*The simplest possible integration between DNS and P2P networks, enabling self-issued public keys to function as sovereign, censorship-resistant top-level domains.*
-
-[Quick Start](#tldr) • [Architecture](#architecture) • [Documentation](./design/README.md) • [FAQ](#faq)
+[TLDR](#tldr) • [Demo](#demo) • [Architecture](#architecture) • [Specifications](./design/README.md) • [FAQ](#faq)
 
 --- 
 
@@ -16,22 +14,15 @@ Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89u
 
 ## TLDR
 - To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
-- To resolve a key's resources, applications query the DHT directly or through a [relay](./design/relays.md), and verify the signature themselves. 
-- Clients and Relays extensively cache records and minimize DHT traffic for improved scalability. 
-- The DHT drops records after a few hours, so users, their friends, or service providers need to periodically republish their records. Additionally, Pkarr relays can republish recently requested records to keep popular records alive.
-- Optional: Existing applications unaware of Pkarr can still function if the user adds Pkarr-aware DNS servers to their operating system's DNS configuration. 
+- To resolve some key's resources, applications query the DHT directly, or through a [relay](./design/relays.md), and verify the signature themselves. 
+- Clients and Relays cache records extensively and minimize DHT traffic as much as possible for improved scalability. 
+- The DHT drops records after a few hours, so users, their friends, or service providers should periodically republish their records to the DHT. Also Pkarr relays could republish records recently requested, to keep popular records alive too.
+- Optional: Existing applications unaware of Pkarr can still function if the user added a Pkarr-aware DNS servers to their operating system DNS servers. 
 
-## Demo
+## Demo 
 
-Try the [web app demo](https://app.pkarr.org)
-
+Try the [web app demo](https://pkdns.net)
 Or if you prefer Rust, check out our [Examples](./pkarr/examples/README.md) 
-
-## Contents
-- [Architecture](#architecture)
-- [Expectations](#expectations)
-- [Why](#why)
-- [FAQ](#faq)
  
 ## Architecture
 
@@ -65,10 +56,10 @@ sequenceDiagram
 
 Native applications can directly query and verify signed records from the DHT if they are not behind NAT. Otherwise, they will need to use a Pkarr Relay.
 
-Browser web apps should try calling the local Pkarr relay at the default port `6881`. If not accessible, they must query a remote relay as a fallback. In either case, these apps should allow users to configure relays of their choice.
- 
+Browser web apps should try calling the local Pkarr relay at the default port 6881. If not accessible, they must query a remote relay as a fallback. In either case, these apps should allow users to configure relays of their choice.
+
 Clients with private keys can also submit signed records either directly to the DHT or through a Pkarr relay to update their records when needed.
- 
+
 #### Existing Applications
 To support existing applications that are unaware of Pkarr, users will need to (manually or programmatically) edit their OS DNS servers to add one or more DNS servers that recognize Pkarr and query the DHT. However, the ideal outcome would be adoption by existing widely used resolvers like `1.1.1.1` (Cloudflare) and `8.8.8.8` (Google).
 
@@ -133,7 +124,7 @@ Addressing Distributed Discovery first makes the most sense for several reasons:
 
 ### Leverage
 
-**Solve the most issues...**
+**Solve the most issues**
 
 Pkarr solves **unavailability** by turning public keys into resolvable URLs: resource **locator**.
 Pkarr solves **censorship and deplatforming** by allowing users to conveniently change DNS records to point to other providers or platforms. While there are other ways to do this, it is never as reliable and authoritative as DNS.
@@ -141,7 +132,7 @@ Pkarr helps with **key management** by enabling users to maintain a long-lasting
 
 Finally, by solving censorship and deplatforming in a sovereign way, the need for signed data becomes less urgent, and we buy more time to figure out the UX of signing everything everywhere all the time.
 
-**... with least work possible ...**
+**with least work possible**
 
 Pkarr doesn't need to bootstrap anything or invent anything, instead using 15 years old battle tested Distributed Hash Table (Mainline DHT) with millions of nodes, and good old web servers.
 
@@ -174,8 +165,23 @@ Open social networks often attempt to solve discovery natively within their netw
 </details>
 
 <details>
-<summary><strong>How can I run the Pkarr server?</strong></summary>
+<summary><strong>How can I run the Pkarr relay?</strong></summary>
 
-You can find building instruction [here](./server/README.md).
+To build and run the Pkarr relay using Docker, you could use a small `docker-compose.yml` such as:
+
+```yaml
+services:
+  pkarr:
+    container_name: pkarr
+    build: .
+    volumes: 
+      - ./config.toml:/config.toml
+      - .pkarr_cache:/cache
+    command: pkarr-relay --config=/config.toml
+```
+Alternatively, lunch docker correctly attaching the `config.toml` as a volume in the right location. In the example above `.pkarr_cache` relative directory is used to permanently store pkarr cached keys.
+
+An example `./config.toml` can be copied from `./src/config.example.toml` and customized as needed.
+
+This will make the Pkarr relay accessible at http://localhost:6881.
 </details>
-

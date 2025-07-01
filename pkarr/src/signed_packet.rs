@@ -582,7 +582,7 @@ fn normalize_name(origin: &str, name: String) -> String {
         return origin.to_string();
     }
 
-    format!("{}.{}", name, origin)
+    format!("{name}.{origin}")
 }
 
 #[cfg(dht)]
@@ -788,15 +788,15 @@ mod tests {
         assert_eq!(normalize_name(origin, origin.to_string()), origin);
         assert_eq!(
             normalize_name(origin, "_derp_region.irorh".to_string()),
-            format!("_derp_region.irorh.{}", origin)
+            format!("_derp_region.irorh.{origin}")
         );
         assert_eq!(
-            normalize_name(origin, format!("_derp_region.irorh.{}", origin)),
-            format!("_derp_region.irorh.{}", origin)
+            normalize_name(origin, format!("_derp_region.irorh.{origin}")),
+            format!("_derp_region.irorh.{origin}")
         );
         assert_eq!(
-            normalize_name(origin, format!("_derp_region.irorh.{}.", origin)),
-            format!("_derp_region.irorh.{}", origin)
+            normalize_name(origin, format!("_derp_region.irorh.{origin}.")),
+            format!("_derp_region.irorh.{origin}")
         );
     }
 

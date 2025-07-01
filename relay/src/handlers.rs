@@ -30,23 +30,11 @@ pub async fn put(
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let cas = if let Some(header_value) = request_headers.get(header::IF_UNMODIFIED_SINCE) {
-        let httpdate = header_value.to_str().map_err(|_| {
-            Error::new(
-                StatusCode::BAD_REQUEST,
-                Some("Could not parse `IF_UNMODIFIED_SINCE` header"),
-            )
-        })?;
-
-        Some(Timestamp::parse_http_date(httpdate).map_err(|_| {
-            Error::new(
-                StatusCode::BAD_REQUEST,
-                Some("Could not parse `IF_UNMODIFIED_SINCE` header"),
-            )
-        })?)
-    } else {
-        None
-    };
+    let cas = request_headers
+        .get(header::IF_MATCH)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Timestamp::from);
 
     state
         .client

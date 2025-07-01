@@ -3,9 +3,11 @@
 # ========================
 FROM rust:1.86.0-alpine3.20 AS builder
 
+
 # Build platform argument (x86_64 or aarch64) (default: x86_64)
 ARG TARGETARCH=x86_64
 RUN echo "TARGETARCH: $TARGETARCH"
+
 
 # Install build dependencies
 RUN apk add --no-cache \

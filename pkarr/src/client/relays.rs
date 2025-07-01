@@ -22,6 +22,7 @@ use reqwest::{
 use super::{ConcurrencyError, PublishError, QueryError};
 use crate::{PublicKey, SignedPacket};
 
+#[derive(Clone)]
 pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
@@ -75,7 +76,7 @@ impl RelaysClient {
         let mut futures = futures_buffered::FuturesUnorderedBounded::new(self.relays.len());
 
         let body = signed_packet.to_relay_payload();
-        let cas = cas.map(|timestamp| timestamp.format_http_date());
+        let cas = cas.map(|timestamp| timestamp.as_u64().to_string());
 
         for relay in &self.relays {
             let http_client = self.http_client.clone();
@@ -323,17 +324,13 @@ pub async fn publish_to_relay(
 
     let mut request = http_client.put(url.clone());
 
-    // TODO: enable for wasm after reqwest release
-    #[cfg(not(wasm_browser))]
-    {
-        request = request
-            // Publish combines the http latency with the PUT query to the dht
-            // on the relay side, so we should be as generous as possible
-            .timeout(timeout * 3);
-    }
+    request = request
+        // Publish combines the http latency with the PUT query to the dht
+        // on the relay side, so we should be as generous as possible
+        .timeout(timeout * 3);
 
-    if let Some(date) = cas {
-        request = request.header(header::IF_UNMODIFIED_SINCE, date);
+    if let Some(cas) = cas {
+        request = request.header(header::IF_MATCH, cas);
     }
 
     let response = request.body(body).send().await.inspect_err(|error| {
@@ -412,10 +409,7 @@ pub async fn resolve_from_relay(
 
     let mut request = reqwest::Request::new(Method::GET, url.clone());
 
-    #[cfg(not(wasm_browser))]
-    {
-        *request.timeout_mut() = Some(timeout);
-    }
+    *request.timeout_mut() = Some(timeout);
 
     if let Some(ref httpdate) = if_modified_since {
         request.headers_mut().insert(
