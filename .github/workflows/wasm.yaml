@@ -38,11 +38,30 @@ jobs:
     - name: Start server and run all tests
       run: |
         # Start the server binary in the background
+        echo "🚀 Starting pkarr-relay in testnet mode..."
         ./target/debug/pkarr-relay --testnet &
         SERVER_PID=$!
         
-        # Wait for server to start
-        sleep 2
+        # Wait for server to start and check if it's running
+        echo "⏳ Waiting for server to start..."
+        sleep 5
+        
+        # Check if server process is still running
+        if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "❌ Server failed to start or crashed"
+            exit 1
+        fi
+        
+        # Check if server is listening on port 15411
+        echo "🔍 Checking if server is listening on port 15411..."
+        for i in {1..10}; do
+            if curl -s http://localhost:15411 >/dev/null 2>&1 || netstat -ln | grep :15411 >/dev/null 2>&1; then
+                echo "✅ Server is responding on port 15411"
+                break
+            fi
+            echo "   Attempt $i/10: Server not ready yet, waiting..."
+            sleep 1
+        done
         
         # Change the working directory to pkarr crate
         cd ./pkarr
@@ -60,4 +79,3 @@ jobs:
         kill $SERVER_PID
         
         echo "✅ All tests completed successfully!"
-
