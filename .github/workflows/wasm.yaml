@@ -49,14 +49,14 @@ jobs:
         # Change the working directory to pkarr crate
         cd ./pkarr
         
-        # # Run wasm-pack tests (Rust WASM tests)
-        # echo "🦀 Running Rust WASM tests..."
-        # wasm-pack test --headless --firefox --lib
+        # Run wasm-pack tests (Rust WASM tests)
+        echo "🦀 Running Rust WASM tests..."
+        wasm-pack test --headless --firefox --lib
         
         # Change to the pkg directory and run JavaScript tests
         echo "🟨 Running JavaScript tests..."
         cd pkg
-        npm run test:integration
+        npm run test
 
         # Ensure server gets killed on exit
         kill $SERVER_PID

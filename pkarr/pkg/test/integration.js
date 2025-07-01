@@ -99,7 +99,7 @@ async function runIntegrationTests() {
         
         // Test 3: Custom relay configuration
         console.log('\n🔍 Test 3: Custom relay configuration');
-        const customRelays = ['http://localhost:15411'];
+        const customRelays = ['http://0.0.0.0:15411'];
         const customClient = new Client(customRelays, 10000);
         const keypair3 = new Keypair();
         
