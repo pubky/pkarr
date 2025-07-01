@@ -44,7 +44,7 @@ jobs:
         
         # Wait for server to start and check if it's running
         echo "⏳ Waiting for server to start..."
-        sleep 2
+        sleep 8
         
         # Change the working directory to pkarr crate
         cd ./pkarr
