@@ -46,22 +46,37 @@ jobs:
         echo "⏳ Waiting for server to start..."
         sleep 5
         
-        # Check if server process is still running
-        if ! kill -0 $SERVER_PID 2>/dev/null; then
-            echo "❌ Server failed to start or crashed"
-            exit 1
-        fi
-        
-        # Check if server is listening on port 15411
-        echo "🔍 Checking if server is listening on port 15411..."
-        for i in {1..10}; do
-            if curl -s http://localhost:15411 >/dev/null 2>&1 || netstat -ln | grep :15411 >/dev/null 2>&1; then
-                echo "✅ Server is responding on port 15411"
+        # Verify server is actually ready by testing the API
+        echo "🧪 Testing server API readiness..."
+        SERVER_READY=false
+        for i in {1..15}; do
+            # Test the health/info endpoint (should return some response)
+            if curl -s -f http://localhost:15411/ >/dev/null 2>&1; then
+                echo "✅ Server API is responding correctly"
+                SERVER_READY=true
+                break
+            elif curl -s http://localhost:15411/ 2>&1 | grep -q "404\|405\|200"; then
+                # Even if it's 404/405, it means server is responding
+                echo "✅ Server is responding (got HTTP response)"
+                SERVER_READY=true
                 break
             fi
-            echo "   Attempt $i/10: Server not ready yet, waiting..."
-            sleep 1
+            echo "   Attempt $i/15: API not ready yet, waiting..."
+            sleep 2
         done
+        
+        # Final check - ensure server is truly ready
+        if [ "$SERVER_READY" = false ]; then
+            echo "❌ Server failed to become ready after 30 seconds"
+            echo "🔍 Server process status:"
+            ps aux | grep pkarr-relay || echo "   No pkarr-relay process found"
+            echo "🔍 Network connections:"
+            netstat -tlnp | grep :15411 || echo "   No process listening on port 15411"
+            echo "🔍 Server logs (if any):"
+            # Try to get some server output
+            kill $SERVER_PID
+            exit 1
+        fi
         
         # Change the working directory to pkarr crate
         cd ./pkarr
