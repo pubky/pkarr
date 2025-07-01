@@ -41,9 +41,6 @@ jobs:
         ./target/debug/pkarr-relay --testnet &
         SERVER_PID=$!
         
-        # Ensure server gets killed on exit
-        trap "kill $SERVER_PID" EXIT
-        
         # Wait for server to start
         sleep 2
         
@@ -58,6 +55,9 @@ jobs:
         echo "🟨 Running JavaScript tests..."
         cd pkg
         npm run test
+
+        # Ensure server gets killed on exit
+        kill $SERVER_PID
         
         echo "✅ All tests completed successfully!"
 
