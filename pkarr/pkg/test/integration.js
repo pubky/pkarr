@@ -4,7 +4,7 @@
  * Tests complete workflows with live network operations
  */
 
-const { Client, WasmKeypair, SignedPacket, WasmUtils } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
 
 async function runIntegrationTests() {
     console.log('🧪 Running Pkarr WASM Integration Tests...\n');
@@ -15,8 +15,12 @@ async function runIntegrationTests() {
     try {
         // Test 1: Basic publish and resolve workflow
         console.log('\n🔍 Test 1: Basic publish and resolve workflow');
-        const client = new Client();
-        const keypair = new WasmKeypair();
+        
+        const localRelay = ['http://localhost:15411'];
+        const timeoutMs = 10000; // 10 seconds
+        const client = new Client(localRelay, timeoutMs);
+
+        const keypair = new Keypair();
         const publicKey = keypair.public_key_string();
         
         // Create a packet
@@ -26,7 +30,7 @@ async function runIntegrationTests() {
         const packet = builder.buildAndSign(keypair);
         
         console.log(`   📤 Publishing packet for key: ${publicKey}`);
-        await client.publish(packet.to_bytes());
+        await client.publish(packet);
         console.log('   ✅ Packet published successfully');
         
         // Wait for propagation
@@ -35,15 +39,13 @@ async function runIntegrationTests() {
         
         // Resolve the packet
         console.log('   📥 Resolving packet...');
-        const resolvedPacketBytes = await client.resolve(publicKey);
+        const resolvedPacket = await client.resolve(publicKey);
         
-        if (!resolvedPacketBytes) {
+        if (!resolvedPacket) {
             throw new Error('Failed to resolve published packet');
         }
         
-        const resolvedPacket = WasmUtils.parseSignedPacket(resolvedPacketBytes);
-        
-        if (resolvedPacket.public_key_string !== publicKey) {
+        if (resolvedPacket.publicKeyString !== publicKey) {
             throw new Error('Resolved packet has wrong public key');
         }
         
@@ -55,7 +57,7 @@ async function runIntegrationTests() {
         
         // Test 2: Multiple record types
         console.log('\n🔍 Test 2: Multiple DNS record types');
-        const keypair2 = new WasmKeypair();
+        const keypair2 = new Keypair();
         const publicKey2 = keypair2.public_key_string();
         
         const builder2 = SignedPacket.builder();
@@ -70,16 +72,15 @@ async function runIntegrationTests() {
         const packet2 = builder2.buildAndSign(keypair2);
         
         console.log(`   📤 Publishing complex packet with ${packet2.records.length} records`);
-        await client.publish(packet2.to_bytes());
+        await client.publish(packet2);
         console.log('   ✅ Complex packet published successfully');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const resolvedPacket2Bytes = await client.resolve(publicKey2);
-        if (!resolvedPacket2Bytes) {
+        const resolvedPacket2 = await client.resolve(publicKey2);
+        if (!resolvedPacket2) {
             throw new Error('Complex packet resolution failed');
         }
-        const resolvedPacket2 = WasmUtils.parseSignedPacket(resolvedPacket2Bytes);
         if (resolvedPacket2.records.length !== 7) {
             throw new Error('Complex packet resolution failed');
         }
@@ -88,42 +89,36 @@ async function runIntegrationTests() {
         
         // Test 3: Custom relay configuration
         console.log('\n🔍 Test 3: Custom relay configuration');
-        const customRelays = [
-            'https://pkarr.pubky.app',
-            'https://pkarr.pubky.org'
-        ];
+        const customRelays = ['http://localhost:15411'];
         const customClient = new Client(customRelays, 10000);
-        const keypair3 = new WasmKeypair();
+        const keypair3 = new Keypair();
         
         const builder3 = SignedPacket.builder();
         builder3.addTxtRecord("_custom", "relay-test=true", 3600);
         const packet3 = builder3.buildAndSign(keypair3);
         
         console.log('   📤 Publishing with custom relay configuration');
-        await customClient.publish(packet3.to_bytes());
+        await customClient.publish(packet3);
         console.log('   ✅ Custom relay publish successful');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const resolvedPacket3Bytes = await customClient.resolve(keypair3.public_key_string());
-        if (!resolvedPacket3Bytes) {
+        const resolvedPacket3 = await customClient.resolve(keypair3.public_key_string());
+        if (!resolvedPacket3) {
             throw new Error('Custom relay resolution failed');
         }
-        const resolvedPacket3 = WasmUtils.parseSignedPacket(resolvedPacket3Bytes);
         
         console.log('   ✅ Custom relay configuration test completed');
         
         // Test 4: resolveMostRecent functionality
         console.log('\n🔍 Test 4: resolveMostRecent functionality');
-        const mostRecentBytes = await client.resolveMostRecent(publicKey);
+        const mostRecentPacket = await client.resolveMostRecent(publicKey);
         
-        if (!mostRecentBytes) {
+        if (!mostRecentPacket) {
             throw new Error('resolveMostRecent failed');
         }
         
-        const mostRecent = WasmUtils.parseSignedPacket(mostRecentBytes);
-        
-        if (mostRecent.public_key_string !== publicKey) {
+        if (mostRecentPacket.publicKeyString !== publicKey) {
             throw new Error('resolveMostRecent returned wrong packet');
         }
         
@@ -139,19 +134,17 @@ async function runIntegrationTests() {
         const updatePacket = updateBuilder.buildAndSign(keypair);
         
         console.log('   📤 Publishing updated packet');
-        await client.publish(updatePacket.to_bytes());
+        await client.publish(updatePacket);
         console.log('   ✅ Updated packet published');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const latestPacketBytes = await client.resolveMostRecent(publicKey);
-        if (!latestPacketBytes) {
+        const latestPacket = await client.resolveMostRecent(publicKey);
+        if (!latestPacket) {
             throw new Error('Failed to resolve updated packet');
         }
         
-        const latestPacket = WasmUtils.parseSignedPacket(latestPacketBytes);
-        
-        if (latestPacket.timestamp_ms <= packet.timestamp_ms) {
+        if (latestPacket.timestampMs <= packet.timestampMs) {
             throw new Error('Updated packet should have newer timestamp');
         }
         
@@ -159,7 +152,7 @@ async function runIntegrationTests() {
         
         // Test 6: Error handling for non-existent keys
         console.log('\n🔍 Test 6: Error handling for non-existent keys');
-        const nonExistentKey = new WasmKeypair().public_key_string();
+        const nonExistentKey = new Keypair().public_key_string();
         const nonExistentResult = await client.resolve(nonExistentKey);
         
         if (nonExistentResult !== undefined && nonExistentResult !== null) {
@@ -177,21 +170,20 @@ async function runIntegrationTests() {
             largeBuilder.addTxtRecord(`record${i}`, `value${i}`, 3600);
         }
         
-        const largeKeypair = new WasmKeypair();
+        const largeKeypair = new Keypair();
         const largePacket = largeBuilder.buildAndSign(largeKeypair);
         
         console.log(`   📤 Publishing large packet with ${largePacket.records.length} records`);
         try {
-            await client.publish(largePacket.to_bytes());
+            await client.publish(largePacket);
             console.log('   ✅ Large packet published successfully');
             
             await new Promise(resolve => setTimeout(resolve, 2000));
             
-            const resolvedLargeBytes = await client.resolve(largeKeypair.public_key_string());
-            if (!resolvedLargeBytes) {
+            const resolvedLarge = await client.resolve(largeKeypair.public_key_string());
+            if (!resolvedLarge) {
                 console.log('   ⚠️  Large packet resolution returned no data, but publish succeeded');
             } else {
-                const resolvedLarge = WasmUtils.parseSignedPacket(resolvedLargeBytes);
                 if (resolvedLarge.records.length !== 10) {
                     console.log('   ⚠️  Large packet resolution returned different record count, but publish succeeded');
                 } else {
@@ -199,38 +191,39 @@ async function runIntegrationTests() {
                 }
             }
         } catch (error) {
-            // Large packets might hit network size limits, which is acceptable
-            console.log('   ⚠️  Large packet may have hit size limits (this is acceptable)');
-            console.log(`   📝 Error: ${error.message || 'Unknown error'}`);
+            console.log(`   ⚠️  Large packet publish failed: ${error.message}`);
+            console.log('   ℹ️  This may be expected due to size limits');
         }
         
         console.log('\n' + '=' .repeat(60));
-        console.log('🎉 ALL INTEGRATION TESTS PASSED!');
+        console.log('🎉 ALL INTEGRATION TESTS COMPLETED SUCCESSFULLY!');
         console.log('=' .repeat(60));
         
         console.log('\n📊 Integration Test Summary:');
-        console.log('   ✅ Basic publish/resolve workflow: SUCCESS');
-        console.log('   ✅ Multiple DNS record types: SUCCESS');
-        console.log('   ✅ Custom relay configuration: SUCCESS');
-        console.log('   ✅ resolveMostRecent functionality: SUCCESS');
-        console.log('   ✅ Packet update workflow: SUCCESS');
-        console.log('   ✅ Error handling for non-existent keys: SUCCESS');
-        console.log('   ✅ Large packet handling: SUCCESS');
-        console.log('   🌐 Live network operations: WORKING');
+        console.log('   ✅ Basic publish/resolve workflow');
+        console.log('   ✅ Multiple DNS record types (TXT, A, AAAA, CNAME)');
+        console.log('   ✅ Custom relay configuration');
+        console.log('   ✅ resolveMostRecent functionality');
+        console.log('   ✅ Packet update workflow');
+        console.log('   ✅ Error handling for non-existent keys');
+        console.log('   ✅ Large packet handling');
+        console.log('   ✅ Network connectivity and relay communication');
+        console.log('   ✅ SignedPacket object workflow (no manual byte handling)');
         
     } catch (error) {
         console.error('\n❌ Integration test failed:', error.message);
         console.error('Stack trace:', error.stack);
-        process.exit(1);
+        throw error;
     }
 }
 
-// Run tests if this file is executed directly
+// Export for use in test runner
+module.exports = { runIntegrationTests };
+
+// Run if called directly
 if (require.main === module) {
     runIntegrationTests().catch(error => {
-        console.error('❌ Integration test suite failed:', error);
+        console.error('❌ Integration tests failed:', error.message);
         process.exit(1);
     });
-}
-
-module.exports = { runIntegrationTests }; 
+} 

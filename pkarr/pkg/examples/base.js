@@ -9,9 +9,9 @@
  * - Resolving packets
  */
 
-const { Client, WasmKeypair, SignedPacket, WasmUtils } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
 
-// Helper function moved to WasmUtils.formatRecordValue
+// Helper function moved to Utils.formatRecordValue
 
 async function runTests() {
     console.log('🧪 Starting Pkarr WASM Test Suite...\n');
@@ -22,15 +22,14 @@ async function runTests() {
     try {
         // Test 1: Client creation
         console.log('✅ WASM initialized');
-        const client = new Client();
+        const customRelays = ['http://localhost:15411'];
+        const timeoutMs = 10000; // 10 seconds
+        
+        const client = new Client(customRelays, timeoutMs);
         console.log('✅ Client created');
         
-        // Test 2: Default relays
-        const defaultRelays = Client.defaultRelays();
-        console.log(`✅ Using ${defaultRelays.length} default relays:`, Array.from(defaultRelays));
-        
         // Test 3: Keypair generation
-        const keypair = new WasmKeypair();
+        const keypair = new Keypair();
         const publicKey = keypair.public_key_string();
         console.log(`✅ Generated keypair with public key: ${publicKey}`);
         
@@ -47,14 +46,13 @@ async function runTests() {
         
         const signedPacket = builder.buildAndSign(keypair);
         console.log('✅ Signed packet created');
-        console.log(`   - Public key: ${signedPacket.public_key_string}`);
-        console.log(`   - Timestamp: ${signedPacket.timestamp_ms}`);
+        console.log(`   - Public key: ${signedPacket.publicKeyString}`);
+        console.log(`   - Timestamp: ${signedPacket.timestampMs}`);
         console.log(`   - Records: ${signedPacket.records.length} DNS records (A, AAAA, TXT, CNAME, HTTPS, SVCB, NS)`);
         
         // Test 5: Publishing
         console.log('📤 Publishing signed packet to relays...');
-        const packetBytes = signedPacket.to_bytes();
-        await client.publish(packetBytes);
+        await client.publish(signedPacket);
         console.log('✅ Packet published successfully!');
         
         // Test 6: Wait for propagation
@@ -63,59 +61,73 @@ async function runTests() {
         
         // Test 7: Resolving
         console.log('📥 Resolving packet...');
-        const resolvedPacketBytes = await client.resolve(publicKey);
+        const resolvedPacket = await client.resolve(publicKey);
         
-        if (resolvedPacketBytes) {
-            console.log('✅ Successfully resolved packet bytes!');
-            
-            // Parse the resolved bytes back to a SignedPacket
-            const resolvedPacketBytes2 = WasmUtils.parseSignedPacket(resolvedPacketBytes);
-            const resolvedPacket = SignedPacket.fromBytes(resolvedPacketBytes2);
+        if (resolvedPacket) {
+            console.log('✅ Successfully resolved packet!');
             console.log('✅ Resolved packet details:');
-            console.log(`   - Public key: ${resolvedPacket.public_key_string}`);
-            console.log(`   - Timestamp: ${resolvedPacket.timestamp_ms}`);
+            console.log(`   - Public key: ${resolvedPacket.publicKeyString}`);
+            console.log(`   - Timestamp: ${resolvedPacket.timestampMs}`);
             console.log(`   - Records: ${resolvedPacket.records.length} DNS records`);
             
             // Display all DNS records
             console.log('   - DNS Records:');
             resolvedPacket.records.forEach((record, index) => {
-                const formattedValue = WasmUtils.formatRecordValue(record.rdata);
+                const formattedValue = Utils.formatRecordValue(record.rdata);
                 console.log(`     [${index}] ${record.name} IN ${record.ttl}s ${record.rdata.type} ${formattedValue}`);
             });
-            // For demonstration, let's create a new SignedPacket from the bytes
-            // (In practice, you would have helper functions to work with the bytes)
-            console.log(`   - Resolved ${resolvedPacketBytes.length} bytes`);
+            
+            // Test converting to bytes and back
+            const packetBytes = resolvedPacket.toBytes();
+            console.log(`   - Packet size: ${packetBytes.length} bytes`);
+            
+            // Test parsing from bytes
+            const parsedPacket = SignedPacket.fromBytes(packetBytes);
+            console.log(`   - Parsed packet public key: ${parsedPacket.publicKeyString}`);
             console.log('✅ Packet resolution successful!');
             
         } else {
             console.log('❌ No packet resolved');
         }
         
-        // Test 9: Resolve most recent
+        // Test 8: Resolve most recent
         console.log('📥 Testing resolveMostRecent...');
-        const mostRecentPacketBytes = await client.resolveMostRecent(publicKey);
-        if (mostRecentPacketBytes) {
+        const mostRecentPacket = await client.resolveMostRecent(publicKey);
+        if (mostRecentPacket) {
             console.log('✅ Successfully resolved most recent packet!');
-            console.log(`   - Resolved ${mostRecentPacketBytes.length} bytes`);
+            console.log(`   - Public key: ${mostRecentPacket.publicKeyString}`);
+            console.log(`   - Timestamp: ${mostRecentPacket.timestampMs}`);
+            console.log(`   - Records: ${mostRecentPacket.records.length} DNS records`);
         } else {
             console.log('❌ No most recent packet found');
         }
+        
+        // Test 9: Test Utils functionality
+        console.log('🔧 Testing Utils...');
+        const isValidKey = Utils.validatePublicKey(publicKey);
+        console.log(`✅ Public key validation: ${isValidKey ? 'VALID' : 'INVALID'}`);
+        
+        const utilsRelays = Utils.defaultRelays();
+        console.log(`✅ Utils default relays: ${utilsRelays.length} relays`);
         
         console.log('\n' + '=' .repeat(60));
         console.log('🎉 ALL TESTS COMPLETED SUCCESSFULLY!');
         console.log('=' .repeat(60));
         
         console.log('\n📊 Test Summary:');
-        console.log('   ✅ WASM initialization: SUCCESS');
-        console.log('   ✅ Client creation: SUCCESS');
-        console.log('   ✅ Keypair generation: SUCCESS');
-        console.log('   ✅ Complete DNS record support: A, AAAA, TXT, CNAME, HTTPS, SVCB, NS');
-        console.log('   ✅ Signed packet creation: SUCCESS');
-        console.log('   ✅ Methods work directly on client instance');
-        console.log('   ✅ Returns SignedPacket objects correctly');
-        console.log('   ✅ Publishing to live relays: SUCCESS');
-        console.log('   ✅ Packet resolution: SUCCESS');
-        console.log('   ✅ WASM bindings: FULLY FUNCTIONAL');
+        console.log('   WASM initialization');
+        console.log('   Client creation');
+        console.log('   Keypair generation');
+        console.log('   Complete DNS record support: A, AAAA, TXT, CNAME, HTTPS, SVCB, NS');
+        console.log('   Signed packet creation');
+        console.log('   Publishing with SignedPacket objects');
+        console.log('   Resolving returns SignedPacket objects');
+        console.log('   Property access (camelCase)');
+        console.log('   Byte serialization/deserialization');
+        console.log('   Utils functionality');
+        console.log('   Publishing to live relays');
+        console.log('   Packet resolution');
+        console.log('   WASM bindings: FULLY FUNCTIONAL');
         
     } catch (error) {
         console.error('\n❌ Test suite failed:', error.message);

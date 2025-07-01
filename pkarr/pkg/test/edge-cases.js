@@ -4,7 +4,7 @@
  * Tests boundary conditions, error scenarios, and edge cases
  */
 
-const { Client, WasmKeypair, SignedPacket, WasmUtils } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
 
 async function runEdgeCasesTests() {
     console.log('🧪 Running Pkarr WASM Edge Cases Tests...\n');
@@ -53,7 +53,7 @@ async function runEdgeCasesTests() {
         
         testCases.forEach((invalidKey, index) => {
             try {
-                WasmKeypair.from_secret_key(invalidKey);
+                Keypair.from_secret_key(invalidKey);
                 throw new Error(`Should have failed for case ${index} (size: ${invalidKey.length})`);
             } catch (error) {
                 // WASM errors might not have detailed messages, just check that it throws
@@ -77,16 +77,16 @@ async function runEdgeCasesTests() {
         ];
         
         invalidKeys.forEach(key => {
-            const isValid = WasmUtils.validatePublicKey(key);
+            const isValid = Utils.validatePublicKey(key);
             if (isValid) {
                 throw new Error(`Invalid key marked as valid: ${key}`);
             }
         });
         
         // Test a valid key to ensure validation works
-        const validKeypair = new WasmKeypair();
+        const validKeypair = new Keypair();
         const validKey = validKeypair.public_key_string();
-        const isValidKeyValid = WasmUtils.validatePublicKey(validKey);
+        const isValidKeyValid = Utils.validatePublicKey(validKey);
         if (!isValidKeyValid) {
             throw new Error("Valid key marked as invalid");
         }
@@ -95,6 +95,7 @@ async function runEdgeCasesTests() {
     // Test 3: Empty and null record values
     test("Empty and null record values", () => {
         const builder = SignedPacket.builder();
+        const keypair = new Keypair();
         
         // Test empty strings
         builder.addTxtRecord("empty", "", 3600);
@@ -104,7 +105,9 @@ async function runEdgeCasesTests() {
         builder.addTxtRecord("spaces", "   ", 3600);
         builder.addTxtRecord("   ", "spaces-name", 3600);
         
-        if (builder.recordCount() !== 4) {
+        // Verify by building the packet
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 4) {
             throw new Error("Empty string records not handled correctly");
         }
     });
@@ -112,6 +115,7 @@ async function runEdgeCasesTests() {
     // Test 4: Very long record values
     test("Very long record values", () => {
         const builder = SignedPacket.builder();
+        const keypair = new Keypair();
         
         try {
             // Test moderately long values first
@@ -120,7 +124,8 @@ async function runEdgeCasesTests() {
             
             builder.addTxtRecord(longName, longValue, 3600);
             
-            if (builder.recordCount() !== 1) {
+            const packet = builder.buildAndSign(keypair);
+            if (packet.records.length !== 1) {
                 throw new Error("Long record values not handled correctly");
             }
             
@@ -144,6 +149,7 @@ async function runEdgeCasesTests() {
     // Test 5: Special characters in record names and values
     test("Special characters in records", () => {
         const builder = SignedPacket.builder();
+        const keypair = new Keypair();
         
         const specialCases = [
             { name: "unicode", value: "🚀🌟✨" },
@@ -158,7 +164,8 @@ async function runEdgeCasesTests() {
             builder.addTxtRecord(testCase.name, testCase.value, 3600);
         });
         
-        if (builder.recordCount() !== specialCases.length) {
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== specialCases.length) {
             throw new Error("Special characters not handled correctly");
         }
     });
@@ -166,6 +173,7 @@ async function runEdgeCasesTests() {
     // Test 6: Extreme TTL values
     test("Extreme TTL values", () => {
         const builder = SignedPacket.builder();
+        const keypair = new Keypair();
         
         const ttlCases = [
             0,           // Zero TTL
@@ -177,7 +185,8 @@ async function runEdgeCasesTests() {
             builder.addTxtRecord(`ttl-test-${index}`, `ttl-${ttl}`, ttl);
         });
         
-        if (builder.recordCount() !== ttlCases.length) {
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== ttlCases.length) {
             throw new Error("Extreme TTL values not handled correctly");
         }
     });
@@ -249,6 +258,7 @@ async function runEdgeCasesTests() {
     // Test 9: Maximum number of records
     test("Maximum number of records", () => {
         const builder = SignedPacket.builder();
+        const keypair = new Keypair();
         
         try {
             // Try to add many records to test limits (reduced to avoid hitting limits)
@@ -256,19 +266,14 @@ async function runEdgeCasesTests() {
                 builder.addTxtRecord(`record${i}`, `value${i}`, 3600);
             }
             
-            if (builder.recordCount() !== 50) {
-                throw new Error("Large number of records not handled correctly");
-            }
-            
             // Try to build the packet
-            const keypair = new WasmKeypair();
             const packet = builder.buildAndSign(keypair);
             
             if (packet.records.length !== 50) {
                 throw new Error("Large packet not built correctly");
             }
         } catch (error) {
-            if (error && error.message && (error.message.includes("not handled correctly") || error.message.includes("not built correctly"))) {
+            if (error && error.message && error.message.includes("not built correctly")) {
                 throw error;
             }
             // Other errors might be due to size limits, which is acceptable
@@ -278,9 +283,6 @@ async function runEdgeCasesTests() {
     
     // Test 10: Timestamp edge cases
     test("Timestamp edge cases", () => {
-        const builder = SignedPacket.builder();
-        builder.addTxtRecord("test", "value", 3600);
-        
         const timestampCases = [
             0,                    // Unix epoch
             1,                    // Minimum positive
@@ -288,7 +290,7 @@ async function runEdgeCasesTests() {
             Date.now() + 1000000, // Future time
         ];
         
-        const keypair = new WasmKeypair();
+        const keypair = new Keypair();
         
         timestampCases.forEach(timestamp => {
             const testBuilder = SignedPacket.builder();
@@ -298,8 +300,8 @@ async function runEdgeCasesTests() {
             const packet = testBuilder.buildAndSign(keypair);
             // The timestamp is stored in microseconds (multiplied by 1000)
             const expectedTimestamp = timestamp * 1000;
-            if (packet.timestamp_ms !== expectedTimestamp) {
-                throw new Error(`Timestamp not set correctly: expected ${expectedTimestamp}, got ${packet.timestamp_ms}`);
+            if (packet.timestampMs !== expectedTimestamp) {
+                throw new Error(`Timestamp not set correctly: expected ${expectedTimestamp}, got ${packet.timestampMs}`);
             }
         });
     });
@@ -327,13 +329,13 @@ async function runEdgeCasesTests() {
     
     // Test 12: Packet serialization and deserialization edge cases
     test("Packet serialization edge cases", () => {
-        const keypair = new WasmKeypair();
+        const keypair = new Keypair();
         
         // Empty packet
         const emptyBuilder = SignedPacket.builder();
         try {
             const emptyPacket = emptyBuilder.buildAndSign(keypair);
-            const bytes = emptyPacket.to_bytes();
+            const bytes = emptyPacket.toBytes();
             if (bytes.length === 0) {
                 throw new Error("Empty packet should still have some bytes");
             }
@@ -345,7 +347,7 @@ async function runEdgeCasesTests() {
         const minimalBuilder = SignedPacket.builder();
         minimalBuilder.addTxtRecord("a", "b", 1);
         const minimalPacket = minimalBuilder.buildAndSign(keypair);
-        const minimalBytes = minimalPacket.to_bytes();
+        const minimalBytes = minimalPacket.toBytes();
         
         if (minimalBytes.length === 0) {
             throw new Error("Minimal packet should have bytes");
@@ -355,7 +357,7 @@ async function runEdgeCasesTests() {
     // Test 13: Concurrent client operations
     await asyncTest("Concurrent client operations", async () => {
         const client = new Client();
-        const keypairs = Array.from({ length: 5 }, () => new WasmKeypair());
+        const keypairs = Array.from({ length: 5 }, () => new Keypair());
         
         // Create packets
         const packets = keypairs.map((kp, index) => {
@@ -365,7 +367,7 @@ async function runEdgeCasesTests() {
         });
         
         // Publish all concurrently
-        const publishPromises = packets.map(packet => client.publish(packet.to_bytes()));
+        const publishPromises = packets.map(packet => client.publish(packet));
         await Promise.all(publishPromises);
         
         // Wait for propagation
@@ -380,8 +382,7 @@ async function runEdgeCasesTests() {
             if (!result) {
                 throw new Error(`Concurrent operation ${index} failed to resolve`);
             }
-            const parsedResult = WasmUtils.parseSignedPacket(result);
-            if (parsedResult.public_key_string !== keypairs[index].public_key_string()) {
+            if (result.publicKeyString !== keypairs[index].public_key_string()) {
                 throw new Error(`Concurrent operation ${index} returned wrong packet`);
             }
         });
@@ -391,7 +392,7 @@ async function runEdgeCasesTests() {
     await asyncTest("Network timeout scenarios", async () => {
         // Create client with very short timeout
         const timeoutClient = new Client(undefined, 100); // 100ms timeout
-        const keypair = new WasmKeypair();
+        const keypair = new Keypair();
         
         const builder = SignedPacket.builder();
         builder.addTxtRecord("timeout-test", "value", 3600);
@@ -399,7 +400,7 @@ async function runEdgeCasesTests() {
         
         try {
             // This might timeout, which is expected
-            await timeoutClient.publish(packet.to_bytes());
+            await timeoutClient.publish(packet);
             // If it succeeds despite short timeout, that's also okay
         } catch (error) {
             // Timeout errors are expected and acceptable
@@ -417,7 +418,7 @@ async function runEdgeCasesTests() {
         
         // Create many objects rapidly
         for (let i = 0; i < 1000; i++) {
-            const keypair = new WasmKeypair();
+            const keypair = new Keypair();
             const builder = SignedPacket.builder();
             
             // Add multiple records
@@ -445,25 +446,34 @@ async function runEdgeCasesTests() {
     console.log('\n' + '=' .repeat(60));
     console.log('📊 EDGE CASES TEST RESULTS');
     console.log('=' .repeat(60));
+    console.log(`Total tests: ${passed + failed}`);
     console.log(`✅ Passed: ${passed}`);
     console.log(`❌ Failed: ${failed}`);
-    console.log(`📈 Success Rate: ${((passed / (passed + failed)) * 100).toFixed(1)}%`);
+    console.log(`Success rate: ${((passed / (passed + failed)) * 100).toFixed(1)}%`);
     
     if (failed > 0) {
-        console.log('\n❌ Some edge cases tests failed!');
-        process.exit(1);
-    } else {
-        console.log('\n🎉 All edge cases tests passed!');
-        console.log('🛡️  The WASM implementation handles edge cases robustly');
+        throw new Error(`${failed} edge cases tests failed`);
     }
+    
+    console.log('\n🎉 All edge cases tests passed!');
+    console.log('🛡️  The WASM implementation handles edge cases robustly');
+    console.log('\n📋 Edge Cases Summary:');
+    console.log('   ✅ Invalid input validation');
+    console.log('   ✅ Boundary conditions');
+    console.log('   ✅ Memory stress testing');
+    console.log('   ✅ Network timeout handling');
+    console.log('   ✅ Concurrent operations');
+    console.log('   ✅ Special character handling');
+    console.log('   ✅ SignedPacket object workflow');
 }
 
-// Run tests if this file is executed directly
+// Export for use in test runner
+module.exports = { runEdgeCasesTests };
+
+// Run if called directly
 if (require.main === module) {
     runEdgeCasesTests().catch(error => {
-        console.error('❌ Edge cases test suite failed:', error);
+        console.error('❌ Edge cases tests failed:', error.message);
         process.exit(1);
     });
-}
-
-module.exports = { runEdgeCasesTests }; 
+} 
