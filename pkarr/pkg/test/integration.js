@@ -16,7 +16,7 @@ async function runIntegrationTests() {
         // Test 1: Basic publish and resolve workflow
         console.log('\n🔍 Test 1: Basic publish and resolve workflow');
         
-        const localRelay = ['http://localhost:15411'];
+        const localRelay = ['http://0.0.0.0:15411'];
         const timeoutMs = 10000; // 10 seconds
         const client = new Client(localRelay, timeoutMs);
 
