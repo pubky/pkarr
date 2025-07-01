@@ -1,17 +1,15 @@
 # ========================
 # Build Stage
 # ========================
-FROM rust:1.82.0-alpine3.20 AS builder
+FROM rust:1.86.0-alpine3.20 AS builder
 
 # Build platform argument (x86_64 or aarch64) (default: x86_64)
 ARG TARGETARCH=x86_64
 RUN echo "TARGETARCH: $TARGETARCH"
 
-# Install build dependencies, including static OpenSSL libraries
+# Install build dependencies
 RUN apk add --no-cache \
     musl-dev \
-    openssl-dev \
-    openssl-libs-static \
     pkgconfig \
     build-base \
     curl
@@ -26,11 +24,6 @@ RUN if [ "$TARGETARCH" = "aarch64" ]; then \
 
 # Set PATH only if we installed the cross compiler (will be empty string for x86)
 ENV PATH="$(cat /tmp/musl_cross_path):$PATH"
-
-# Set environment variables for static linking with OpenSSL
-ENV OPENSSL_STATIC=yes
-ENV OPENSSL_LIB_DIR=/usr/lib
-ENV OPENSSL_INCLUDE_DIR=/usr/include
 
 # Add the MUSL target for static linking
 RUN rustup target add $TARGETARCH-unknown-linux-musl
