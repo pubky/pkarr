@@ -55,7 +55,7 @@ jobs:
         
         # Change to the pkg directory and run JavaScript tests
         echo "🟨 Running JavaScript tests..."
-        cd pkarr/pkg
+        cd pkg
         npm run test:integration
 
         # Ensure server gets killed on exit
