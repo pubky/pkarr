@@ -68,6 +68,9 @@ async function runIntegrationTests() {
         builder2.addAAAARecord("www", "2001:db8::1", 3600);
         builder2.addAAAARecord("api", "2001:db8::2", 3600);
         builder2.addCnameRecord("blog", "www", 3600);
+        builder2.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
+        builder2.addSvcbRecord("_api._tcp", 10, "api-server.example.com", 3600);
+        builder2.addNsRecord("subdomain", "ns1.example.com", 86400);
         
         const packet2 = builder2.buildAndSign(keypair2);
         
@@ -81,11 +84,18 @@ async function runIntegrationTests() {
         if (!resolvedPacket2) {
             throw new Error('Complex packet resolution failed');
         }
-        if (resolvedPacket2.records.length !== 7) {
-            throw new Error('Complex packet resolution failed');
+        if (resolvedPacket2.records.length !== 10) {
+            throw new Error(`Complex packet should have 10 records, got ${resolvedPacket2.records.length}`);
         }
         
-        console.log('   ✅ Multiple record types test completed');
+        // Verify we have all record types
+        const recordTypes = resolvedPacket2.records.map(r => r.rdata.type).sort();
+        const expectedTypes = ["A", "A", "AAAA", "AAAA", "CNAME", "HTTPS", "NS", "SVCB", "TXT", "TXT"];
+        if (JSON.stringify(recordTypes) !== JSON.stringify(expectedTypes)) {
+            throw new Error(`Expected record types ${expectedTypes.join(',')}, got ${recordTypes.join(',')}`);
+        }
+        
+        console.log('   ✅ Multiple record types test completed (all 7 DNS record types)');
         
         // Test 3: Custom relay configuration
         console.log('\n🔍 Test 3: Custom relay configuration');
@@ -200,15 +210,16 @@ async function runIntegrationTests() {
         console.log('=' .repeat(60));
         
         console.log('\n📊 Integration Test Summary:');
-        console.log('   ✅ Basic publish/resolve workflow');
-        console.log('   ✅ Multiple DNS record types (TXT, A, AAAA, CNAME)');
-        console.log('   ✅ Custom relay configuration');
-        console.log('   ✅ resolveMostRecent functionality');
-        console.log('   ✅ Packet update workflow');
-        console.log('   ✅ Error handling for non-existent keys');
-        console.log('   ✅ Large packet handling');
-        console.log('   ✅ Network connectivity and relay communication');
-        console.log('   ✅ SignedPacket object workflow (no manual byte handling)');
+        console.log('   Basic publish/resolve workflow');
+        console.log('   Multiple DNS record types (TXT, A, AAAA, CNAME, HTTPS, SVCB, NS)');
+        console.log('   Custom relay configuration');
+        console.log('   resolveMostRecent functionality');
+        console.log('   Packet update workflow');
+        console.log('   Error handling for non-existent keys');
+        console.log('   Large packet handling');
+        console.log('   Network connectivity and relay communication');
+        console.log('   SignedPacket object workflow (no manual byte handling)');
+        console.log('   All 7 DNS record types validated in live network operations');
         
     } catch (error) {
         console.error('\n❌ Integration test failed:', error.message);

@@ -130,18 +130,74 @@ async function runUnitTests() {
         if (packet.records.length !== 1) throw new Error("CNAME record not added");
     });
     
-    // Test 14: Multiple records
-    test("Multiple records", () => {
+    // Test 14: Adding HTTPS record
+    test("Adding HTTPS record", () => {
+        const builder = SignedPacket.builder();
+        builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
+        const keypair = new Keypair();
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 1) throw new Error("HTTPS record not added");
+        
+        // Verify the record structure
+        const record = packet.records[0];
+        if (record.rdata.type !== "HTTPS") throw new Error("Wrong record type");
+        if (record.rdata.priority !== 1) throw new Error("Wrong HTTPS priority");
+        if (record.rdata.target !== "primary.example.com") throw new Error("Wrong HTTPS target");
+    });
+    
+    // Test 15: Adding SVCB record
+    test("Adding SVCB record", () => {
+        const builder = SignedPacket.builder();
+        builder.addSvcbRecord("_api._tcp", 10, "api-server.example.com", 3600);
+        const keypair = new Keypair();
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 1) throw new Error("SVCB record not added");
+        
+        // Verify the record structure
+        const record = packet.records[0];
+        if (record.rdata.type !== "SVCB") throw new Error("Wrong record type");
+        if (record.rdata.priority !== 10) throw new Error("Wrong SVCB priority");
+        if (record.rdata.target !== "api-server.example.com") throw new Error("Wrong SVCB target");
+    });
+    
+    // Test 16: Adding NS record
+    test("Adding NS record", () => {
+        const builder = SignedPacket.builder();
+        builder.addNsRecord("subdomain", "ns1.example.com", 86400);
+        const keypair = new Keypair();
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 1) throw new Error("NS record not added");
+        
+        // Verify the record structure
+        const record = packet.records[0];
+        if (record.rdata.type !== "NS") throw new Error("Wrong record type");
+        if (record.rdata.nsdname !== "ns1.example.com") throw new Error("Wrong NS nameserver");
+    });
+    
+    // Test 17: Multiple records (all 7 types)
+    test("Multiple records (all 7 types)", () => {
         const builder = SignedPacket.builder();
         builder.addTxtRecord("txt", "value", 3600);
         builder.addARecord("www", "192.168.1.1", 3600);
         builder.addAAAARecord("www", "2001:db8::1", 3600);
+        builder.addCnameRecord("alias", "target", 3600);
+        builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
+        builder.addSvcbRecord("_api._tcp", 10, "api-server.example.com", 3600);
+        builder.addNsRecord("subdomain", "ns1.example.com", 86400);
+        
         const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
-        if (packet.records.length !== 3) throw new Error("Expected 3 records");
+        if (packet.records.length !== 7) throw new Error("Expected 7 records");
+        
+        // Verify we have all record types
+        const types = packet.records.map(r => r.rdata.type).sort();
+        const expectedTypes = ["A", "AAAA", "CNAME", "HTTPS", "NS", "SVCB", "TXT"];
+        if (JSON.stringify(types) !== JSON.stringify(expectedTypes)) {
+            throw new Error(`Expected types ${expectedTypes.join(',')}, got ${types.join(',')}`);
+        }
     });
     
-    // Test 15: Building and signing packet
+    // Test 18: Building and signing packet
     test("Building and signing packet", () => {
         const keypair = new Keypair();
         const builder = SignedPacket.builder();
@@ -154,7 +210,7 @@ async function runUnitTests() {
         }
     });
     
-    // Test 16: Packet serialization
+    // Test 19: Packet serialization
     test("Packet serialization", () => {
         const keypair = new Keypair();
         const builder = SignedPacket.builder();
@@ -165,7 +221,7 @@ async function runUnitTests() {
         if (!bytes || bytes.length === 0) throw new Error("Packet serialization failed");
     });
     
-    // Test 17: Public key validation
+    // Test 20: Public key validation
     test("Public key validation", () => {
         const keypair = new Keypair();
         const publicKey = keypair.public_key_string();
@@ -177,7 +233,7 @@ async function runUnitTests() {
         if (isInvalid) throw new Error("Invalid public key marked as valid");
     });
     
-    // Test 18: Packet parsing
+    // Test 21: Packet parsing
     test("Packet parsing", () => {
         const keypair = new Keypair();
         const builder = SignedPacket.builder();
@@ -192,7 +248,7 @@ async function runUnitTests() {
         }
     });
     
-    // Test 19: Custom timestamp
+    // Test 22: Custom timestamp
     test("Custom timestamp", () => {
         const keypair = new Keypair();
         const builder = SignedPacket.builder();
@@ -208,7 +264,7 @@ async function runUnitTests() {
         }
     });
     
-    // Test 20: Error handling for invalid IPv4 address
+    // Test 23: Error handling for invalid IPv4 address
     test("Error handling for invalid IPv4 address", () => {
         const builder = SignedPacket.builder();
         try {
@@ -222,7 +278,7 @@ async function runUnitTests() {
         }
     });
     
-    // Test 21: Error handling for invalid IPv6 address
+    // Test 24: Error handling for invalid IPv6 address
     test("Error handling for invalid IPv6 address", () => {
         const builder = SignedPacket.builder();
         try {
@@ -235,8 +291,71 @@ async function runUnitTests() {
             // Expected error - test passed
         }
     });
+
+    // Test 25: HTTPS record with priority 0 and target "."
+    test("HTTPS record with priority 0 and target '.'", () => {
+        const builder = SignedPacket.builder();
+        builder.addHttpsRecord("_443._tcp", 0, ".", 3600);
+        const keypair = new Keypair();
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 1) throw new Error("HTTPS record not added");
+        
+        const record = packet.records[0];
+        if (record.rdata.priority !== 0) throw new Error("Wrong priority for alias mode");
+        // The "." target gets normalized to an empty string in HTTPS/SVCB records
+        if (record.rdata.target !== "") {
+            throw new Error(`Wrong target for alias mode: expected empty string, got '${record.rdata.target}'`);
+        }
+    });
     
-    // Test 22: SignedPacket static builder method
+    // Test 26: SVCB record with high priority
+    test("SVCB record with high priority", () => {
+        const builder = SignedPacket.builder();
+        builder.addSvcbRecord("_service._tcp", 65535, "backup.example.com", 3600);
+        const keypair = new Keypair();
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 1) throw new Error("SVCB record not added");
+        
+        const record = packet.records[0];
+        if (record.rdata.priority !== 65535) throw new Error("Wrong maximum priority");
+    });
+    
+    // Test 27: NS record validation
+    test("NS record validation", () => {
+        const builder = SignedPacket.builder();
+        builder.addNsRecord("zone", "ns.example.com", 86400);
+        const keypair = new Keypair();
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 1) throw new Error("NS record not added");
+        
+        const record = packet.records[0];
+        if (record.name !== `zone.${keypair.public_key_string()}`) throw new Error("NS record name not properly normalized");
+        if (record.ttl !== 86400) throw new Error("Wrong TTL for NS record");
+    });
+    
+    // Test 28: Multiple HTTPS records with different priorities
+    test("Multiple HTTPS records with different priorities", () => {
+        const builder = SignedPacket.builder();
+        builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
+        builder.addHttpsRecord("_443._tcp", 2, "secondary.example.com", 3600);
+        builder.addHttpsRecord("_443._tcp", 0, ".", 3600); // Alias mode
+        
+        const keypair = new Keypair();
+        const packet = builder.buildAndSign(keypair);
+        if (packet.records.length !== 3) throw new Error("Expected 3 HTTPS records");
+        
+        // Check that all are HTTPS records
+        const httpsRecords = packet.records.filter(r => r.rdata.type === "HTTPS");
+        if (httpsRecords.length !== 3) throw new Error("Expected 3 HTTPS records");
+        
+        // Check priorities
+        const priorities = httpsRecords.map(r => r.rdata.priority).sort((a, b) => a - b);
+        if (JSON.stringify(priorities) !== JSON.stringify([0, 1, 2])) {
+            throw new Error("Wrong priorities for HTTPS records");
+        }
+    });
+    
+    // Test 29: SignedPacket static builder method
     test("SignedPacket static builder method", () => {
         const builder = SignedPacket.builder();
         if (!builder) throw new Error("Static builder method failed");

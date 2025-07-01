@@ -105,6 +105,21 @@ async function runPerformanceTests() {
             builder.addCnameRecord("alias", "target", 3600);
         }, 5000);
         
+        measureTime('HTTPS record addition', () => {
+            const builder = SignedPacket.builder();
+            builder.addHttpsRecord("_443._tcp", 1, "server.example.com", 3600);
+        }, 5000);
+        
+        measureTime('SVCB record addition', () => {
+            const builder = SignedPacket.builder();
+            builder.addSvcbRecord("_api._tcp", 10, "api.example.com", 3600);
+        }, 5000);
+        
+        measureTime('NS record addition', () => {
+            const builder = SignedPacket.builder();
+            builder.addNsRecord("subdomain", "ns.example.com", 86400);
+        }, 5000);
+        
         console.log('\n🔍 Packet Building and Signing Performance');
         measureTime('Single record packet build and sign', () => {
             const builder = SignedPacket.builder();
@@ -118,6 +133,9 @@ async function runPerformanceTests() {
             builder.addARecord("www", "192.168.1.1", 3600);
             builder.addAAAARecord("www", "2001:db8::1", 3600);
             builder.addCnameRecord("alias", "target", 3600);
+            builder.addHttpsRecord("_443._tcp", 1, "server.example.com", 3600);
+            builder.addSvcbRecord("_api._tcp", 10, "api.example.com", 3600);
+            builder.addNsRecord("subdomain", "ns.example.com", 86400);
             builder.buildAndSign(keypair);
         }, 1000);
         

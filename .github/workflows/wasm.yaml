@@ -21,21 +21,43 @@ jobs:
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
     - name: Build server
       run: cargo build
 
-    - name: Start server and run tests
+    - name: Build WASM package
+      run: |
+        cd ./pkarr
+        chmod +x build-wasm.sh
+        ./build-wasm.sh
+
+    - name: Start server and run all tests
       run: |
         # Start the server binary in the background
         ./target/debug/pkarr-relay --testnet &
         SERVER_PID=$!
         
+        # Ensure server gets killed on exit
+        trap "kill $SERVER_PID" EXIT
+        
+        # Wait for server to start
+        sleep 2
+        
         # Change the working directory to pkarr crate
         cd ./pkarr
         
-        # Run wasm-pack tests
+        # Run wasm-pack tests (Rust WASM tests)
+        echo "🦀 Running Rust WASM tests..."
         wasm-pack test --headless --firefox --lib
         
-        # Kill the server
-        kill $SERVER_PID
+        # Change to the pkg directory and run JavaScript tests
+        echo "🟨 Running JavaScript tests..."
+        cd pkg
+        npm run test
+        
+        echo "✅ All tests completed successfully!"
 
