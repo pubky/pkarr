@@ -1,4 +1,19 @@
+use super::constants::*;
+use super::error::ClientError;
 use super::*;
+use std::sync::LazyLock;
+
+// Pre-parsed default relays for better performance
+// Fails fast if any default relay URL is invalid
+static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
+    crate::DEFAULT_RELAYS
+        .iter()
+        .map(|&url_str| {
+            url::Url::parse(url_str)
+                .unwrap_or_else(|e| panic!("Invalid default relay URL '{}': {}", url_str, e))
+        })
+        .collect()
+});
 
 /// Pkarr Client for publishing and resolving signed DNS packets
 #[wasm_bindgen]
@@ -14,43 +29,16 @@ impl Client {
     ///
     /// # Arguments
     /// * `relays` - Optional array of relay URLs as strings. If not provided, default relays will be used
-    /// * `timeout_ms` - Controls the networks timeouts for relay responses (optional, defaults to 30000 ms)
+    /// * `timeout_ms` - Controls the network timeouts for relay responses (optional, defaults to 30000 ms, min: 1000, max: 300000)
     #[wasm_bindgen(constructor)]
     pub fn new(relays: Option<Array>, timeout_ms: Option<u32>) -> Result<Client, JsValue> {
         console_error_panic_hook::set_once();
 
-        let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(30000) as u64);
+        let timeout = Self::validate_and_create_timeout(timeout_ms)?;
 
         #[cfg(feature = "relays")]
         {
-            let relay_urls: Result<Vec<url::Url>, _> = if let Some(relays) = relays {
-                relays
-                    .iter()
-                    .map(|val| {
-                        let url_str = val
-                            .as_string()
-                            .ok_or_else(|| JsValue::from_str("Relay URL must be a string"))?;
-                        url::Url::parse(&url_str)
-                            .map_err(|e| JsValue::from_str(&format!("Invalid URL: {}", e)))
-                    })
-                    .collect()
-            } else {
-                // Use default relays
-                crate::DEFAULT_RELAYS
-                    .iter()
-                    .map(|&url_str| {
-                        url::Url::parse(url_str)
-                            .map_err(|e| JsValue::from_str(&format!("Invalid default URL: {}", e)))
-                    })
-                    .collect()
-            };
-
-            let relay_urls = relay_urls?;
-
-            if relay_urls.is_empty() {
-                return Err(JsValue::from_str("At least one relay URL is required"));
-            }
-
+            let relay_urls = Self::parse_relay_urls(relays)?;
             let relays_client = RelaysClient::new(relay_urls.into_boxed_slice(), timeout);
 
             Ok(Client {
@@ -61,7 +49,7 @@ impl Client {
 
         #[cfg(not(feature = "relays"))]
         {
-            Err(JsValue::from_str("Relays feature not enabled"))
+            Err(ClientError::FeatureNotEnabled("relays feature not enabled".to_string()).into())
         }
     }
 
@@ -70,6 +58,7 @@ impl Client {
     /// # Arguments
     /// * `signed_packet` - The signed packet to publish
     /// * `cas_timestamp` - Optional compare-and-swap timestamp in milliseconds
+    #[wasm_bindgen(js_name = "publish")]
     pub async fn publish(
         &self,
         signed_packet: &super::SignedPacket,
@@ -77,23 +66,20 @@ impl Client {
     ) -> Result<(), JsValue> {
         #[cfg(feature = "relays")]
         {
-            if let Some(relays) = &self.relays {
-                let cas = cas_timestamp.map(|ts| crate::Timestamp::from(ts as u64));
+            let relays = self.get_relays()?;
+            let cas = Self::convert_cas_timestamp(cas_timestamp)?;
 
-                relays
-                    .publish(&signed_packet.inner, cas)
-                    .await
-                    .map_err(|e| JsValue::from_str(&format!("Publish failed: {}", e)))?;
+            relays
+                .publish(&signed_packet.inner, cas)
+                .await
+                .map_err(|e| ClientError::NetworkError(format!("publish failed: {}", e)))?;
 
-                Ok(())
-            } else {
-                Err(JsValue::from_str("No relays configured"))
-            }
+            Ok(())
         }
 
         #[cfg(not(feature = "relays"))]
         {
-            Err(JsValue::from_str("Relays feature not enabled"))
+            Err(ClientError::FeatureNotEnabled("relays feature not enabled".to_string()).into())
         }
     }
 
@@ -104,29 +90,12 @@ impl Client {
     ///
     /// # Returns
     /// * `Option<SignedPacket>` - The signed packet if found
+    #[wasm_bindgen(js_name = "resolve")]
     pub async fn resolve(
         &self,
         public_key_str: &str,
     ) -> Result<Option<super::SignedPacket>, JsValue> {
-        #[cfg(feature = "relays")]
-        {
-            if let Some(relays) = &self.relays {
-                let public_key = PublicKey::try_from(public_key_str)
-                    .map_err(|e| JsValue::from_str(&format!("Invalid public key: {}", e)))?;
-
-                use futures_lite::StreamExt;
-                let mut futures = relays.resolve_futures(&public_key, None);
-                let result = futures.next().await.flatten();
-                Ok(result.map(|packet| super::SignedPacket::from(packet)))
-            } else {
-                Err(JsValue::from_str("No relays configured"))
-            }
-        }
-
-        #[cfg(not(feature = "relays"))]
-        {
-            Err(JsValue::from_str("Relays feature not enabled"))
-        }
+        self.inner_resolve(public_key_str).await
     }
 
     /// Resolve the most recent signed packet for a public key
@@ -141,17 +110,174 @@ impl Client {
         &self,
         public_key_str: &str,
     ) -> Result<Option<super::SignedPacket>, JsValue> {
-        // For simplicity, this is the same as resolve for relay-only implementation
-        self.resolve(public_key_str).await
+        // TODO: This could implement more sophisticated logic to
+        // query multiple relays and find the most recent packet
+        self.inner_resolve(public_key_str).await
     }
 
     /// Get default relay URLs as JavaScript array
     #[wasm_bindgen(js_name = "defaultRelays")]
     pub fn default_relays() -> Array {
         let relays = Array::new();
-        for relay in crate::DEFAULT_RELAYS.iter() {
-            relays.push(&JsValue::from_str(relay));
+        for relay in PARSED_DEFAULT_RELAYS.iter() {
+            relays.push(&JsValue::from_str(relay.as_str()));
         }
         relays
+    }
+
+    /// Get the configured timeout in milliseconds
+    #[wasm_bindgen(js_name = "getTimeout")]
+    pub fn get_timeout(&self) -> u32 {
+        self.timeout.as_millis() as u32
+    }
+}
+
+// Private helper methods
+impl Client {
+    /// Common implementation for resolve methods to avoid duplication
+    async fn inner_resolve(
+        &self,
+        public_key_str: &str,
+    ) -> Result<Option<super::SignedPacket>, JsValue> {
+        #[cfg(feature = "relays")]
+        {
+            let relays = self.get_relays()?;
+            let public_key = Self::parse_public_key(public_key_str)?;
+
+            use futures_lite::StreamExt;
+            let mut futures = relays.resolve_futures(&public_key, None);
+            let result = futures.next().await.flatten();
+            Ok(result.map(super::SignedPacket::from))
+        }
+
+        #[cfg(not(feature = "relays"))]
+        {
+            Err(ClientError::FeatureNotEnabled("relays feature not enabled".to_string()).into())
+        }
+    }
+
+    /// Validate and create timeout duration from milliseconds
+    fn validate_and_create_timeout(
+        timeout_ms: Option<u32>,
+    ) -> Result<std::time::Duration, JsValue> {
+        let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
+
+        if timeout_ms < MIN_TIMEOUT_MS || timeout_ms > MAX_TIMEOUT_MS {
+            return Err(ClientError::ValidationError {
+                context: "timeout".to_string(),
+                message: format!(
+                    "{} ms (must be between {} and {} ms)",
+                    timeout_ms, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS
+                ),
+            }
+            .into());
+        }
+
+        Ok(std::time::Duration::from_millis(timeout_ms as u64))
+    }
+
+    /// Parse and validate relay URLs
+    #[cfg(feature = "relays")]
+    fn parse_relay_urls(relays: Option<Array>) -> Result<Vec<url::Url>, JsValue> {
+        let relay_urls: Result<Vec<url::Url>, ClientError> = if let Some(relays) = relays {
+            // Validate that we have at least one relay
+            if relays.length() == 0 {
+                return Err(ClientError::ConfigurationError(
+                    "At least one relay URL is required".to_string(),
+                )
+                .into());
+            }
+
+            relays
+                .iter()
+                .enumerate()
+                .map(|(index, val)| {
+                    let url_str = val
+                        .as_string()
+                        .ok_or_else(|| ClientError::ValidationError {
+                            context: format!("relay URL at index {}", index),
+                            message: "Relay URL must be a string".to_string(),
+                        })?;
+
+                    if url_str.trim().is_empty() {
+                        return Err(ClientError::ValidationError {
+                            context: format!("relay URL at index {}", index),
+                            message: "Relay URL cannot be empty".to_string(),
+                        });
+                    }
+
+                    url::Url::parse(&url_str).map_err(|e| ClientError::ParseError {
+                        input_type: format!("relay URL at index {}", index),
+                        message: e.to_string(),
+                    })
+                })
+                .collect()
+        } else {
+            // Use pre-parsed default relays
+            Ok(PARSED_DEFAULT_RELAYS.clone())
+        };
+
+        let relay_urls = relay_urls?;
+
+        if relay_urls.is_empty() {
+            return Err(
+                ClientError::ConfigurationError("No valid relay URLs found".to_string()).into(),
+            );
+        }
+
+        Ok(relay_urls)
+    }
+
+    /// Parse and validate public key string
+    fn parse_public_key(public_key_str: &str) -> Result<PublicKey, JsValue> {
+        if public_key_str.trim().is_empty() {
+            return Err(ClientError::ValidationError {
+                context: "public key".to_string(),
+                message: "Public key cannot be empty".to_string(),
+            }
+            .into());
+        }
+
+        PublicKey::try_from(public_key_str).map_err(|e| {
+            ClientError::ParseError {
+                input_type: "public key".to_string(),
+                message: e.to_string(),
+            }
+            .into()
+        })
+    }
+
+    /// Convert and validate CAS timestamp
+    fn convert_cas_timestamp(
+        cas_timestamp: Option<f64>,
+    ) -> Result<Option<crate::Timestamp>, JsValue> {
+        match cas_timestamp {
+            Some(ts) => {
+                if ts < 0.0 {
+                    return Err(ClientError::ValidationError {
+                        context: "CAS timestamp".to_string(),
+                        message: "Timestamp cannot be negative".to_string(),
+                    }
+                    .into());
+                }
+                if ts > u64::MAX as f64 {
+                    return Err(ClientError::ValidationError {
+                        context: "CAS timestamp".to_string(),
+                        message: "Timestamp too large".to_string(),
+                    }
+                    .into());
+                }
+                Ok(Some(crate::Timestamp::from(ts as u64)))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Get the relays client or return an error
+    #[cfg(feature = "relays")]
+    fn get_relays(&self) -> Result<&RelaysClient, JsValue> {
+        self.relays.as_ref().map(|arc| arc.as_ref()).ok_or_else(|| {
+            ClientError::ConfigurationError("No relays configured".to_string()).into()
+        })
     }
 }

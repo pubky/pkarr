@@ -3,7 +3,7 @@
  * 
  * This example demonstrates advanced usage of pkarr WASM bindings:
  * - Custom relay configuration
- * - All 7 DNS record types (A, AAAA, TXT, CNAME, HTTPS, SVCB, NS)
+ * - All 7 DNS record types (A, AAAA, TXT, CNAME, HTTPS, SVCB, NS)  
  * - Error handling and retry logic
  * - Compare-and-swap publishing
  * - Resolving most recent packets
@@ -47,34 +47,39 @@ async function advancedExample() {
         console.log('📦 Creating comprehensive DNS packet...');
         const builder = SignedPacket.builder();
         
-        // Add various DNS record types
-        builder.addTxtRecord("_service", "v=1;type=web", 3600);
-        builder.addTxtRecord("description", "My decentralized app", 7200);
-        builder.addTxtRecord("contact", "admin@example.com", 3600);
-        
-        // IPv4 addresses
-        builder.addARecord("www", "192.168.1.100", 3600);
-        builder.addARecord("api", "192.168.1.101", 3600);
-        
-        // IPv6 addresses
-        builder.addAAAARecord("www", "2001:db8::1", 3600);
-        builder.addAAAARecord("api", "2001:db8::2", 3600);
-        
-        // CNAME records
-        builder.addCnameRecord("blog", "www", 3600);
-        builder.addCnameRecord("docs", "www", 3600);
-        
-        // HTTPS service records (modern service discovery)
-        builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
-        builder.addHttpsRecord("_443._tcp", 2, "backup.example.com", 7200);
-        
-        // SVCB service binding records
-        builder.addSvcbRecord("_api._tcp", 10, "api-primary.example.com", 3600);
-        builder.addSvcbRecord("_api._tcp", 20, "api-backup.example.com", 3600);
-        
-        // NS records for subdomain delegation
-        builder.addNsRecord("subdomain", "ns1.example.com", 86400);
-        builder.addNsRecord("subdomain", "ns2.example.com", 86400);
+        // Add various DNS record types (now with better error handling)
+        try {
+            builder.addTxtRecord("_service", "v=1;type=web", 3600);
+            builder.addTxtRecord("description", "My decentralized app", 7200);
+            builder.addTxtRecord("contact", "admin@example.com", 3600);
+            
+            // IPv4 addresses
+            builder.addARecord("www", "192.168.1.100", 3600);
+            builder.addARecord("api", "192.168.1.101", 3600);
+            
+            // IPv6 addresses
+            builder.addAAAARecord("www", "2001:db8::1", 3600);
+            builder.addAAAARecord("api", "2001:db8::2", 3600);
+            
+            // CNAME records
+            builder.addCnameRecord("blog", "www", 3600);
+            builder.addCnameRecord("docs", "www", 3600);
+            
+            // HTTPS service records (modern service discovery)
+            builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
+            builder.addHttpsRecord("_443._tcp", 2, "backup.example.com", 7200);
+            
+            // SVCB service binding records
+            builder.addSvcbRecord("_api._tcp", 10, "api-primary.example.com", 3600);
+            builder.addSvcbRecord("_api._tcp", 20, "api-backup.example.com", 3600);
+            
+            // NS records for subdomain delegation
+            builder.addNsRecord("subdomain", "ns1.example.com", 86400);
+            builder.addNsRecord("subdomain", "ns2.example.com", 86400);
+        } catch (error) {
+            console.log(`❌ Builder validation caught error: ${error.message}`);
+            throw error;
+        }
         
         // Set custom timestamp (optional - defaults to current time)
         const customTimestamp = Date.now();
@@ -205,6 +210,7 @@ async function advancedExample() {
         console.log('\n📋 Summary of demonstrated features:');
         console.log('   Custom relay configuration');
         console.log('   All 7 DNS record types (TXT, A, AAAA, CNAME, HTTPS, SVCB, NS)');
+        console.log('   Enhanced builder with input validation');
         console.log('   Error handling and retry logic');
         console.log('   Compare-and-swap publishing');
         console.log('   Most recent packet resolution');

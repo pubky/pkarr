@@ -22,10 +22,8 @@ async function runTests() {
     try {
         // Test 1: Client creation
         console.log('✅ WASM initialized');
-        const customRelays = ['http://localhost:15411'];
-        const timeoutMs = 10000; // 10 seconds
         
-        const client = new Client(customRelays, timeoutMs);
+        const client = new Client();
         console.log('✅ Client created');
         
         // Test 3: Keypair generation

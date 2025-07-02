@@ -154,26 +154,27 @@ Comprehensive test suite with 100% pass rate across all areas:
 
 ```bash
 npm run test                  # Run all test suites (recommended)
-npm run test:unit            # Unit tests (22 tests) - Core functionality
+npm run test:unit            # Unit tests (29 tests) - Core functionality
 npm run test:integration     # Integration tests (7 tests) - Live network
 npm run test:performance     # Performance benchmarks - Speed analysis  
-npm run test:edge-cases      # Edge cases (15 tests) - Error handling
+npm run test:edge-cases      # Edge cases (21 tests) - Error handling
 ```
 
 ### Test Coverage
 
-- ✅ **Unit Tests** (100%): Core WASM functionality, keypairs, packet building, API compatibility
-- ✅ **Integration Tests** (100%): Live network operations with Pubky relays
-- ✅ **Performance Tests** (100%): Benchmarks and memory analysis
-- ✅ **Edge Cases** (100%): Error handling, validation, boundary conditions
+- ✅ **Unit Tests** (29/29): Core WASM functionality, keypairs, packet building, API compatibility
+- ✅ **Integration Tests** (7/7): Live network operations with Pubky relays
+- ✅ **Performance Tests**: Benchmarks and memory analysis across all operations
+- ✅ **Edge Cases** (21/21): Error handling, input validation, boundary conditions
 
-### Performance Metrics
+### Performance Characteristics
 
-- **Keypair Generation**: ~20,000 ops/sec
-- **Packet Building**: ~32,000 ops/sec  
-- **Network Operations**: Live relay communication
-- **Memory Usage**: Efficient WASM memory management
-- **Concurrent Operations**: Full async/await support
+- **Keypair Generation**: Fast cryptographic key generation using Ed25519
+- **Packet Building**: Efficient DNS packet construction and signing
+- **Record Operations**: Optimized handling of all 7 DNS record types
+- **Network Operations**: Live relay communication with configurable timeouts
+- **Memory Usage**: Efficient WASM memory management with stress testing
+- **Concurrent Operations**: Full async/await support with parallel publish/resolve
 
 ## 🌐 Network Operations
 
@@ -192,7 +193,7 @@ const client = new Client(customRelays, 10000); // 10s timeout
 
 ## 🛡️ Error Handling
 
-The WASM bindings include robust error handling:
+The WASM bindings include robust error handling with comprehensive input validation:
 
 ```javascript
 try {
@@ -206,6 +207,14 @@ try {
     console.error('Resolution failed:', error.message);
 }
 ```
+
+### Enhanced Validation
+
+- **Input Validation**: All DNS names, IP addresses, and parameters are validated
+- **Timeout Validation**: Client timeouts must be between 1-300 seconds
+- **Key Validation**: Ed25519 keys are validated for proper length and format
+- **Packet Size Limits**: Enforces 1000-byte pkarr specification limit
+- **Error Context**: Detailed error messages with context for debugging
 
 ## 🔧 TypeScript Support
 

@@ -17,7 +17,7 @@ use crate::client::relays::RelaysClient;
 
 // Import DNS types for the records implementation
 use ntimestamp::Timestamp;
-use simple_dns::rdata::{RData, A, AAAA, CNAME, HTTPS, NS, SVCB, TXT};
+use simple_dns::rdata::{RData, A, AAAA, HTTPS, NS, SVCB, TXT};
 use simple_dns::{Name, ResourceRecord, CLASS};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -31,6 +31,8 @@ use url;
 // Module declarations
 mod builder;
 mod client;
+mod constants;
+mod error;
 mod keypair;
 mod signed_packet;
 mod utils;

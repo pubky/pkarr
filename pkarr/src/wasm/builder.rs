@@ -1,3 +1,5 @@
+use super::constants::*;
+use super::error::ClientError;
 use super::*;
 
 /// WASM-compatible wrapper for SignedPacketBuilder
@@ -24,12 +26,16 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addTxtRecord")]
     pub fn add_txt_record(&mut self, name: &str, text: &str, ttl: u32) -> Result<(), JsValue> {
-        let name = Name::new_unchecked(name);
+        self.validate_name(name)?;
+        let domain_name = Name::new_unchecked(name);
         let txt = TXT::new()
             .with_string(text)
-            .map_err(|e| JsValue::from_str(&format!("Invalid TXT record: {}", e)))?;
+            .map_err(|e| ClientError::ValidationError {
+                context: "TXT record".to_string(),
+                message: e.to_string(),
+            })?;
 
-        let record = ResourceRecord::new(name, CLASS::IN, ttl, RData::TXT(txt));
+        let record = ResourceRecord::new(domain_name, CLASS::IN, ttl, RData::TXT(txt));
         self.inner = self.inner.clone().record(record);
         Ok(())
     }
@@ -42,11 +48,17 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addARecord")]
     pub fn add_a_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
-        let addr: Ipv4Addr = address
-            .parse()
-            .map_err(|e| JsValue::from_str(&format!("Invalid IPv4 address: {}", e)))?;
+        self.validate_name(name)?;
+        let domain_name = Name::new_unchecked(name);
+        let addr: Ipv4Addr =
+            address
+                .parse()
+                .map_err(|e: std::net::AddrParseError| ClientError::ParseError {
+                    input_type: "IPv4 address".to_string(),
+                    message: e.to_string(),
+                })?;
 
-        self.inner = self.inner.clone().a(Name::new_unchecked(name), addr, ttl);
+        self.inner = self.inner.clone().a(domain_name, addr, ttl);
         Ok(())
     }
 
@@ -58,14 +70,17 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addAAAARecord")]
     pub fn add_aaaa_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
-        let addr: Ipv6Addr = address
-            .parse()
-            .map_err(|e| JsValue::from_str(&format!("Invalid IPv6 address: {}", e)))?;
+        self.validate_name(name)?;
+        let domain_name = Name::new_unchecked(name);
+        let addr: Ipv6Addr =
+            address
+                .parse()
+                .map_err(|e: std::net::AddrParseError| ClientError::ParseError {
+                    input_type: "IPv6 address".to_string(),
+                    message: e.to_string(),
+                })?;
 
-        self.inner = self
-            .inner
-            .clone()
-            .aaaa(Name::new_unchecked(name), addr, ttl);
+        self.inner = self.inner.clone().aaaa(domain_name, addr, ttl);
         Ok(())
     }
 
@@ -77,10 +92,12 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addCnameRecord")]
     pub fn add_cname_record(&mut self, name: &str, target: &str, ttl: u32) -> Result<(), JsValue> {
-        self.inner =
-            self.inner
-                .clone()
-                .cname(Name::new_unchecked(name), Name::new_unchecked(target), ttl);
+        self.validate_name(name)?;
+        self.validate_name(target)?;
+        let domain_name = Name::new_unchecked(name);
+        let target_name = Name::new_unchecked(target);
+
+        self.inner = self.inner.clone().cname(domain_name, target_name, ttl);
         Ok(())
     }
 
@@ -99,11 +116,13 @@ impl SignedPacketBuilder {
         target: &str,
         ttl: u32,
     ) -> Result<(), JsValue> {
-        let svcb = SVCB::new(priority, Name::new_unchecked(target));
-        self.inner = self
-            .inner
-            .clone()
-            .https(Name::new_unchecked(name), svcb, ttl);
+        self.validate_name(name)?;
+        self.validate_name(target)?;
+        let domain_name = Name::new_unchecked(name);
+        let target_name = Name::new_unchecked(target);
+        let svcb = SVCB::new(priority, target_name);
+
+        self.inner = self.inner.clone().https(domain_name, svcb, ttl);
         Ok(())
     }
 
@@ -122,11 +141,13 @@ impl SignedPacketBuilder {
         target: &str,
         ttl: u32,
     ) -> Result<(), JsValue> {
-        let svcb = SVCB::new(priority, Name::new_unchecked(target));
-        self.inner = self
-            .inner
-            .clone()
-            .svcb(Name::new_unchecked(name), svcb, ttl);
+        self.validate_name(name)?;
+        self.validate_name(target)?;
+        let domain_name = Name::new_unchecked(name);
+        let target_name = Name::new_unchecked(target);
+        let svcb = SVCB::new(priority, target_name);
+
+        self.inner = self.inner.clone().svcb(domain_name, svcb, ttl);
         Ok(())
     }
 
@@ -138,9 +159,13 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addNsRecord")]
     pub fn add_ns_record(&mut self, name: &str, nameserver: &str, ttl: u32) -> Result<(), JsValue> {
-        use simple_dns::rdata::NS;
-        let ns = NS(Name::new_unchecked(nameserver));
-        self.inner = self.inner.clone().ns(Name::new_unchecked(name), ns, ttl);
+        self.validate_name(name)?;
+        self.validate_name(nameserver)?;
+        let domain_name = Name::new_unchecked(name);
+        let nameserver_name = Name::new_unchecked(nameserver);
+        let ns = simple_dns::rdata::NS(nameserver_name);
+
+        self.inner = self.inner.clone().ns(domain_name, ns, ttl);
         Ok(())
     }
 
@@ -150,10 +175,11 @@ impl SignedPacketBuilder {
     /// * `timestamp_ms` - Timestamp in milliseconds since Unix epoch
     #[wasm_bindgen(js_name = "setTimestamp")]
     pub fn set_timestamp(&mut self, timestamp_ms: f64) {
+        let timestamp_microseconds = (timestamp_ms as u64).saturating_mul(MS_TO_MICROSECONDS);
         self.inner = self
             .inner
             .clone()
-            .timestamp(Timestamp::from(timestamp_ms as u64 * 1000)); // Convert ms to microseconds
+            .timestamp(Timestamp::from(timestamp_microseconds));
     }
 
     /// Build and sign the packet with the given keypair
@@ -169,7 +195,7 @@ impl SignedPacketBuilder {
             .inner
             .clone()
             .sign(&keypair.keypair)
-            .map_err(|e| JsValue::from_str(&format!("Failed to build packet: {}", e)))?;
+            .map_err(|e| ClientError::BuildError(e.to_string()))?;
 
         Ok(super::SignedPacket::from(signed_packet))
     }
@@ -184,5 +210,30 @@ impl SignedPacketBuilder {
     #[wasm_bindgen(js_name = "builder")]
     pub fn builder() -> SignedPacketBuilder {
         SignedPacketBuilder::new()
+    }
+}
+
+// Private helper methods
+impl SignedPacketBuilder {
+    /// Validate a domain name string
+    fn validate_name(&self, name: &str) -> Result<(), JsValue> {
+        if name.is_empty() {
+            return Err(ClientError::ValidationError {
+                context: "domain name".to_string(),
+                message: "Name cannot be empty".to_string(),
+            }
+            .into());
+        }
+
+        // Check for obviously invalid characters
+        if name.contains("..") || name.starts_with('-') || name.ends_with('-') {
+            return Err(ClientError::ValidationError {
+                context: "domain name".to_string(),
+                message: "Invalid domain name format".to_string(),
+            }
+            .into());
+        }
+
+        Ok(())
     }
 }
