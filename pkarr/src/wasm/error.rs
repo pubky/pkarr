@@ -1,53 +1,32 @@
 use wasm_bindgen::JsValue;
+use thiserror::Error;
 
 /// Generic error types for the WASM module
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ClientError {
     /// Input validation failed
+    #[error("validation failed in {context}: {message}")]
     ValidationError { context: String, message: String },
 
     /// Failed to parse input data
+    #[error("parse error for {input_type}: {message}")]
     ParseError { input_type: String, message: String },
 
     /// Network or connectivity error
+    #[error("network error: {0}")]
     NetworkError(String),
 
     /// Configuration or setup error
+    #[error("configuration error: {0}")]
     ConfigurationError(String),
 
     /// Requested feature is not available
+    #[error("feature not enabled: {0}")]
     FeatureNotEnabled(String),
 
     /// Failed to build or create something
+    #[error("build error: {0}")]
     BuildError(String),
-}
-
-impl std::fmt::Display for ClientError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClientError::ValidationError { context, message } => {
-                write!(f, "Validation error in {}: {}", context, message)
-            }
-            ClientError::ParseError {
-                input_type,
-                message,
-            } => {
-                write!(f, "Parse error for {}: {}", input_type, message)
-            }
-            ClientError::NetworkError(msg) => {
-                write!(f, "Network error: {}", msg)
-            }
-            ClientError::ConfigurationError(msg) => {
-                write!(f, "Configuration error: {}", msg)
-            }
-            ClientError::FeatureNotEnabled(feature) => {
-                write!(f, "Feature not available: {}", feature)
-            }
-            ClientError::BuildError(msg) => {
-                write!(f, "Build error: {}", msg)
-            }
-        }
-    }
 }
 
 impl From<ClientError> for JsValue {

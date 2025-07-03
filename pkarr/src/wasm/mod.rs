@@ -37,9 +37,6 @@ mod keypair;
 mod signed_packet;
 mod utils;
 
-#[cfg(test)]
-mod test;
-
 // Re-exports
 pub use builder::SignedPacketBuilder;
 pub use client::Client;

@@ -26,8 +26,7 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addTxtRecord")]
     pub fn add_txt_record(&mut self, name: &str, text: &str, ttl: u32) -> Result<(), JsValue> {
-        self.validate_name(name)?;
-        let domain_name = Name::new_unchecked(name);
+        let domain_name = self.parse_name(name)?;
         let txt = TXT::new()
             .with_string(text)
             .map_err(|e| ClientError::ValidationError {
@@ -48,8 +47,7 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addARecord")]
     pub fn add_a_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
-        self.validate_name(name)?;
-        let domain_name = Name::new_unchecked(name);
+        let domain_name = self.parse_name(name)?;
         let addr: Ipv4Addr =
             address
                 .parse()
@@ -70,8 +68,7 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addAAAARecord")]
     pub fn add_aaaa_record(&mut self, name: &str, address: &str, ttl: u32) -> Result<(), JsValue> {
-        self.validate_name(name)?;
-        let domain_name = Name::new_unchecked(name);
+        let domain_name = self.parse_name(name)?;
         let addr: Ipv6Addr =
             address
                 .parse()
@@ -92,11 +89,7 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addCnameRecord")]
     pub fn add_cname_record(&mut self, name: &str, target: &str, ttl: u32) -> Result<(), JsValue> {
-        self.validate_name(name)?;
-        self.validate_name(target)?;
-        let domain_name = Name::new_unchecked(name);
-        let target_name = Name::new_unchecked(target);
-
+        let (domain_name, target_name) = self.parse_name_pair(name, target)?;
         self.inner = self.inner.clone().cname(domain_name, target_name, ttl);
         Ok(())
     }
@@ -116,12 +109,8 @@ impl SignedPacketBuilder {
         target: &str,
         ttl: u32,
     ) -> Result<(), JsValue> {
-        self.validate_name(name)?;
-        self.validate_name(target)?;
-        let domain_name = Name::new_unchecked(name);
-        let target_name = Name::new_unchecked(target);
+        let (domain_name, target_name) = self.parse_name_pair(name, target)?;
         let svcb = SVCB::new(priority, target_name);
-
         self.inner = self.inner.clone().https(domain_name, svcb, ttl);
         Ok(())
     }
@@ -141,12 +130,8 @@ impl SignedPacketBuilder {
         target: &str,
         ttl: u32,
     ) -> Result<(), JsValue> {
-        self.validate_name(name)?;
-        self.validate_name(target)?;
-        let domain_name = Name::new_unchecked(name);
-        let target_name = Name::new_unchecked(target);
+        let (domain_name, target_name) = self.parse_name_pair(name, target)?;
         let svcb = SVCB::new(priority, target_name);
-
         self.inner = self.inner.clone().svcb(domain_name, svcb, ttl);
         Ok(())
     }
@@ -159,12 +144,8 @@ impl SignedPacketBuilder {
     /// * `ttl` - Time to live in seconds
     #[wasm_bindgen(js_name = "addNsRecord")]
     pub fn add_ns_record(&mut self, name: &str, nameserver: &str, ttl: u32) -> Result<(), JsValue> {
-        self.validate_name(name)?;
-        self.validate_name(nameserver)?;
-        let domain_name = Name::new_unchecked(name);
-        let nameserver_name = Name::new_unchecked(nameserver);
+        let (domain_name, nameserver_name) = self.parse_name_pair(name, nameserver)?;
         let ns = simple_dns::rdata::NS(nameserver_name);
-
         self.inner = self.inner.clone().ns(domain_name, ns, ttl);
         Ok(())
     }
@@ -235,5 +216,23 @@ impl SignedPacketBuilder {
         }
 
         Ok(())
+    }
+
+    /// Validate a single name and return a `Name`
+    fn parse_name<'a>(&self, name: &'a str) -> Result<Name<'a>, JsValue> {
+        self.validate_name(name)?;
+        Ok(Name::new_unchecked(name))
+    }
+
+    /// Validate two domain names and return their `Name` representations
+    fn parse_name_pair<'a>(
+        &self,
+        name: &'a str,
+        target: &'a str,
+    ) -> Result<(Name<'a>, Name<'a>), JsValue> {
+        self.validate_name(name)?;
+        self.validate_name(target)?;
+
+        Ok((Name::new_unchecked(name), Name::new_unchecked(target)))
     }
 }
