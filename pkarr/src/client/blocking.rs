@@ -12,6 +12,7 @@ impl Client {
 }
 
 /// A blocking (synchronous) version of [Client].
+#[derive(Clone, Debug)]
 pub struct ClientBlocking(Client);
 
 impl ClientBlocking {
