@@ -7,21 +7,15 @@
 const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
 
 async function runEdgeCasesTests() {
-    console.log('🧪 Running Pkarr WASM Edge Cases Tests...\n');
-    console.log('=' .repeat(60));
-    console.log('🔥 EDGE CASES TESTS');
-    console.log('=' .repeat(60));
+    console.log('🧪 Running Edge Cases Tests...');
     
-    let passed = 0;
     let failed = 0;
     
     // Helper function to run a test
     function test(name, testFn) {
         try {
-            console.log(`\n🔍 Testing: ${name}`);
+            //console.log(`\t-${name}`);
             testFn();
-            console.log(`✅ PASS: ${name}`);
-            passed++;
         } catch (error) {
             console.log(`❌ FAIL: ${name} - ${error.message}`);
             failed++;
@@ -31,10 +25,8 @@ async function runEdgeCasesTests() {
     // Helper function for async tests
     async function asyncTest(name, testFn) {
         try {
-            console.log(`\n🔍 Testing: ${name}`);
+            //console.log(`\t-${name}`);
             await testFn();
-            console.log(`✅ PASS: ${name}`);
-            passed++;
         } catch (error) {
             console.log(`❌ FAIL: ${name} - ${error.message}`);
             failed++;
@@ -148,7 +140,6 @@ async function runEdgeCasesTests() {
                 builder.addTxtRecord(veryLongName, veryLongValue, 3600);
             } catch (error) {
                 // Very long values might be rejected, which is acceptable
-                console.log("   📝 Very long values rejected (this is acceptable for DNS limits)");
             }
         } catch (error) {
             if (error.message === "Long record values not handled correctly") {
@@ -412,7 +403,6 @@ async function runEdgeCasesTests() {
                     // Empty zone rejection is acceptable
                 } else {
                     // Other zone names should work
-                    console.log(`   📝 Zone name '${zone}' was rejected (might be acceptable)`);
                 }
             }
         });
@@ -447,7 +437,6 @@ async function runEdgeCasesTests() {
                 throw error;
             }
             // Other errors might be due to validation, which is acceptable
-            console.log("   📝 Some edge case combinations were rejected (acceptable)");
         }
     });
     
@@ -508,7 +497,6 @@ async function runEdgeCasesTests() {
                 throw error;
             }
             // Other errors might be due to size limits, which is acceptable
-            console.log("   📝 Hit packet size limits (this is acceptable)");
         }
     });
     
@@ -671,17 +659,14 @@ async function runEdgeCasesTests() {
             try {
                 // This might timeout or succeed - both are acceptable
                 await timeoutClient.publish(packet);
-                console.log("   📝 Short timeout request succeeded (acceptable)");
             } catch (error) {
                 // Network timeout errors are expected and acceptable
                 const errorMessage = error && error.message ? error.message : String(error);
-                console.log(`   📝 Network timeout as expected: ${errorMessage}`);
                 // Don't re-throw - network timeout errors are acceptable for this test
             }
         } catch (error) {
             // If there's any error in the test setup, that's also acceptable
             const errorMessage = error && error.message ? error.message : String(error);
-            console.log(`   📝 Network timeout test error (acceptable): ${errorMessage}`);
         }
     });
     
@@ -716,32 +701,9 @@ async function runEdgeCasesTests() {
         }
     });
     
-    console.log('\n' + '=' .repeat(60));
-    console.log('📊 EDGE CASES TEST RESULTS');
-    console.log('=' .repeat(60));
-    console.log(`Total tests: ${passed + failed}`);
-    console.log(`✅ Passed: ${passed}`);
-    console.log(`❌ Failed: ${failed}`);
-    console.log(`Success rate: ${((passed / (passed + failed)) * 100).toFixed(1)}%`);
-    
     if (failed > 0) {
         throw new Error(`${failed} edge cases tests failed`);
     }
-    
-    console.log('\n🎉 All edge cases tests passed!');
-    console.log('🛡️  The WASM implementation handles edge cases robustly');
-    console.log('\n📋 Edge Cases Summary:');
-    console.log('   Invalid input validation');
-    console.log('   Boundary conditions');
-    console.log('   Memory stress testing');
-    console.log('   Network timeout handling');
-    console.log('   Concurrent operations');
-    console.log('   Special character handling');
-    console.log('   SignedPacket object workflow');
-    console.log('   All 7 DNS record types (TXT, A, AAAA, CNAME, HTTPS, SVCB, NS)');
-    console.log('   Service discovery edge cases (priority ranges, alias modes)');
-    console.log('   Nameserver delegation validation (NS records)');
-    console.log('   Mixed record type combinations with extreme values');
 }
 
 // Export for use in test runner

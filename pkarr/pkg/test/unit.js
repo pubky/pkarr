@@ -7,21 +7,15 @@
 const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
 
 async function runUnitTests() {
-    console.log('🧪 Running Pkarr WASM Unit Tests...\n');
-    console.log('=' .repeat(60));
-    console.log('🔬 UNIT TESTS');
-    console.log('=' .repeat(60));
+    console.log('🧪 Running Unit Tests...');
     
-    let passed = 0;
     let failed = 0;
     
     // Helper function to run a test
     function test(name, testFn) {
         try {
-            console.log(`\n🔍 Testing: ${name}`);
+            //console.log(`\t-${name}`);
             testFn();
-            console.log(`✅ PASS: ${name}`);
-            passed++;
         } catch (error) {
             console.log(`❌ FAIL: ${name} - ${error.message}`);
             failed++;
@@ -365,20 +359,10 @@ async function runUnitTests() {
         const packet = builder.buildAndSign(keypair);
         if (!packet) throw new Error("Builder from static method failed");
     });
-    
-    console.log('\n' + '=' .repeat(60));
-    console.log('📊 UNIT TEST RESULTS');
-    console.log('=' .repeat(60));
-    console.log(`Total tests: ${passed + failed}`);
-    console.log(`✅ Passed: ${passed}`);
-    console.log(`❌ Failed: ${failed}`);
-    console.log(`Success rate: ${((passed / (passed + failed)) * 100).toFixed(1)}%`);
-    
+
     if (failed > 0) {
         throw new Error(`${failed} unit tests failed`);
     }
-    
-    console.log('🎉 All unit tests passed!');
 }
 
 // Export for use in test runner

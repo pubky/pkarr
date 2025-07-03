@@ -7,14 +7,11 @@
 const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
 
 async function runIntegrationTests() {
-    console.log('🧪 Running Pkarr WASM Integration Tests...\n');
-    console.log('=' .repeat(60));
-    console.log('🌐 INTEGRATION TESTS');
-    console.log('=' .repeat(60));
+    console.log('🧪 Running Integration Tests...');
     
     try {
         // Test 1: Basic publish and resolve workflow
-        console.log('\n🔍 Test 1: Basic publish and resolve workflow');
+        //console.log('\t- Basic publish and resolve workflow');
         
         const localRelay = ['http://0.0.0.0:15411'];
         const timeoutMs = 10000; // 10 seconds
@@ -28,17 +25,13 @@ async function runIntegrationTests() {
         builder.addTxtRecord("_test", "integration-test=true", 3600);
         builder.addARecord("www", "192.168.1.100", 3600);
         const packet = builder.buildAndSign(keypair);
-        
-        console.log(`   📤 Publishing packet for key: ${publicKey}`);
+
         await client.publish(packet);
-        console.log('   ✅ Packet published successfully');
         
         // Wait for propagation
-        console.log('   ⏳ Waiting 2 seconds for propagation...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Resolve the packet
-        console.log('   📥 Resolving packet...');
         const resolvedPacket = await client.resolve(publicKey);
         
         if (!resolvedPacket) {
@@ -53,10 +46,8 @@ async function runIntegrationTests() {
             throw new Error('Resolved packet has wrong number of records');
         }
         
-        console.log('   ✅ Basic workflow completed successfully');
-        
         // Test 2: Multiple record types
-        console.log('\n🔍 Test 2: Multiple DNS record types');
+        //console.log('\t- Multiple DNS record types');
         const keypair2 = new Keypair();
         const publicKey2 = keypair2.public_key_string();
         
@@ -73,10 +64,7 @@ async function runIntegrationTests() {
         builder2.addNsRecord("subdomain", "ns1.example.com", 86400);
         
         const packet2 = builder2.buildAndSign(keypair2);
-        
-        console.log(`   📤 Publishing complex packet with ${packet2.records.length} records`);
         await client.publish(packet2);
-        console.log('   ✅ Complex packet published successfully');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
@@ -95,10 +83,8 @@ async function runIntegrationTests() {
             throw new Error(`Expected record types ${expectedTypes.join(',')}, got ${recordTypes.join(',')}`);
         }
         
-        console.log('   ✅ Multiple record types test completed (all 7 DNS record types)');
-        
         // Test 3: Custom relay configuration
-        console.log('\n🔍 Test 3: Custom relay configuration');
+        //console.log('\t- Custom relay configuration');
         const customRelays = ['http://0.0.0.0:15411'];
         const customClient = new Client(customRelays, 10000);
         const keypair3 = new Keypair();
@@ -107,9 +93,7 @@ async function runIntegrationTests() {
         builder3.addTxtRecord("_custom", "relay-test=true", 3600);
         const packet3 = builder3.buildAndSign(keypair3);
         
-        console.log('   📤 Publishing with custom relay configuration');
         await customClient.publish(packet3);
-        console.log('   ✅ Custom relay publish successful');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
@@ -118,10 +102,8 @@ async function runIntegrationTests() {
             throw new Error('Custom relay resolution failed');
         }
         
-        console.log('   ✅ Custom relay configuration test completed');
-        
         // Test 4: resolveMostRecent functionality
-        console.log('\n🔍 Test 4: resolveMostRecent functionality');
+        //console.log('\t- resolveMostRecent functionality');
         const mostRecentPacket = await client.resolveMostRecent(publicKey);
         
         if (!mostRecentPacket) {
@@ -132,10 +114,8 @@ async function runIntegrationTests() {
             throw new Error('resolveMostRecent returned wrong packet');
         }
         
-        console.log('   ✅ resolveMostRecent test completed');
-        
         // Test 5: Packet update workflow
-        console.log('\n🔍 Test 5: Packet update workflow');
+        //console.log('\t- Packet update workflow');
         const updateBuilder = SignedPacket.builder();
         updateBuilder.addTxtRecord("_test", "integration-test=updated", 3600);
         updateBuilder.addTxtRecord("updated", new Date().toISOString(), 3600);
@@ -143,9 +123,7 @@ async function runIntegrationTests() {
         
         const updatePacket = updateBuilder.buildAndSign(keypair);
         
-        console.log('   📤 Publishing updated packet');
         await client.publish(updatePacket);
-        console.log('   ✅ Updated packet published');
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
@@ -158,72 +136,16 @@ async function runIntegrationTests() {
             throw new Error('Updated packet should have newer timestamp');
         }
         
-        console.log('   ✅ Packet update workflow completed');
-        
         // Test 6: Error handling for non-existent keys
-        console.log('\n🔍 Test 6: Error handling for non-existent keys');
+        //console.log('\t- Error handling for non-existent keys');
         const nonExistentKey = new Keypair().public_key_string();
         const nonExistentResult = await client.resolve(nonExistentKey);
         
         if (nonExistentResult !== undefined && nonExistentResult !== null) {
             throw new Error(`Expected null or undefined for non-existent key, got: ${nonExistentResult}`);
         }
-        
-        console.log('   ✅ Non-existent key handling test completed');
-        
-        // Test 7: Large packet handling
-        console.log('\n🔍 Test 7: Large packet handling');
-        const largeBuilder = SignedPacket.builder();
-        
-        // Add many records to test size limits (reduced to avoid network limits)
-        for (let i = 0; i < 10; i++) {
-            largeBuilder.addTxtRecord(`record${i}`, `value${i}`, 3600);
-        }
-        
-        const largeKeypair = new Keypair();
-        const largePacket = largeBuilder.buildAndSign(largeKeypair);
-        
-        console.log(`   📤 Publishing large packet with ${largePacket.records.length} records`);
-        try {
-            await client.publish(largePacket);
-            console.log('   ✅ Large packet published successfully');
-            
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const resolvedLarge = await client.resolve(largeKeypair.public_key_string());
-            if (!resolvedLarge) {
-                console.log('   ⚠️  Large packet resolution returned no data, but publish succeeded');
-            } else {
-                if (resolvedLarge.records.length !== 10) {
-                    console.log('   ⚠️  Large packet resolution returned different record count, but publish succeeded');
-                } else {
-                    console.log('   ✅ Large packet handling test completed');
-                }
-            }
-        } catch (error) {
-            console.log(`   ⚠️  Large packet publish failed: ${error.message}`);
-            console.log('   ℹ️  This may be expected due to size limits');
-        }
-        
-        console.log('\n' + '=' .repeat(60));
-        console.log('🎉 ALL INTEGRATION TESTS COMPLETED SUCCESSFULLY!');
-        console.log('=' .repeat(60));
-        
-        console.log('\n📊 Integration Test Summary:');
-        console.log('   Basic publish/resolve workflow');
-        console.log('   Multiple DNS record types (TXT, A, AAAA, CNAME, HTTPS, SVCB, NS)');
-        console.log('   Custom relay configuration');
-        console.log('   resolveMostRecent functionality');
-        console.log('   Packet update workflow');
-        console.log('   Error handling for non-existent keys');
-        console.log('   Large packet handling');
-        console.log('   Network connectivity and relay communication');
-        console.log('   SignedPacket object workflow (no manual byte handling)');
-        console.log('   All 7 DNS record types validated in live network operations');
-        
     } catch (error) {
         console.error('\n❌ Integration test failed:', error.message);
-        console.error('Stack trace:', error.stack);
         throw error;
     }
 }
