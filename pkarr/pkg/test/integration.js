@@ -17,11 +17,10 @@ async function runIntegrationTests() {
         const timeoutMs = 10000; // 10 seconds
         const client = new Client(localRelay, timeoutMs);
 
-        const keypair = new Keypair();
+        const {builder, keypair} = newFixture();
         const publicKey = keypair.public_key_string();
         
         // Create a packet
-        const builder = SignedPacket.builder();
         builder.addTxtRecord("_test", "integration-test=true", 3600);
         builder.addARecord("www", "192.168.1.100", 3600);
         const packet = builder.buildAndSign(keypair);
@@ -48,10 +47,10 @@ async function runIntegrationTests() {
         
         // Test 2: Multiple record types
         //console.log('\t- Multiple DNS record types');
-        const keypair2 = new Keypair();
+
+        const {builder2, keypair2} = newFixture();
         const publicKey2 = keypair2.public_key_string();
         
-        const builder2 = SignedPacket.builder();
         builder2.addTxtRecord("_service", "type=web;version=1", 3600);
         builder2.addTxtRecord("description", "Integration test service", 7200);
         builder2.addARecord("www", "192.168.1.1", 3600);
@@ -87,9 +86,8 @@ async function runIntegrationTests() {
         //console.log('\t- Custom relay configuration');
         const customRelays = ['http://0.0.0.0:15411'];
         const customClient = new Client(customRelays, 10000);
-        const keypair3 = new Keypair();
         
-        const builder3 = SignedPacket.builder();
+        const {builder3, keypair3} = newFixture();
         builder3.addTxtRecord("_custom", "relay-test=true", 3600);
         const packet3 = builder3.buildAndSign(keypair3);
         

@@ -89,46 +89,41 @@ async function runUnitTests() {
     
     // Test 10: Adding TXT record
     test("Adding TXT record", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addTxtRecord("test", "value", 3600);
-        // Note: recordCount() was removed - we'll verify by building
-        const keypair = new Keypair();
+        
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("TXT record not added");
     });
     
     // Test 11: Adding A record
     test("Adding A record", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addARecord("www", "192.168.1.1", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("A record not added");
     });
     
     // Test 12: Adding AAAA record
     test("Adding AAAA record", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addAAAARecord("www", "2001:db8::1", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("AAAA record not added");
     });
     
     // Test 13: Adding CNAME record
     test("Adding CNAME record", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addCnameRecord("alias", "target", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("CNAME record not added");
     });
     
     // Test 14: Adding HTTPS record
     test("Adding HTTPS record", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("HTTPS record not added");
         
@@ -141,9 +136,8 @@ async function runUnitTests() {
     
     // Test 15: Adding SVCB record
     test("Adding SVCB record", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addSvcbRecord("_api._tcp", 10, "api-server.example.com", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("SVCB record not added");
         
@@ -156,9 +150,8 @@ async function runUnitTests() {
     
     // Test 16: Adding NS record
     test("Adding NS record", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addNsRecord("subdomain", "ns1.example.com", 86400);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("NS record not added");
         
@@ -170,7 +163,7 @@ async function runUnitTests() {
     
     // Test 17: Multiple records (all 7 types)
     test("Multiple records (all 7 types)", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addTxtRecord("txt", "value", 3600);
         builder.addARecord("www", "192.168.1.1", 3600);
         builder.addAAAARecord("www", "2001:db8::1", 3600);
@@ -179,7 +172,6 @@ async function runUnitTests() {
         builder.addSvcbRecord("_api._tcp", 10, "api-server.example.com", 3600);
         builder.addNsRecord("subdomain", "ns1.example.com", 86400);
         
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 7) throw new Error("Expected 7 records");
         
@@ -193,8 +185,7 @@ async function runUnitTests() {
     
     // Test 18: Building and signing packet
     test("Building and signing packet", () => {
-        const keypair = new Keypair();
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addTxtRecord("test", "value", 3600);
         
         const packet = builder.buildAndSign(keypair);
@@ -206,8 +197,7 @@ async function runUnitTests() {
     
     // Test 19: Packet serialization
     test("Packet serialization", () => {
-        const keypair = new Keypair();
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addTxtRecord("test", "value", 3600);
         
         const packet = builder.buildAndSign(keypair);
@@ -229,8 +219,7 @@ async function runUnitTests() {
     
     // Test 21: Packet parsing
     test("Packet parsing", () => {
-        const keypair = new Keypair();
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addTxtRecord("test", "value", 3600);
         
         const originalPacket = builder.buildAndSign(keypair);
@@ -244,8 +233,7 @@ async function runUnitTests() {
     
     // Test 22: Custom timestamp
     test("Custom timestamp", () => {
-        const keypair = new Keypair();
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         const customTime = Date.now();
         
         builder.addTxtRecord("test", "value", 3600);
@@ -288,9 +276,8 @@ async function runUnitTests() {
 
     // Test 25: HTTPS record with priority 0 and target "."
     test("HTTPS record with priority 0 and target '.'", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addHttpsRecord("_443._tcp", 0, ".", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("HTTPS record not added");
         
@@ -304,9 +291,8 @@ async function runUnitTests() {
     
     // Test 26: SVCB record with high priority
     test("SVCB record with high priority", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addSvcbRecord("_service._tcp", 65535, "backup.example.com", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("SVCB record not added");
         
@@ -316,9 +302,8 @@ async function runUnitTests() {
     
     // Test 27: NS record validation
     test("NS record validation", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addNsRecord("zone", "ns.example.com", 86400);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 1) throw new Error("NS record not added");
         
@@ -329,12 +314,11 @@ async function runUnitTests() {
     
     // Test 28: Multiple HTTPS records with different priorities
     test("Multiple HTTPS records with different priorities", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
         builder.addHttpsRecord("_443._tcp", 2, "secondary.example.com", 3600);
         builder.addHttpsRecord("_443._tcp", 0, ".", 3600); // Alias mode
         
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (packet.records.length !== 3) throw new Error("Expected 3 HTTPS records");
         
@@ -351,11 +335,10 @@ async function runUnitTests() {
     
     // Test 29: SignedPacket static builder method
     test("SignedPacket static builder method", () => {
-        const builder = SignedPacket.builder();
+        const {builder, keypair} = newFixture();
         if (!builder) throw new Error("Static builder method failed");
         
         builder.addTxtRecord("test", "value", 3600);
-        const keypair = new Keypair();
         const packet = builder.buildAndSign(keypair);
         if (!packet) throw new Error("Builder from static method failed");
     });

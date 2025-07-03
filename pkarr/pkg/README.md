@@ -108,73 +108,15 @@ console.log(packet.timestampMs);
 console.log(packet.records);
 ```
 
-### Compare-and-Swap (CAS) Publishing
-
-Prevent race conditions when multiple clients update the same DNS records:
-
-```javascript
-// Step 1: Read current state
-const currentPacket = await client.resolveMostRecent(publicKey);
-
-// Step 2: Create updated packet
-const builder = SignedPacket.builder();
-builder.addTxtRecord("version", "2.0", 3600);
-const updatedPacket = builder.buildAndSign(keypair);
-
-// Step 3: Conditional publish
-try {
-    const casTimestamp = currentPacket ? currentPacket.timestampMs / 1000 : null;
-    await client.publish(updatedPacket, casTimestamp);
-    console.log('✅ CAS publish successful');
-} catch (error) {
-    console.log('❌ CAS failed - state was modified by another client');
-    // Re-read current state and retry
-}
-```
-
 CAS ensures your update only succeeds if the server state hasn't changed since you last read it.
 
 ## 🧪 Examples
 
-Run the included examples to see Pkarr in action:
+Run the example to see Pkarr in action:
 
 ```bash
 npm run example          # Basic publish/resolve workflow
-npm run example:advanced # Advanced usage with multiple record types
 ```
-
-### Example Files
-
-- **`examples/base.js`** - Basic usage patterns
-- **`examples/advanced.js`** - Complex scenarios and best practices
-
-## 🔬 Testing
-
-Comprehensive test suite with 100% pass rate across all areas:
-
-```bash
-npm run test                  # Run all test suites (recommended)
-npm run test:unit            # Unit tests (29 tests) - Core functionality
-npm run test:integration     # Integration tests (7 tests) - Live network
-npm run test:performance     # Performance benchmarks - Speed analysis  
-npm run test:edge-cases      # Edge cases (21 tests) - Error handling
-```
-
-### Test Coverage
-
-- ✅ **Unit Tests** (29/29): Core WASM functionality, keypairs, packet building, API compatibility
-- ✅ **Integration Tests** (7/7): Live network operations with Pubky relays
-- ✅ **Performance Tests**: Benchmarks and memory analysis across all operations
-- ✅ **Edge Cases** (21/21): Error handling, input validation, boundary conditions
-
-### Performance Characteristics
-
-- **Keypair Generation**: Fast cryptographic key generation using Ed25519
-- **Packet Building**: Efficient DNS packet construction and signing
-- **Record Operations**: Optimized handling of all 7 DNS record types
-- **Network Operations**: Live relay communication with configurable timeouts
-- **Memory Usage**: Efficient WASM memory management with stress testing
-- **Concurrent Operations**: Full async/await support with parallel publish/resolve
 
 ## 🌐 Network Operations
 
@@ -190,31 +132,6 @@ The client by default uses the following relays:
 const customRelays = ['http://localhost:15411'];
 const client = new Client(customRelays, 10000); // 10s timeout
 ```
-
-## 🛡️ Error Handling
-
-The WASM bindings include robust error handling with comprehensive input validation:
-
-```javascript
-try {
-    const packet = await client.resolve(publicKey);
-    if (packet) {
-        console.log('Found packet:', packet.records);
-    } else {
-        console.log('No packet found for key');
-    }
-} catch (error) {
-    console.error('Resolution failed:', error.message);
-}
-```
-
-### Enhanced Validation
-
-- **Input Validation**: All DNS names, IP addresses, and parameters are validated
-- **Timeout Validation**: Client timeouts must be between 1-300 seconds
-- **Key Validation**: Ed25519 keys are validated for proper length and format
-- **Packet Size Limits**: Enforces 1000-byte pkarr specification limit
-- **Error Context**: Detailed error messages with context for debugging
 
 ## 🔧 TypeScript Support
 

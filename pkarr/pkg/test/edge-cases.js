@@ -86,8 +86,7 @@ async function runEdgeCasesTests() {
     
     // Test 3: Empty and null record values
     test("Empty and null record values", () => {
-        const builder = SignedPacket.builder();
-        const keypair = new Keypair();
+        const {builder, keypair} = newFixture();
         
         // Test empty values (should be allowed)
         builder.addTxtRecord("empty-value", "", 3600);
@@ -118,8 +117,7 @@ async function runEdgeCasesTests() {
     
     // Test 4: Very long record values
     test("Very long record values", () => {
-        const builder = SignedPacket.builder();
-        const keypair = new Keypair();
+        const {builder, keypair} = newFixture();
         
         try {
             // Test moderately long values first
@@ -151,8 +149,7 @@ async function runEdgeCasesTests() {
     
     // Test 5: Special characters in record names and values
     test("Special characters in records", () => {
-        const builder = SignedPacket.builder();
-        const keypair = new Keypair();
+        const {builder, keypair} = newFixture();
         
         const specialCases = [
             { name: "unicode", value: "🚀🌟✨" },
@@ -175,8 +172,7 @@ async function runEdgeCasesTests() {
     
     // Test 6: Extreme TTL values
     test("Extreme TTL values", () => {
-        const builder = SignedPacket.builder();
-        const keypair = new Keypair();
+        const {builder, keypair} = newFixture();
         
         const ttlCases = [
             0,           // Zero TTL
@@ -410,8 +406,7 @@ async function runEdgeCasesTests() {
     
     // Test 12: Mixed record type edge cases
     test("Mixed record type edge cases", () => {
-        const builder = SignedPacket.builder();
-        const keypair = new Keypair();
+        const {builder, keypair} = newFixture();
         
         // Test mixing all 7 record types with edge case values
         try {
@@ -477,8 +472,7 @@ async function runEdgeCasesTests() {
     
     // Test 14: Maximum number of records
     test("Maximum number of records", () => {
-        const builder = SignedPacket.builder();
-        const keypair = new Keypair();
+        const {builder, keypair} = newFixture();
         
         try {
             // Try to add many records to test limits (reduced to avoid hitting limits)
@@ -651,8 +645,8 @@ async function runEdgeCasesTests() {
             // Create client with short but valid timeout
             const timeoutClient = new Client(undefined, 1000); // 1 second timeout (minimum valid)
             
-            const keypair = new Keypair();
-            const builder = SignedPacket.builder();
+            const {builder, keypair} = newFixture();
+            
             builder.addTxtRecord("timeout-test", "value", 3600);
             const packet = builder.buildAndSign(keypair);
             
@@ -676,8 +670,7 @@ async function runEdgeCasesTests() {
         
         // Create many objects rapidly
         for (let i = 0; i < 1000; i++) {
-            const keypair = new Keypair();
-            const builder = SignedPacket.builder();
+            const {builder, keypair} = newFixture();
             
             // Add multiple records
             for (let j = 0; j < 5; j++) {
