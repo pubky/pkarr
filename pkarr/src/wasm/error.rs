@@ -1,5 +1,5 @@
-use wasm_bindgen::JsValue;
 use thiserror::Error;
+use wasm_bindgen::JsValue;
 
 /// Generic error types for the WASM module
 #[derive(Error, Debug)]

@@ -4,7 +4,8 @@
  * Tests boundary conditions, error scenarios, and edge cases
  */
 
-const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket } = require('../pkarr.js');
+const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runEdgeCasesTests() {
     console.log('🧪 Running Edge Cases Tests...');
@@ -69,7 +70,7 @@ async function runEdgeCasesTests() {
         ];
         
         invalidKeys.forEach(key => {
-            const isValid = Utils.validatePublicKey(key);
+            const isValid = validatePublicKey(key);
             if (isValid) {
                 throw new Error(`Invalid key marked as valid: ${key}`);
             }
@@ -78,7 +79,7 @@ async function runEdgeCasesTests() {
         // Test a valid key to ensure validation works
         const validKeypair = new Keypair();
         const validKey = validKeypair.public_key_string();
-        const isValidKeyValid = Utils.validatePublicKey(validKey);
+        const isValidKeyValid = validatePublicKey(validKey);
         if (!isValidKeyValid) {
             throw new Error("Valid key marked as invalid");
         }

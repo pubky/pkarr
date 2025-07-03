@@ -4,7 +4,8 @@
  * Tests individual components and methods in isolation
  */
 
-const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket } = require('../pkarr.js');
+const { newFixture, validatePublicKey, parseSignedPacket } = require('./helpers.js');
 
 async function runUnitTests() {
     console.log('🧪 Running Unit Tests...');
@@ -210,10 +211,10 @@ async function runUnitTests() {
         const keypair = new Keypair();
         const publicKey = keypair.public_key_string();
         
-        const isValid = Utils.validatePublicKey(publicKey);
+        const isValid = validatePublicKey(publicKey);
         if (!isValid) throw new Error("Valid public key marked as invalid");
         
-        const isInvalid = Utils.validatePublicKey("invalid-key");
+        const isInvalid = validatePublicKey("invalid-key");
         if (isInvalid) throw new Error("Invalid public key marked as valid");
     });
     
@@ -224,7 +225,7 @@ async function runUnitTests() {
         
         const originalPacket = builder.buildAndSign(keypair);
         const bytes = originalPacket.toBytes();
-        const parsedPacket = Utils.parseSignedPacket(bytes);
+        const parsedPacket = parseSignedPacket(bytes);
         
         if (parsedPacket.publicKeyString !== originalPacket.publicKeyString) {
             throw new Error("Parsed packet public key doesn't match");

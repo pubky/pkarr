@@ -1,4 +1,4 @@
-const { Keypair, SignedPacketBuilder } = require('../pkarr.js');
+const { Keypair, SignedPacketBuilder, Utils } = require('../pkarr.js');
 
 /**
  * Spin up a fresh Keypair + Builder
@@ -11,5 +11,6 @@ function newFixture() {
 
 module.exports = {
     newFixture,
-    sleep
+    validatePublicKey: Utils.validatePublicKey,
+    parseSignedPacket: Utils.parseSignedPacket,
   };

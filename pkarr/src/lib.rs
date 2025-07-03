@@ -61,3 +61,21 @@ pub mod errors {
     #[cfg(client)]
     pub use super::client::{BuildError, ConcurrencyError, PublishError, QueryError};
 }
+
+// --- Compile-time guards for WASM targets -----------------------------------
+// Ensure correct feature combinations at compile time rather than silently
+// producing an unusable build.
+
+// If we are compiling for a WASM target and *did not* enable the `relays`
+// feature, emit a helpful error.
+#[cfg(all(target_family = "wasm", not(feature = "relays")))]
+compile_error!(
+    "When targeting WebAssembly, the `relays` feature must be enabled (e.g. `--features relays`)."
+);
+
+// Conversely, the `dht` feature is not supported in WASM builds; make that
+// explicit so accidental `--all-features` builds fail fast.
+#[cfg(all(target_family = "wasm", feature = "dht"))]
+compile_error!(
+    "The `dht` feature is not available for WebAssembly targets. Disable it when building for WASM."
+);

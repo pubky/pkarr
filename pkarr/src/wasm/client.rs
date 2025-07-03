@@ -36,21 +36,13 @@ impl Client {
 
         let timeout = Self::validate_and_create_timeout(timeout_ms)?;
 
-        #[cfg(feature = "relays")]
-        {
-            let relay_urls = Self::parse_relay_urls(relays)?;
-            let relays_client = RelaysClient::new(relay_urls.into_boxed_slice(), timeout);
+        let relay_urls = Self::parse_relay_urls(relays)?;
+        let relays_client = RelaysClient::new(relay_urls.into_boxed_slice(), timeout);
 
-            Ok(Client {
-                relays: Some(std::sync::Arc::new(relays_client)),
-                timeout,
-            })
-        }
-
-        #[cfg(not(feature = "relays"))]
-        {
-            Err(ClientError::FeatureNotEnabled("relays feature not enabled".to_string()).into())
-        }
+        Ok(Client {
+            relays: Some(std::sync::Arc::new(relays_client)),
+            timeout,
+        })
     }
 
     /// Publish a signed packet to relays
@@ -64,23 +56,15 @@ impl Client {
         signed_packet: &super::SignedPacket,
         cas_timestamp: Option<f64>,
     ) -> Result<(), JsValue> {
-        #[cfg(feature = "relays")]
-        {
-            let relays = self.get_relays()?;
-            let cas = Self::convert_cas_timestamp(cas_timestamp)?;
+        let relays = self.get_relays()?;
+        let cas = Self::convert_cas_timestamp(cas_timestamp)?;
 
-            relays
-                .publish(&signed_packet.inner, cas)
-                .await
-                .map_err(|e| ClientError::NetworkError(format!("publish failed: {}", e)))?;
+        relays
+            .publish(&signed_packet.inner, cas)
+            .await
+            .map_err(|e| ClientError::NetworkError(format!("publish failed: {}", e)))?;
 
-            Ok(())
-        }
-
-        #[cfg(not(feature = "relays"))]
-        {
-            Err(ClientError::FeatureNotEnabled("relays feature not enabled".to_string()).into())
-        }
+        Ok(())
     }
 
     /// Resolve a public key to get the latest signed packet
@@ -139,21 +123,13 @@ impl Client {
         &self,
         public_key_str: &str,
     ) -> Result<Option<super::SignedPacket>, JsValue> {
-        #[cfg(feature = "relays")]
-        {
-            let relays = self.get_relays()?;
-            let public_key = Self::parse_public_key(public_key_str)?;
+        let relays = self.get_relays()?;
+        let public_key = Self::parse_public_key(public_key_str)?;
 
-            use futures_lite::StreamExt;
-            let mut futures = relays.resolve_futures(&public_key, None);
-            let result = futures.next().await.flatten();
-            Ok(result.map(super::SignedPacket::from))
-        }
-
-        #[cfg(not(feature = "relays"))]
-        {
-            Err(ClientError::FeatureNotEnabled("relays feature not enabled".to_string()).into())
-        }
+        use futures_lite::StreamExt;
+        let mut futures = relays.resolve_futures(&public_key, None);
+        let result = futures.next().await.flatten();
+        Ok(result.map(super::SignedPacket::from))
     }
 
     /// Validate and create timeout duration from milliseconds

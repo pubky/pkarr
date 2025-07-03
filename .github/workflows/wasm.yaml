@@ -49,9 +49,9 @@ jobs:
         # Change the working directory to pkarr crate
         cd ./pkarr
         
-        # Run wasm-pack tests (Rust WASM tests)
+        # Run the WASM test suite (headless Firefox) with just the `wasm` feature enabled
         echo "🦀 Running Rust WASM tests..."
-        wasm-pack test --headless --firefox --lib
+        wasm-pack test --headless --firefox --lib --no-default-features --features wasm
         
         # Change to the pkg directory and run JavaScript tests
         echo "🟨 Running JavaScript tests..."

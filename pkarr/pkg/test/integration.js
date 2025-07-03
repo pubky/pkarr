@@ -4,7 +4,8 @@
  * Tests complete workflows with live network operations
  */
 
-const { Client, Keypair, SignedPacket, Utils } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket } = require('../pkarr.js');
+const { newFixture } = require('./helpers.js');
 
 async function runIntegrationTests() {
     console.log('🧪 Running Integration Tests...');
@@ -48,7 +49,7 @@ async function runIntegrationTests() {
         // Test 2: Multiple record types
         //console.log('\t- Multiple DNS record types');
 
-        const {builder2, keypair2} = newFixture();
+        const {builder: builder2, keypair: keypair2} = newFixture();
         const publicKey2 = keypair2.public_key_string();
         
         builder2.addTxtRecord("_service", "type=web;version=1", 3600);
@@ -87,7 +88,7 @@ async function runIntegrationTests() {
         const customRelays = ['http://0.0.0.0:15411'];
         const customClient = new Client(customRelays, 10000);
         
-        const {builder3, keypair3} = newFixture();
+        const {builder: builder3, keypair: keypair3} = newFixture();
         builder3.addTxtRecord("_custom", "relay-test=true", 3600);
         const packet3 = builder3.buildAndSign(keypair3);
         
