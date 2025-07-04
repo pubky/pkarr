@@ -40,92 +40,10 @@ impl SignedPacket {
         let records = js_sys::Array::new();
 
         for record in self.inner.all_resource_records() {
-            let record_obj = js_sys::Object::new();
-
-            // Add name
-            Self::set_record(
-                &record_obj,
-                PROP_NAME,
-                &JsValue::from_str(&record.name.to_string()),
-            )?;
-
-            // Add TTL
-            Self::set_record(&record_obj, PROP_TTL, &JsValue::from_f64(record.ttl as f64))?;
-
-            // Add type and data
-            let rdata_obj = js_sys::Object::new();
-            match &record.rdata {
-                RData::A(A { address }) => {
-                    Self::set_record(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_A))?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_ADDRESS,
-                        &JsValue::from_str(&std::net::Ipv4Addr::from(*address).to_string()),
-                    )?;
-                }
-                RData::AAAA(AAAA { address }) => {
-                    Self::set_record(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_AAAA))?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_ADDRESS,
-                        &JsValue::from_str(&std::net::Ipv6Addr::from(*address).to_string()),
-                    )?;
-                }
-                RData::CNAME(name) => {
-                    Self::set_record(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_CNAME))?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_TARGET,
-                        &JsValue::from_str(&name.to_string()),
-                    )?;
-                }
-                RData::TXT(txt) => {
-                    Self::set_record(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_TXT))?;
-                    let text_content = txt.clone().try_into().unwrap_or_else(|_| "".to_string());
-                    Self::set_record(&rdata_obj, PROP_VALUE, &JsValue::from_str(&text_content))?;
-                }
-                RData::HTTPS(HTTPS(svcb)) => {
-                    Self::set_record(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_HTTPS))?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_PRIORITY,
-                        &JsValue::from_f64(svcb.priority as f64),
-                    )?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_TARGET,
-                        &JsValue::from_str(&svcb.target.to_string()),
-                    )?;
-                }
-                RData::SVCB(svcb) => {
-                    Self::set_record(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_SVCB))?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_PRIORITY,
-                        &JsValue::from_f64(svcb.priority as f64),
-                    )?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_TARGET,
-                        &JsValue::from_str(&svcb.target.to_string()),
-                    )?;
-                }
-                RData::NS(NS(name)) => {
-                    Self::set_record(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_NS))?;
-                    Self::set_record(
-                        &rdata_obj,
-                        PROP_NSDNAME,
-                        &JsValue::from_str(&name.to_string()),
-                    )?;
-                }
-                _ => {
-                    // Skip unsupported record types
-                    continue;
-                }
+            if let Ok(js_record) = Self::record_to_js(&record) {
+                records.push(&js_record);
             }
-
-            Self::set_record(&record_obj, PROP_RDATA, &rdata_obj)?;
-            records.push(&record_obj);
+            // Skip unsupported record types silently
         }
 
         Ok(records)
@@ -226,7 +144,7 @@ impl SignedPacket {
         Ok(())
     }
 
-    /// Sets a property on a JavaScript object during DNS record serialization
+    /// Sets a property on a JavaScript object
     ///
     /// # Arguments
     /// * `obj` - The JavaScript object to set the property on
@@ -234,11 +152,107 @@ impl SignedPacket {
     /// * `value` - The JavaScript value to assign to the property
     ///
     /// # Errors
-    /// Returns a ClientError::BuildError
-    fn set_record(obj: &js_sys::Object, key: &str, value: &JsValue) -> Result<(), JsValue> {
+    /// Returns a ClientError::BuildError if setting the property fails
+    fn set_prop(obj: &js_sys::Object, key: &str, value: &JsValue) -> Result<(), JsValue> {
         js_sys::Reflect::set(obj, &JsValue::from_str(key), value).map_err(|_| {
             ClientError::BuildError("Failed to set DNS record property".to_string())
         })?;
         Ok(())
+    }
+
+    /// Convert a ResourceRecord to a JavaScript object
+    ///
+    /// # Arguments
+    /// * `rr` - The ResourceRecord to convert
+    ///
+    /// # Returns
+    /// A JavaScript object representing the DNS record
+    fn record_to_js(rr: &ResourceRecord) -> Result<JsValue, JsValue> {
+        let record_obj = js_sys::Object::new();
+
+        // Add name
+        Self::set_prop(
+            &record_obj,
+            PROP_NAME,
+            &JsValue::from_str(&rr.name.to_string()),
+        )?;
+
+        // Add TTL
+        Self::set_prop(&record_obj, PROP_TTL, &JsValue::from_f64(rr.ttl as f64))?;
+
+        // Add type and data
+        let rdata_obj = js_sys::Object::new();
+        match &rr.rdata {
+            RData::A(A { address }) => {
+                Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_A))?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_ADDRESS,
+                    &JsValue::from_str(&Ipv4Addr::from(*address).to_string()),
+                )?;
+            }
+            RData::AAAA(AAAA { address }) => {
+                Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_AAAA))?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_ADDRESS,
+                    &JsValue::from_str(&Ipv6Addr::from(*address).to_string()),
+                )?;
+            }
+            RData::CNAME(name) => {
+                Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_CNAME))?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_TARGET,
+                    &JsValue::from_str(&name.to_string()),
+                )?;
+            }
+            RData::TXT(txt) => {
+                Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_TXT))?;
+                let text_content = txt.clone().try_into().unwrap_or_else(|_| "".to_string());
+                Self::set_prop(&rdata_obj, PROP_VALUE, &JsValue::from_str(&text_content))?;
+            }
+            RData::HTTPS(HTTPS(svcb)) => {
+                Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_HTTPS))?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_PRIORITY,
+                    &JsValue::from_f64(svcb.priority as f64),
+                )?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_TARGET,
+                    &JsValue::from_str(&svcb.target.to_string()),
+                )?;
+            }
+            RData::SVCB(svcb) => {
+                Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_SVCB))?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_PRIORITY,
+                    &JsValue::from_f64(svcb.priority as f64),
+                )?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_TARGET,
+                    &JsValue::from_str(&svcb.target.to_string()),
+                )?;
+            }
+            RData::NS(NS(name)) => {
+                Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_NS))?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_NSDNAME,
+                    &JsValue::from_str(&name.to_string()),
+                )?;
+            }
+            _ => {
+                // Skip unsupported record types by returning an error that will be filtered out
+                return Err(JsValue::from_str("Unsupported record type"));
+            }
+        }
+
+        Self::set_prop(&record_obj, PROP_RDATA, &rdata_obj)?;
+        Ok(record_obj.into())
     }
 }
