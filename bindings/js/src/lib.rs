@@ -34,8 +34,8 @@ use wasm_bindgen::prelude::*;
 // Without aliases, Rust would be confused about which "Keypair" or "SignedPacket" we're referring to
 // This ensures our WASM wrappers properly delegate to the native types instead of creating circular references
 use pkarr::{
-    Keypair as NativeKeypair, PublicKey, SignedPacket as NativeSignedPacket,
-    SignedPacketBuilder as NativeSignedPacketBuilder, RelaysClient,
+    Keypair as NativeKeypair, PublicKey, RelaysClient, SignedPacket as NativeSignedPacket,
+    SignedPacketBuilder as NativeSignedPacketBuilder,
 };
 
 // Import DNS types for the records implementation
