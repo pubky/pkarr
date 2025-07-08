@@ -32,7 +32,7 @@ impl Utils {
         }
 
         let signed_packet =
-            NativeSignedPacket::deserialize(bytes).map_err(|e| ClientError::ParseError {
+            pkarr::SignedPacket::deserialize(bytes).map_err(|e| ClientError::ParseError {
                 input_type: "signed packet bytes".to_string(),
                 message: e.to_string(),
             })?;
@@ -72,7 +72,7 @@ impl Utils {
                 let target = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_TARGET))?
                     .as_string()
                     .unwrap_or_default();
-                Ok(format!("{} {}", priority, target))
+                Ok(format!("{priority} {target}"))
             }
             TYPE_NS => {
                 let nsdname = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_NSDNAME))?
@@ -82,7 +82,7 @@ impl Utils {
             }
             _ => {
                 // For unknown types, return a JSON-like representation
-                Ok(format!("{:?}", rdata))
+                Ok(format!("{rdata:?}"))
             }
         }
     }
@@ -93,7 +93,7 @@ impl Utils {
         if public_key_str.trim().is_empty() {
             return false;
         }
-        PublicKey::try_from(public_key_str).is_ok()
+        pkarr::PublicKey::try_from(public_key_str).is_ok()
     }
 
     /// Get default relay URLs

@@ -10,9 +10,6 @@ license = "MIT"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 categories = ["network-programming"]
 
-[lib]
-crate-type = ["rlib"]
-
 [dependencies]
 base32 = "0.5.1"
 ed25519-dalek = { version = "2.1.1" }

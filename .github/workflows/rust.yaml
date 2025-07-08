@@ -62,7 +62,7 @@ jobs:
         fi
 
     - name: Check no default features
-      run: cargo check --no-default-features --features relays
+      run: cargo check --no-default-features
 
     - name: Check formatting
       run: cargo fmt -- --check

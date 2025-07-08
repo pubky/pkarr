@@ -5,7 +5,7 @@ use super::*;
 /// WASM-compatible wrapper for Keypair
 #[wasm_bindgen]
 pub struct Keypair {
-    pub(super) keypair: NativeKeypair,
+    pub(super) keypair: pkarr::Keypair,
 }
 
 #[wasm_bindgen]
@@ -14,7 +14,7 @@ impl Keypair {
     #[wasm_bindgen(constructor)]
     pub fn random() -> Keypair {
         Keypair {
-            keypair: NativeKeypair::random(),
+            keypair: pkarr::Keypair::random(),
         }
     }
 
@@ -30,7 +30,7 @@ impl Keypair {
         bytes.copy_from_slice(secret_key_bytes);
 
         Ok(Keypair {
-            keypair: NativeKeypair::from_secret_key(&bytes),
+            keypair: pkarr::Keypair::from_secret_key(&bytes),
         })
     }
 

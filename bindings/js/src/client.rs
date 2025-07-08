@@ -8,10 +8,7 @@ use std::sync::LazyLock;
 static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
     pkarr::DEFAULT_RELAYS
         .iter()
-        .map(|&url_str| {
-            url::Url::parse(url_str)
-                .unwrap_or_else(|e| panic!("Invalid default relay URL '{}': {}", url_str, e))
-        })
+        .map(|&url_str| url::Url::parse(url_str).expect("valid default relays urls"))
         .collect()
 });
 
@@ -19,7 +16,7 @@ static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
 #[wasm_bindgen]
 pub struct Client {
     #[cfg(feature = "relays")]
-    relays: Option<std::sync::Arc<RelaysClient>>,
+    relays: Option<std::sync::Arc<pkarr::Client>>,
     timeout: std::time::Duration,
 }
 
@@ -37,10 +34,15 @@ impl Client {
         let timeout = Self::validate_and_create_timeout(timeout_ms)?;
 
         let relay_urls = Self::parse_relay_urls(relays)?;
-        let relays_client = RelaysClient::new(relay_urls.into_boxed_slice(), timeout);
+        let client = pkarr::Client::builder()
+            .relays(&relay_urls)
+            .unwrap()
+            .request_timeout(timeout)
+            .build()
+            .unwrap();
 
         Ok(Client {
-            relays: Some(std::sync::Arc::new(relays_client)),
+            relays: Some(std::sync::Arc::new(client)),
             timeout,
         })
     }
@@ -62,7 +64,7 @@ impl Client {
         relays
             .publish(&signed_packet.inner, cas)
             .await
-            .map_err(|e| ClientError::NetworkError(format!("publish failed: {}", e)))?;
+            .map_err(|e| ClientError::NetworkError(format!("publish failed: {e}")))?;
 
         Ok(())
     }
@@ -126,10 +128,10 @@ impl Client {
         let relays = self.get_relays()?;
         let public_key = Self::parse_public_key(public_key_str)?;
 
-        use futures_lite::StreamExt;
-        let mut futures = relays.resolve_futures(&public_key, None);
-        let result = futures.next().await.flatten();
-        Ok(result.map(super::SignedPacket::from))
+        Ok(relays
+            .resolve(&public_key)
+            .await
+            .map(super::SignedPacket::from))
     }
 
     /// Validate and create timeout duration from milliseconds
@@ -142,8 +144,7 @@ impl Client {
             return Err(ClientError::ValidationError {
                 context: "timeout".to_string(),
                 message: format!(
-                    "{} ms (must be between {} and {} ms)",
-                    timeout_ms, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS
+                    "{timeout_ms} ms (must be between {MIN_TIMEOUT_MS} and {MAX_TIMEOUT_MS} ms)",
                 ),
             }
             .into());
@@ -171,19 +172,19 @@ impl Client {
                     let url_str = val
                         .as_string()
                         .ok_or_else(|| ClientError::ValidationError {
-                            context: format!("relay URL at index {}", index),
+                            context: format!("relay URL at index {index}"),
                             message: "Relay URL must be a string".to_string(),
                         })?;
 
                     if url_str.trim().is_empty() {
                         return Err(ClientError::ValidationError {
-                            context: format!("relay URL at index {}", index),
+                            context: format!("relay URL at index {index}"),
                             message: "Relay URL cannot be empty".to_string(),
                         });
                     }
 
                     url::Url::parse(&url_str).map_err(|e| ClientError::ParseError {
-                        input_type: format!("relay URL at index {}", index),
+                        input_type: format!("relay URL at index {index}"),
                         message: e.to_string(),
                     })
                 })
@@ -205,7 +206,7 @@ impl Client {
     }
 
     /// Parse and validate public key string
-    fn parse_public_key(public_key_str: &str) -> Result<PublicKey, JsValue> {
+    fn parse_public_key(public_key_str: &str) -> Result<pkarr::PublicKey, JsValue> {
         if public_key_str.trim().is_empty() {
             return Err(ClientError::ValidationError {
                 context: "public key".to_string(),
@@ -214,7 +215,7 @@ impl Client {
             .into());
         }
 
-        PublicKey::try_from(public_key_str).map_err(|e| {
+        pkarr::PublicKey::try_from(public_key_str).map_err(|e| {
             ClientError::ParseError {
                 input_type: "public key".to_string(),
                 message: e.to_string(),
@@ -251,7 +252,7 @@ impl Client {
 
     /// Get the relays client or return an error
     #[cfg(feature = "relays")]
-    fn get_relays(&self) -> Result<&RelaysClient, JsValue> {
+    fn get_relays(&self) -> Result<&pkarr::Client, JsValue> {
         self.relays.as_ref().map(|arc| arc.as_ref()).ok_or_else(|| {
             ClientError::ConfigurationError("No relays configured".to_string()).into()
         })

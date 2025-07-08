@@ -6,7 +6,7 @@ use super::*;
 #[derive(Default)]
 #[wasm_bindgen]
 pub struct SignedPacketBuilder {
-    inner: NativeSignedPacketBuilder,
+    inner: pkarr::SignedPacketBuilder,
 }
 
 #[wasm_bindgen]
@@ -183,7 +183,7 @@ impl SignedPacketBuilder {
     /// Clear all records from the builder
     #[wasm_bindgen(js_name = "clear")]
     pub fn clear(&mut self) {
-        self.inner = NativeSignedPacketBuilder::default();
+        self.inner = pkarr::SignedPacket::builder();
     }
 
     /// Create a new builder instance (static method)
