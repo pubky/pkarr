@@ -7,6 +7,7 @@ description = "JavaScript/WebAssembly bindings for Pkarr - Public-Key Addressabl
 homepage = "https://pkarr.org"
 repository = "https://git.pkarr.org"
 license = "MIT"
+readme = "README.md"
 keywords = ["pkarr", "dns", "wasm", "javascript", "webassembly"]
 categories = ["network-programming", "wasm"]
 publish = false

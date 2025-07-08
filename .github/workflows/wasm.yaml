@@ -54,10 +54,11 @@ jobs:
         
         # Run the WASM test suite (headless Firefox)
         echo "🦀 Running Rust WASM tests..."
+        cd pkarr
         wasm-pack test --headless --firefox --lib --no-default-features --features relays
         
         # Change the working directory to JS bindings crate
-        cd ./bindings/js
+        cd ../bindings/js
         
         # Change to the pkg directory and run JavaScript tests
         echo "🟨 Running JavaScript tests..."

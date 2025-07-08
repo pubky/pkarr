@@ -24,7 +24,7 @@ use crate::{PublicKey, SignedPacket};
 
 #[derive(Clone)]
 /// Client for interacting with [Pkarr Relays](https://github.com/Pubky/pkarr/blob/main/design/relays.md)
-/// 
+///
 /// Provides functionality to publish and resolve signed packets from multiple relay servers.
 pub struct RelaysClient {
     relays: Box<[Url]>,
@@ -53,7 +53,7 @@ impl Debug for RelaysClient {
 
 impl RelaysClient {
     /// Create a new `RelaysClient` with the given relay URLs and timeout
-    /// 
+    ///
     /// # Arguments
     /// * `relays` - Array of relay URLs to use for publishing and resolving
     /// * `timeout` - HTTP request timeout duration
@@ -72,11 +72,11 @@ impl RelaysClient {
     }
 
     /// Publish a signed packet to all configured relays
-    /// 
+    ///
     /// # Arguments
     /// * `signed_packet` - The signed packet to publish
     /// * `cas` - Optional timestamp for compare-and-swap semantics
-    /// 
+    ///
     /// # Returns
     /// Returns `Ok(())` if at least one relay accepted the publish request,
     /// or an error if all relays failed.
@@ -136,11 +136,11 @@ impl RelaysClient {
     #[cfg(not(wasm_browser))]
     /// Resolve a signed packet from all configured relays as a stream.
     /// This is a convenience method that filters out empty responses from `resolve_futures`.
-    /// 
+    ///
     /// # Arguments
     /// * `public_key` - The public key to resolve
     /// * `more_recent_than` - Optional timestamp to only return packets newer than this time
-    /// 
+    ///
     /// # Returns
     /// Returns a stream of `SignedPacket` from relays that have the requested data.
     pub fn resolve(
@@ -156,11 +156,11 @@ impl RelaysClient {
 
     /// Resolve a signed packet from all configured relays concurrently.
     /// Use this method when you need fine-grained control over individual relay responses.
-    /// 
+    ///
     /// # Arguments
     /// * `public_key` - The public key to resolve
     /// * `more_recent_than` - Optional timestamp to only return packets newer than this time
-    /// 
+    ///
     /// # Returns
     /// Returns a bounded collection of futures that resolve to `Option<SignedPacket>`.
     pub fn resolve_futures(

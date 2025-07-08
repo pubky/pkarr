@@ -3,6 +3,7 @@ use super::error::ClientError;
 use super::*;
 
 /// WASM-compatible wrapper for SignedPacketBuilder
+#[derive(Default)]
 #[wasm_bindgen]
 pub struct SignedPacketBuilder {
     inner: NativeSignedPacketBuilder,
@@ -13,9 +14,7 @@ impl SignedPacketBuilder {
     /// Create a new SignedPacketBuilder for WASM
     #[wasm_bindgen(constructor)]
     pub fn new() -> SignedPacketBuilder {
-        SignedPacketBuilder {
-            inner: NativeSignedPacketBuilder::default(),
-        }
+        Self::default()
     }
 
     /// Add a TXT record to the packet
@@ -190,7 +189,7 @@ impl SignedPacketBuilder {
     /// Create a new builder instance (static method)
     #[wasm_bindgen(js_name = "builder")]
     pub fn builder() -> SignedPacketBuilder {
-        SignedPacketBuilder::new()
+        Self::new()
     }
 }
 

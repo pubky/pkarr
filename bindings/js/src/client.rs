@@ -138,7 +138,7 @@ impl Client {
     ) -> Result<std::time::Duration, JsValue> {
         let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
 
-        if timeout_ms < MIN_TIMEOUT_MS || timeout_ms > MAX_TIMEOUT_MS {
+        if !(MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&timeout_ms) {
             return Err(ClientError::ValidationError {
                 context: "timeout".to_string(),
                 message: format!(

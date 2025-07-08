@@ -9,12 +9,6 @@ if [ -f "pkg/package.json" ]; then
     cp pkg/package.json pkg/package.json.backup
 fi
 
-# Save the custom README.md if it exists
-if [ -f "pkg/README.md" ]; then
-    echo "📖 Backing up custom README.md..."
-    cp pkg/README.md pkg/README.md.backup
-fi
-
 # Build the WASM package for JavaScript bindings
 echo "🔨 Building WASM for JavaScript bindings…"
 wasm-pack build --release --target nodejs --out-dir pkg --out-name pkarr
@@ -24,16 +18,14 @@ echo ""
 echo "📝 Fixing .gitignore content..."
 echo "pkarr*" > pkg/.gitignore
 
+# Copy README from root to pkg
+# echo "📖 Copying README.md to package..."
+# cp README.md pkg/README.md
+
 # Restore custom package.json or enhance the generated one
 if [ -f "pkg/package.json.backup" ]; then
     echo "🔄 Restoring custom package.json..."
     mv pkg/package.json.backup pkg/package.json
-fi
-
-# Restore custom README.md if it was backed up
-if [ -f "pkg/README.md.backup" ]; then
-    echo "📖 Restoring custom README.md..."
-    mv pkg/README.md.backup pkg/README.md
 fi
 
 echo "✅ WASM package built successfully!"

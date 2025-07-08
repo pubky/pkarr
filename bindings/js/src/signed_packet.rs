@@ -40,7 +40,7 @@ impl SignedPacket {
         let records = js_sys::Array::new();
 
         for record in self.inner.all_resource_records() {
-            if let Ok(js_record) = Self::record_to_js(&record) {
+            if let Ok(js_record) = Self::record_to_js(record) {
                 records.push(&js_record);
             }
             // Skip unsupported record types silently
@@ -100,7 +100,7 @@ impl SignedPacket {
     /// Create a SignedPacketBuilder (static method)
     #[wasm_bindgen(js_name = builder)]
     pub fn builder() -> super::SignedPacketBuilder {
-        super::SignedPacketBuilder::new()
+        super::SignedPacketBuilder::default()
     }
 }
 

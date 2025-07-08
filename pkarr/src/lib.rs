@@ -32,10 +32,10 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 pub use client::blocking::ClientBlocking;
 #[cfg(client)]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
-#[cfg(client)]
-pub use client::{builder::ClientBuilder, Client};
 #[cfg(feature = "relays")]
 pub use client::relays::RelaysClient;
+#[cfg(client)]
+pub use client::{builder::ClientBuilder, Client};
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
 #[cfg(feature = "signed_packet")]

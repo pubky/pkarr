@@ -14,7 +14,6 @@ cd pkg && npm run test
 
 # Run examples
 npm run example
-npm run example:advanced
 ```
 
 ## 🚀 Quick Start
