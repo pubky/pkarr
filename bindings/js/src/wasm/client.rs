@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 // Pre-parsed default relays for better performance
 // Fails fast if any default relay URL is invalid
 static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
-    crate::DEFAULT_RELAYS
+    pkarr::DEFAULT_RELAYS
         .iter()
         .map(|&url_str| {
             url::Url::parse(url_str)
@@ -226,7 +226,7 @@ impl Client {
     /// Convert and validate CAS timestamp
     fn convert_cas_timestamp(
         cas_timestamp: Option<f64>,
-    ) -> Result<Option<crate::Timestamp>, JsValue> {
+    ) -> Result<Option<pkarr::Timestamp>, JsValue> {
         match cas_timestamp {
             Some(ts) => {
                 if ts < 0.0 {
@@ -243,7 +243,7 @@ impl Client {
                     }
                     .into());
                 }
-                Ok(Some(crate::Timestamp::from(ts as u64)))
+                Ok(Some(pkarr::Timestamp::from(ts as u64)))
             }
             None => Ok(None),
         }

@@ -11,7 +11,7 @@ keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 categories = ["network-programming"]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 base32 = "0.5.1"
@@ -68,15 +68,12 @@ getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
 
 #feat: client dependencies
 log = { version = "0.4.25", optional = true}
-wasm-bindgen-futures = { version = "0.4.50", optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
 
-# WASM bindings dependencies - enabled by default for WASM target
-wasm-bindgen = { version = "0.2.100" }
-js-sys = { version = "0.3.70" }
-console_error_panic_hook = { version = "0.1.7" }
+
 
 [dev-dependencies]
 anyhow = "1.0.95"
@@ -95,7 +92,6 @@ axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
-wasm-bindgen = { version = "0.2.100", features = ["serde-serialize"] }
 wasm-bindgen-test = "0.3.50"
 console_log = { version = "1.0.0", features = ["color"] }
 
@@ -142,9 +138,6 @@ full-client = ["dht", "relays"]
 extra = ["endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
 ## Use all features including the `full-client` and `extra` features.
 full = ["full-client", "extra"]
-
-## Enable WASM bindings for relay functions
-wasm = ["relays"]
 
 default = ["full-client"]
 

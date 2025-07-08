@@ -15,12 +15,9 @@ if [ -f "pkg/README.md" ]; then
     cp pkg/README.md pkg/README.md.backup
 fi
 
-# Build the WASM package.  We disable default features because the default
-# set includes the `dht` feature, which is not supported on WebAssembly.
-# Instead we explicitly enable the `wasm` feature (which turns on `relays`),
-# satisfying the compile-time guards in `src/lib.rs`.
-echo "🔨 Building WASM (wasm feature only)…"
-wasm-pack build --target nodejs --out-dir pkg --no-default-features --features wasm
+# Build the WASM package for JavaScript bindings
+echo "🔨 Building WASM for JavaScript bindings…"
+wasm-pack build --release --target nodejs --out-dir pkg --out-name pkarr
 
 echo ""
 # Fix .gitignore content (wasm-pack creates it with "*" but we want "p*")

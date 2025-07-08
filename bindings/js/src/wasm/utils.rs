@@ -100,7 +100,7 @@ impl Utils {
     #[wasm_bindgen(js_name = "defaultRelays")]
     pub fn default_relays() -> Array {
         let relays = Array::new();
-        for relay in crate::DEFAULT_RELAYS.iter() {
+        for relay in pkarr::DEFAULT_RELAYS.iter() {
             relays.push(&JsValue::from_str(relay));
         }
         relays

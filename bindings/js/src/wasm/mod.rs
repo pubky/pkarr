@@ -7,13 +7,13 @@ use wasm_bindgen::prelude::*;
 // Import core library types with aliases to avoid name conflicts with our WASM wrapper structs
 // Without aliases, Rust would be confused about which "Keypair" or "SignedPacket" we're referring to
 // This ensures our WASM wrappers properly delegate to the native types instead of creating circular references
-use crate::{
+use pkarr::{
     Keypair as NativeKeypair, PublicKey, SignedPacket as NativeSignedPacket,
     SignedPacketBuilder as NativeSignedPacketBuilder,
 };
 
 #[cfg(feature = "relays")]
-use crate::client::relays::RelaysClient;
+use pkarr::RelaysClient;
 
 // Import DNS types for the records implementation
 use ntimestamp::Timestamp;

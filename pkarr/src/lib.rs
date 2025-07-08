@@ -16,8 +16,6 @@ pub mod extra;
 mod keys;
 #[cfg(feature = "signed_packet")]
 mod signed_packet;
-#[cfg(all(target_family = "wasm", feature = "relays"))]
-pub mod wasm;
 
 /// Default minimum TTL: 5 minutes.
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -36,6 +34,8 @@ pub use client::blocking::ClientBlocking;
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
 pub use client::{builder::ClientBuilder, Client};
+#[cfg(feature = "relays")]
+pub use client::relays::RelaysClient;
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
 #[cfg(feature = "signed_packet")]
@@ -64,7 +64,8 @@ pub mod errors {
 
 // --- Compile-time guards for WASM targets -----------------------------------
 // Ensure correct feature combinations at compile time rather than silently
-// producing an unusable build.
+// producing an unusable build. These protect users who use the main pkarr crate
+// directly in WASM environments (not through language bindings)
 
 // If we are compiling for a WASM target and *did not* enable the `relays`
 // feature, emit a helpful error.

@@ -4,22 +4,22 @@
     "Nuh <nuh@nuh.dev>"
   ],
   "description": "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT",
-  "version": "3.1.1",
+  "version": "3.8.0",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://git.pkarr.org"
   },
   "files": [
-    "pkarr_bg.wasm",
-    "pkarr.js",
-    "pkarr.d.ts",
+    "pkarr_js_bg.wasm",
+    "pkarr_js.js",
+    "pkarr_js.d.ts",
     "examples/base.js",
     "examples/advanced.js"
   ],
-  "main": "pkarr.js",
-  "homepage": "https://pkarr.org",
-  "types": "pkarr.d.ts",
+  "main": "pkarr_js.js",
+  "homepage": "https://pkdns.net",
+  "types": "pkarr_js.d.ts",
   "scripts": {
     "example": "node example.js",
     "test": "node test/all.js",

@@ -1,0 +1,53 @@
+[package]
+name = "pkarr-js"
+version = "3.8.0"
+authors = ["Nuh <nuh@nuh.dev>"]
+edition = "2021"
+description = "JavaScript/WebAssembly bindings for Pkarr - Public-Key Addressable Resource Records"
+homepage = "https://pkarr.org"
+repository = "https://git.pkarr.org"
+license = "MIT"
+keywords = ["pkarr", "dns", "wasm", "javascript", "webassembly"]
+categories = ["network-programming", "wasm"]
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Core pkarr dependency
+pkarr = { path = "../../pkarr", default-features = false, features = ["relays"] }
+
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+console_error_panic_hook = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+
+# Dependencies needed by the WASM bindings
+simple-dns = { version = "0.9.3" }
+ntimestamp = { version = "1.0.0", features = ["full"] }
+thiserror = "2.0.11"
+url = { version = "2.5.4" }
+futures-lite = { version = "2.6.0", default-features = false, features = ["std"] }
+
+# Required for WASM target
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
+wasm-bindgen-futures = { workspace = true }
+
+[features]
+default = ["relays"]
+relays = []
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.50"
+
+[target.wasm32-unknown-unknown.dev-dependencies]
+wasm-bindgen = { workspace = true, features = ["serde-serialize"] }
+console_log = { version = "1.0.0", features = ["color"] }
+
+[build-dependencies]
+cfg_aliases = "0.2.1"
+
+[package.metadata.docs.rs]
+all-features = true 
