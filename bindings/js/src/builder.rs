@@ -145,7 +145,7 @@ impl SignedPacketBuilder {
     pub fn add_ns_record(&mut self, name: &str, nameserver: &str, ttl: u32) -> Result<(), JsValue> {
         let (domain_name, nameserver_name) = self.parse_name_pair(name, nameserver)?;
         let ns = simple_dns::rdata::NS(nameserver_name);
-        self.inner = self.inner.clone().ns(domain_name, ns, ttl);
+        self.inner = self.inner.clone().rdata(domain_name, RData::NS(ns), ttl);
         Ok(())
     }
 
