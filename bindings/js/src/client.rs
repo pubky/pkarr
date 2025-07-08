@@ -15,7 +15,6 @@ static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
 /// Pkarr Client for publishing and resolving signed DNS packets
 #[wasm_bindgen]
 pub struct Client {
-    #[cfg(feature = "relays")]
     relays: Option<std::sync::Arc<pkarr::Client>>,
     timeout: std::time::Duration,
 }
@@ -154,7 +153,6 @@ impl Client {
     }
 
     /// Parse and validate relay URLs
-    #[cfg(feature = "relays")]
     fn parse_relay_urls(relays: Option<Array>) -> Result<Vec<url::Url>, JsValue> {
         let relay_urls: Result<Vec<url::Url>, ClientError> = if let Some(relays) = relays {
             // Validate that we have at least one relay
@@ -251,7 +249,6 @@ impl Client {
     }
 
     /// Get the relays client or return an error
-    #[cfg(feature = "relays")]
     fn get_relays(&self) -> Result<&pkarr::Client, JsValue> {
         self.relays.as_ref().map(|arc| arc.as_ref()).ok_or_else(|| {
             ClientError::ConfigurationError("No relays configured".to_string()).into()
