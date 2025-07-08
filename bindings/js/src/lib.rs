@@ -35,11 +35,8 @@ use wasm_bindgen::prelude::*;
 // This ensures our WASM wrappers properly delegate to the native types instead of creating circular references
 use pkarr::{
     Keypair as NativeKeypair, PublicKey, SignedPacket as NativeSignedPacket,
-    SignedPacketBuilder as NativeSignedPacketBuilder,
+    SignedPacketBuilder as NativeSignedPacketBuilder, RelaysClient,
 };
-
-#[cfg(feature = "relays")]
-use pkarr::RelaysClient;
 
 // Import DNS types for the records implementation
 use ntimestamp::Timestamp;

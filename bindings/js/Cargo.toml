@@ -16,7 +16,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-# Core pkarr dependency
+# Core pkarr dependency - always enable relays since JS bindings require them
 pkarr = { path = "../../pkarr", default-features = false, features = ["relays"] }
 
 wasm-bindgen = { workspace = true }
@@ -37,6 +37,7 @@ getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
 wasm-bindgen-futures = { workspace = true }
 
 [features]
+# JS bindings always require relays - make it a required feature
 default = ["relays"]
 relays = []
 

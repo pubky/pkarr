@@ -16,6 +16,15 @@ cd pkg && npm run test
 npm run example
 ```
 
+### Development Notes
+
+The JavaScript bindings require the `relays` feature to function, as WASM environments cannot access the DHT directly. If you need to build with `--no-default-features`, you must explicitly enable the relays feature:
+
+```bash
+cargo check --no-default-features --features relays
+cargo build --no-default-features --features relays
+```
+
 ## 🚀 Quick Start
 
 ```javascript
