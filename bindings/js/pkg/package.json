@@ -11,15 +11,15 @@
     "url": "https://git.pkarr.org"
   },
   "files": [
-    "pkarr_js_bg.wasm",
-    "pkarr_js.js",
-    "pkarr_js.d.ts",
+    "pkarr_bg.wasm",
+    "pkarr.js",
+    "pkarr.d.ts",
     "examples/base.js",
     "examples/advanced.js"
   ],
-  "main": "pkarr_js.js",
+  "main": "pkarr.js",
   "homepage": "https://pkdns.net",
-  "types": "pkarr_js.d.ts",
+  "types": "pkarr.d.ts",
   "scripts": {
     "example": "node example.js",
     "test": "node test/all.js",
