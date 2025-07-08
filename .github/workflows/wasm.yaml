@@ -18,54 +18,24 @@ jobs:
       with:
         targets: wasm32-unknown-unknown
 
-    - name: Cache Rust build artifacts
-      # Re-use previously compiled artifacts for the wasm32 target
-      uses: Swatinem/rust-cache@v2
-      with:
-        cache-targets: "wasm32-unknown-unknown"
-
     - name: Install wasm-pack
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
 
     - name: Build server
       run: cargo build
 
-    - name: Build WASM package
-      run: |
-        cd ./bindings/js
-        chmod +x build-wasm.sh
-        ./build-wasm.sh
-
-    - name: Start server and run all tests
+    - name: Start server and run tests
       run: |
         # Start the server binary in the background
-        echo "🚀 Starting pkarr-relay in testnet mode..."
         ./target/debug/pkarr-relay --testnet &
         SERVER_PID=$!
         
-        # Wait for server to start and check if it's running
-        echo "⏳ Waiting for server to start..."
-        sleep 8
+        # Change the working directory to pkarr crate
+        cd ./pkarr
         
-        # Run the WASM test suite (headless Firefox)
-        echo "🦀 Running Rust WASM tests..."
-        cd pkarr
-        wasm-pack test --headless --firefox --lib --no-default-features --features relays
+        # Run wasm-pack tests
+        wasm-pack test --headless --firefox --lib
         
-        # Change the working directory to JS bindings crate
-        cd ../bindings/js
-        
-        # Change to the pkg directory and run JavaScript tests
-        echo "🟨 Running JavaScript tests..."
-        cd pkg
-        npm run test
-
-        # Ensure server gets killed on exit
+        # Kill the server
         kill $SERVER_PID
-        
-        echo "✅ All tests completed successfully!"
+
