@@ -17,7 +17,7 @@ pub mod builder;
 #[cfg(not(wasm_browser))]
 mod futures;
 #[cfg(relays)]
-pub mod relays;
+mod relays;
 
 #[cfg(all(test, not(wasm_browser)))]
 mod tests;

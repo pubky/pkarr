@@ -5,12 +5,9 @@ use bytes::{Bytes, BytesMut};
 use ed25519_dalek::{Signature, SignatureError};
 use self_cell::self_cell;
 use simple_dns::{
-    rdata::{RData, A, AAAA, HTTPS, NS, SVCB, TXT},
+    rdata::{RData, A, AAAA, HTTPS, SVCB, TXT},
     Name, Packet, ResourceRecord, SimpleDnsError, CLASS,
 };
-
-#[cfg(test)]
-use simple_dns::rdata::CNAME;
 use std::{
     char,
     fmt::{self, Debug, Display, Formatter},
@@ -113,14 +110,6 @@ impl SignedPacketBuilder {
     /// (the public key, of the keypair used in [Self::sign])
     pub fn svcb(self, name: Name<'_>, svcb: SVCB, ttl: u32) -> Self {
         self.rdata(name, RData::SVCB(svcb), ttl)
-    }
-
-    /// Insert an `NS` record
-    ///
-    /// You can set the name to `.` to point or the Apex
-    /// (the public key, of the keypair used in [Self::sign])
-    pub fn ns(self, name: Name<'_>, nsdname: NS, ttl: u32) -> Self {
-        self.rdata(name, RData::NS(nsdname), ttl)
     }
 
     /// Add a custom [Timestamp].
@@ -771,6 +760,8 @@ pub enum SignedPacketBuildError {
 
 #[cfg(test)]
 mod tests {
+    use simple_dns::rdata::CNAME;
+
     use super::*;
 
     use crate::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
