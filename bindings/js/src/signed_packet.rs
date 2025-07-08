@@ -5,7 +5,7 @@ use super::*;
 /// WASM-compatible wrapper for SignedPacket
 #[wasm_bindgen]
 pub struct SignedPacket {
-    pub(super) inner: NativeSignedPacket,
+    pub(super) inner: pkarr::SignedPacket,
 }
 
 #[wasm_bindgen]
@@ -87,7 +87,7 @@ impl SignedPacket {
         Self::validate_bytes(bytes)?;
 
         let signed_packet =
-            NativeSignedPacket::deserialize(bytes).map_err(|e| ClientError::ParseError {
+            pkarr::SignedPacket::deserialize(bytes).map_err(|e| ClientError::ParseError {
                 input_type: "signed packet bytes".to_string(),
                 message: e.to_string(),
             })?;
@@ -104,13 +104,13 @@ impl SignedPacket {
     }
 }
 
-impl From<NativeSignedPacket> for SignedPacket {
-    fn from(inner: NativeSignedPacket) -> Self {
+impl From<pkarr::SignedPacket> for SignedPacket {
+    fn from(inner: pkarr::SignedPacket) -> Self {
         SignedPacket { inner }
     }
 }
 
-impl From<SignedPacket> for NativeSignedPacket {
+impl From<SignedPacket> for pkarr::SignedPacket {
     fn from(wrapper: SignedPacket) -> Self {
         wrapper.inner
     }
