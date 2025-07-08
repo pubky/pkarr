@@ -19,10 +19,11 @@ crate-type = ["cdylib"]
 # Core pkarr dependency - always enable relays since JS bindings require them
 pkarr = { path = "../../pkarr", default-features = false, features = ["relays"] }
 
-wasm-bindgen = { workspace = true }
-js-sys = { workspace = true }
-console_error_panic_hook = { workspace = true }
-wasm-bindgen-futures = { workspace = true }
+# WASM dependencies - shared directly or transitively
+wasm-bindgen = "0.2.100"
+js-sys = "0.3.77"
+console_error_panic_hook = "0.1.7"
+wasm-bindgen-futures = "0.4.50"
 
 # Dependencies needed by the WASM bindings
 simple-dns = { version = "0.9.3" }
@@ -34,7 +35,6 @@ futures-lite = { version = "2.6.0", default-features = false, features = ["std"]
 # Required for WASM target
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
-wasm-bindgen-futures = { workspace = true }
 
 [features]
 # JS bindings always require relays - make it a required feature
@@ -45,7 +45,7 @@ relays = []
 wasm-bindgen-test = "0.3.50"
 
 [target.wasm32-unknown-unknown.dev-dependencies]
-wasm-bindgen = { workspace = true, features = ["serde-serialize"] }
+wasm-bindgen = { version = "0.2.100", features = ["serde-serialize"] }
 console_log = { version = "1.0.0", features = ["color"] }
 
 [build-dependencies]
