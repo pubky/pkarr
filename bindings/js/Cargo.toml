@@ -36,11 +36,6 @@ futures-lite = { version = "2.6.0", default-features = false, features = ["std"]
 [target.wasm32-unknown-unknown.dependencies]
 getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
 
-[features]
-# JS bindings always require relays - make it a required feature
-default = ["relays"]
-relays = []
-
 [dev-dependencies]
 wasm-bindgen-test = "0.3.50"
 
