@@ -41,25 +41,11 @@ jobs:
         ./build-wasm.sh
 
     - name: Start server and run JS tests
-      run: |
-        # Start the server binary in the background
-        echo "Starting pkarr-relay in testnet mode..."
-        ./target/debug/pkarr-relay --testnet &
-        SERVER_PID=$!
-        
-        # Wait for server to start and check if it's running
-        echo "Waiting for server to start..."
-        sleep 8
-        
-        # Change the working directory to JS bindings crate
-        cd ./bindings/js
-        
+      run: |        
         # Change to the pkg directory and run JavaScript tests
+        cd ./bindings/js/pkg
+        
         echo "Running JavaScript tests..."
-        cd pkg
         npm run test
-
-        # Ensure server gets killed on exit
-        kill $SERVER_PID
         
         echo "All tests completed successfully!"

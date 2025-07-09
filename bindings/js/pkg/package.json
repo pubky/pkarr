@@ -1,6 +1,7 @@
 {
   "name": "pkarr",
   "collaborators": [
+    "tipogi",
     "Nuh <nuh@nuh.dev>"
   ],
   "description": "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT",
@@ -22,9 +23,9 @@
   "types": "pkarr.d.ts",
   "scripts": {
     "example": "node example.js",
-    "test": "node test/all.js",
+    "test": "node -e \"const{spawn}=require('child_process');const p=spawn('../../../target/debug/pkarr-relay',['--testnet'],{stdio:'inherit'});setTimeout(()=>{const t=spawn('node',['test/all.js'],{stdio:'inherit'});t.on('close',c=>{console.log('Killing PID:',p.pid);p.kill();process.exit(c)})},8000)\"",
     "test:unit": "node test/unit.js",
-    "test:integration": "node test/integration.js",
+    "test:integration": "node -e \"const{spawn}=require('child_process');const p=spawn('../../../target/debug/pkarr-relay',['--testnet'],{stdio:'inherit'});setTimeout(()=>{const t=spawn('node',['test/integration.js'],{stdio:'inherit'});t.on('close',c=>{console.log('Killing PID:',p.pid);p.kill();process.exit(c)})},8000)\"",
     "test:performance": "node test/performance.js",
     "test:edge-cases": "node test/edge-cases.js"
   },

@@ -8,7 +8,7 @@ const { Client, Keypair, SignedPacket } = require('../pkarr.js');
 const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runEdgeCasesTests() {
-    console.log('🧪 Running Edge Cases Tests...');
+    console.log('Running Edge Cases Tests...');
     
     let failed = 0;
     

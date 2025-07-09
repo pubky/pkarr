@@ -8,7 +8,7 @@ const { Client, Keypair, SignedPacket } = require('../pkarr.js');
 const { newFixture } = require('./helpers.js');
 
 async function runIntegrationTests() {
-    console.log('🧪 Running Integration Tests...');
+    console.log('Running Integration Tests...');
     
     try {
         // Test 1: Basic publish and resolve workflow

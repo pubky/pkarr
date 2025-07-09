@@ -7,22 +7,15 @@ WebAssembly bindings for [Pkarr](https://pkarr.org) - Public-Key Addressable Res
 To build the WASM package from source, run:
 
 ```bash
+# This script assumes the pkarr binary exists
 ./build-wasm.sh
 
-# Test your changes
-cd pkg && npm run test
+# Run tests
+cd pkg
+npm run test
 
 # Run examples
 npm run example
-```
-
-### Development Notes
-
-The JavaScript bindings require the `relays` feature to function, as WASM environments cannot access the DHT directly. If you need to build with `--no-default-features`, you must explicitly enable the relays feature:
-
-```bash
-cargo check --no-default-features --features relays
-cargo build --no-default-features --features relays
 ```
 
 ## 🚀 Quick Start
@@ -68,6 +61,8 @@ npm install pkarr
 ### Client Methods
 
 ```javascript
+const { Client } = require('pkarr');
+
 const client = new Client();                    // Default relays
 const client = new Client(relays, timeout);     // Custom configuration
 
@@ -82,6 +77,8 @@ const relays = Client.defaultRelays();          // Get default relay list
 ### Keypair Operations
 
 ```javascript
+const { Keypair } = require('pkarr');
+
 const keypair = new Keypair();                    // Generate new keypair
 const keypair = Keypair.from_secret_key(bytes);   // From existing secret
 
@@ -93,6 +90,8 @@ const secretBytes = keypair.secret_key_bytes();   // Raw secret key bytes
 ### Packet Building
 
 ```javascript
+const { SignedPacket } = require('pkarr');
+
 const builder = SignedPacket.builder();
 
 // Add DNS records (all 7 supported types)
@@ -137,6 +136,8 @@ The client by default uses the following relays:
 ### Custom Configuration
 
 ```javascript
+const { Client } = require('pkarr');
+
 const customRelays = ['http://localhost:15411'];
 const client = new Client(customRelays, 10000); // 10s timeout
 ```

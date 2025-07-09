@@ -8,7 +8,7 @@ const { Client, Keypair, SignedPacket } = require('../pkarr.js');
 const { newFixture, validatePublicKey, parseSignedPacket } = require('./helpers.js');
 
 async function runUnitTests() {
-    console.log('🧪 Running Unit Tests...');
+    console.log('Running Unit Tests...');
     
     let failed = 0;
     
