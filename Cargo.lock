@@ -1611,6 +1611,7 @@ dependencies = [
  "document-features",
  "dyn-clone",
  "ed25519-dalek",
+ "futures-buffered",
  "futures-lite",
  "getrandom 0.2.16",
  "heed",
@@ -1619,6 +1620,7 @@ dependencies = [
  "mainline",
  "ntimestamp",
  "page_size",
+ "reqwest",
  "self_cell",
  "serde",
  "sha1_smol",
@@ -1626,7 +1628,19 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tracing",
+ "url",
  "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "pkarr-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "pkarr 3.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
