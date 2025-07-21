@@ -10,7 +10,11 @@ repository = "https://git.pkarr.org"
 keywords = ["pkarr", "relay", "mainline", "dht"]
 categories = ["network-programming"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html 
+
+[[bin]]
+name = "pkarr"  # This sets the binary name to `pkarr`
+path = "src/main.rs"  # This is the default, so you can omit it if desired
 
 [dependencies]
 pkarr = "3.8.0"
