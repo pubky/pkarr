@@ -1,5 +1,11 @@
 # Pkarr cli
 
+## Install
+
+```bash
+cargo install pkarr-cli
+```
+
 ## Commands
 
 ### Resolve
@@ -7,7 +13,7 @@
 Resolve a SignedPacket for a given public key.
 
 ```sh
-cargo run --example resolve <PUBLIC_KEY> [MODE] [RELAYS]
+pkarr resolve <PUBLIC_KEY> [MODE] [RELAYS]
 ```
 ```
 Arguments:
