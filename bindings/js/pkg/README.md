@@ -1,21 +1,13 @@
-# Pkarr WASM
+# Pkarr
 
-WebAssembly bindings for [Pkarr](https://pkarr.org) - Public-Key Addressable Resource Records for publishing and resolving DNS packets over [Mainline DHT](https://github.com/Pubky/mainline).
+Public-Key Addressable Resource Records for publishing and resolving DNS packets over [Mainline DHT](https://github.com/Pubky/mainline)
 
-## 🔨 Building from Source
+## 📦 Installation
 
-To build the WASM package from source, run:
+This package is generated via `wasm-pack` and includes TypeScript definitions.
 
 ```bash
-# This script assumes the pkarr binary exists
-./build-wasm.sh
-
-# Run tests
-cd pkg
-npm run test
-
-# Run examples
-npm run example
+npm install pkarr
 ```
 
 ## 🚀 Quick Start
@@ -39,14 +31,6 @@ await client.publish(packet);
 // Resolve later
 const resolved = await client.resolve(keypair.public_key_string());
 console.log('Records:', resolved.records);
-```
-
-## 📦 Installation
-
-This package is generated via `wasm-pack` and includes TypeScript definitions.
-
-```bash
-npm install pkarr
 ```
 
 ## 🏗️ API Overview
@@ -127,13 +111,20 @@ npm run example          # Basic publish/resolve workflow
 
 ## 🌐 Network Operations
 
-### Default Relays
-
-The client by default uses the following relays:
+The client by **default** uses the following relays:
 - `https://pkarr.pubky.app`
 - `https://pkarr.pubky.org`
 
 ### Custom Configuration
+
+To publish the records to a custom relay, compile the `pkarr-relay` binary from source. Navigate to the pkarr [repository](https://github.com/pubky/pkarr) and:
+
+```bash
+cargo build
+./target/debug/pkarr-relay --testnet
+```
+
+After configuring your custom relay, you can initialize a client with custom relay URLs:
 
 ```javascript
 const { Client } = require('pkarr');
@@ -142,16 +133,17 @@ const customRelays = ['http://localhost:15411'];
 const client = new Client(customRelays, 10000); // 10s timeout
 ```
 
-## 🔧 TypeScript Support
+## 🧪 Testing and Examples
 
-Full TypeScript definitions included:
+To run tests and examples:
 
-```typescript
-import { Client, Keypair, SignedPacket } from 'pkarr';
+```bash
+# Run tests. NOTE: Integration tests require a local pkarr-relay server (see Custom Configuration above)
+cd pkg
+npm run test
 
-const client: Client = new Client();
-const keypair: Keypair = new Keypair();
-const builder = SignedPacket.builder();
+# Run examples
+npm run example
 ```
 
 ## 📄 License
