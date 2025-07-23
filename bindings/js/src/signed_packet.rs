@@ -53,8 +53,8 @@ impl SignedPacket {
     ///
     /// This returns the full DNS packet structure as bytes, suitable for:
     /// - Parsing with `SignedPacket.fromBytes()`
-    #[wasm_bindgen(js_name = uncompressedBytes)]
-    pub fn uncompressed_bytes(&self) -> Result<js_sys::Uint8Array, JsValue> {
+    #[wasm_bindgen(js_name = bytes)]
+    pub fn bytes(&self) -> Result<js_sys::Uint8Array, JsValue> {
         let bytes = self.inner.serialize();
 
         // Validate the serialized size against pkarr specification
@@ -82,7 +82,7 @@ impl SignedPacket {
     ///
     /// Note: This is only the DNS packet part, not the full pkarr format.
     /// For relay publishing, use the packet directly with `client.publish()`.
-    /// For reconstruction, use `uncompressedBytes()` instead.
+    /// For reconstruction, use `bytes()` instead.
     #[wasm_bindgen(js_name = compressedBytes)]
     pub fn compressed_bytes(&self) -> Result<js_sys::Uint8Array, JsValue> {
         let bytes = self.inner.encoded_packet();
@@ -100,10 +100,10 @@ impl SignedPacket {
     /// Create a SignedPacket from uncompressed bytes
     ///
     /// # Arguments
-    /// * `bytes` - The uncompressed/serialized signed packet bytes (from `uncompressedBytes()`)
+    /// * `bytes` - The uncompressed/serialized signed packet bytes (from `bytes()`)
     ///
     /// Note: This method expects uncompressed DNS packet bytes, not the compressed
-    /// pkarr format. Use `packet.uncompressedBytes()` to get compatible bytes.
+    /// pkarr format. Use `packet.bytes()` to get compatible bytes.
     #[wasm_bindgen(js_name = fromBytes)]
     pub fn from_bytes(bytes: &[u8]) -> Result<SignedPacket, JsValue> {
         Self::validate_bytes(bytes)?;

@@ -137,7 +137,7 @@ async function runExample() {
         console.log(`   ✅ Default relays: ${defaultRelays.length} relays`);
         
         // Packet serialization and parsing
-        const packetBytes = signedPacket.uncompressedBytes();
+        const packetBytes = signedPacket.bytes();
         console.log(`   📦 Packet size - uncompressed: ${packetBytes.length} bytes`);
         const compressedPacketBytes = signedPacket.compressedBytes();
         console.log(`   📦 Packet size - compressed: ${compressedPacketBytes.length} bytes`);

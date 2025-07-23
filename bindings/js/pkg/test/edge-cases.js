@@ -549,7 +549,7 @@ async function runEdgeCasesTests() {
         const emptyBuilder = SignedPacket.builder();
         try {
             const emptyPacket = emptyBuilder.buildAndSign(keypair);
-            const bytes = emptyPacket.uncompressedBytes();
+            const bytes = emptyPacket.bytes();
             if (bytes.length === 0) {
                 throw new Error("Empty packet should still have some bytes");
             }
@@ -561,7 +561,7 @@ async function runEdgeCasesTests() {
         const minimalBuilder = SignedPacket.builder();
         minimalBuilder.addTxtRecord("a", "b", 1);
         const minimalPacket = minimalBuilder.buildAndSign(keypair);
-        const minimalBytes = minimalPacket.uncompressedBytes();
+        const minimalBytes = minimalPacket.bytes();
         
         if (minimalBytes.length === 0) {
             throw new Error("Minimal packet should have bytes");

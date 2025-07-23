@@ -202,7 +202,7 @@ async function runUnitTests() {
         builder.addTxtRecord("test", "value", 3600);
         
         const packet = builder.buildAndSign(keypair);
-        const uncompressedBytes = packet.uncompressedBytes();
+        const uncompressedBytes = packet.bytes();
         const compressedBytes = packet.compressedBytes();
         if (!uncompressedBytes || uncompressedBytes.length === 0) throw new Error("Packet serialization failed");
         if (!compressedBytes || compressedBytes.length === 0) throw new Error("Packet serialization failed");
@@ -226,7 +226,7 @@ async function runUnitTests() {
         builder.addTxtRecord("test", "value", 3600);
         
         const originalPacket = builder.buildAndSign(keypair);
-        const uncompressedBytes = originalPacket.uncompressedBytes();
+        const uncompressedBytes = originalPacket.bytes();
         const parsedPacket = SignedPacket.fromBytes(uncompressedBytes);
         
         if (parsedPacket.publicKeyString !== originalPacket.publicKeyString) {
