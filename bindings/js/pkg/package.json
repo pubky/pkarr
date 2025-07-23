@@ -12,7 +12,6 @@
     "pkarr.js",
     "pkarr_bg.js",
     "pkarr.d.ts",
-    "pkarr_bg.wasm.d.ts",
     "example.js"
   ],
   "main": "pkarr.js",
@@ -21,6 +20,7 @@
   "sideEffects": false,
   "homepage": "https://pkdns.net",
   "scripts": {
+    "build": "cargo run --bin bundle_pubky_npm",
     "example": "node example.js",
     "test": "node -e \"const{spawn}=require('child_process');const p=spawn('../../../target/debug/pkarr-relay',['--testnet'],{stdio:'inherit'});setTimeout(()=>{const t=spawn('node',['test/all.js'],{stdio:'inherit'});t.on('close',c=>{console.log('Killing PID:',p.pid);p.kill();process.exit(c)})},8000)\"",
     "test:unit": "node test/unit.js",

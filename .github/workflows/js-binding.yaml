@@ -36,9 +36,8 @@ jobs:
 
     - name: Build WASM package
       run: |
-        cd ./bindings/js
-        chmod +x build-wasm.sh
-        ./build-wasm.sh
+        cd ./bindings/js/pkg
+        npm run build
 
     - name: Start server and run JS tests
       run: |        

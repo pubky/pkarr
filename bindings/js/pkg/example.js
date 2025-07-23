@@ -1,4 +1,4 @@
-const { Client, Keypair, SignedPacket, Utils } = require('./pkarr.js');
+const { Client, Keypair, SignedPacket, Utils } = require('./index.js');
 
 /**
  * Comprehensive Pkarr WASM Example
@@ -19,6 +19,7 @@ async function runExample() {
 
         const client = new Client();
         console.log('✅ Client created');
+        console.log();
         
         // Client custom configuration
         // const customRelays = ['http://localhost:15411'];
@@ -77,6 +78,7 @@ async function runExample() {
         console.log('   📤 Publishing packet...');
         await client.publish(signedPacket);
         console.log('   ✅ Successful!');
+        console.log();
         
         console.log('📥 SECTION 5: Resolution Strategies');
         
@@ -94,6 +96,7 @@ async function runExample() {
         } else {
             console.log('   ❌ Resolve failed');
         }
+        console.log();
         
         // === SECTION 6: Compare-and-Swap Publishing ===
         console.log('🔄 SECTION 6: Compare-and-Swap Publishing');
@@ -134,11 +137,13 @@ async function runExample() {
         console.log(`   ✅ Default relays: ${defaultRelays.length} relays`);
         
         // Packet serialization and parsing
-        const packetBytes = signedPacket.toBytes();
-        console.log(`   📦 Packet size: ${packetBytes.length} bytes`);
+        const packetBytes = signedPacket.uncompressedBytes();
+        console.log(`   📦 Packet size - uncompressed: ${packetBytes.length} bytes`);
+        const compressedPacketBytes = signedPacket.compressedBytes();
+        console.log(`   📦 Packet size - compressed: ${compressedPacketBytes.length} bytes`);
         
         try {
-            const parsedPacket = Utils.parseSignedPacket(packetBytes);
+            const parsedPacket = SignedPacket.fromBytes(packetBytes);
             console.log('   ✅ Packet parsing successful');
             console.log(`      Parsed public key: ${parsedPacket.publicKeyString}`);
             console.log(`      Parsed timestamp: ${new Date(parsedPacket.timestampMs / 1000).toISOString()}`);
