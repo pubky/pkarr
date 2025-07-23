@@ -4,7 +4,7 @@
  * Tests complete workflows with live network operations
  */
 
-const { Client, Keypair, SignedPacket } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket } = require('../index.js');
 const { newFixture } = require('./helpers.js');
 
 async function runIntegrationTests() {

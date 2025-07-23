@@ -1,27 +1,26 @@
 {
-  "name": "pkarr",
-  "collaborators": [
-    "tipogi",
-    "Nuh <nuh@nuh.dev>"
-  ],
+  "name": "@synonymdev/pkarr",
   "description": "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT",
-  "version": "3.8.0",
+  "version": "0.1.3",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://git.pkarr.org"
+    "url": "git+https://github.com/pubky/pkarr.git"
   },
   "files": [
-    "pkarr_bg.wasm",
-    "pkarr.js",
-    "pkarr.d.ts",
-    "examples/base.js",
-    "examples/advanced.js"
+    "pkarr_js_bg.wasm",
+    "pkarr_js.d.ts",
+    "index.js",
+    "index.cjs",
+    "example.js"
   ],
-  "main": "pkarr.js",
+  "main": "index.js",
+  "module": "index.js",
+  "types": "pkarr_js.d.ts",
+  "sideEffects": false,
   "homepage": "https://pkdns.net",
-  "types": "pkarr.d.ts",
   "scripts": {
+    "build": "cargo run --bin bundle_pubky_npm",
     "example": "node example.js",
     "test": "node -e \"const{spawn}=require('child_process');const p=spawn('../../../target/debug/pkarr-relay',['--testnet'],{stdio:'inherit'});setTimeout(()=>{const t=spawn('node',['test/all.js'],{stdio:'inherit'});t.on('close',c=>{console.log('Killing PID:',p.pid);p.kill();process.exit(c)})},8000)\"",
     "test:unit": "node test/unit.js",
@@ -30,7 +29,10 @@
     "test:edge-cases": "node test/edge-cases.js"
   },
   "keywords": [
-    "wasm",
-    "test"
+    "dht",
+    "dns",
+    "identity",
+    "pkdns",
+    "pkarr"
   ]
 }

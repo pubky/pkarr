@@ -4,8 +4,8 @@
  * Tests individual components and methods in isolation
  */
 
-const { Client, Keypair, SignedPacket } = require('../pkarr.js');
-const { newFixture, validatePublicKey, parseSignedPacket } = require('./helpers.js');
+const { Client, Keypair, SignedPacket } = require('../index.js');
+const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runUnitTests() {
     console.log('Running Unit Tests...');
@@ -202,8 +202,10 @@ async function runUnitTests() {
         builder.addTxtRecord("test", "value", 3600);
         
         const packet = builder.buildAndSign(keypair);
-        const bytes = packet.toBytes();
-        if (!bytes || bytes.length === 0) throw new Error("Packet serialization failed");
+        const uncompressedBytes = packet.bytes();
+        const compressedBytes = packet.compressedBytes();
+        if (!uncompressedBytes || uncompressedBytes.length === 0) throw new Error("Packet serialization failed");
+        if (!compressedBytes || compressedBytes.length === 0) throw new Error("Packet serialization failed");
     });
     
     // Test 20: Public key validation
@@ -224,8 +226,8 @@ async function runUnitTests() {
         builder.addTxtRecord("test", "value", 3600);
         
         const originalPacket = builder.buildAndSign(keypair);
-        const bytes = originalPacket.toBytes();
-        const parsedPacket = parseSignedPacket(bytes);
+        const uncompressedBytes = originalPacket.bytes();
+        const parsedPacket = SignedPacket.fromBytes(uncompressedBytes);
         
         if (parsedPacket.publicKeyString !== originalPacket.publicKeyString) {
             throw new Error("Parsed packet public key doesn't match");

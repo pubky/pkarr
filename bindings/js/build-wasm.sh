@@ -11,7 +11,7 @@ fi
 
 # Build the WASM package for JavaScript bindings
 echo "Building WASM for JavaScript bindings…"
-wasm-pack build --release --target nodejs --out-dir pkg --out-name pkarr
+wasm-pack build --release --target bundler --out-dir pkg --out-name pkarr
 
 echo ""
 # Fix .gitignore content (wasm-pack creates it with "*" but we want "p*")
