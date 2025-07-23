@@ -50,7 +50,7 @@ impl SignedPacket {
     }
 
     /// Get the uncompressed (serialized) bytes of the signed packet
-    /// 
+    ///
     /// This returns the full DNS packet structure as bytes, suitable for:
     /// - Parsing with `SignedPacket.fromBytes()`
     #[wasm_bindgen(js_name = uncompressedBytes)]
@@ -74,12 +74,12 @@ impl SignedPacket {
     }
 
     /// Get the compressed DNS packet bytes only
-    /// 
+    ///
     /// This returns just the compressed DNS packet portion (without signature/timestamp),
     /// which is suitable for:
     /// - Direct DNS protocol operations  
     /// - Size analysis of the DNS content
-    /// 
+    ///
     /// Note: This is only the DNS packet part, not the full pkarr format.
     /// For relay publishing, use the packet directly with `client.publish()`.
     /// For reconstruction, use `uncompressedBytes()` instead.
@@ -101,7 +101,7 @@ impl SignedPacket {
     ///
     /// # Arguments
     /// * `bytes` - The uncompressed/serialized signed packet bytes (from `uncompressedBytes()`)
-    /// 
+    ///
     /// Note: This method expects uncompressed DNS packet bytes, not the compressed
     /// pkarr format. Use `packet.uncompressedBytes()` to get compatible bytes.
     #[wasm_bindgen(js_name = fromBytes)]
