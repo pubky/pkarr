@@ -2,7 +2,7 @@
 
 Public-Key Addressable Resource Records for publishing and resolving DNS packets over [Mainline DHT](https://github.com/Pubky/mainline)
 
-## 📦 Installation
+### 📦 Installation
 
 This package is generated via `wasm-pack` and includes TypeScript definitions.
 
@@ -10,7 +10,7 @@ This package is generated via `wasm-pack` and includes TypeScript definitions.
 npm install pkarr
 ```
 
-## 🚀 Quick Start
+### 🚀 Quick Start
 
 ```javascript
 const { Client, Keypair, SignedPacket } = require('pkarr');
@@ -33,16 +33,16 @@ const resolved = await client.resolve(keypair.public_key_string());
 console.log('Records:', resolved.records);
 ```
 
-## 🏗️ API Overview
+### 🏗️ API Overview
 
-### Core Classes
+#### Core Classes
 
 - **`Client`** - Publish and resolve packets via Pubky relays
 - **`Keypair`** - Generate and manage Ed25519 keypairs
 - **`SignedPacket`** - Build and sign DNS packets
 - **`Utils`** - Utility functions for validation
 
-### Client Methods
+#### Client Methods
 
 ```javascript
 const { Client } = require('pkarr');
@@ -58,7 +58,7 @@ const packet = await client.resolveMostRecent(publicKey); // Alternative resolve
 const relays = Client.defaultRelays();          // Get default relay list
 ```
 
-### Keypair Operations
+#### Keypair Operations
 
 ```javascript
 const { Keypair } = require('pkarr');
@@ -71,7 +71,7 @@ const publicBytes = keypair.public_key_bytes();   // Raw public key bytes
 const secretBytes = keypair.secret_key_bytes();   // Raw secret key bytes
 ```
 
-### Packet Building
+#### Packet Building
 
 ```javascript
 const { SignedPacket } = require('pkarr');
@@ -101,7 +101,7 @@ console.log(packet.records);
 
 CAS ensures your update only succeeds if the server state hasn't changed since you last read it.
 
-## 🧪 Examples
+### 🧪 Examples
 
 Run the example to see Pkarr in action:
 
@@ -109,13 +109,13 @@ Run the example to see Pkarr in action:
 npm run example          # Basic publish/resolve workflow
 ```
 
-## 🌐 Network Operations
+### 🌐 Network Operations
 
 The client by **default** uses the following relays:
 - `https://pkarr.pubky.app`
 - `https://pkarr.pubky.org`
 
-### Custom Configuration
+#### Custom Configuration
 
 To publish the records to a custom relay, compile the `pkarr-relay` binary from source. Navigate to the pkarr [repository](https://github.com/pubky/pkarr) and:
 
@@ -133,7 +133,7 @@ const customRelays = ['http://localhost:15411'];
 const client = new Client(customRelays, 10000); // 10s timeout
 ```
 
-## 🧪 Testing and Examples
+### 🧪 Testing and Examples
 
 To run tests and examples:
 
@@ -146,6 +146,6 @@ npm run test
 npm run example
 ```
 
-## 📄 License
+### 📄 License
 
 MIT License - see LICENSE file for details.
