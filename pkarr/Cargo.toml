@@ -54,9 +54,6 @@ tracing = { version = "0.1.41", optional = true }
 # feat: dht dependencies
 mainline = { version = "5.4.0", optional = true }
 
-# feat: fs dependencies
-const-hex = { version = "1.14", optional = true }
-
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
 tokio = { version = "1.43.0", default-features = false, optional = true }
@@ -132,7 +129,7 @@ endpoints = ["__client", "dep:genawaiter"]
 ## Adds convenience methods for filesystem operations involving pkarr keys.
 ##
 ## Only available if the `client` module is enabled.
-fs = ["__client", "dep:const-hex"]
+fs = ["__client"]
 ## Enables [tls](https://pkarr.org/tls) spec.
 ##
 ## Only available if the `client` module is enabled.
