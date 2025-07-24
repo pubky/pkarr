@@ -5,14 +5,9 @@ use ed25519_dalek::{
 };
 use std::{
     fmt::{self, Debug, Display, Formatter},
-    fs::{read_to_string, write},
     hash::Hash,
-    path::Path,
     str::FromStr,
 };
-
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 
 use serde::{Deserialize, Serialize};
 
@@ -73,9 +68,9 @@ impl Keypair {
 impl Keypair {
     /// Reads the `SecretKey` from a file and derives the `Keypair` from it.
     pub fn from_secret_key_file(
-        secret_file_path: &Path,
+        secret_file_path: &std::path::Path,
     ) -> Result<Keypair, Box<dyn std::error::Error>> {
-        let hex_string = read_to_string(secret_file_path)?;
+        let hex_string = std::fs::read_to_string(secret_file_path)?;
         let hex_string = hex_string.trim();
 
         if hex_string.len() % 2 != 0 {
@@ -98,12 +93,17 @@ impl Keypair {
 
     /// Writes the secret key of the keypair to file, as a hex encoded string.
     /// If the file already exists, it will be overwritten.
-    pub fn write_secret_key_file(&self, secret_file_path: &Path) -> Result<(), std::io::Error> {
+    pub fn write_secret_key_file(
+        &self,
+        secret_file_path: &std::path::Path,
+    ) -> Result<(), std::io::Error> {
         let secret = self.secret_key();
         let hex_string: String = secret.iter().map(|b| format!("{b:02x}")).collect();
-        write(secret_file_path, hex_string)?;
+        std::fs::write(secret_file_path, hex_string)?;
         #[cfg(unix)]
         {
+            use std::os::unix::fs::PermissionsExt;
+
             std::fs::set_permissions(secret_file_path, std::fs::Permissions::from_mode(0o600))?;
         }
         Ok(())
