@@ -4,9 +4,6 @@
 #[cfg(feature = "endpoints")]
 pub mod endpoints;
 
-#[cfg(all(not(wasm_browser), feature = "fs"))]
-pub mod fs;
-
 #[cfg(all(not(wasm_browser), feature = "reqwest-resolve"))]
 pub mod reqwest;
 

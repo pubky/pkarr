@@ -5,9 +5,14 @@ use ed25519_dalek::{
 };
 use std::{
     fmt::{self, Debug, Display, Formatter},
+    fs::{read_to_string, write},
     hash::Hash,
+    path::Path,
     str::FromStr,
 };
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +65,48 @@ impl Keypair {
     /// Converts the public key of this `Keypair` to a URI string.
     pub fn to_uri_string(&self) -> String {
         self.public_key().to_uri_string()
+    }
+}
+
+// Filesystem-related operations, which are not available for WASM
+#[cfg(not(wasm_browser))]
+impl Keypair {
+    /// Reads the `SecretKey` from a file and derives the `Keypair` from it.
+    pub fn from_secret_key_file(
+        secret_file_path: &Path,
+    ) -> Result<Keypair, Box<dyn std::error::Error>> {
+        let hex_string = read_to_string(secret_file_path)?;
+        let hex_string = hex_string.trim();
+
+        if hex_string.len() % 2 != 0 {
+            return Err("Invalid hex string length".into());
+        }
+
+        let mut secret_key_bytes_vec = vec![];
+        for i in (0..hex_string.len()).step_by(2) {
+            let byte_str = &hex_string[i..i + 2];
+            let byte = u8::from_str_radix(byte_str, 16)?;
+            secret_key_bytes_vec.push(byte);
+        }
+
+        let secret_key_bytes: [u8; 32] = secret_key_bytes_vec
+            .try_into()
+            .map_err(|_| "Invalid secret key length")?;
+
+        Ok(Keypair::from_secret_key(&secret_key_bytes))
+    }
+
+    /// Writes the secret key of the keypair to file, as a hex encoded string.
+    /// If the file already exists, it will be overwritten.
+    pub fn write_secret_key_file(&self, secret_file_path: &Path) -> Result<(), std::io::Error> {
+        let secret = self.secret_key();
+        let hex_string: String = secret.iter().map(|b| format!("{b:02x}")).collect();
+        write(secret_file_path, hex_string)?;
+        #[cfg(unix)]
+        {
+            std::fs::set_permissions(secret_file_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
     }
 }
 
@@ -556,5 +603,60 @@ mod tests {
             PublicKey::try_from(key),
             Err(PublicKeyError::InvalidEd25519PublicKey)
         );
+    }
+
+    #[cfg(not(wasm_browser))]
+    mod fs_ops {
+        use std::{
+            env,
+            fs::{remove_file, write},
+        };
+
+        use crate::Keypair;
+
+        #[test]
+        fn test_write_and_read_keypair() {
+            let temp_file_path = env::temp_dir().join("test_keypair.tmp");
+
+            let generated_keypair = Keypair::random();
+
+            let write_keypair_result = generated_keypair.write_secret_key_file(&temp_file_path);
+            assert!(write_keypair_result.is_ok());
+            assert!(temp_file_path.exists());
+
+            let read_keypair_result = Keypair::from_secret_key_file(&temp_file_path);
+            assert!(read_keypair_result.is_ok());
+
+            let read_keypair = read_keypair_result.unwrap();
+            assert_eq!(generated_keypair.secret_key(), read_keypair.secret_key());
+
+            let _ = remove_file(&temp_file_path);
+        }
+
+        #[test]
+        fn test_read_keypair_invalid_hex() {
+            let temp_file_path = env::temp_dir().join("test_invalid_hex.tmp");
+
+            write(&temp_file_path, "invalidhex").unwrap();
+
+            // Try to read file with invalid hex data
+            let read_keypair_result = Keypair::from_secret_key_file(&temp_file_path);
+            assert!(read_keypair_result.is_err());
+
+            let _ = remove_file(&temp_file_path);
+        }
+
+        #[test]
+        fn test_read_keypair_invalid_length() {
+            let temp_file_path = env::temp_dir().join("test_invalid_length.tmp");
+
+            write(&temp_file_path, "abcd").unwrap();
+
+            // Try to read file with valid hex, but invalid length
+            let read_keypair_result = Keypair::from_secret_key_file(&temp_file_path);
+            assert!(read_keypair_result.is_err());
+
+            let _ = remove_file(temp_file_path);
+        }
     }
 }
