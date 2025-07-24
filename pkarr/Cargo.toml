@@ -126,10 +126,6 @@ lmdb-cache = ["__client", "dep:heed", "dep:byteorder", "dep:page_size"]
 ##
 ## Only available if the `client` module is enabled.
 endpoints = ["__client", "dep:genawaiter"]
-## Adds convenience methods for filesystem operations involving pkarr keys.
-##
-## Only available if the `client` module is enabled.
-fs = ["__client"]
 ## Enables [tls](https://pkarr.org/tls) spec.
 ##
 ## Only available if the `client` module is enabled.
@@ -149,7 +145,7 @@ full-client = ["dht", "relays"]
 ## Extra features that might benefit most but not all developers building apps using Pkarr.
 ##
 ## Only available if the `client` module is enabled.
-extra = ["endpoints", "fs", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
+extra = ["endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
 ## Use all features including the `full-client` and `extra` features.
 full = ["full-client", "extra"]
 
