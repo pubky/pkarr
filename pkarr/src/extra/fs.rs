@@ -16,6 +16,5 @@ pub fn write_keypair(keypair: &Keypair, secret_file_path: &Path) -> Result<(), s
     {
         std::fs::set_permissions(&secret_file_path, std::fs::Permissions::from_mode(0o600))?;
     }
-    tracing::info!("Secret file created at {}", secret_file_path.display());
     Ok(())
 }
