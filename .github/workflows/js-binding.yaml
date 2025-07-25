@@ -29,16 +29,15 @@ jobs:
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '22.13.0'
 
     - name: Build server
       run: cargo build
 
     - name: Build WASM package
       run: |
-        cd ./bindings/js
-        chmod +x build-wasm.sh
-        ./build-wasm.sh
+        cd ./bindings/js/pkg
+        npm run build
 
     - name: Start server and run JS tests
       run: |        

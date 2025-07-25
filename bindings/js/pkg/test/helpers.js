@@ -1,16 +1,18 @@
-const { Keypair, SignedPacketBuilder, Utils } = require('../pkarr.js');
-
 /**
- * Spin up a fresh Keypair + Builder
+ * Test Helper Functions
  */
-function newFixture() {
-  const keypair = new Keypair();
-  const builder = SignedPacketBuilder.builder();
-  return { keypair, builder };
-}
+
+const { Keypair, SignedPacket, Utils } = require('../index.js');
+
+// Re-export commonly used functions for tests
+const newFixture = () => ({
+    builder: SignedPacket.builder(),
+    keypair: new Keypair()
+});
+
+const validatePublicKey = Utils.validatePublicKey;
 
 module.exports = {
     newFixture,
-    validatePublicKey: Utils.validatePublicKey,
-    parseSignedPacket: Utils.parseSignedPacket,
-  };
+    validatePublicKey
+};

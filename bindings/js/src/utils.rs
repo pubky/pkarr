@@ -1,5 +1,4 @@
 use super::constants::*;
-use super::error::ClientError;
 use super::*;
 
 /// Utility functions
@@ -8,37 +7,6 @@ pub struct Utils;
 
 #[wasm_bindgen]
 impl Utils {
-    /// Parse a signed packet from bytes and validate it
-    #[wasm_bindgen(js_name = "parseSignedPacket")]
-    pub fn parse_signed_packet(bytes: &[u8]) -> Result<super::SignedPacket, JsValue> {
-        if bytes.is_empty() {
-            return Err(ClientError::ValidationError {
-                context: "signed packet bytes".to_string(),
-                message: "Input bytes cannot be empty".to_string(),
-            }
-            .into());
-        }
-
-        if bytes.len() > MAX_PACKET_SIZE {
-            return Err(ClientError::ValidationError {
-                context: "signed packet bytes".to_string(),
-                message: format!(
-                    "Packet too large: {} bytes (max {})",
-                    bytes.len(),
-                    MAX_PACKET_SIZE
-                ),
-            }
-            .into());
-        }
-
-        let signed_packet =
-            pkarr::SignedPacket::deserialize(bytes).map_err(|e| ClientError::ParseError {
-                input_type: "signed packet bytes".to_string(),
-                message: e.to_string(),
-            })?;
-        Ok(super::SignedPacket::from(signed_packet))
-    }
-
     /// Format a DNS record value for display
     #[wasm_bindgen(js_name = "formatRecordValue")]
     pub fn format_record_value(rdata: &JsValue) -> Result<String, JsValue> {

@@ -4,7 +4,7 @@
  * Tests boundary conditions, error scenarios, and edge cases
  */
 
-const { Client, Keypair, SignedPacket } = require('../pkarr.js');
+const { Client, Keypair, SignedPacket } = require('../index.js');
 const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runEdgeCasesTests() {
@@ -549,7 +549,7 @@ async function runEdgeCasesTests() {
         const emptyBuilder = SignedPacket.builder();
         try {
             const emptyPacket = emptyBuilder.buildAndSign(keypair);
-            const bytes = emptyPacket.toBytes();
+            const bytes = emptyPacket.bytes();
             if (bytes.length === 0) {
                 throw new Error("Empty packet should still have some bytes");
             }
@@ -561,7 +561,7 @@ async function runEdgeCasesTests() {
         const minimalBuilder = SignedPacket.builder();
         minimalBuilder.addTxtRecord("a", "b", 1);
         const minimalPacket = minimalBuilder.buildAndSign(keypair);
-        const minimalBytes = minimalPacket.toBytes();
+        const minimalBytes = minimalPacket.bytes();
         
         if (minimalBytes.length === 0) {
             throw new Error("Minimal packet should have bytes");
