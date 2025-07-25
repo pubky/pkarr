@@ -35,10 +35,12 @@ impl Client {
         let relay_urls = Self::parse_relay_urls(relays)?;
         let client = pkarr::Client::builder()
             .relays(&relay_urls)
-            .unwrap()
+            .map_err(|e| {
+                ClientError::ConfigurationError(format!("Invalid relay configuration: {e}"))
+            })?
             .request_timeout(timeout)
             .build()
-            .unwrap();
+            .map_err(|e| ClientError::ConfigurationError(format!("Failed to build client: {e}")))?;
 
         Ok(Client {
             relays: Some(std::sync::Arc::new(client)),
