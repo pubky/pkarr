@@ -8,8 +8,8 @@ authors = [
 ]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
-homepage = "https://pkarr.org"
-repository = "https://git.pkarr.org"
+homepage = "https://pkdns.net"
+repository = "https://github.com/pubky/pkarr"
 license = "MIT"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 categories = ["network-programming"]
