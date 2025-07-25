@@ -91,8 +91,9 @@ impl Keypair {
         Ok(Keypair::from_secret_key(&secret_key_bytes))
     }
 
-    /// Writes the secret key of the keypair to file, as a hex encoded string.
+    /// Writes the secret of the keypair to a file, as a hex encoded string.
     /// If the file already exists, it will be overwritten.
+    /// In unix like operating systems, the file permission `600` is set.
     pub fn write_secret_key_file(
         &self,
         secret_file_path: &std::path::Path,
