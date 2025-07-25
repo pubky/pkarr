@@ -10,6 +10,9 @@ license = "MIT"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 categories = ["network-programming"]
 
+[lib]
+crate-type = ["rlib"]
+
 [dependencies]
 base32 = "0.5.1"
 ed25519-dalek = { version = "2.1.1" }
@@ -65,10 +68,12 @@ getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
 
 #feat: client dependencies
 log = { version = "0.4.25", optional = true}
-wasm-bindgen-futures = { version = "0.4.50", optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
 
 # feat: relay dependencies
 reqwest = { version = "0.12.13", default-features = false, optional = true }
+
+
 
 [dev-dependencies]
 anyhow = "1.0.95"
@@ -87,8 +92,7 @@ axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
-wasm-bindgen = { version = "0.2.100", features = ["serde-serialize"] }
-wasm-bindgen-test = "0.3"
+wasm-bindgen-test = "0.3.50"
 console_log = { version = "1.0.0", features = ["color"] }
 
 [build-dependencies]
