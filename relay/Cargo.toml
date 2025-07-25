@@ -1,12 +1,16 @@
 [package]
 name = "pkarr-relay"
-version = "0.10.0"
-authors = ["Nuh <nuh@nuh.dev>"]
+version = "0.11.0"
+authors = [
+    "Nuh <nuh@nuh.dev>",
+    "SeverinAlexB <severin@synonym.to>",
+    "SHAcollision <shacollision@synonym.to>",
+]
 edition = "2021"
-description = "Pkarr relay (https://pkarr.org/relays)"
+description = "Pkarr relay (https://github.com/pubky/pkarr/blob/main/design/relays.md)"
 license = "MIT"
-homepage = "https://pkarr.org"
-repository = "https://git.pkarr.org"
+homepage = "https://pkdns.net"
+repository = "https://github.com/pubky/pkarr"
 keywords = ["pkarr", "relay", "mainline", "dht"]
 categories = ["network-programming"]
 
@@ -32,7 +36,10 @@ clap = { version = "4.5.28", features = ["derive"] }
 dirs-next = "2.0.0"
 httpdate = "1.0.3"
 url = "2.5.4"
-pkarr = { version = "3.8.0", default-features = false, features = ["dht", "lmdb-cache"] }
+pkarr = { path = "../pkarr", version = "3.9.0", default-features = false, features = [
+    "dht",
+    "lmdb-cache",
+] }
 
 [package.metadata.docs.rs]
 all-features = true
