@@ -66,7 +66,7 @@ impl Keypair {
 // Filesystem-related operations, which are not available for WASM
 #[cfg(not(wasm_browser))]
 impl Keypair {
-    /// Reads the `SecretKey` from a file and derives the `Keypair` from it.
+    /// Reads the `SecretKey` from a hex file and derives the `Keypair` from it.
     pub fn from_secret_key_file(
         secret_file_path: &std::path::Path,
     ) -> Result<Keypair, Box<dyn std::error::Error>> {
