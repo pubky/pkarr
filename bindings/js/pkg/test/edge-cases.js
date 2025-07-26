@@ -706,7 +706,7 @@ module.exports = { runEdgeCasesTests };
 // Run if called directly
 if (require.main === module) {
     runEdgeCasesTests().catch(error => {
-        console.error('❌ Edge cases tests failed:', error.message);
+        console.error('❌ Edge cases tests failed:', error);
         process.exit(1);
     });
 } 
