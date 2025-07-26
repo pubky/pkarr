@@ -243,10 +243,12 @@ impl SignedPacketBuilder {
     /// Validate two domain names and return their `Name` representations
     fn parse_name_pair<'a>(
         &self,
-        name: &'a str,
+        mut name: &'a str,
         target: &'a str,
     ) -> Result<(Name<'a>, Name<'a>), JsValue> {
-        self.validate_name(name)?;
+        if name.is_empty() {
+            name = ".";
+        }
         self.validate_name(target)?;
 
         Ok((Name::new_unchecked(name), Name::new_unchecked(target)))

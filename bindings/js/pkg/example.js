@@ -48,10 +48,10 @@ async function runExample() {
             builder.addCnameRecord("blog", "www", 3600);
             
             // HTTPS service record without parameters
-            builder.addHttpsRecord("_443._tcp", 1, "primary.example.com", 3600);
+            builder.addHttpsRecord("_443._tcp", 0, "primary.example.com", 3600);
 
             // HTTPS record with all supported parameter types
-            builder.addHttpsRecord("api", 6, "server.example.com", 3600, {
+            builder.addHttpsRecord("", 1, ".", 3600, {
                 alpn: "http/1.1",
                 port: 8443,
                 ipv4hint: "192.168.1.100",
@@ -59,7 +59,7 @@ async function runExample() {
             });
             
             // SVCB records
-            builder.addSvcbRecord("_api._tcp", 2, "api-master.example.com", 3600);
+            builder.addSvcbRecord("_api._tcp", 0, "api-master.example.com", 3600);
             builder.addSvcbRecord("_api._tcp", 8, "api-slave.example.com", 8888, {
                 alpn: ["h3"],
                 port: 6888,

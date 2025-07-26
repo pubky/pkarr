@@ -37,11 +37,21 @@ impl Utils {
                 let priority = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_PRIORITY))?
                     .as_f64()
                     .unwrap_or(0.0) as u16;
-                let target = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_TARGET))?
+                let mut target = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_TARGET))?
                     .as_string()
                     .unwrap_or_default();
 
-                // Display parameters in a human-readable way
+                // For priority 0, only show priority and target
+                if priority == 0 {
+                    return Ok(format!("{} {}", priority, target));
+                }
+
+                // ServiceMode (priority > 0): TargetName must be set; "." means "this host" (RFC 9460 §2.5.2)
+                if target.is_empty() {
+                    target = ".".to_string();
+                }
+
+                // For priority > 0, include parameters
                 let params_result = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_PARAMS));
                 let mut params_str = String::new();
 
@@ -53,10 +63,7 @@ impl Utils {
 
                             for i in 0..keys.length() {
                                 if let Some(key_str) = keys.get(i).as_string() {
-                                    // Keys are already descriptive names, no need to convert
                                     let display_name = &key_str;
-
-                                    // Get the actual parameter value (now a parsed string)
                                     let value_result = js_sys::Reflect::get(obj_ref, &keys.get(i));
                                     if let Ok(value_js) = value_result {
                                         if let Some(value_str) = value_js.as_string() {
@@ -72,7 +79,7 @@ impl Utils {
                             }
 
                             if !param_parts.is_empty() {
-                                params_str = format!(" ({})", param_parts.join(", "));
+                                params_str = format!(" {}", param_parts.join(" "));
                             }
                         }
                     }
