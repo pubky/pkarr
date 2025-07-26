@@ -40,7 +40,45 @@ impl Utils {
                 let target = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_TARGET))?
                     .as_string()
                     .unwrap_or_default();
-                Ok(format!("{priority} {target}"))
+
+                // Display parameters in a human-readable way
+                let params_result = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_PARAMS));
+                let mut params_str = String::new();
+
+                if let Ok(params_obj) = params_result {
+                    if !params_obj.is_undefined() {
+                        if let Some(obj_ref) = params_obj.dyn_ref::<js_sys::Object>() {
+                            let keys = js_sys::Object::keys(obj_ref);
+                            let mut param_parts = Vec::new();
+
+                            for i in 0..keys.length() {
+                                if let Some(key_str) = keys.get(i).as_string() {
+                                    // Keys are already descriptive names, no need to convert
+                                    let display_name = &key_str;
+
+                                    // Get the actual parameter value (now a parsed string)
+                                    let value_result = js_sys::Reflect::get(obj_ref, &keys.get(i));
+                                    if let Ok(value_js) = value_result {
+                                        if let Some(value_str) = value_js.as_string() {
+                                            param_parts
+                                                .push(format!("{}={}", display_name, value_str));
+                                        } else {
+                                            param_parts.push(format!("{}=<invalid>", display_name));
+                                        }
+                                    } else {
+                                        param_parts.push(format!("{}=<error>", display_name));
+                                    }
+                                }
+                            }
+
+                            if !param_parts.is_empty() {
+                                params_str = format!(" ({})", param_parts.join(", "));
+                            }
+                        }
+                    }
+                }
+
+                Ok(format!("{} {}{}", priority, target, params_str))
             }
             TYPE_NS => {
                 let nsdname = js_sys::Reflect::get(rdata, &JsValue::from_str(PROP_NSDNAME))?
