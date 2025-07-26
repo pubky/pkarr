@@ -38,18 +38,14 @@ fn parse_param_value(key: u16, value: &[u8]) -> String {
     match key {
         PARAM_ALPN => parse_alpn_param(value),
         PARAM_PORT => parse_port_param(value),
-        PARAM_IPV4HINT => {
-            parse_ip_hint_param(value, 4, "ipv4hint", |chunk| {
-                format!("{}.{}.{}.{}", chunk[0], chunk[1], chunk[2], chunk[3])
-            })
-        }
-        PARAM_IPV6HINT => {
-            parse_ip_hint_param(value, 16, "ipv6hint", |chunk| {
-                let mut addr_bytes = [0u8; 16];
-                addr_bytes.copy_from_slice(chunk);
-                std::net::Ipv6Addr::from(addr_bytes).to_string()
-            })
-        }
+        PARAM_IPV4HINT => parse_ip_hint_param(value, 4, "ipv4hint", |chunk| {
+            format!("{}.{}.{}.{}", chunk[0], chunk[1], chunk[2], chunk[3])
+        }),
+        PARAM_IPV6HINT => parse_ip_hint_param(value, 16, "ipv6hint", |chunk| {
+            let mut addr_bytes = [0u8; 16];
+            addr_bytes.copy_from_slice(chunk);
+            std::net::Ipv6Addr::from(addr_bytes).to_string()
+        }),
         _ => bytes_to_hex(value),
     }
 }
