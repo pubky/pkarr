@@ -1,6 +1,6 @@
 [package]
 name = "pkarr"
-version = "3.9.0"
+version = "3.9.1"
 authors = [
   "Nuh <nuh@nuh.dev>",
   "SeverinAlexB <severin@synonym.to>",
@@ -8,8 +8,8 @@ authors = [
 ]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
-homepage = "https://pkarr.org"
-repository = "https://git.pkarr.org"
+homepage = "https://pkdns.net"
+repository = "https://github.com/pubky/pkarr"
 license = "MIT"
 keywords = ["mainline", "dht", "dns", "decentralized", "identity"]
 categories = ["network-programming"]
