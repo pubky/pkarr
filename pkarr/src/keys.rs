@@ -69,24 +69,27 @@ impl Keypair {
     /// Reads the `SecretKey` from a hex file and derives the `Keypair` from it.
     pub fn from_secret_key_file(
         secret_file_path: &std::path::Path,
-    ) -> Result<Keypair, Box<dyn std::error::Error>> {
+    ) -> Result<Keypair, std::io::Error> {
         let hex_string = std::fs::read_to_string(secret_file_path)?;
         let hex_string = hex_string.trim();
 
+        let invalid_data_err = |e: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, e);
+
         if hex_string.len() % 2 != 0 {
-            return Err("Invalid hex string length".into());
+            return Err(invalid_data_err("Invalid hex string length"));
         }
 
         let mut secret_key_bytes_vec = vec![];
         for i in (0..hex_string.len()).step_by(2) {
             let byte_str = &hex_string[i..i + 2];
-            let byte = u8::from_str_radix(byte_str, 16)?;
+            let byte = u8::from_str_radix(byte_str, 16)
+                .map_err(|_| invalid_data_err("Invalid hex string"))?;
             secret_key_bytes_vec.push(byte);
         }
 
         let secret_key_bytes: [u8; 32] = secret_key_bytes_vec
             .try_into()
-            .map_err(|_| "Invalid secret key length")?;
+            .map_err(|_| invalid_data_err("Invalid secret key length"))?;
 
         Ok(Keypair::from_secret_key(&secret_key_bytes))
     }
