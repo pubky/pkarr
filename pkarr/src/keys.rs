@@ -611,16 +611,15 @@ mod tests {
 
     #[cfg(not(wasm_browser))]
     mod fs_ops {
-        use std::{
-            env,
-            fs::{remove_file, write},
-        };
+        use std::fs::write;
+
+        use tempfile::NamedTempFile;
 
         use crate::Keypair;
 
         #[test]
         fn test_write_and_read_keypair() {
-            let temp_file_path = env::temp_dir().join("test_keypair.tmp");
+            let temp_file_path = NamedTempFile::new().unwrap().path().to_path_buf();
 
             let generated_keypair = Keypair::random();
 
@@ -633,34 +632,28 @@ mod tests {
 
             let read_keypair = read_keypair_result.unwrap();
             assert_eq!(generated_keypair.secret_key(), read_keypair.secret_key());
-
-            let _ = remove_file(&temp_file_path);
         }
 
         #[test]
         fn test_read_keypair_invalid_hex() {
-            let temp_file_path = env::temp_dir().join("test_invalid_hex.tmp");
+            let temp_file_path = NamedTempFile::new().unwrap().path().to_path_buf();
 
             write(&temp_file_path, "invalidhex").unwrap();
 
             // Try to read file with invalid hex data
             let read_keypair_result = Keypair::from_secret_key_file(&temp_file_path);
             assert!(read_keypair_result.is_err());
-
-            let _ = remove_file(&temp_file_path);
         }
 
         #[test]
         fn test_read_keypair_invalid_length() {
-            let temp_file_path = env::temp_dir().join("test_invalid_length.tmp");
+            let temp_file_path = NamedTempFile::new().unwrap().path().to_path_buf();
 
             write(&temp_file_path, "abcd").unwrap();
 
             // Try to read file with valid hex, but invalid length
             let read_keypair_result = Keypair::from_secret_key_file(&temp_file_path);
             assert!(read_keypair_result.is_err());
-
-            let _ = remove_file(temp_file_path);
         }
     }
 }
