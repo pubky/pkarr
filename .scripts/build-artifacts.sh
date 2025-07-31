@@ -31,15 +31,15 @@ then
 fi
 
 # Read the version from the homeserver
-VERSION=$(cargo pkgid -p pkarr-relay | awk -F# '{print $NF}')
+VERSION=$(cargo pkgid -p pkarr-relay | awk -F@ '{print $NF}')
 echo "Preparing release executables for version $VERSION..."
 TARGETS=(
 # target, nickname
 "aarch64-unknown-linux-musl,linux-arm64"
 "x86_64-unknown-linux-musl,linux-amd64"
 "x86_64-pc-windows-gnu,windows-amd64"
-# "aarch64-apple-darwin,osx-arm64" 
-# "x86_64-apple-darwin,osx-amd64"
+"aarch64-apple-darwin,osx-arm64" 
+"x86_64-apple-darwin,osx-amd64"
 )
 
 # List of binaries to build.
