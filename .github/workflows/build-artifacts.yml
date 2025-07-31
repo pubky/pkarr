@@ -9,8 +9,6 @@ on:
   # Aka when a PR is merged.
   push:
     branches: [main]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build:
