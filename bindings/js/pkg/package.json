@@ -1,7 +1,7 @@
 {
   "name": "@synonymdev/pkarr",
   "description": "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -20,12 +20,12 @@
   "sideEffects": false,
   "homepage": "https://pkdns.net",
   "scripts": {
-    "build": "cargo run --bin bundle_pubky_npm",
+    "build": "cargo run --bin bundle_pkarr_npm",
     "example": "node example.js",
     "test": "node -e \"const{spawn}=require('child_process');const p=spawn('../../../target/debug/pkarr-relay',['--testnet'],{stdio:'inherit'});setTimeout(()=>{const t=spawn('node',['test/all.js'],{stdio:'inherit'});t.on('close',c=>{console.log('Killing PID:',p.pid);p.kill();process.exit(c)})},8000)\"",
     "test:unit": "node test/unit.js",
+    "test:svcb": "node test/svcb.js",
     "test:integration": "node -e \"const{spawn}=require('child_process');const p=spawn('../../../target/debug/pkarr-relay',['--testnet'],{stdio:'inherit'});setTimeout(()=>{const t=spawn('node',['test/integration.js'],{stdio:'inherit'});t.on('close',c=>{console.log('Killing PID:',p.pid);p.kill();process.exit(c)})},8000)\"",
-    "test:performance": "node test/performance.js",
     "test:edge-cases": "node test/edge-cases.js"
   },
   "keywords": [
