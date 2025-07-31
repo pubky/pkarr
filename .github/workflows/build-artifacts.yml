@@ -4,11 +4,13 @@
 
 name: Build Artifacts
 
-# on:
+on:
   # This workflow is triggered every time a push is made to the main branch.
   # Aka when a PR is merged.
   # push:
   #   branches: [main]
+    pull_request:
+    branches: [ main ]
 
 jobs:
   build:
