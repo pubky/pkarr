@@ -24,6 +24,9 @@ jobs:
         components: rustfmt, clippy
         override: true
 
+    - name: Install cargo-deny
+      run: cargo install cargo-deny
+
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -69,6 +72,9 @@ jobs:
 
     - name: Lint with Clippy
       run: cargo clippy --workspace --all-features --bins --tests
+
+    - name: cargo deny
+      run: cargo deny check sources licenses advisories
 
     - name: Build
       if: steps.cargo-build-cache.outputs.cache-hit != 'true'
