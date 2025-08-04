@@ -21,8 +21,11 @@ jobs:
       with:
         profile: minimal
         toolchain: stable
-        components: rustfmt, clippy, deny
+        components: rustfmt, clippy
         override: true
+
+    - name: Install cargo-deny
+      run: cargo install cargo-deny
 
     - name: Cache cargo registry
       uses: actions/cache@v4
