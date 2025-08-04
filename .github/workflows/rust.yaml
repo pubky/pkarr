@@ -21,7 +21,7 @@ jobs:
       with:
         profile: minimal
         toolchain: stable
-        components: rustfmt, clippy
+        components: rustfmt, clippy, deny
         override: true
 
     - name: Cache cargo registry
@@ -69,6 +69,9 @@ jobs:
 
     - name: Lint with Clippy
       run: cargo clippy --workspace --all-features --bins --tests
+
+    - name: cargo deny
+      run: cargo deny check sources licenses advisories
 
     - name: Build
       if: steps.cargo-build-cache.outputs.cache-hit != 'true'
