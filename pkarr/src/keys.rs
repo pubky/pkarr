@@ -290,7 +290,7 @@ impl TryFrom<&String> for PublicKey {
     type Error = PublicKeyError;
 
     fn try_from(s: &String) -> Result<PublicKey, PublicKeyError> {
-        s.try_into()
+        s.as_str().try_into()
     }
 }
 
@@ -362,6 +362,17 @@ pub enum PublicKeyError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_from_string_ref() {
+        let string = "yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no".to_string();
+        let expected = [
+            1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
+            207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
+        ];
+        let public_key: PublicKey = (&string).try_into().unwrap();
+        assert_eq!(public_key.verifying_key().as_bytes(), &expected);
+    }
 
     #[test]
     fn pkarr_key_generate() {
