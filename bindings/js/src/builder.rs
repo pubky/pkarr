@@ -1,6 +1,7 @@
 use super::constants::*;
 use super::error::ClientError;
 use super::*;
+use crate::dns;
 
 /// WASM-compatible wrapper for SignedPacketBuilder
 #[derive(Default)]
@@ -100,6 +101,8 @@ impl SignedPacketBuilder {
     /// * `priority` - Service priority (0-65535)
     /// * `target` - The target server domain name
     /// * `ttl` - Time to live in seconds
+    /// * `params` - Optional JavaScript object containing service parameters
+    ///              Keys can be either numeric strings ("1", "3") or descriptive names ("alpn", "port")
     #[wasm_bindgen(js_name = "addHttpsRecord")]
     pub fn add_https_record(
         &mut self,
@@ -107,9 +110,15 @@ impl SignedPacketBuilder {
         priority: u16,
         target: &str,
         ttl: u32,
+        params: Option<js_sys::Object>,
     ) -> Result<(), JsValue> {
         let (domain_name, target_name) = self.parse_name_pair(name, target)?;
-        let svcb = SVCB::new(priority, target_name);
+        let mut svcb = SVCB::new(priority, target_name);
+
+        if let Some(params_obj) = params {
+            dns::svcb::apply_svcb_params(&mut svcb, &params_obj)?;
+        }
+
         self.inner = self.inner.clone().https(domain_name, svcb, ttl);
         Ok(())
     }
@@ -120,7 +129,9 @@ impl SignedPacketBuilder {
     /// * `name` - The domain name
     /// * `priority` - Service priority (0-65535)
     /// * `target` - The target server domain name
-    /// * `ttl` - Time to live in seconds
+    /// * `ttl` - Time to live in seconds  
+    /// * `params` - Optional JavaScript object containing service parameters
+    ///              Keys can be either numeric strings ("1", "3") or descriptive names ("alpn", "port")
     #[wasm_bindgen(js_name = "addSvcbRecord")]
     pub fn add_svcb_record(
         &mut self,
@@ -128,9 +139,15 @@ impl SignedPacketBuilder {
         priority: u16,
         target: &str,
         ttl: u32,
+        params: Option<js_sys::Object>,
     ) -> Result<(), JsValue> {
         let (domain_name, target_name) = self.parse_name_pair(name, target)?;
-        let svcb = SVCB::new(priority, target_name);
+        let mut svcb = SVCB::new(priority, target_name);
+
+        if let Some(params_obj) = params {
+            dns::svcb::apply_svcb_params(&mut svcb, &params_obj)?;
+        }
+
         self.inner = self.inner.clone().svcb(domain_name, svcb, ttl);
         Ok(())
     }
@@ -226,10 +243,12 @@ impl SignedPacketBuilder {
     /// Validate two domain names and return their `Name` representations
     fn parse_name_pair<'a>(
         &self,
-        name: &'a str,
+        mut name: &'a str,
         target: &'a str,
     ) -> Result<(Name<'a>, Name<'a>), JsValue> {
-        self.validate_name(name)?;
+        if name.is_empty() {
+            name = ".";
+        }
         self.validate_name(target)?;
 
         Ok((Name::new_unchecked(name), Name::new_unchecked(target)))

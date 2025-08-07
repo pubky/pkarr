@@ -1,6 +1,7 @@
 use super::constants::*;
 use super::error::ClientError;
 use super::*;
+use crate::dns;
 
 /// WASM-compatible wrapper for SignedPacket
 #[wasm_bindgen]
@@ -246,6 +247,11 @@ impl SignedPacket {
                     PROP_TARGET,
                     &JsValue::from_str(&svcb.target.to_string()),
                 )?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_PARAMS,
+                    &dns::svcb::to_js_object(svcb)?.into(),
+                )?;
             }
             RData::SVCB(svcb) => {
                 Self::set_prop(&rdata_obj, PROP_TYPE, &JsValue::from_str(TYPE_SVCB))?;
@@ -258,6 +264,11 @@ impl SignedPacket {
                     &rdata_obj,
                     PROP_TARGET,
                     &JsValue::from_str(&svcb.target.to_string()),
+                )?;
+                Self::set_prop(
+                    &rdata_obj,
+                    PROP_PARAMS,
+                    &dns::svcb::to_js_object(svcb)?.into(),
                 )?;
             }
             RData::NS(NS(name)) => {

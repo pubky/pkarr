@@ -52,6 +52,30 @@ pub const PROP_PRIORITY: &str = "priority";
 /// Property name for name server domain in NS records
 pub const PROP_NSDNAME: &str = "nsdname";
 
+/// Property name for service parameters in HTTPS/SVCB records
+pub const PROP_PARAMS: &str = "params";
+
+// === SVCB/HTTPS Service Parameter Names ===
+// These allow using descriptive names instead of just numeric keys
+
+/// SVCB parameter name for ALPN (Application-Layer Protocol Negotiation)
+pub const SVCB_PARAM_ALPN: &str = "alpn";
+
+/// SVCB parameter name for no default ALPN
+pub const SVCB_PARAM_NO_DEFAULT_ALPN: &str = "no-default-alpn";
+
+/// SVCB parameter name for port number
+pub const SVCB_PARAM_PORT: &str = "port";
+
+/// SVCB parameter name for IPv4 address hints
+pub const SVCB_PARAM_IPV4HINT: &str = "ipv4hint";
+
+/// SVCB parameter name for Encrypted Client Hello configuration
+pub const SVCB_PARAM_ECH: &str = "ech";
+
+/// SVCB parameter name for IPv6 address hints
+pub const SVCB_PARAM_IPV6HINT: &str = "ipv6hint";
+
 // === DNS Record Type Values ===
 // These are the string values used for the "type" field in DNS record objects
 

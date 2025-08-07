@@ -155,7 +155,7 @@ module.exports = { runIntegrationTests };
 // Run if called directly
 if (require.main === module) {
     runIntegrationTests().catch(error => {
-        console.error('❌ Integration tests failed:', error.message);
+        console.error('❌ Integration tests failed:', error);
         process.exit(1);
     });
 } 
