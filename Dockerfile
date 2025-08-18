@@ -37,8 +37,8 @@ COPY Cargo.toml Cargo.lock ./
 # Copy over all the source code
 COPY . .
 
-# Build the project in release mode for the MUSL target
-RUN cargo build --release --target $TARGETARCH-unknown-linux-musl
+# Build the relay in release mode for the MUSL target
+RUN cargo build -p pkarr-relay --release --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
 RUN strip target/$TARGETARCH-unknown-linux-musl/release/pkarr-relay
@@ -64,4 +64,4 @@ WORKDIR /usr/local/bin
 EXPOSE 6881
 
 # Set the default command to run the relay binary
-CMD ["pkarr-relay", "--config=./config.toml"]
+CMD ["pkarr-relay", "--config=/config.toml"]

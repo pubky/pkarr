@@ -71,6 +71,8 @@ Pkarr relays are optional but they:
 
 Relays are very light and cheap to operate, making them easy to run altruistically. Private and paid relays are also possible.
 
+A relay can be easily run with docker by cloning the repository and running `docker compose up -d`
+
 ### Republishers
 
 Services and hosting providers mentioned in a user's Resource Records are incentivized to republish these records and keep them alive on the DHT, for the same reasons they are incentivized to gain that user in the first place.
