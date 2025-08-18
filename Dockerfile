@@ -26,8 +26,8 @@ COPY Cargo.toml Cargo.lock ./
 # Copy over all the source code
 COPY . .
 
-# Build only the relay crate in release mode for the MUSL target
-RUN cargo build --release -p pkarr-relay
+# Build the relay in release mode for the MUSL target
+RUN cargo build -p pkarr-relay --release --target $TARGETARCH-unknown-linux-musl
 
 # Strip the binary to reduce size
 RUN strip target/release/pkarr-relay
