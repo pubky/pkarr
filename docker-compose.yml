@@ -1,0 +1,26 @@
+services:
+  pkarr-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TARGETARCH: x86_64  # Change to aarch64 for ARM64/Apple Silicon
+    container_name: pkarr-relay
+    restart: unless-stopped
+    
+    # need both TCP and UDP
+    ports:
+      - "6881:6881"
+    
+    volumes:
+      # config file
+      - ./relay/src/config.example.toml:/config.toml:ro
+      # pkarr cache location, modify both this and config to move cache location
+      - .:/cache
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:6881/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
