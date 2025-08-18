@@ -64,4 +64,4 @@ WORKDIR /usr/local/bin
 EXPOSE 6881
 
 # Set the default command to run the relay binary
-CMD ["pkarr-relay", "--config=./config.toml"]
+CMD ["pkarr-relay", "--config=/config.toml"]
