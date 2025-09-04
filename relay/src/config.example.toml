@@ -1,3 +1,9 @@
+# Relay operating mode
+# - legacy: ignores fresh query parameter, always returns cached data
+# - public: ignores fresh query parameter, always returns cached data (default)
+# - private: when fresh=true specified, queries DHT for most recent data
+mode = "public"
+
 # HTTP server configurations.
 [http]
 # The port number to run the HTTP server on. 
@@ -21,9 +27,9 @@ path = "./storage/location"
 size = 1_000_000
 
 # Minimum TTL before attempting to lookup a more recent version of a SignedPacket 
-minimum_ttl =  300
+minimum_ttl = 300
 # Maximum TTL before attempting to lookup a more recent version of a SignedPacket 
-maximum_ttl =  86400
+maximum_ttl = 86400
 
 # Ip rate limiting configurations.
 # If not included, rate limiting will be disabled.
@@ -41,3 +47,8 @@ behind_proxy = false
 burst_size = 10
 # Number of seconds after which one request of the quota is replenished.
 per_second = 2
+
+# Optional IP addresses that bypass rate limiting when running in private mode.
+# Example:
+# ip_whitelist = ["192.168.1.100", "10.0.0.0/8", "172.16.0.0/12"]
+ip_whitelist = []

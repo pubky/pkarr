@@ -1,22 +1,26 @@
 use std::str::FromStr;
 
-use axum::extract::Path;
+use crate::config::RelayMode;
+use crate::error::Error;
+use crate::AppState;
+use axum::extract::{Path, Query};
 use axum::http::HeaderMap;
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
-
 use bytes::Bytes;
 use http::{header, StatusCode};
 use httpdate::HttpDate;
 use pkarr::errors::{ConcurrencyError, PublishError};
 use pkarr::Timestamp;
+use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
+use serde::Deserialize;
 use tracing::debug;
 
-use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
-
-use crate::error::Error;
-
-use crate::AppState;
+#[derive(Deserialize)]
+pub struct GetQuery {
+    #[serde(default)]
+    most_recent: bool,
+}
 
 pub async fn put(
     State(state): State<AppState>,
@@ -63,12 +67,16 @@ pub async fn put(
 pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
+    Query(query): Query<GetQuery>,
     request_headers: HeaderMap,
 ) -> Result<impl IntoResponse, Error> {
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    if let Some(signed_packet) = state.client.resolve(&public_key).await {
+    let signed_packet =
+        resolve_packet(&state.client, &public_key, query.most_recent, &state.mode).await;
+
+    if let Some(signed_packet) = signed_packet {
         tracing::debug!(?public_key, "cache hit responding with packet!");
 
         let mut response_headers = HeaderMap::new();
@@ -117,6 +125,25 @@ pub async fn get(
         Ok(response)
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
+    }
+}
+
+async fn resolve_packet(
+    client: &pkarr::Client,
+    public_key: &PublicKey,
+    most_recent: bool,
+    mode: &RelayMode,
+) -> Option<pkarr::SignedPacket> {
+    match mode {
+        // Legacy mode ignores most_recent param, always use cache
+        RelayMode::LEGACY => client.resolve(public_key).await,
+        // Public and Private modes respect most_recent param
+        RelayMode::PUBLIC | RelayMode::PRIVATE => {
+            if most_recent {
+                return client.resolve_most_recent(public_key).await;
+            }
+            client.resolve(public_key).await
+        }
     }
 }
 
