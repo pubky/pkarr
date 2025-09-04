@@ -4,20 +4,36 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
+    net::IpAddr,
     path::{Path, PathBuf},
 };
 
+/// Relay operating modes that affect caching and resolution behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RelayMode {
+    /// Legacy mode uses cache and rate limiting, ignores most_recent query param.
+    LEGACY,
+    /// Public mode uses cache and rate limiting, respects most_recent query param.
+    PUBLIC,
+    /// Private mode uses cache and rate limiting, respects most_recent query param, but also skips rate limiting for whitelisted IPs.
+    PRIVATE,
+}
+
+/// Default cache size for the relay
 pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
+/// Directory name for cache storage
 pub const CACHE_DIR: &str = "pkarr-cache";
 
 use crate::rate_limiting::RateLimiterConfig;
 
 #[derive(Serialize, Deserialize, Default)]
 struct ConfigToml {
+    mode: Option<RelayMode>,
     http: Option<HttpConfig>,
     mainline: Option<MainlineConfig>,
     rate_limiter: Option<RateLimiterConfig>,
     cache: Option<CacheConfig>,
+    ip_whitelist: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -61,6 +77,25 @@ pub struct Config {
     pub cache_size: usize,
     /// IP rete limiter configuration
     pub rate_limiter: Option<RateLimiterConfig>,
+
+    /// Relay operating mode
+    /// Defaults to `PUBLIC`
+    pub mode: RelayMode,
+    /// IP whitelist configuration
+    pub ip_whitelist: IpWhitelist,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct IpWhitelist {
+    /// Parsed IP addresses and CIDR blocks
+    pub ips: Vec<ipnet::IpNet>,
+}
+
+impl IpWhitelist {
+    /// Check if an IP address is trusted
+    pub fn is_trusted(&self, ip: &IpAddr) -> bool {
+        self.ips.iter().any(|net| net.contains(ip))
+    }
 }
 
 impl Default for Config {
@@ -71,6 +106,8 @@ impl Default for Config {
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: Some(RateLimiterConfig::default()),
+            mode: RelayMode::PUBLIC,
+            ip_whitelist: IpWhitelist::default(),
         };
 
         this.pkarr.no_relays();
@@ -91,6 +128,10 @@ impl Config {
         let config_toml: ConfigToml = toml::from_str(&s)?;
 
         let mut config = Config::default();
+
+        if let Some(mode) = config_toml.mode {
+            config.mode = mode;
+        }
 
         if let Some(cache_config) = config_toml.cache {
             if let Some(ttl) = cache_config.minimum_ttl {
@@ -128,6 +169,24 @@ impl Config {
         }
 
         config.rate_limiter = config_toml.rate_limiter;
+
+        if let Some(ip_strings) = config_toml.ip_whitelist {
+            let mut whitelist_ips = Vec::new();
+            for ip_str in ip_strings {
+                // Support both individual IPs and CIDR blocks
+                match ip_str.parse::<ipnet::IpNet>() {
+                    Ok(net) => whitelist_ips.push(net),
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(
+                            "Invalid whitelist IP/CIDR '{}': {}",
+                            ip_str,
+                            e
+                        ));
+                    }
+                }
+            }
+            config.ip_whitelist = IpWhitelist { ips: whitelist_ips };
+        }
 
         Ok(config)
     }

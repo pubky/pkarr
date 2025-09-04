@@ -12,25 +12,21 @@ mod error;
 mod handlers;
 mod rate_limiting;
 
+use axum::{extract::DefaultBodyLimit, Router};
+use axum_server::Handle;
+use config::{Config, CACHE_DIR};
+use config::{IpWhitelist, RelayMode};
+use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
+pub use rate_limiting::RateLimiterConfig;
 use std::{
     net::{SocketAddr, TcpListener},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
-
-use axum::{extract::DefaultBodyLimit, Router};
-use axum_server::Handle;
-
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
-
-use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
 use url::Url;
-
-use config::{Config, CACHE_DIR};
-
-pub use rate_limiting::RateLimiterConfig;
 
 /// A builder for Pkarr [Relay]
 pub struct RelayBuilder(Config);
@@ -169,7 +165,14 @@ impl Relay {
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let app = create_app(AppState { client }, rate_limiter);
+        let app = create_app(
+            AppState {
+                client,
+                mode: config.mode,
+                ip_whitelist: config.ip_whitelist.clone(),
+            },
+            rate_limiter,
+        );
 
         let handle = Handle::new();
 
@@ -274,6 +277,9 @@ impl Relay {
 }
 
 fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
+    let mode = state.mode.clone();
+    let whitelist = state.ip_whitelist.clone();
+
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -286,7 +292,7 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
         .layer(TraceLayer::new_for_http());
 
     if let Some(rate_limiter) = rate_limiter {
-        router = rate_limiter.layer(router);
+        router = rate_limiter.layer(router, mode, whitelist);
     }
 
     router
@@ -296,4 +302,8 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
 struct AppState {
     /// The Pkarr client for DHT operations.
     client: Client,
+    /// The relay operating mode.
+    mode: RelayMode,
+    /// Optional IP whitelist for bypassing rate limiting.
+    ip_whitelist: IpWhitelist,
 }
