@@ -73,6 +73,9 @@ jobs:
     - name: Lint with Clippy
       run: cargo clippy --workspace --all-features --bins --tests
 
+    - name: Update dependencies
+      run: cargo update
+
     - name: cargo deny
       run: cargo deny check sources licenses advisories
 
