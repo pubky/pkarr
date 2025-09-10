@@ -83,9 +83,18 @@ builder.addTxtRecord(name, value, ttl);         // TXT records
 builder.addARecord(name, ipv4, ttl);            // IPv4 addresses
 builder.addAAAARecord(name, ipv6, ttl);         // IPv6 addresses
 builder.addCnameRecord(name, target, ttl);      // Canonical names
-builder.addHttpsRecord(name, priority, target, ttl);  // HTTPS service records
-builder.addSvcbRecord(name, priority, target, ttl);   // Service binding records
 builder.addNsRecord(name, nameserver, ttl);     // Name server records
+
+// SVCB/HTTPS Parameters
+const params = {
+    port: 443,                           // Port number
+    ipv4hint: "192.0.2.1",              // IPv4 hints (string or array)
+    ipv6hint: ["2001:db8::1"],          // IPv6 hints (string or array)
+    alpn: ["h2", "http/1.1"],           // ALPN protocol IDs
+};
+
+builder.addHttpsRecord(name, priority, target, ttl, params);  // HTTPS service records
+builder.addSvcbRecord(name, priority, target, ttl, params);   // Service binding records
 
 // Optional: Set custom timestamp
 builder.setTimestamp(Date.now());

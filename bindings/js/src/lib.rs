@@ -11,6 +11,7 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 mod builder;
 mod client;
 mod constants;
+mod dns;
 mod error;
 mod keypair;
 mod signed_packet;

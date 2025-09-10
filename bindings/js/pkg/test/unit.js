@@ -357,7 +357,7 @@ module.exports = { runUnitTests };
 // Run if called directly
 if (require.main === module) {
     runUnitTests().catch(error => {
-        console.error('❌ Unit tests failed:', error.message);
+        console.error('❌ Unit tests failed:', error);
         process.exit(1);
     });
 } 
