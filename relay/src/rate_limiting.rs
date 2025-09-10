@@ -1,15 +1,24 @@
-use std::{net::IpAddr, sync::Arc, time::Duration};
-
-use axum::Router;
+use crate::config::{IpWhitelist, RelayMode};
+use axum::{
+    body::Body,
+    extract::ConnectInfo,
+    http::{Request, StatusCode},
+    middleware::{self, Next},
+    response::IntoResponse,
+    Router,
+};
 use governor::middleware::StateInformationMiddleware;
 use serde::{Deserialize, Serialize};
-
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
+pub use tower_governor::GovernorLayer;
 use tower_governor::{
     governor::{GovernorConfig, GovernorConfigBuilder},
     key_extractor::{PeerIpKeyExtractor, SmartIpKeyExtractor},
 };
-
-pub use tower_governor::GovernorLayer;
 
 #[derive(Serialize, Deserialize, Debug)]
 /// Configurations for rate limitng.
@@ -112,7 +121,13 @@ impl IpRateLimiter {
     }
 
     /// Add a [GovernorLayer] on the provided [Router]
-    pub fn layer(&self, router: Router) -> Router {
+    pub fn layer(self, router: Router, mode: RelayMode, whitelist: IpWhitelist) -> Router {
+        // If private mode, use custom middleware that respects whitelist
+        if matches!(mode, RelayMode::PRIVATE) {
+            return self.handle_private_mode(router, whitelist);
+        }
+
+        // Default behavior for legacy and public modes
         match self {
             IpRateLimiter::Peer(config) => router.layer(GovernorLayer {
                 config: config.clone(),
@@ -121,6 +136,29 @@ impl IpRateLimiter {
                 config: config.clone(),
             }),
         }
+    }
+
+    fn handle_private_mode(self, router: Router, whitelist: IpWhitelist) -> Router {
+        let whitelist = whitelist;
+
+        router.layer(middleware::from_fn(
+            move |ConnectInfo(addr): ConnectInfo<SocketAddr>,
+                  request: Request<Body>,
+                  next: Next| {
+                let rate_limiter = self.clone();
+                let whitelist = whitelist.clone();
+                async move {
+                    // Check if IP is whitelisted (skip rate limiting if it is)
+                    let is_whitelisted = whitelist.is_trusted(&addr.ip());
+
+                    if !is_whitelisted && rate_limiter.is_limited(&addr.ip()) {
+                        return (StatusCode::TOO_MANY_REQUESTS, "Too Many Requests")
+                            .into_response();
+                    }
+                    next.run(request).await
+                }
+            },
+        ))
     }
 }
 
