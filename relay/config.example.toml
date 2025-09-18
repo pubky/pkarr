@@ -1,0 +1,58 @@
+# HTTP server configurations.
+[http]
+# The port number to run the HTTP server on.
+port = 6881
+
+# Internal Mainline node configurations
+[mainline]
+# Port to run the internal Mainline DHT node on.
+port = 6881
+
+# Cache settings
+[cache]
+# Set the path for the cache storage.
+#
+# Should be either absolute or relative to the location of this config file.
+# Cache will be stored in a `pkarr-cache` directory inside the provided directory.
+#
+# Defaults to a random temporary directory.
+path = "./storage/location"
+# Maximum number of SignedPackets to store, before evicting the oldest packets.
+size = 1_000_000
+
+# Minimum TTL before attempting to lookup a more recent version of a SignedPacket
+minimum_ttl = 300
+# Maximum TTL before attempting to lookup a more recent version of a SignedPacket
+maximum_ttl = 86400
+
+# Operation-based rate limiting configurations.
+# If not included, rate limiting will use defaults.
+[relay]
+# Rate limits are applied to specific relay operations
+# Each rate limit entry supports:
+# - operation: one of "publish", "resolve", "resolve_most_recent"
+# - quota: rate in format "{count}{unit}/{time}" (e.g., "2r/s", "100mb/m")
+#   - units: "r" (requests), "kb", "mb", "gb"
+#   - time: "s" (second), "m" (minute)
+# - burst: maximum burst size (optional)
+# - whitelist: optional list of IPs/CIDR blocks exempt from this rate limit
+
+# Rate limit resolve operations (GET requests without most_recent=true) - more generous
+[[relay.rate_limits]]
+operation = "resolve"
+quota = "10r/s"
+burst = 20
+
+# Rate limit resolve_most_recent operations (GET requests with most_recent=true) - more restrictive
+[[relay.rate_limits]]
+operation = "resolve_most_recent"
+quota = "2r/s"
+burst = 5
+
+# Rate limit publish operations (PUT requests) - very restrictive with whitelist
+[[relay.rate_limits]]
+operation = "publish"
+quota = "1r/s"
+burst = 2
+# Per-operation whitelist - supports individual IPs and CIDR blocks
+whitelist = ["127.0.0.1", "192.168.1.0/24", "10.0.0.0/8"]

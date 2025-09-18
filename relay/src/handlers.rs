@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use crate::config::RelayMode;
 use crate::error::Error;
 use crate::AppState;
 use axum::extract::{Path, Query};
@@ -73,8 +72,11 @@ pub async fn get(
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let signed_packet =
-        resolve_packet(&state.client, &public_key, query.most_recent, &state.mode).await;
+    let signed_packet = if query.most_recent {
+        state.client.resolve_most_recent(&public_key).await
+    } else {
+        state.client.resolve(&public_key).await
+    };
 
     if let Some(signed_packet) = signed_packet {
         tracing::debug!(?public_key, "cache hit responding with packet!");
@@ -125,25 +127,6 @@ pub async fn get(
         Ok(response)
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
-    }
-}
-
-async fn resolve_packet(
-    client: &pkarr::Client,
-    public_key: &PublicKey,
-    most_recent: bool,
-    mode: &RelayMode,
-) -> Option<pkarr::SignedPacket> {
-    match mode {
-        // Legacy mode ignores most_recent param, always use cache
-        RelayMode::LEGACY => client.resolve(public_key).await,
-        // Public and Private modes respect most_recent param
-        RelayMode::PUBLIC | RelayMode::PRIVATE => {
-            if most_recent {
-                return client.resolve_most_recent(public_key).await;
-            }
-            client.resolve(public_key).await
-        }
     }
 }
 

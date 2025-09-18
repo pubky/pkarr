@@ -4,36 +4,29 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
-    net::IpAddr,
+    num::NonZero,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
-/// Relay operating modes that affect caching and resolution behavior.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum RelayMode {
-    /// Legacy mode uses cache and rate limiting, ignores most_recent query param.
-    LEGACY,
-    /// Public mode uses cache and rate limiting, respects most_recent query param.
-    PUBLIC,
-    /// Private mode uses cache and rate limiting, respects most_recent query param, but also skips rate limiting for whitelisted IPs.
-    PRIVATE,
-}
+use crate::rate_limiter::{Operation, OperationLimit, QuotaValue};
 
 /// Default cache size for the relay
 pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
 /// Directory name for cache storage
 pub const CACHE_DIR: &str = "pkarr-cache";
 
-use crate::rate_limiting::RateLimiterConfig;
-
 #[derive(Serialize, Deserialize, Default)]
 struct ConfigToml {
-    mode: Option<RelayMode>,
     http: Option<HttpConfig>,
     mainline: Option<MainlineConfig>,
-    rate_limiter: Option<RateLimiterConfig>,
+    relay: Option<RelayToml>,
     cache: Option<CacheConfig>,
-    ip_whitelist: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct RelayToml {
+    rate_limits: Option<Vec<OperationLimit>>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -75,39 +68,40 @@ pub struct Config {
     ///
     /// Defaults to 1000_000
     pub cache_size: usize,
-    /// IP rete limiter configuration
-    pub rate_limiter: Option<RateLimiterConfig>,
-
-    /// Relay operating mode
-    /// Defaults to `PUBLIC`
-    pub mode: RelayMode,
-    /// IP whitelist configuration
-    pub ip_whitelist: IpWhitelist,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct IpWhitelist {
-    /// Parsed IP addresses and CIDR blocks
-    pub ips: Vec<ipnet::IpNet>,
-}
-
-impl IpWhitelist {
-    /// Check if an IP address is trusted
-    pub fn is_trusted(&self, ip: &IpAddr) -> bool {
-        self.ips.iter().any(|net| net.contains(ip))
-    }
+    /// Operation-based rate limiter configuration
+    pub rate_limiter: Option<Vec<OperationLimit>>,
 }
 
 impl Default for Config {
     fn default() -> Self {
+        // Default rate limiting configuration - same as historical relay settings
+        let default_rate_limits = vec![
+            OperationLimit {
+                operation: Operation::Resolve,
+                quota: QuotaValue::from_str("2r/s").expect("valid default quota"),
+                burst: Some(NonZero::new(10).expect("valid burst")),
+                whitelist: vec![],
+            },
+            OperationLimit {
+                operation: Operation::ResolveMostRecent,
+                quota: QuotaValue::from_str("2r/s").expect("valid default quota"),
+                burst: Some(NonZero::new(10).expect("valid burst")),
+                whitelist: vec![],
+            },
+            OperationLimit {
+                operation: Operation::Publish,
+                quota: QuotaValue::from_str("2r/s").expect("valid default quota"),
+                burst: Some(NonZero::new(10).expect("valid burst")),
+                whitelist: vec![],
+            },
+        ];
+
         let mut this = Self {
             http_port: 6881,
             pkarr: Default::default(),
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
-            rate_limiter: Some(RateLimiterConfig::default()),
-            mode: RelayMode::PUBLIC,
-            ip_whitelist: IpWhitelist::default(),
+            rate_limiter: Some(default_rate_limits),
         };
 
         this.pkarr.no_relays();
@@ -128,10 +122,6 @@ impl Config {
         let config_toml: ConfigToml = toml::from_str(&s)?;
 
         let mut config = Config::default();
-
-        if let Some(mode) = config_toml.mode {
-            config.mode = mode;
-        }
 
         if let Some(cache_config) = config_toml.cache {
             if let Some(ttl) = cache_config.minimum_ttl {
@@ -168,24 +158,10 @@ impl Config {
             config.http_port = port;
         }
 
-        config.rate_limiter = config_toml.rate_limiter;
-
-        if let Some(ip_strings) = config_toml.ip_whitelist {
-            let mut whitelist_ips = Vec::new();
-            for ip_str in ip_strings {
-                // Support both individual IPs and CIDR blocks
-                match ip_str.parse::<ipnet::IpNet>() {
-                    Ok(net) => whitelist_ips.push(net),
-                    Err(e) => {
-                        return Err(anyhow::anyhow!(
-                            "Invalid whitelist IP/CIDR '{}': {}",
-                            ip_str,
-                            e
-                        ));
-                    }
-                }
-            }
-            config.ip_whitelist = IpWhitelist { ips: whitelist_ips };
+        // Use TOML-defined rate limits if present, otherwise keep defaults
+        if let Some(rate_limits) = config_toml.relay.and_then(|r| r.rate_limits) {
+            // Override defaults with TOML-defined rate limits
+            config.rate_limiter = Some(rate_limits);
         }
 
         Ok(config)

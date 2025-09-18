@@ -10,14 +10,13 @@
 mod config;
 mod error;
 mod handlers;
-mod rate_limiting;
+mod rate_limiter;
 
 use axum::{extract::DefaultBodyLimit, Router};
 use axum_server::Handle;
 use config::{Config, CACHE_DIR};
-use config::{IpWhitelist, RelayMode};
 use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
-pub use rate_limiting::RateLimiterConfig;
+pub use rate_limiter::*;
 use std::{
     net::{SocketAddr, TcpListener},
     path::{Path, PathBuf},
@@ -69,11 +68,11 @@ impl RelayBuilder {
         self
     }
 
-    /// Set the [RateLimiterConfig].
+    /// Set the operation-based rate limiter configuration.
     ///
-    /// Defaults to [RateLimiterConfig::default].
-    pub fn rate_limiter_config(&mut self, config: RateLimiterConfig) -> &mut Self {
-        self.0.rate_limiter = Some(config);
+    /// Defaults to None (no rate limiting).
+    pub fn rate_limiter_config(&mut self, limits: Vec<OperationLimit>) -> &mut Self {
+        self.0.rate_limiter = Some(limits);
 
         self
     }
@@ -135,20 +134,9 @@ impl Relay {
 
         let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
-        let rate_limiter = config
-            .rate_limiter
-            .map(|rate_limiter| rate_limiting::IpRateLimiter::new(&rate_limiter));
+        let rate_limiter = config.rate_limiter.clone();
 
         config.pkarr.cache(cache);
-
-        if let Some(ref rate_limiter) = rate_limiter {
-            config.pkarr.dht(|builder| {
-                builder.server_settings(pkarr::mainline::ServerSettings {
-                    filter: Box::new(rate_limiter.clone()),
-                    ..Default::default()
-                })
-            });
-        }
 
         let client = config.pkarr.build()?;
 
@@ -165,14 +153,7 @@ impl Relay {
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let app = create_app(
-            AppState {
-                client,
-                mode: config.mode,
-                ip_whitelist: config.ip_whitelist.clone(),
-            },
-            rate_limiter,
-        );
+        let app = create_app(AppState { client }, rate_limiter);
 
         let handle = Handle::new();
 
@@ -276,10 +257,7 @@ impl Relay {
     }
 }
 
-fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
-    let mode = state.mode.clone();
-    let whitelist = state.ip_whitelist.clone();
-
+fn create_app(state: AppState, rate_limiter: Option<Vec<OperationLimit>>) -> Router {
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -291,8 +269,8 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http());
 
-    if let Some(rate_limiter) = rate_limiter {
-        router = rate_limiter.layer(router, mode, whitelist);
+    if let Some(limits) = rate_limiter {
+        router = router.layer(RateLimiterLayer::new(limits));
     }
 
     router
@@ -302,8 +280,4 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
 struct AppState {
     /// The Pkarr client for DHT operations.
     client: Client,
-    /// The relay operating mode.
-    mode: RelayMode,
-    /// Optional IP whitelist for bypassing rate limiting.
-    ip_whitelist: IpWhitelist,
 }
