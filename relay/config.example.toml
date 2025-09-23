@@ -31,8 +31,8 @@ maximum_ttl = 86400
 # Rate limits are applied to specific relay operations
 # Each rate limit entry supports:
 # - operation: one of "publish", "resolve", "resolve_most_recent"
-# - quota: rate in format "{count}{unit}/{time}" (e.g., "2r/s", "100mb/m")
-#   - units: "r" (requests), "kb", "mb", "gb"
+# - quota: rate in format "{count}{unit}/{time}" (e.g., "2r/s", "10r/m")
+#   - units: "r" (requests)
 #   - time: "s" (second), "m" (minute)
 # - burst: maximum burst size (optional)
 # - whitelist: optional list of IPs/CIDR blocks exempt from this rate limit

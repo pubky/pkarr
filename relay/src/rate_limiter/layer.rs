@@ -1,4 +1,4 @@
-use axum::response::{IntoResponse, Response};
+use axum::response::IntoResponse;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -82,82 +82,17 @@ impl std::str::FromStr for LimitKey {
     }
 }
 
-/// Speed rate unit for rate limiting
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SpeedRateUnit {
-    /// Kilobyte
-    Kilobyte,
-    /// Megabyte
-    Megabyte,
-    /// Gigabyte
-    Gigabyte,
-}
-
-impl SpeedRateUnit {
-    /// Returns the number of bytes for this unit
-    pub const fn multiplier(&self) -> std::num::NonZeroU32 {
-        match self {
-            // Speed quotas are always in kilobytes.
-            // Because counting bytes is not practical and we are limited to u32 = 4GB max.
-            // Counting in kb as more practical and we can count up to 4GB*1024 = 4TB.
-            SpeedRateUnit::Kilobyte => std::num::NonZeroU32::new(1).expect("Is always non-zero"),
-            SpeedRateUnit::Megabyte => std::num::NonZeroU32::new(1024).expect("Is always non-zero"),
-            SpeedRateUnit::Gigabyte => {
-                std::num::NonZeroU32::new(1024 * 1024).expect("Is always non-zero")
-            }
-        }
-    }
-}
-
-impl std::fmt::Display for SpeedRateUnit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                SpeedRateUnit::Kilobyte => "kb",
-                SpeedRateUnit::Megabyte => "mb",
-                SpeedRateUnit::Gigabyte => "gb",
-            }
-        )
-    }
-}
-
-impl FromStr for SpeedRateUnit {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "kb" => Ok(SpeedRateUnit::Kilobyte),
-            "mb" => Ok(SpeedRateUnit::Megabyte),
-            "gb" => Ok(SpeedRateUnit::Gigabyte),
-            _ => Err(format!("Invalid speedrate unit: {}", s)),
-        }
-    }
-}
 
 /// The unit of the rate.
 ///
 /// Examples:
 /// - "r" -> request
-/// - "kb" -> kilobyte
-/// - "mb" -> megabyte
-/// - "gb" -> gigabyte
-/// - "tb" -> terabyte
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RateUnit {
     /// Request
     Request,
-    /// Speed rate unit
-    SpeedRateUnit(SpeedRateUnit),
 }
 
-impl RateUnit {
-    /// Returns true if the rate unit is a speed rate unit.
-    pub fn is_speed_rate_unit(&self) -> bool {
-        matches!(self, RateUnit::SpeedRateUnit(_))
-    }
-}
 
 impl std::fmt::Display for RateUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -166,7 +101,6 @@ impl std::fmt::Display for RateUnit {
             "{}",
             match self {
                 RateUnit::Request => "r".to_string(),
-                RateUnit::SpeedRateUnit(unit) => unit.to_string(),
             }
         )
     }
@@ -178,20 +112,16 @@ impl FromStr for RateUnit {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "r" => Ok(RateUnit::Request),
-            other => match SpeedRateUnit::from_str(other) {
-                Ok(unit) => Ok(RateUnit::SpeedRateUnit(unit)),
-                Err(_) => Err(format!("Invalid rate unit: {}", s)),
-            },
+            _ => Err(format!("Invalid rate unit: {}", s)),
         }
     }
 }
 
 impl RateUnit {
-    /// Returns the number of bytes for this unit
+    /// Returns the multiplier for this unit
     pub const fn multiplier(&self) -> std::num::NonZeroU32 {
         match self {
             RateUnit::Request => std::num::NonZeroU32::new(1).expect("Is always non-zero"),
-            RateUnit::SpeedRateUnit(unit) => unit.multiplier(),
         }
     }
 }
@@ -249,9 +179,6 @@ impl TimeUnit {
 /// Examples:
 /// - 5r/m
 /// - 5r/s
-/// - 5kb/m
-/// - 5mb/m
-/// - 5gb/s
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuotaValue {
     /// The rate.
@@ -264,9 +191,6 @@ pub struct QuotaValue {
 
 impl From<QuotaValue> for governor::Quota {
     /// Get the quota to do the actual rate limiting.
-    ///
-    /// Important: The speed quotas are always in kilobytes, not bytes.
-    /// Counting bytes is not practical.
     ///
     fn from(value: QuotaValue) -> Self {
         let rate_count = value.rate.get();
@@ -450,14 +374,13 @@ impl From<OperationLimit> for governor::Quota {
         quota
     }
 }
-use futures_util::StreamExt;
-use governor::{Jitter, Quota, RateLimiter};
+use governor::{Quota, RateLimiter};
 
 use super::extract_ip::extract_ip;
 
 /// A Tower Layer to handle general rate limiting.
 ///
-/// Supports rate limiting by request count and by upload/download speed.
+/// Supports rate limiting by request count only.
 ///
 /// Requires a `PubkyHostLayer` to be applied first.
 /// Used to extract the user pubkey as the key for the rate limiter.
@@ -560,87 +483,6 @@ pub struct RateLimiterMiddleware<S> {
 }
 
 impl<S> RateLimiterMiddleware<S> {
-    /// Throttle the download body.
-    fn throttle_download(
-        res: Response<Body>,
-        key: &LimitKey,
-        limiter: &Arc<RateLimiter<LimitKey, DashMapStateStore<LimitKey>, QuantaClock>>,
-    ) -> Response<Body> {
-        let (parts, body) = res.into_parts();
-        let new_body = Self::throttle_body(body, key, limiter);
-        Response::from_parts(parts, new_body)
-    }
-
-    /// Throttle the up or download body.
-    ///
-    /// Important: The speed quotas are always in kilobytes, not bytes.
-    /// Counting bytes is not practical.
-    ///
-    fn throttle_body(
-        body: Body,
-        key: &LimitKey,
-        limiter: &Arc<RateLimiter<LimitKey, DashMapStateStore<LimitKey>, QuantaClock>>,
-    ) -> Body {
-        let body_stream = body.into_data_stream();
-        let limiter = limiter.clone();
-        let key = key.clone();
-        let throttled = body_stream
-            .map(move |chunk| {
-                let limiter = limiter.clone();
-                let key = key.clone();
-                // When the rate limit is exceeded, we wait between 25ms and 500ms before retrying.
-                // This is to avoid overwhelming the server with requests when the rate limit is exceeded.
-                // Randomization is used to avoid thundering herd problem.
-                let jitter = Jitter::new(
-                    Duration::from_millis(25),
-                    Duration::from_millis(500),
-                );
-                async move {
-                    let bytes = match chunk {
-                        Ok(actual_chunk) => {
-                            actual_chunk
-                        }
-                        Err(e) => return Err(e),
-                    };
-
-                    // --- Round up to the nearest kilobyte. ---
-                    // Important: If the chunk is < 1KB, it will be rounded up to 1 kb.
-                    // Many small uploads will be counted as more than they actually are.
-                    // I am not too concerned about this though because small random disk writes are stressing 
-                    // the disk more anyway compared to larger writes.
-                    // Why are we doing this? governor::Quota is defined as a u32. u32 can only count up to 4GB.
-                    // To support 4GB/s+ limits we need to count in kilobytes.
-                    //
-                    // --- Chunk Size ---
-                    // The chunk size is determined by the client library.
-                    // Common chunk sizes: 16KB to 10MB. 
-                    // HTTP based uploads are usually between 256KB and 1MB.
-                    // Asking the limiter for 1KB packets is tradeoff between
-                    // - Not calling the limiter too much
-                    // - Guaranteeing the call size (1kb) is low enough to not cause race condition issues.
-                    let chunk_kilobytes = bytes.len().div_ceil(1024);
-                    for _ in 0..chunk_kilobytes {
-                        // Check each kilobyte
-                        if limiter
-                            .until_key_n_ready_with_jitter(
-                                &key,
-                                NonZero::new(1).expect("1 is always non zero"),
-                                jitter,
-                            )
-                            .await.is_err()
-                        {
-                            // Requested rate (1kb) is higher then the set limit (x kb/s).
-                            // This should never happen.
-                            unreachable!("Rate limiting is based on the number of kilobytes, not bytes. So 1 kb should always be allowed.");
-                        };
-                    }
-                    Ok(bytes)
-                }
-            })
-            .buffered(1);
-
-        Body::from_stream(throttled)
-    }
 
     /// Get the limits that match the request.
     fn get_limit_matches(&self, req: &Request<Body>) -> Vec<&LimitTuple> {
@@ -704,45 +546,22 @@ where
                 continue;
             }
 
-            if !limit.limit.quota.rate_unit.is_speed_rate_unit() {
-                // Request limiting is enabled, so we need to limit the number of requests.
-                if let Err(_e) = limit.limiter.check_key(&key) {
-                    tracing::debug!("Rate limit of {} exceeded for {:?}", limit.limit.quota, key);
-                    return Box::pin(async move {
-                        Ok(HttpError::new(
-                            StatusCode::TOO_MANY_REQUESTS,
-                            Some("Rate limit exceeded"),
-                        )
-                        .into_response())
-                    });
-                };
-            }
+            // Check request rate limit
+            if let Err(_e) = limit.limiter.check_key(&key) {
+                tracing::debug!("Rate limit of {} exceeded for {:?}", limit.limit.quota, key);
+                return Box::pin(async move {
+                    Ok(HttpError::new(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        Some("Rate limit exceeded"),
+                    )
+                    .into_response())
+                });
+            };
         }
 
-        // Create a clone of the request without the body.
-        // This way, we can extract the keys for the response too.
-        let (parts, body) = req.into_parts();
-        let req_clone = Request::from_parts(parts.clone(), Body::empty());
-        let req = Request::from_parts(parts, body);
-
-        let speed_limits = limits
-            .into_iter()
-            .filter(|limit| limit.limit.quota.rate_unit.is_speed_rate_unit())
-            .cloned()
-            .collect::<Vec<_>>();
         Box::pin(async move {
             // Call the next layer and receive the response.
-            let mut response = match inner.call(req).await.map_err(|_| unreachable!()) {
-                Ok(response) => response,
-                Err(e) => return Err(e),
-            };
-            // Rate limit the download speed.
-            for limit in speed_limits {
-                if let Ok(key) = limit.extract_key(&req_clone) {
-                    response = Self::throttle_download(response, &key, &limit.limiter);
-                };
-            }
-            Ok(response)
+            inner.call(req).await.map_err(|_| unreachable!())
         })
     }
 }
