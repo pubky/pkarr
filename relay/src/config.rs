@@ -116,7 +116,7 @@ impl Default for Config {
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: Some(default_rate_limits),
-            behind_proxy: false, // Default to secure mode
+            behind_proxy: false,
         };
 
         this.pkarr.no_relays();

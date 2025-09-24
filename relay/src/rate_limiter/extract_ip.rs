@@ -37,8 +37,8 @@ fn maybe_connect_info<T>(req: &Request<T>) -> Option<IpAddr> {
 /// * `behind_proxy` - Whether to trust proxy headers (X-Forwarded-For, X-Real-IP)
 ///
 /// # Security
-/// - When `behind_proxy` is `false`: Only uses the direct TCP connection IP (secure mode)
-/// - When `behind_proxy` is `true`: Trusts proxy headers, which can be spoofed by attackers
+/// - When `behind_proxy` is `false`: Only uses the direct socket IP
+/// - When `behind_proxy` is `true`: Trusts proxy headers, which can be spoofed by attackers if misconfigured
 ///
 /// # Returns
 /// The client's IP address for rate limiting
