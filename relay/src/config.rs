@@ -102,6 +102,12 @@ impl Default for Config {
                 burst: Some(NonZero::new(10).expect("valid burst")),
                 whitelist: vec![],
             },
+            OperationLimit {
+                operation: Operation::Index,
+                quota: QuotaValue::from_str("10r/m").expect("valid default quota"),
+                burst: Some(NonZero::new(20).expect("valid burst")),
+                whitelist: vec![],
+            },
         ];
 
         let mut this = Self {

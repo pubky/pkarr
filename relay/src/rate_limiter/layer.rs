@@ -283,15 +283,32 @@ pub enum Operation {
     Resolve,
     /// Resolving most recent records (GET requests with most_recent=true)
     ResolveMostRecent,
+    /// Index/status page (GET requests to root)
+    Index,
 }
 
 impl Operation {
+    /// Check if the request path is a valid operation path (/{key}, not / or empty)
+    fn is_operation(path: &str) -> bool {
+        // Only match requests to /{key} (not root "/" or other paths)
+        if path == "/" || path.is_empty() {
+            return false;
+        }
+        // Should be a path like "/{key}" - check it has content after the slash
+        if !path.starts_with('/') || path.len() <= 1 {
+            return false;
+        }
+        true
+    }
+
     /// Check if a request matches this operation
     pub fn matches_request(&self, req: &Request<Body>) -> bool {
         match self {
-            Operation::Publish => req.method() == Method::PUT,
+            Operation::Publish => {
+                req.method() == Method::PUT && Self::is_operation(req.uri().path())
+            }
             Operation::Resolve => {
-                if req.method() != Method::GET {
+                if req.method() != Method::GET || !Self::is_operation(req.uri().path()) {
                     return false;
                 }
                 // Check if most_recent query parameter is present and true
@@ -302,7 +319,7 @@ impl Operation {
                 }
             }
             Operation::ResolveMostRecent => {
-                if req.method() != Method::GET {
+                if req.method() != Method::GET || !Self::is_operation(req.uri().path()) {
                     return false;
                 }
                 // Check if most_recent query parameter is present and true
@@ -311,6 +328,9 @@ impl Operation {
                 } else {
                     false
                 }
+            }
+            Operation::Index => {
+                req.method() == Method::GET && req.uri().path() == "/"
             }
         }
     }

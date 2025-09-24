@@ -35,29 +35,35 @@ maximum_ttl = 86400
 behind_proxy = false
 # Rate limits are applied to specific relay operations
 # Each rate limit entry supports:
-# - operation: one of "publish", "resolve", "resolve_most_recent"
+# - operation: one of "publish", "resolve", "resolve_most_recent", "index"
 # - quota: rate in format "{count}{unit}/{time}" (e.g., "2r/s", "10r/m")
 #   - units: "r" (requests)
 #   - time: "s" (second), "m" (minute)
 # - burst: maximum burst size (optional)
 # - whitelist: optional list of IPs/CIDR blocks exempt from this rate limit
 
-# Rate limit resolve operations (GET requests without most_recent=true) - more generous
+# Rate limit resolve operations (GET requests without most_recent=true)
 [[relay.rate_limits]]
 operation = "resolve"
 quota = "30r/m"
 burst = 30
 
-# Rate limit resolve_most_recent operations (GET requests with most_recent=true) - more restrictive
+# Rate limit resolve_most_recent operations (GET requests with most_recent=true)
 [[relay.rate_limits]]
 operation = "resolve_most_recent"
 quota = "5r/m"
 burst = 10
 
-# Rate limit publish operations (PUT requests) - very restrictive with whitelist
+# Rate limit publish operations (PUT requests)
 [[relay.rate_limits]]
 operation = "publish"
 quota = "5r/s"
 burst = 10
 # Per-operation whitelist - supports individual IPs and CIDR blocks
 whitelist = ["127.0.0.1", "192.168.1.0/24", "10.0.0.0/8"]
+
+# Rate limit index/status page operations (GET requests to /)
+[[relay.rate_limits]]
+operation = "index"
+quota = "30r/m"
+burst = 30
