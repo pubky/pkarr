@@ -259,7 +259,11 @@ impl Relay {
     }
 }
 
-fn create_app(state: AppState, rate_limiter: Option<Vec<OperationLimit>>, behind_proxy: bool) -> Router {
+fn create_app(
+    state: AppState,
+    rate_limiter: Option<Vec<OperationLimit>>,
+    behind_proxy: bool,
+) -> Router {
     let mut router = Router::new()
         .route(
             "/{key}",

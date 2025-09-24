@@ -329,9 +329,7 @@ impl Operation {
                     false
                 }
             }
-            Operation::Index => {
-                req.method() == Method::GET && req.uri().path() == "/"
-            }
+            Operation::Index => req.method() == Method::GET && req.uri().path() == "/",
         }
     }
 }
