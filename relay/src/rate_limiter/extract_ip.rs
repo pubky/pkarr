@@ -28,10 +28,32 @@ fn maybe_connect_info<T>(req: &Request<T>) -> Option<IpAddr> {
         .map(|addr| addr.ip())
 }
 
-pub fn extract_ip<T>(req: &Request<T>) -> anyhow::Result<IpAddr> {
-    let headers = req.headers();
-    maybe_x_forwarded_for(headers)
-        .or_else(|| maybe_x_real_ip(headers))
-        .or_else(|| maybe_connect_info(req))
-        .ok_or(anyhow::anyhow!("Failed to extract ip."))
+/// Extract the client IP address from a request
+///
+/// This function determines the real client IP for rate limiting purposes.
+///
+/// # Arguments
+/// * `req` - The HTTP request
+/// * `behind_proxy` - Whether to trust proxy headers (X-Forwarded-For, X-Real-IP)
+///
+/// # Security
+/// - When `behind_proxy` is `false`: Only uses the direct TCP connection IP (secure mode)
+/// - When `behind_proxy` is `true`: Trusts proxy headers, which can be spoofed by attackers
+///
+/// # Returns
+/// The client's IP address for rate limiting
+pub fn extract_ip<T>(req: &Request<T>, behind_proxy: bool) -> anyhow::Result<IpAddr> {
+    if behind_proxy {
+        // Trust proxy headers and direct socket IP
+        let headers = req.headers();
+        maybe_x_forwarded_for(headers)
+            .or_else(|| maybe_x_real_ip(headers))
+            .or_else(|| maybe_connect_info(req))
+            .ok_or(anyhow::anyhow!("Failed to extract ip."))
+    } else {
+        // Only trust the direct socket IP
+        maybe_connect_info(req).ok_or(anyhow::anyhow!(
+            "Failed to extract ip from connection info."
+        ))
+    }
 }

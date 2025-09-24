@@ -27,6 +27,7 @@ struct ConfigToml {
 #[derive(Serialize, Deserialize, Default)]
 struct RelayToml {
     rate_limits: Option<Vec<OperationLimit>>,
+    behind_proxy: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -70,6 +71,13 @@ pub struct Config {
     pub cache_size: usize,
     /// Operation-based rate limiter configuration
     pub rate_limiter: Option<Vec<OperationLimit>>,
+    /// Whether this relay is behind a proxy (affects IP extraction for rate limiting)
+    ///
+    /// If true, trusts X-Forwarded-For and X-Real-IP headers for rate limiting.
+    /// If false, only uses the direct TCP connection IP.
+    ///
+    /// Defaults to false for security.
+    pub behind_proxy: bool,
 }
 
 impl Default for Config {
@@ -102,6 +110,7 @@ impl Default for Config {
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: Some(default_rate_limits),
+            behind_proxy: false, // Default to secure mode
         };
 
         this.pkarr.no_relays();
@@ -158,10 +167,17 @@ impl Config {
             config.http_port = port;
         }
 
-        // Use TOML-defined rate limits if present, otherwise keep defaults
-        if let Some(rate_limits) = config_toml.relay.and_then(|r| r.rate_limits) {
-            // Override defaults with TOML-defined rate limits
-            config.rate_limiter = Some(rate_limits);
+        // Apply relay configuration
+        if let Some(relay_config) = config_toml.relay {
+            // Use TOML-defined rate limits if present, otherwise keep defaults
+            if let Some(rate_limits) = relay_config.rate_limits {
+                config.rate_limiter = Some(rate_limits);
+            }
+
+            // Set behind_proxy option if specified
+            if let Some(behind_proxy) = relay_config.behind_proxy {
+                config.behind_proxy = behind_proxy;
+            }
         }
 
         Ok(config)

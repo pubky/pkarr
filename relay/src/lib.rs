@@ -10,11 +10,13 @@
 mod config;
 mod error;
 mod handlers;
-mod rate_limiter;
+/// Rate limiting functionality for the relay
+pub mod rate_limiter;
 
 use axum::{extract::DefaultBodyLimit, Router};
 use axum_server::Handle;
-use config::{Config, CACHE_DIR};
+pub use config::Config;
+use config::CACHE_DIR;
 use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
 pub use rate_limiter::*;
 use std::{
@@ -153,7 +155,7 @@ impl Relay {
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let app = create_app(AppState { client }, rate_limiter);
+        let app = create_app(AppState { client }, rate_limiter, config.behind_proxy);
 
         let handle = Handle::new();
 
@@ -257,7 +259,7 @@ impl Relay {
     }
 }
 
-fn create_app(state: AppState, rate_limiter: Option<Vec<OperationLimit>>) -> Router {
+fn create_app(state: AppState, rate_limiter: Option<Vec<OperationLimit>>, behind_proxy: bool) -> Router {
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -270,7 +272,7 @@ fn create_app(state: AppState, rate_limiter: Option<Vec<OperationLimit>>) -> Rou
         .layer(TraceLayer::new_for_http());
 
     if let Some(limits) = rate_limiter {
-        router = router.layer(RateLimiterLayer::new(limits));
+        router = router.layer(RateLimiterLayer::new(limits, behind_proxy));
     }
 
     router

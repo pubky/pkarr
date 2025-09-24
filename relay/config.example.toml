@@ -28,6 +28,11 @@ maximum_ttl = 86400
 # Operation-based rate limiting configurations.
 # If not included, rate limiting will use defaults.
 [relay]
+# Whether this relay is behind a proxy/load balancer
+# If true, trusts X-Forwarded-For and X-Real-IP headers for rate limiting
+# If false, only uses the direct socket IP
+# Defaults to false
+behind_proxy = false
 # Rate limits are applied to specific relay operations
 # Each rate limit entry supports:
 # - operation: one of "publish", "resolve", "resolve_most_recent"

@@ -82,7 +82,6 @@ impl std::str::FromStr for LimitKey {
     }
 }
 
-
 /// The unit of the rate.
 ///
 /// Examples:
@@ -92,7 +91,6 @@ pub enum RateUnit {
     /// Request
     Request,
 }
-
 
 impl std::fmt::Display for RateUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -390,11 +388,12 @@ use super::extract_ip::extract_ip;
 #[derive(Debug, Clone)]
 pub struct RateLimiterLayer {
     limits: Vec<OperationLimit>,
+    behind_proxy: bool,
 }
 
 impl RateLimiterLayer {
     /// Create a new rate limiter layer with operation-based limits.
-    pub fn new(limits: Vec<OperationLimit>) -> Self {
+    pub fn new(limits: Vec<OperationLimit>, behind_proxy: bool) -> Self {
         if limits.is_empty() {
             tracing::info!("Rate limiting is disabled.");
         } else {
@@ -404,7 +403,10 @@ impl RateLimiterLayer {
                 .collect::<Vec<String>>();
             tracing::info!("Rate limits configured: {}", limits_str.join(", "));
         }
-        Self { limits }
+        Self {
+            limits,
+            behind_proxy,
+        }
     }
 }
 
@@ -421,6 +423,7 @@ impl<S> Layer<S> for RateLimiterLayer {
         RateLimiterMiddleware {
             inner,
             limits: tuples,
+            behind_proxy: self.behind_proxy,
         }
     }
 }
@@ -456,19 +459,6 @@ impl LimitTuple {
         }
     }
 
-    /// Extract the key from the request.
-    ///
-    /// The key is the IP address of the client as a single-host network.
-    fn extract_key(&self, req: &Request<Body>) -> anyhow::Result<LimitKey> {
-        let ip = extract_ip(req)?;
-        // Convert IP to a /32 or /128 network for consistent matching
-        let network = match ip {
-            IpAddr::V4(ipv4) => ipnet::IpNet::from(ipnet::Ipv4Net::new(ipv4, 32)?),
-            IpAddr::V6(ipv6) => ipnet::IpNet::from(ipnet::Ipv6Net::new(ipv6, 128)?),
-        };
-        Ok(LimitKey::IpNetwork(network))
-    }
-
     /// Check if the request matches the limit.
     pub fn is_match(&self, req: &Request<Body>) -> bool {
         self.limit.operation.matches_request(req)
@@ -480,9 +470,19 @@ impl LimitTuple {
 pub struct RateLimiterMiddleware<S> {
     inner: S,
     limits: Vec<LimitTuple>,
+    behind_proxy: bool,
 }
 
 impl<S> RateLimiterMiddleware<S> {
+    /// Convert an IP address to a rate limiting key
+    fn ip_to_limit_key(ip: &IpAddr) -> anyhow::Result<LimitKey> {
+        // Convert IP to a /32 or /128 network for consistent matching
+        let network = match ip {
+            IpAddr::V4(ipv4) => ipnet::IpNet::from(ipnet::Ipv4Net::new(*ipv4, 32)?),
+            IpAddr::V6(ipv6) => ipnet::IpNet::from(ipnet::Ipv6Net::new(*ipv6, 128)?),
+        };
+        Ok(LimitKey::IpNetwork(network))
+    }
 
     /// Get the limits that match the request.
     fn get_limit_matches(&self, req: &Request<Body>) -> Vec<&LimitTuple> {
@@ -519,29 +519,39 @@ where
             return Box::pin(async move { inner.call(req).await.map_err(|_| unreachable!()) });
         }
 
+        // Extract IP once for the entire request
+        let ip = match extract_ip(&req, self.behind_proxy) {
+            Ok(ip) => ip,
+            Err(e) => {
+                tracing::warn!("Failed to extract IP for rate limiting: {}", e);
+                return Box::pin(async move {
+                    Ok(HttpError::new(
+                        StatusCode::BAD_REQUEST,
+                        Some("Failed to extract IP for rate limiting"),
+                    )
+                    .into_response())
+                });
+            }
+        };
+
+        // Convert IP to rate limiting key
+        let key = match Self::ip_to_limit_key(&ip) {
+            Ok(key) => key,
+            Err(e) => {
+                tracing::warn!("Failed to convert IP to rate limiting key: {}", e);
+                return Box::pin(async move {
+                    Ok(HttpError::new(
+                        StatusCode::BAD_REQUEST,
+                        Some("Failed to create rate limiting key"),
+                    )
+                    .into_response())
+                });
+            }
+        };
+
         // Go through all the limits and check if we need to throttle or reject the request.
         for limit in limits.clone() {
-            let key = match limit.extract_key(&req) {
-                Ok(key) => key,
-                Err(e) => {
-                    tracing::warn!(
-                        "{:?} Failed to extract key for rate limiting: {}",
-                        limit.limit.operation,
-                        e
-                    );
-                    return Box::pin(async move {
-                        Ok(HttpError::new(
-                            StatusCode::BAD_REQUEST,
-                            Some("Failed to extract key for rate limiting"),
-                        )
-                        .into_response())
-                    });
-                }
-            };
-
-            // Check whitelist using the original IP address
-            let ip = extract_ip(&req)
-                .unwrap_or_else(|_| "127.0.0.1".parse().expect("localhost IP is valid"));
+            // Check whitelist first
             if limit.limit.is_whitelisted(&ip) {
                 continue;
             }
@@ -550,11 +560,10 @@ where
             if let Err(_e) = limit.limiter.check_key(&key) {
                 tracing::debug!("Rate limit of {} exceeded for {:?}", limit.limit.quota, key);
                 return Box::pin(async move {
-                    Ok(HttpError::new(
-                        StatusCode::TOO_MANY_REQUESTS,
-                        Some("Rate limit exceeded"),
+                    Ok(
+                        HttpError::new(StatusCode::TOO_MANY_REQUESTS, Some("Rate limit exceeded"))
+                            .into_response(),
                     )
-                    .into_response())
                 });
             };
         }

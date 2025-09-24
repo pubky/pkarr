@@ -45,5 +45,8 @@ pkarr = { path = "../pkarr", version = "4.0.0", default-features = false, featur
     "lmdb-cache",
 ] }
 
+[dev-dependencies]
+reqwest = "0.12"
+
 [package.metadata.docs.rs]
 all-features = true
