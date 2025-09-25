@@ -73,8 +73,17 @@ impl RelayBuilder {
     /// Set the operation-based rate limiter configuration.
     ///
     /// Defaults to None (no rate limiting).
-    pub fn rate_limiter_config(&mut self, limits: Vec<OperationLimit>) -> &mut Self {
-        self.0.rate_limiter = Some(limits);
+    pub fn rate_limiter_config(&mut self, limits: Option<Vec<OperationLimit>>) -> &mut Self {
+        self.0.rate_limiter = limits;
+
+        self
+    }
+
+    /// Set whether to respect the most_recent query parameter.
+    ///
+    /// Defaults to false.
+    pub fn resolve_most_recent_enabled(&mut self, enabled: bool) -> &mut Self {
+        self.0.resolve_most_recent_enabled = enabled;
 
         self
     }
@@ -155,7 +164,12 @@ impl Relay {
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let app = create_app(AppState { client }, rate_limiter, config.behind_proxy);
+        let app = create_app(AppState {
+            client,
+            resolve_most_recent_enabled: config.resolve_most_recent_enabled,
+            rate_limiter,
+            behind_proxy: config.behind_proxy,
+        });
 
         let handle = Handle::new();
 
@@ -259,11 +273,11 @@ impl Relay {
     }
 }
 
-fn create_app(
-    state: AppState,
-    rate_limiter: Option<Vec<OperationLimit>>,
-    behind_proxy: bool,
-) -> Router {
+fn create_app(state: AppState) -> Router {
+    // Extract values before state is moved
+    let rate_limiter = state.rate_limiter.clone();
+    let behind_proxy = state.behind_proxy;
+
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -286,4 +300,10 @@ fn create_app(
 struct AppState {
     /// The Pkarr client for DHT operations.
     client: Client,
+    /// Whether to respect the most_recent query parameter
+    resolve_most_recent_enabled: bool,
+    /// Operation-based rate limiter configuration
+    rate_limiter: Option<Vec<OperationLimit>>,
+    /// Whether this relay is behind a proxy
+    behind_proxy: bool,
 }

@@ -28,6 +28,7 @@ struct ConfigToml {
 struct RelayToml {
     rate_limits: Option<Vec<OperationLimit>>,
     behind_proxy: Option<bool>,
+    resolve_most_recent_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -78,6 +79,13 @@ pub struct Config {
     ///
     /// Defaults to false for security.
     pub behind_proxy: bool,
+    /// Whether to respect the most_recent query parameter in resolve requests
+    ///
+    /// If true, the most_recent query parameter is respected and will bypass cache.
+    /// If false, the most_recent query parameter is ignored and will always load from cache.
+    ///
+    /// Defaults to false for backward compatibility.
+    pub resolve_most_recent_enabled: bool,
 }
 
 impl Default for Config {
@@ -89,6 +97,7 @@ impl Default for Config {
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: None,
             behind_proxy: false,
+            resolve_most_recent_enabled: false,
         };
 
         this.pkarr.no_relays();
@@ -155,6 +164,11 @@ impl Config {
             // Set behind_proxy option if specified
             if let Some(behind_proxy) = relay_config.behind_proxy {
                 config.behind_proxy = behind_proxy;
+            }
+
+            // Set resolve_most_recent_enabled option if specified
+            if let Some(resolve_most_recent_enabled) = relay_config.resolve_most_recent_enabled {
+                config.resolve_most_recent_enabled = resolve_most_recent_enabled;
             }
         }
 
