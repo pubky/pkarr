@@ -38,6 +38,8 @@ jobs:
       run: cargo build
 
     - name: Build WASM package
+      env:
+        CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS: '--cfg=getrandom_backend="wasm_js"'
       run: |
         cd ./bindings/js/pkg
         npm run build
