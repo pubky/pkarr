@@ -16,7 +16,10 @@ fn build_wasm(target: &str) -> io::Result<ExitStatus> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
 
     let output = Command::new("wasm-pack")
-        .env("CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS", "--cfg=getrandom_backend=\"wasm_js\"")
+        .env(
+            "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS",
+            "--cfg=getrandom_backend=\"wasm_js\"",
+        )
         .args([
             "build",
             &manifest_dir,
