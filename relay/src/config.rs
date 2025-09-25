@@ -82,40 +82,12 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        // Default rate limiting configuration - same as historical relay settings
-        let default_rate_limits = vec![
-            OperationLimit {
-                operation: Operation::Resolve,
-                quota: QuotaValue::from_str("2r/s").expect("valid default quota"),
-                burst: Some(NonZero::new(10).expect("valid burst")),
-                whitelist: vec![],
-            },
-            OperationLimit {
-                operation: Operation::ResolveMostRecent,
-                quota: QuotaValue::from_str("2r/s").expect("valid default quota"),
-                burst: Some(NonZero::new(10).expect("valid burst")),
-                whitelist: vec![],
-            },
-            OperationLimit {
-                operation: Operation::Publish,
-                quota: QuotaValue::from_str("2r/s").expect("valid default quota"),
-                burst: Some(NonZero::new(10).expect("valid burst")),
-                whitelist: vec![],
-            },
-            OperationLimit {
-                operation: Operation::Index,
-                quota: QuotaValue::from_str("10r/m").expect("valid default quota"),
-                burst: Some(NonZero::new(20).expect("valid burst")),
-                whitelist: vec![],
-            },
-        ];
-
         let mut this = Self {
             http_port: 6881,
             pkarr: Default::default(),
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
-            rate_limiter: Some(default_rate_limits),
+            rate_limiter: None,
             behind_proxy: false,
         };
 
@@ -175,7 +147,7 @@ impl Config {
 
         // Apply relay configuration
         if let Some(relay_config) = config_toml.relay {
-            // Use TOML-defined rate limits if present, otherwise keep defaults
+            // Only apply rate limits if explicitly defined in TOML
             if let Some(rate_limits) = relay_config.rate_limits {
                 config.rate_limiter = Some(rate_limits);
             }
