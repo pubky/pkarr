@@ -1748,7 +1748,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "futures-lite",
- "getrandom 0.2.16",
+ "getrandom 0.3.3",
  "js-sys",
  "ntimestamp",
  "pkarr",
