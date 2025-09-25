@@ -1,9 +1,9 @@
 use crate::{
-    PublicKey, SignedPacket,
     dns::{
-        ResourceRecord,
         rdata::{RData, SVCB},
+        ResourceRecord,
     },
+    PublicKey, SignedPacket,
 };
 use std::{
     collections::{BTreeMap, HashSet},
@@ -117,7 +117,11 @@ impl Endpoint {
 
     /// Returns the port number of this endpoint if set to non-zero value.
     pub fn port(&self) -> Option<u16> {
-        if self.port > 0 { Some(self.port) } else { None }
+        if self.port > 0 {
+            Some(self.port)
+        } else {
+            None
+        }
     }
 
     /// Return the [PublicKey] of the [SignedPacket] this endpoint was found at.
