@@ -9,7 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    env:
+      RUSTFLAGS: '--cfg getrandom_backend="wasm_js"'
     steps:
     - uses: actions/checkout@v4
 
@@ -29,13 +30,12 @@ jobs:
         # Start the server binary in the background
         ./target/debug/pkarr-relay --testnet &
         SERVER_PID=$!
-        
+
         # Change the working directory to pkarr crate
         cd ./pkarr
-        
+
         # Run wasm-pack tests
         wasm-pack test --headless --firefox --lib
-        
+
         # Kill the server
         kill $SERVER_PID
-

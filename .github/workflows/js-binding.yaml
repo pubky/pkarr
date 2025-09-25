@@ -10,6 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      RUSTFLAGS: '--cfg getrandom_backend="wasm_js"'
+
     steps:
     - uses: actions/checkout@v4
 
@@ -43,11 +46,11 @@ jobs:
         npm run build
 
     - name: Start server and run JS tests
-      run: |        
+      run: |
         # Change to the pkg directory and run JavaScript tests
         cd ./bindings/js/pkg
-        
+
         echo "Running JavaScript tests..."
         npm run test
-        
+
         echo "All tests completed successfully!"
