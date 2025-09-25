@@ -9,8 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      RUSTFLAGS: '--cfg getrandom_backend="wasm_js"'
+
     steps:
     - uses: actions/checkout@v4
 
@@ -35,6 +34,7 @@ jobs:
         cd ./pkarr
 
         # Run wasm-pack tests
+        RUSTFLAGS='--cfg getrandom_backend="wasm_js"' \
         wasm-pack test --headless --firefox --lib
 
         # Kill the server
