@@ -4,7 +4,7 @@
  * Tests validation of SVCB and HTTPS record parameters
  */
 
-const { SignedPacket, Keypair } = require('../index.js');
+const { SignedPacket, Keypair } = require('../index.cjs');
 
 async function runSvcbTests() {
     console.log('Running SVCB/HTTPS Tests...');

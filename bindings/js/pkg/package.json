@@ -14,7 +14,7 @@
     "index.cjs",
     "example.js"
   ],
-  "main": "index.js",
+  "main": "index.cjs",
   "module": "index.js",
   "types": "pkarr_js.d.ts",
   "sideEffects": false,
