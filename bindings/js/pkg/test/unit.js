@@ -4,7 +4,7 @@
  * Tests individual components and methods in isolation
  */
 
-const { Client, Keypair, SignedPacket } = require('../index.js');
+const { Client, Keypair, SignedPacket } = require('../index.cjs');
 const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runUnitTests() {

@@ -4,7 +4,7 @@
  * Tests boundary conditions, error scenarios, and edge cases
  */
 
-const { Client, Keypair, SignedPacket } = require('../index.js');
+const { Client, Keypair, SignedPacket } = require('../index.cjs');
 const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runEdgeCasesTests() {
