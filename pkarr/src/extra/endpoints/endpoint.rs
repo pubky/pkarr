@@ -196,7 +196,7 @@ fn shuffle<T>(slice: &mut [T]) {
     for i in 1..slice.len() {
         if chunk_remaining == 0 {
             let mut buf = [0u8; 8];
-            getrandom::getrandom(&mut buf).expect("getrandom failed");
+            getrandom::fill(&mut buf).expect("getrandom failed");
             chunk = u64::from_le_bytes(buf);
             chunk_remaining = 64;
         }

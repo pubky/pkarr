@@ -16,7 +16,7 @@ categories = ["network-programming"]
 
 [dependencies]
 base32 = "0.5.1"
-ed25519-dalek = { version = "2.1.1" }
+ed25519-dalek = { version = "3.0.0-pre.1", features = ["alloc"] }
 thiserror = "2.0.11"
 serde = { version = "1.0.217", features = ["derive"] }
 
@@ -46,7 +46,7 @@ genawaiter = { version = "0.99.1", default-features = false, features = [
 ], optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-getrandom = { version = "0.2.15", default-features = false }
+getrandom = { version = "0.3", default-features = false }
 
 #feat: client dependencies
 tracing = { version = "0.1.41", optional = true }
@@ -69,7 +69,7 @@ rustls = { workspace = true, optional = true }
 webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.2.15", default-features = false, features = ["js"] }
+getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
 
 #feat: client dependencies
 log = { version = "0.4.25", optional = true }
@@ -114,7 +114,7 @@ signed_packet = [
   'dep:self_cell',
 ]
 
-# Clients 
+# Clients
 ## Enable the [Client] with [mainline] support.
 dht = ["dep:mainline", "__client"]
 ## Enables [Client] with [Relays](https://pkarr.org/relays).

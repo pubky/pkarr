@@ -20,7 +20,7 @@ impl Keypair {
     pub fn random() -> Keypair {
         let mut bytes = [0u8; 32];
 
-        getrandom::getrandom(&mut bytes).expect("getrandom failed");
+        getrandom::fill(&mut bytes).expect("getrandom failed");
 
         let signing_key: SigningKey = SigningKey::from_bytes(&bytes);
 
@@ -528,8 +528,7 @@ mod tests {
 
     #[test]
     fn from_uri_complex() {
-        let str =
-            "https://foo@bar.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.:8888?q=v&a=b#foo";
+        let str = "https://foo@bar.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no.:8888?q=v&a=b#foo";
         let expected = [
             1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
             207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,
@@ -558,8 +557,7 @@ mod tests {
     fn from_uri_multiple_pkarr() {
         // Should only catch the TLD.
 
-        let str =
-            "https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
+        let str = "https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy.yg4gxe7z1r7mr6orids9fh95y7gxhdsxjqi6nngsxxtakqaxr5no";
         let expected = [
             1, 180, 103, 163, 183, 145, 58, 178, 122, 4, 168, 237, 242, 243, 251, 7, 76, 254, 14,
             207, 75, 171, 225, 8, 214, 123, 227, 133, 59, 15, 38, 197,

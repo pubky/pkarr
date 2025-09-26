@@ -38,16 +38,18 @@ jobs:
       run: cargo build
 
     - name: Build WASM package
+      env:
+        CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS: '--cfg=getrandom_backend="wasm_js"'
       run: |
         cd ./bindings/js/pkg
         npm run build
 
     - name: Start server and run JS tests
-      run: |        
+      run: |
         # Change to the pkg directory and run JavaScript tests
         cd ./bindings/js/pkg
-        
+
         echo "Running JavaScript tests..."
         npm run test
-        
+
         echo "All tests completed successfully!"

@@ -29,13 +29,13 @@ jobs:
         # Start the server binary in the background
         ./target/debug/pkarr-relay --testnet &
         SERVER_PID=$!
-        
+
         # Change the working directory to pkarr crate
         cd ./pkarr
-        
+
         # Run wasm-pack tests
+        CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg=getrandom_backend="wasm_js"' \
         wasm-pack test --headless --firefox --lib
-        
+
         # Kill the server
         kill $SERVER_PID
-
