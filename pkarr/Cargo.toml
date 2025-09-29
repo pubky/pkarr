@@ -1,6 +1,6 @@
 [package]
 name = "pkarr"
-version = "3.11.0"
+version = "4.0.0"
 authors = [
   "Nuh <nuh@nuh.dev>",
   "SeverinAlexB <severin@synonym.to>",
