@@ -4,20 +4,31 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
+    num::NonZero,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
-pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
-pub const CACHE_DIR: &str = "pkarr-cache";
+use crate::rate_limiter::{Operation, OperationLimit, QuotaValue};
 
-use crate::rate_limiting::RateLimiterConfig;
+/// Default cache size for the relay
+pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
+/// Directory name for cache storage
+pub const CACHE_DIR: &str = "pkarr-cache";
 
 #[derive(Serialize, Deserialize, Default)]
 struct ConfigToml {
     http: Option<HttpConfig>,
     mainline: Option<MainlineConfig>,
-    rate_limiter: Option<RateLimiterConfig>,
+    relay: Option<RelayToml>,
     cache: Option<CacheConfig>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct RelayToml {
+    rate_limits: Option<Vec<OperationLimit>>,
+    behind_proxy: Option<bool>,
+    resolve_most_recent_enabled: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -59,8 +70,22 @@ pub struct Config {
     ///
     /// Defaults to 1000_000
     pub cache_size: usize,
-    /// IP rete limiter configuration
-    pub rate_limiter: Option<RateLimiterConfig>,
+    /// Operation-based rate limiter configuration
+    pub rate_limiter: Option<Vec<OperationLimit>>,
+    /// Whether this relay is behind a proxy (affects IP extraction for rate limiting)
+    ///
+    /// If true, trusts X-Forwarded-For and X-Real-IP headers for rate limiting.
+    /// If false, only uses the direct TCP connection IP.
+    ///
+    /// Defaults to false for security.
+    pub behind_proxy: bool,
+    /// Whether to respect the most_recent query parameter in resolve requests
+    ///
+    /// If true, the most_recent query parameter is respected and will bypass cache.
+    /// If false, the most_recent query parameter is ignored and will always load from cache.
+    ///
+    /// Defaults to false for backward compatibility.
+    pub resolve_most_recent_enabled: bool,
 }
 
 impl Default for Config {
@@ -70,7 +95,9 @@ impl Default for Config {
             pkarr: Default::default(),
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
-            rate_limiter: Some(RateLimiterConfig::default()),
+            rate_limiter: None,
+            behind_proxy: false,
+            resolve_most_recent_enabled: false,
         };
 
         this.pkarr.no_relays();
@@ -127,7 +154,23 @@ impl Config {
             config.http_port = port;
         }
 
-        config.rate_limiter = config_toml.rate_limiter;
+        // Apply relay configuration
+        if let Some(relay_config) = config_toml.relay {
+            // Only apply rate limits if explicitly defined in TOML
+            if let Some(rate_limits) = relay_config.rate_limits {
+                config.rate_limiter = Some(rate_limits);
+            }
+
+            // Set behind_proxy option if specified
+            if let Some(behind_proxy) = relay_config.behind_proxy {
+                config.behind_proxy = behind_proxy;
+            }
+
+            // Set resolve_most_recent_enabled option if specified
+            if let Some(resolve_most_recent_enabled) = relay_config.resolve_most_recent_enabled {
+                config.resolve_most_recent_enabled = resolve_most_recent_enabled;
+            }
+        }
 
         Ok(config)
     }
