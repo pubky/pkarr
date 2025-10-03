@@ -1425,6 +1425,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
 
 [[package]]
+name = "lru"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfe949189f46fabb938b3a9a0be30fdd93fd8a09260da863399a8cf3db756ec8"
+
+[[package]]
 name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1443,7 +1449,29 @@ dependencies = [
  "flume",
  "futures-lite",
  "getrandom 0.2.16",
- "lru",
+ "lru 0.13.0",
+ "serde",
+ "serde_bencode",
+ "serde_bytes",
+ "sha1_smol",
+ "thiserror 2.0.16",
+ "tracing",
+]
+
+[[package]]
+name = "mainline"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5be6c12ff79bfbf65bcbec84882a4bf700177df6d83a7b866c6a01cda7db4777"
+dependencies = [
+ "crc",
+ "document-features",
+ "dyn-clone",
+ "ed25519-dalek 3.0.0-pre.1",
+ "flume",
+ "futures-lite",
+ "getrandom 0.3.3",
+ "lru 0.16.1",
  "serde",
  "serde_bencode",
  "serde_bytes",
@@ -1693,7 +1721,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "4.0.0"
+version = "5.0.0"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -1714,8 +1742,9 @@ dependencies = [
  "getrandom 0.3.3",
  "heed",
  "log",
- "lru",
- "mainline",
+ "lru 0.13.0",
+ "mainline 5.4.0",
+ "mainline 6.0.0",
  "ntimestamp",
  "page_size",
  "pkarr-relay",
@@ -1762,7 +1791,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.11.1"
+version = "0.11.2"
 dependencies = [
  "anyhow",
  "axum",
