@@ -1,6 +1,6 @@
 [package]
 name = "pkarr-relay"
-version = "0.11.1"
+version = "0.11.2"
 authors = [
     "Nuh <nuh@nuh.dev>",
     "SeverinAlexB <severin@synonym.to>",
@@ -40,7 +40,7 @@ dirs-next = "2.0.0"
 httpdate = "1.0.3"
 url = "2.5.4"
 ipnet = { version = "2.11.0", features = ["serde"] }
-pkarr = { path = "../pkarr", version = "4.0.0", default-features = false, features = [
+pkarr = { path = "../pkarr", version = "5.0.0", default-features = false, features = [
     "dht",
     "lmdb-cache",
 ] }
