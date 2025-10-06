@@ -2,14 +2,9 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::Debug,
-    num::NonZero,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{fmt::Debug, path::{Path, PathBuf}};
 
-use crate::rate_limiter::{Operation, OperationLimit, QuotaValue};
+use crate::rate_limiter::OperationLimit;
 
 /// Default cache size for the relay
 pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
