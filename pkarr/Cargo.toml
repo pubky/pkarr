@@ -88,7 +88,7 @@ rstest = "0.24.0"
 pkarr-relay = { path = "../relay" }
 clap = { version = "4.5.29", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-mainline = "5.4.0"
+mainline = "6.0.0"
 tempfile = "3.20"
 tokio-rustls = { version = "0.26.1", default-features = false }
 axum = "0.8.1"
