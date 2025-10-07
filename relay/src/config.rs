@@ -2,7 +2,10 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, path::{Path, PathBuf}};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+};
 
 use crate::rate_limiter::OperationLimit;
 
