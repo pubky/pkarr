@@ -27,6 +27,7 @@ pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
     timeout: Duration,
+    resolve_most_recent_enabled: bool,
     pub(crate) inflight_publish: InflightPublishRequests,
 }
 
@@ -49,7 +50,7 @@ impl Debug for RelaysClient {
 }
 
 impl RelaysClient {
-    pub fn new(relays: Box<[Url]>, timeout: Duration) -> Self {
+    pub fn new(relays: Box<[Url]>, timeout: Duration, resolve_most_recent_enabled: bool) -> Self {
         let inflight_publish = InflightPublishRequests::new(relays.len());
 
         Self {
@@ -59,6 +60,7 @@ impl RelaysClient {
                 .expect("Client building should be infallible"),
 
             timeout,
+            resolve_most_recent_enabled,
             inflight_publish,
         }
     }
@@ -143,12 +145,14 @@ impl RelaysClient {
             let public_key = public_key.clone();
             let if_modified_since = if_modified_since.clone();
             let timeout = self.timeout;
+            let resolve_most_recent = self.resolve_most_recent_enabled;
 
             futures.push(resolve_from_relay(
                 http_client,
                 relay,
                 public_key,
                 if_modified_since,
+                resolve_most_recent,
                 timeout,
             ));
         });
@@ -403,9 +407,15 @@ pub async fn resolve_from_relay(
     relay: Url,
     public_key: PublicKey,
     if_modified_since: Option<String>,
+    resolve_most_recent: bool,
     timeout: Duration,
 ) -> Option<SignedPacket> {
-    let url = format_url(&relay, &public_key);
+    let mut url = format_url(&relay, &public_key);
+
+    // Add most_recent query parameter if enabled
+    if resolve_most_recent {
+        url.query_pairs_mut().append_pair("most_recent", "true");
+    }
 
     let mut request = reqwest::Request::new(Method::GET, url.clone());
 

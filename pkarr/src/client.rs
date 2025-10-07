@@ -52,6 +52,7 @@ pub(crate) struct Inner {
     dht: Option<Dht>,
     #[cfg(relays)]
     relays: Option<RelaysClient>,
+    resolve_most_recent_enabled: bool,
     #[cfg(feature = "endpoints")]
     pub(crate) max_recursion_depth: u8,
 }
@@ -101,8 +102,11 @@ impl Client {
                 return Err(BuildError::EmptyListOfRelays);
             }
 
-            let relays_client =
-                RelaysClient::new(relays.clone().into_boxed_slice(), config.request_timeout);
+            let relays_client = RelaysClient::new(
+                relays.clone().into_boxed_slice(),
+                config.request_timeout,
+                config.resolve_most_recent_enabled,
+            );
 
             Some(relays_client)
         } else {
@@ -123,6 +127,7 @@ impl Client {
             dht,
             #[cfg(relays)]
             relays,
+            resolve_most_recent_enabled: config.resolve_most_recent_enabled,
             #[cfg(feature = "endpoints")]
             max_recursion_depth: config.max_recursion_depth,
         }));

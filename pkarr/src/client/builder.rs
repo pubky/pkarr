@@ -49,6 +49,14 @@ pub(crate) struct Config {
     /// Defaults to [DEFAULT_REQUEST_TIMEOUT]
     pub request_timeout: Duration,
 
+    /// Whether to pass the most_recent query parameter to relay requests
+    ///
+    /// If true, relays will be asked to bypass cache and return the most recent packet.
+    /// Note: Relays must also have resolve_most_recent_enabled=true to honor this.
+    ///
+    /// Defaults to false for backward compatibility.
+    pub resolve_most_recent_enabled: bool,
+
     #[cfg(feature = "endpoints")]
     pub max_recursion_depth: u8,
 }
@@ -75,6 +83,7 @@ impl Default for Config {
             ),
 
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            resolve_most_recent_enabled: false,
 
             #[cfg(feature = "endpoints")]
             max_recursion_depth: DEFAULT_MAX_RECURSION_DEPTH,
@@ -264,6 +273,18 @@ impl ClientBuilder {
         self.0.request_timeout = timeout;
         #[cfg(dht)]
         self.0.dht.as_mut().map(|b| b.request_timeout(timeout));
+
+        self
+    }
+
+    /// Set whether to pass the most_recent query parameter to relay requests.
+    ///
+    /// If enabled, relays will be asked to bypass cache and return the most recent packet.
+    /// Note: Relays must also have resolve_most_recent_enabled=true to honor this.
+    ///
+    /// Defaults to false.
+    pub fn resolve_most_recent_enabled(&mut self, enabled: bool) -> &mut Self {
+        self.0.resolve_most_recent_enabled = enabled;
 
         self
     }
