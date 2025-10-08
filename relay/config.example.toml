@@ -38,7 +38,7 @@ behind_proxy = false
 # If true, the most_recent query parameter is respected and will bypass cache
 # If false, the most_recent query parameter is ignored and will always load from cache
 # Defaults to false for backward compatibility
-resolve_most_recent_enabled = false
+resolve_most_recent = false
 
 # Rate limits are applied to specific relay operations
 # Each rate limit entry supports:

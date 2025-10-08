@@ -1801,7 +1801,6 @@ dependencies = [
  "httpdate",
  "ipnet",
  "pkarr",
- "regex",
  "reqwest",
  "rustls",
  "serde",

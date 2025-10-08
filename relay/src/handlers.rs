@@ -72,7 +72,7 @@ pub async fn get(
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let signed_packet = if query.most_recent && state.resolve_most_recent_enabled {
+    let signed_packet = if query.most_recent && state.resolve_most_recent {
         state.client.resolve_most_recent(&public_key).await
     } else {
         state.client.resolve(&public_key).await

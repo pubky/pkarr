@@ -301,33 +301,30 @@ impl Operation {
         true
     }
 
+    /// Check if a query parameter has a specific value
+    fn has_query_param(req: &Request<Body>, key: &str, value: &str) -> bool {
+        req.uri()
+            .query()
+            .map(|q| url::form_urlencoded::parse(q.as_bytes()).any(|(k, v)| k == key && v == value))
+            .unwrap_or(false)
+    }
+
     /// Check if a request matches this operation
-    pub fn matches_request(&self, req: &Request<Body>) -> bool {
+    pub fn matches_request(&self, req: &Request<Body>, resolve_most_recent: bool) -> bool {
         match self {
             Operation::Publish => {
                 req.method() == Method::PUT && Self::is_operation(req.uri().path())
             }
             Operation::Resolve => {
-                if req.method() != Method::GET || !Self::is_operation(req.uri().path()) {
-                    return false;
-                }
-                // Check if most_recent query parameter is present and true
-                if let Some(query_string) = req.uri().query() {
-                    !query_string.contains("most_recent=true")
-                } else {
-                    true // No query parameters, so it's a regular resolve
-                }
+                req.method() == Method::GET
+                    && Self::is_operation(req.uri().path())
+                    && !(resolve_most_recent && Self::has_query_param(req, "most_recent", "true"))
             }
             Operation::ResolveMostRecent => {
-                if req.method() != Method::GET || !Self::is_operation(req.uri().path()) {
-                    return false;
-                }
-                // Check if most_recent query parameter is present and true
-                if let Some(query_string) = req.uri().query() {
-                    query_string.contains("most_recent=true")
-                } else {
-                    false
-                }
+                req.method() == Method::GET
+                    && Self::is_operation(req.uri().path())
+                    && resolve_most_recent
+                    && Self::has_query_param(req, "most_recent", "true")
             }
             Operation::Index => req.method() == Method::GET && req.uri().path() == "/",
         }
@@ -407,11 +404,12 @@ use super::extract_ip::extract_ip;
 pub struct RateLimiterLayer {
     limits: Vec<OperationLimit>,
     behind_proxy: bool,
+    resolve_most_recent: bool,
 }
 
 impl RateLimiterLayer {
     /// Create a new rate limiter layer with operation-based limits.
-    pub fn new(limits: Vec<OperationLimit>, behind_proxy: bool) -> Self {
+    pub fn new(limits: Vec<OperationLimit>, behind_proxy: bool, resolve_most_recent: bool) -> Self {
         if limits.is_empty() {
             tracing::info!("Rate limiting is disabled.");
         } else {
@@ -424,6 +422,7 @@ impl RateLimiterLayer {
         Self {
             limits,
             behind_proxy,
+            resolve_most_recent,
         }
     }
 }
@@ -442,6 +441,7 @@ impl<S> Layer<S> for RateLimiterLayer {
             inner,
             limits: tuples,
             behind_proxy: self.behind_proxy,
+            resolve_most_recent: self.resolve_most_recent,
         }
     }
 }
@@ -478,8 +478,10 @@ impl LimitTuple {
     }
 
     /// Check if the request matches the limit.
-    pub fn is_match(&self, req: &Request<Body>) -> bool {
-        self.limit.operation.matches_request(req)
+    pub fn is_match(&self, req: &Request<Body>, resolve_most_recent: bool) -> bool {
+        self.limit
+            .operation
+            .matches_request(req, resolve_most_recent)
     }
 }
 
@@ -489,6 +491,7 @@ pub struct RateLimiterMiddleware<S> {
     inner: S,
     limits: Vec<LimitTuple>,
     behind_proxy: bool,
+    resolve_most_recent: bool,
 }
 
 impl<S> RateLimiterMiddleware<S> {
@@ -504,9 +507,10 @@ impl<S> RateLimiterMiddleware<S> {
 
     /// Get the limits that match the request.
     fn get_limit_matches(&self, req: &Request<Body>) -> Vec<&LimitTuple> {
+        let resolve_most_recent = self.resolve_most_recent;
         self.limits
             .iter()
-            .filter(|limit| limit.is_match(req))
+            .filter(|limit| limit.is_match(req, resolve_most_recent))
             .collect()
     }
 }

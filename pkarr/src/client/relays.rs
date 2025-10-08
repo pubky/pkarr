@@ -27,7 +27,7 @@ pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
     timeout: Duration,
-    resolve_most_recent_enabled: bool,
+    resolve_most_recent: bool,
     pub(crate) inflight_publish: InflightPublishRequests,
 }
 
@@ -50,7 +50,7 @@ impl Debug for RelaysClient {
 }
 
 impl RelaysClient {
-    pub fn new(relays: Box<[Url]>, timeout: Duration, resolve_most_recent_enabled: bool) -> Self {
+    pub fn new(relays: Box<[Url]>, timeout: Duration, resolve_most_recent: bool) -> Self {
         let inflight_publish = InflightPublishRequests::new(relays.len());
 
         Self {
@@ -60,7 +60,7 @@ impl RelaysClient {
                 .expect("Client building should be infallible"),
 
             timeout,
-            resolve_most_recent_enabled,
+            resolve_most_recent,
             inflight_publish,
         }
     }
@@ -145,7 +145,7 @@ impl RelaysClient {
             let public_key = public_key.clone();
             let if_modified_since = if_modified_since.clone();
             let timeout = self.timeout;
-            let resolve_most_recent = self.resolve_most_recent_enabled;
+            let resolve_most_recent = self.resolve_most_recent;
 
             futures.push(resolve_from_relay(
                 http_client,

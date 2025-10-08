@@ -82,8 +82,8 @@ impl RelayBuilder {
     /// Set whether to respect the most_recent query parameter.
     ///
     /// Defaults to false.
-    pub fn resolve_most_recent_enabled(&mut self, enabled: bool) -> &mut Self {
-        self.0.resolve_most_recent_enabled = enabled;
+    pub fn set_resolve_most_recent(&mut self, value: bool) -> &mut Self {
+        self.0.resolve_most_recent = value;
 
         self
     }
@@ -166,7 +166,7 @@ impl Relay {
 
         let app = create_app(AppState {
             client,
-            resolve_most_recent_enabled: config.resolve_most_recent_enabled,
+            resolve_most_recent: config.resolve_most_recent,
             rate_limiter,
             behind_proxy: config.behind_proxy,
         });
@@ -277,6 +277,7 @@ fn create_app(state: AppState) -> Router {
     // Extract values before state is moved
     let rate_limiter = state.rate_limiter.clone();
     let behind_proxy = state.behind_proxy;
+    let resolve_most_recent = state.resolve_most_recent;
 
     let mut router = Router::new()
         .route(
@@ -290,7 +291,11 @@ fn create_app(state: AppState) -> Router {
         .layer(TraceLayer::new_for_http());
 
     if let Some(limits) = rate_limiter {
-        router = router.layer(RateLimiterLayer::new(limits, behind_proxy));
+        router = router.layer(RateLimiterLayer::new(
+            limits,
+            behind_proxy,
+            resolve_most_recent,
+        ));
     }
 
     router
@@ -301,7 +306,7 @@ struct AppState {
     /// The Pkarr client for DHT operations.
     client: Client,
     /// Whether to respect the most_recent query parameter
-    resolve_most_recent_enabled: bool,
+    resolve_most_recent: bool,
     /// Operation-based rate limiter configuration
     rate_limiter: Option<Vec<OperationLimit>>,
     /// Whether this relay is behind a proxy

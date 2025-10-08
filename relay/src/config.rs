@@ -18,15 +18,15 @@ pub const CACHE_DIR: &str = "pkarr-cache";
 struct ConfigToml {
     http: Option<HttpConfig>,
     mainline: Option<MainlineConfig>,
-    relay: Option<RelayToml>,
+    relay: Option<RelayConfig>,
     cache: Option<CacheConfig>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
-struct RelayToml {
+struct RelayConfig {
     rate_limits: Option<Vec<OperationLimit>>,
     behind_proxy: Option<bool>,
-    resolve_most_recent_enabled: Option<bool>,
+    resolve_most_recent: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -83,7 +83,7 @@ pub struct Config {
     /// If false, the most_recent query parameter is ignored and will always load from cache.
     ///
     /// Defaults to false for backward compatibility.
-    pub resolve_most_recent_enabled: bool,
+    pub resolve_most_recent: bool,
 }
 
 impl Default for Config {
@@ -95,7 +95,7 @@ impl Default for Config {
             cache_size: DEFAULT_CACHE_SIZE,
             rate_limiter: None,
             behind_proxy: false,
-            resolve_most_recent_enabled: false,
+            resolve_most_recent: false,
         };
 
         this.pkarr.no_relays();
@@ -154,20 +154,11 @@ impl Config {
 
         // Apply relay configuration
         if let Some(relay_config) = config_toml.relay {
-            // Only apply rate limits if explicitly defined in TOML
-            if let Some(rate_limits) = relay_config.rate_limits {
-                config.rate_limiter = Some(rate_limits);
-            }
-
-            // Set behind_proxy option if specified
-            if let Some(behind_proxy) = relay_config.behind_proxy {
-                config.behind_proxy = behind_proxy;
-            }
-
-            // Set resolve_most_recent_enabled option if specified
-            if let Some(resolve_most_recent_enabled) = relay_config.resolve_most_recent_enabled {
-                config.resolve_most_recent_enabled = resolve_most_recent_enabled;
-            }
+            config.rate_limiter = relay_config.rate_limits.or(config.rate_limiter);
+            config.behind_proxy = relay_config.behind_proxy.unwrap_or(config.behind_proxy);
+            config.resolve_most_recent = relay_config
+                .resolve_most_recent
+                .unwrap_or(config.resolve_most_recent);
         }
 
         Ok(config)
