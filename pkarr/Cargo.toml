@@ -5,6 +5,7 @@ authors = [
   "Nuh <nuh@nuh.dev>",
   "SeverinAlexB <severin@synonym.to>",
   "SHAcollision <shacollision@synonym.to>",
+  "Kevin Karsopawiro <kevin@synonym.to>",
 ]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
@@ -69,7 +70,9 @@ rustls = { workspace = true, optional = true }
 webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
+getrandom = { version = "0.3", default-features = false, features = [
+  "wasm_js",
+] }
 
 #feat: client dependencies
 log = { version = "0.4.25", optional = true }
