@@ -10,8 +10,10 @@
 mod config;
 mod error;
 mod handlers;
-/// Rate limiting functionality for the relay
+/// Operation-based rate limiting
 pub mod rate_limiter;
+/// IP-based rate limiting
+pub mod rate_limiting;
 
 use axum::{extract::DefaultBodyLimit, Router};
 use axum_server::Handle;
@@ -65,16 +67,17 @@ impl RelayBuilder {
     ///
     /// Useful when running in a local test network.
     pub fn disable_rate_limiter(&mut self) -> &mut Self {
-        self.0.rate_limiter = None;
+        self.0.dht_rate_limiter = None;
+        self.0.http_rate_limiter = None;
 
         self
     }
 
     /// Set the operation-based rate limiter configuration.
     ///
-    /// Defaults to None (no rate limiting).
+    /// Defaults to None (no operation-based rate limiting).
     pub fn rate_limiter_config(&mut self, limits: Option<Vec<OperationLimit>>) -> &mut Self {
-        self.0.rate_limiter = limits;
+        self.0.http_rate_limiter = limits;
 
         self
     }
@@ -145,9 +148,25 @@ impl Relay {
 
         let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
-        let rate_limiter = config.rate_limiter.clone();
+        let dht_rate_limiter = config.dht_rate_limiter.map(|mut dht_config| {
+            // Override behind_proxy with global setting
+            dht_config.behind_proxy = config.behind_proxy;
+            rate_limiting::IpRateLimiter::new(&dht_config)
+        });
+
+        let http_rate_limiter = config.http_rate_limiter.clone();
 
         config.pkarr.cache(cache);
+
+        // Apply DHT rate limiting (if enabled)
+        if let Some(ref rate_limiter) = dht_rate_limiter {
+            config.pkarr.dht(|builder| {
+                builder.server_settings(pkarr::mainline::ServerSettings {
+                    filter: Box::new(rate_limiter.clone()),
+                    ..Default::default()
+                })
+            });
+        }
 
         let client = config.pkarr.build()?;
 
@@ -167,7 +186,8 @@ impl Relay {
         let app = create_app(AppState {
             client,
             resolve_most_recent: config.resolve_most_recent,
-            rate_limiter,
+            dht_rate_limiter,
+            http_rate_limiter,
             behind_proxy: config.behind_proxy,
         });
 
@@ -213,7 +233,7 @@ impl Relay {
         let mut config = Config {
             cache_path: None,
             http_port: 0,
-            rate_limiter: None,
+            dht_rate_limiter: None,
             ..Default::default()
         };
 
@@ -243,7 +263,7 @@ impl Relay {
         let mut config = Config {
             http_port: 15411,
             cache_path: None,
-            rate_limiter: None,
+            dht_rate_limiter: None,
             ..Default::default()
         };
 
@@ -275,7 +295,8 @@ impl Relay {
 
 fn create_app(state: AppState) -> Router {
     // Extract values before state is moved
-    let rate_limiter = state.rate_limiter.clone();
+    let dht_rate_limiter = state.dht_rate_limiter.clone();
+    let http_rate_limiter = state.http_rate_limiter.clone();
     let behind_proxy = state.behind_proxy;
     let resolve_most_recent = state.resolve_most_recent;
 
@@ -290,12 +311,16 @@ fn create_app(state: AppState) -> Router {
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http());
 
-    if let Some(limits) = rate_limiter {
+    // Apply operation-based rate limiting (if configured)
+    if let Some(limits) = http_rate_limiter {
         router = router.layer(RateLimiterLayer::new(
             limits,
             behind_proxy,
             resolve_most_recent,
         ));
+    } else if let Some(dht_limiter) = dht_rate_limiter {
+        // Fallback to IP-based rate limiting for HTTP if no operation-based limits
+        router = dht_limiter.layer(router);
     }
 
     router
@@ -307,8 +332,10 @@ struct AppState {
     client: Client,
     /// Whether to respect the most_recent query parameter
     resolve_most_recent: bool,
-    /// Operation-based rate limiter configuration
-    rate_limiter: Option<Vec<OperationLimit>>,
+    /// DHT rate limiter (IP-based, protects DHT node)
+    dht_rate_limiter: Option<rate_limiting::IpRateLimiter>,
+    /// HTTP rate limiter (operation-based, protects HTTP server)
+    http_rate_limiter: Option<Vec<OperationLimit>>,
     /// Whether this relay is behind a proxy
     behind_proxy: bool,
 }
