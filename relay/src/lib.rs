@@ -35,6 +35,11 @@ use url::Url;
 pub struct RelayBuilder(Config);
 
 impl RelayBuilder {
+    /// Create a new RelayBuilder from a Config.
+    pub fn new(config: Config) -> Self {
+        RelayBuilder(config)
+    }
+
     /// Set the port for the HTTP endpoint.
     pub fn http_port(&mut self, port: u16) -> &mut Self {
         self.0.http_port = port;
