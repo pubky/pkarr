@@ -1,10 +1,11 @@
 [package]
 name = "pkarr"
-version = "5.0.0"
+version = "5.0.1"
 authors = [
   "Nuh <nuh@nuh.dev>",
   "SeverinAlexB <severin@synonym.to>",
   "SHAcollision <shacollision@synonym.to>",
+  "dzdidi <denys@synonym.to>",
   "Kevin Karsopawiro <kevin@synonym.to>",
 ]
 edition = "2021"
@@ -53,7 +54,7 @@ getrandom = { version = "0.3", default-features = false }
 tracing = { version = "0.1.41", optional = true }
 
 # feat: dht dependencies
-mainline = { version = "6.0.0", optional = true }
+mainline = { version = "6.0.1", optional = true }
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
@@ -88,11 +89,12 @@ reqwest = { workspace = true }
 rstest = "0.24.0"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+
+tempfile = "3.20"
 pkarr-relay = { path = "../relay" }
 clap = { version = "4.5.29", features = ["derive"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-mainline = "6.0.0"
-tempfile = "3.20"
+mainline = "6.0.1"
 tokio-rustls = { version = "0.26.1", default-features = false }
 axum = "0.8.1"
 axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
