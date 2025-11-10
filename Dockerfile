@@ -14,14 +14,6 @@ RUN apk add --no-cache \
     build-base \
     curl
 
-# Install cross-compiler toolchain only for ARM (Apple Silicon)
-RUN if [ "$TARGETARCH" =~ ".*arm64.*" ]; then \
-        wget -qO- https://musl.cc/aarch64-linux-musl-cross.tgz | tar -xz -C /usr/local && \
-        echo "/usr/local/aarch64-linux-musl-cross/bin" > /tmp/musl_cross_path; \
-    else \
-        echo "" > /tmp/musl_cross_path; \
-    fi
-
 # Set PATH only if we installed the cross compiler (will be empty string for x86)
 ENV PATH="$(cat /tmp/musl_cross_path):$PATH"
 
