@@ -61,7 +61,7 @@ jobs:
     - name: Install Nextest if not cached
       run: |
         if [ ! -f ~/.cargo/bin/cargo-nextest ]; then
-          cargo install cargo-nextest
+          cargo install cargo-nextest@0.9.111
         fi
 
     - name: Check no default features
@@ -72,9 +72,6 @@ jobs:
 
     - name: Lint with Clippy
       run: cargo clippy --workspace --all-features --bins --tests
-
-    - name: Update dependencies
-      run: cargo update
 
     - name: cargo deny
       run: cargo deny check sources licenses advisories
