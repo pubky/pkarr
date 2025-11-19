@@ -11,7 +11,7 @@ use tower_governor::{
 
 pub use tower_governor::GovernorLayer;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 /// Configurations for rate limitng.
 pub struct RateLimiterConfig {
     /// Enable rate limit based on headers commonly used by reverse proxies.
@@ -45,7 +45,9 @@ impl Default for RateLimiterConfig {
 #[derive(Debug, Clone)]
 /// A rate limiter that works for direct connections (Peer) or behind reverse-proxy (Proxy)
 pub enum IpRateLimiter {
+    /// Rate limiter for direct peer connections
     Peer(Arc<GovernorConfig<PeerIpKeyExtractor, StateInformationMiddleware>>),
+    /// Rate limiter for connections behind a proxy
     Proxy(Arc<GovernorConfig<SmartIpKeyExtractor, StateInformationMiddleware>>),
 }
 
