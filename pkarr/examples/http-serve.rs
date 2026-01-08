@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     let server = axum_server::bind_rustls(
         addr,
         RustlsConfig::from_config(Arc::new(keypair.to_rpk_rustls_server_config())),
-    );
+    )?;
 
     let app = Router::new().route("/", get(|| async { "Hello, world!" }));
     server.serve(app.into_make_service()).await?;

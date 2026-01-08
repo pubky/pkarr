@@ -7,10 +7,9 @@
 //!     $ cargo run --example publish
 
 use clap::{Parser, ValueEnum};
+use pkarr::{Client, Keypair, SignedPacket};
 use std::time::Instant;
 use tracing_subscriber;
-
-use pkarr::{Client, Keypair, SignedPacket};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

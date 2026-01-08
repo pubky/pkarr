@@ -802,7 +802,8 @@ mod reqwest_builder {
             let server = axum_server::from_tcp_rustls(
                 listener,
                 RustlsConfig::from_config(Arc::new((&keypair).into())),
-            );
+            )
+            .unwrap();
 
             tokio::spawn(server.serve(app.into_make_service()));
         }

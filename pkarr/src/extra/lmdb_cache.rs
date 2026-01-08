@@ -36,7 +36,7 @@ pub struct CacheKeyCodec;
 impl BytesEncode<'_> for CacheKeyCodec {
     type EItem = CacheKey;
 
-    fn bytes_encode(key: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
+    fn bytes_encode(key: &Self::EItem) -> Result<Cow<'_, [u8]>, BoxedError> {
         Ok(Cow::Owned(key.to_vec()))
     }
 }
@@ -53,7 +53,7 @@ impl<'a> BytesDecode<'a> for CacheKeyCodec {
 impl BytesEncode<'_> for SignedPacket {
     type EItem = SignedPacket;
 
-    fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<[u8]>, BoxedError> {
+    fn bytes_encode(signed_packet: &Self::EItem) -> Result<Cow<'_, [u8]>, BoxedError> {
         Ok(Cow::Owned(signed_packet.serialize().to_vec()))
     }
 }
