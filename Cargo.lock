@@ -1319,15 +1319,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.13.0"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "227748d55f2f0ab4735d87fd623798cb6b664512fe979705f829c9f81c934465"
-
-[[package]]
-name = "lru"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe949189f46fabb938b3a9a0be30fdd93fd8a09260da863399a8cf3db756ec8"
+checksum = "a1dc47f592c06f33f8e3aea9591776ec7c9f9e4124778ff8a3c3b87159f7e593"
 
 [[package]]
 name = "lru-slab"
@@ -1348,7 +1342,7 @@ dependencies = [
  "flume",
  "futures-lite",
  "getrandom 0.3.3",
- "lru 0.16.1",
+ "lru",
  "serde",
  "serde_bencode",
  "serde_bytes",
@@ -1619,7 +1613,7 @@ dependencies = [
  "getrandom 0.3.3",
  "heed",
  "log",
- "lru 0.13.0",
+ "lru",
  "mainline",
  "ntimestamp",
  "page_size",
