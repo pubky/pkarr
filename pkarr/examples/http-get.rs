@@ -2,7 +2,6 @@
 
 use reqwest::Method;
 use tracing::Level;
-use tracing_subscriber;
 
 use clap::Parser;
 
