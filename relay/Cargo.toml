@@ -1,6 +1,6 @@
 [package]
 name = "pkarr-relay"
-version = "0.11.2"
+version = "0.11.3"
 authors = [
     "Nuh <nuh@nuh.dev>",
     "SeverinAlexB <severin@synonym.to>",
@@ -23,7 +23,7 @@ tokio = { version = "1.43.0", features = ["full"] }
 tower-http = { version = "0.6.2", features = ["cors", "trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 rustls = { workspace = true }
 http = "1.2.0"
 thiserror = "2.0.11"

@@ -107,7 +107,7 @@ impl RelayBuilder {
 /// This struct represents a running relay server and provides methods to interact with it,
 /// such as retrieving the server's address or shutting it down.
 pub struct Relay {
-    handle: Handle,
+    handle: Handle<SocketAddr>,
     relay_address: SocketAddr,
 }
 
@@ -157,6 +157,9 @@ impl Relay {
         let client = config.pkarr.build()?;
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
+        // On axum-server 0.8.0 the `.set_nonblocking(true)` call does not take place internally anymore
+        // See open issue https://github.com/programatik29/axum-server/issues/181
+        listener.set_nonblocking(true)?;
 
         let node_address = client
             .dht()
@@ -173,7 +176,7 @@ impl Relay {
 
         let handle = Handle::new();
 
-        let task = axum_server::from_tcp(listener)
+        let task = axum_server::from_tcp(listener)?
             .handle(handle.clone())
             .serve(app.into_make_service_with_connect_info::<SocketAddr>());
 

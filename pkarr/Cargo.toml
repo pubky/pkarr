@@ -1,11 +1,11 @@
 [package]
 name = "pkarr"
-version = "5.0.1"
+version = "5.0.2"
 authors = [
   "Nuh <nuh@nuh.dev>",
   "SeverinAlexB <severin@synonym.to>",
   "SHAcollision <shacollision@synonym.to>",
-  "dzdidi <denys@synonym.to>"
+  "dzdidi <denys@synonym.to>",
 ]
 edition = "2021"
 description = "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT"
@@ -70,7 +70,9 @@ rustls = { workspace = true, optional = true }
 webpki = { package = "rustls-webpki", version = "0.102", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
+getrandom = { version = "0.3", default-features = false, features = [
+  "wasm_js",
+] }
 
 #feat: client dependencies
 log = { version = "0.4.25", optional = true }
@@ -93,7 +95,7 @@ mainline = "6.0.1"
 tempfile = "3.20"
 tokio-rustls = { version = "0.26.1", default-features = false }
 axum = "0.8.1"
-axum-server = { version = "0.7.1", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]

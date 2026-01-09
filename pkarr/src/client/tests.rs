@@ -792,6 +792,7 @@ mod reqwest_builder {
             // Run a server on Pkarr
             let app = Router::new().route("/", get(|| async { "Hello, world!" }));
             let listener = TcpListener::bind("127.0.0.1:0").unwrap(); // Bind to any available port
+            listener.set_nonblocking(true).unwrap();
             let address = listener.local_addr().unwrap();
 
             let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -802,7 +803,8 @@ mod reqwest_builder {
             let server = axum_server::from_tcp_rustls(
                 listener,
                 RustlsConfig::from_config(Arc::new((&keypair).into())),
-            );
+            )
+            .unwrap();
 
             tokio::spawn(server.serve(app.into_make_service()));
         }

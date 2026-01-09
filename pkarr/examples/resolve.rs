@@ -4,10 +4,8 @@
 //!     $ cargo run --example resolve <zbase32 encoded key>
 
 use clap::{Parser, ValueEnum};
-use std::time::Instant;
-use tracing_subscriber;
-
 use pkarr::{Client, PublicKey};
+use std::time::Instant;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

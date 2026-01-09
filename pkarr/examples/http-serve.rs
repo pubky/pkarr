@@ -3,11 +3,9 @@
 //! This server will _not_ be accessible from other networks
 //! unless the provided IP is public and the port number is forwarded.
 
-use tracing::Level;
-use tracing_subscriber;
-
 use axum::{routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
+use tracing::Level;
 
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
@@ -73,7 +71,7 @@ async fn publish_server_pkarr(
     let signed_packet = SignedPacket::builder()
         .https(".".try_into().unwrap(), svcb, 60 * 60)
         .address(".".try_into().unwrap(), socket_addr.ip(), 60 * 60)
-        .sign(&keypair)?;
+        .sign(keypair)?;
 
     client.publish(&signed_packet, None).await?;
 
