@@ -157,6 +157,8 @@ impl Relay {
         let client = config.pkarr.build()?;
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
+        // On axum-server 0.8.0 the `.set_nonblocking(true)` call does not take place internally anymore
+        // See open issue https://github.com/programatik29/axum-server/issues/181
         listener.set_nonblocking(true)?;
 
         let node_address = client
