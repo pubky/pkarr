@@ -1,4 +1,4 @@
-//! implementation of [Endpoints](https://pkarr.org/endpoints) spec.
+//! implementation of [Endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) spec.
 //!
 
 mod endpoint;

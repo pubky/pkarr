@@ -291,7 +291,7 @@ impl SignedPacket {
         })
     }
 
-    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://pkarr.org/relays) payload.
+    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) payload.
     pub fn from_relay_payload(
         public_key: &PublicKey,
         payload: &Bytes,
@@ -344,7 +344,7 @@ impl SignedPacket {
     }
 
     /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
-    /// to be sent as a request/response body to or from [relays](https://pkarr.org/relays).
+    /// to be sent as a request/response body to or from [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     pub fn to_relay_payload(&self) -> Bytes {
         self.inner.borrow_owner().slice(32..)
     }

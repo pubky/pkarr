@@ -35,7 +35,7 @@ impl ClientBlocking {
 
     // === Publish ===
 
-    /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://pkarr.org/relays).
+    /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
     /// # Lost Update Problem
     ///
@@ -135,7 +135,7 @@ impl ClientBlocking {
     }
 
     /// Returns the most recent [SignedPacket] found after querying all
-    /// [mainline] Dht nodes and or [Relays](https:://pkarr.org/relays).
+    /// [mainline] Dht nodes and or [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
     /// Useful if you want to read the most recent packet before publishing
     /// a new packet.

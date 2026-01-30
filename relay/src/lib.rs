@@ -1,4 +1,4 @@
-//! A server that functions as a [pkarr](https://pkarr.org) [relay](https://pkarr.org/relays).
+//! A server that functions as a [pkarr](https://github.com/pubky/pkarr/) [relay](https://github.com/pubky/pkarr/blob/main/design/relays.md).
 //!
 //! You can run this relay as a binary or a crate for testing purposes.
 //!

@@ -120,17 +120,17 @@ signed_packet = [
 # Clients
 ## Enable the [Client] with [mainline] support.
 dht = ["dep:mainline", "__client"]
-## Enables [Client] with [Relays](https://pkarr.org/relays).
+## Enables [Client] with [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
 relays = ["dep:url", "dep:reqwest", "dep:futures-buffered", "__client"]
 
 # Extra
 ## Use [LmdbCache][extra::lmdb_cache::LmdbCache] implementation. Only available if the `client` module is enabled.
 lmdb-cache = ["__client", "dep:heed", "dep:byteorder", "dep:page_size"]
-## Enables [endpoints](https://pkarr.org/endpoints) spec.
+## Enables [endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) spec.
 ##
 ## Only available if the `client` module is enabled.
 endpoints = ["__client", "dep:genawaiter"]
-## Enables [tls](https://pkarr.org/tls) spec.
+## Enables [tls](https://github.com/pubky/pkarr/blob/main/design/tls.md) spec.
 ##
 ## Only available if the `client` module is enabled.
 tls = ["endpoints", "ed25519-dalek/pkcs8", "dep:webpki", "dep:rustls"]

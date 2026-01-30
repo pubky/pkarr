@@ -1,6 +1,6 @@
 # TLS
 
-Once an endpoint (server) for a Pkarr domain has been resolved (see [Endpoints](https://pkarr.org/endpoints)), and assuming the endpoint itself is listening on its own Pkarr key, we can use that key to establish a TLS connection using [Raw Public Key (RFC 7250)](https://www.rfc-editor.org/rfc/rfc7250).
+Once an endpoint (server) for a Pkarr domain has been resolved (see [Endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md)), and assuming the endpoint itself is listening on its own Pkarr key, we can use that key to establish a TLS connection using [Raw Public Key (RFC 7250)](https://www.rfc-editor.org/rfc/rfc7250).
 
 ## Supported Algorithm
 

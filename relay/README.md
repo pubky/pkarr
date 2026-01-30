@@ -1,6 +1,6 @@
 # Pkarr Relay
 
-A server that functions as a [pkarr relay](https://pkarr.org/relays).
+A server that functions as a [pkarr relay](https://github.com/pubky/pkarr/blob/main/design/relays.md).
 
 ## Installation & Usage
 
