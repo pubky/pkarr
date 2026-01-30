@@ -2,15 +2,24 @@
 
 > Public-Key Addressable Resource Records
 
-[![Try the demo](https://img.shields.io/badge/Try%20the-Demo-blue)](https://app.pkarr.org) [![View Examples](https://img.shields.io/badge/View-Examples-green)](./pkarr/examples/README.md) [![Crates.io](https://img.shields.io/crates/v/pkarr)](https://crates.io/crates/pkarr) [![Documentation](https://img.shields.io/badge/docs-design-orange)](./design/README.md) [![License](https://img.shields.io/badge/license-MIT-purple)](./LICENSE)
+[![View Examples](https://img.shields.io/badge/View-Examples-green)](./pkarr/examples/README.md) [![Crates.io](https://img.shields.io/crates/v/pkarr)](https://crates.io/crates/pkarr) [![Documentation](https://img.shields.io/badge/docs-design-orange)](./design/README.md) [![License](https://img.shields.io/badge/license-MIT-purple)](./LICENSE)
 
 [TLDR](#tldr) • [Demo](#demo) • [Architecture](#architecture) • [Specifications](./design/README.md) • [FAQ](#faq)
 
---- 
+## Documentation
+
+- **[Introduction](./docs/introduction.md)** - Philosophy, concepts, and why Pkarr exists
+- **[Quickstart](./docs/quickstart.md)** - Get started in 5 minutes
+- **[Integration Guide](./docs/integration.md)** - Embedding Pkarr in your application
+- **[Feature Reference](./docs/features.md)** - Cargo feature flags and configurations
+- **[API Reference](https://docs.rs/pkarr/latest/pkarr/)** - Full Rust API documentation
+- **[Examples](./pkarr/examples/README.md)** - Code samples
+
+---
 
 The simplest possible streamlined integration between the Domain Name System and peer-to-peer overlay networks, enabling self-issued public keys to function as sovereign, publicly addressable, censorship-resistant top-level domains. This system is accessible to anyone capable of maintaining a private key.
 
-Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://app.pkarr.org/?pk=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
+Where we are going, this [https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy](https://pkdns.net/?id=o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy) resolves everywhere!
 
 ## TLDR
 - To publish resource records for your key, sign a small encoded DNS packet (<= 1000 bytes) and publish it on the DHT (through a relay if necessary).
@@ -66,7 +75,7 @@ To support existing applications that are unaware of Pkarr, users will need to (
 ### Relays
 
 Pkarr relays are optional but they:
-1. Enable web applications to query the DHT through [relays](https://pkarr.org/relays)
+1. Enable web applications to query the DHT through [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md)
 2. Act as a large caching layer for many users to provide lower latency, better reliability, and improved scalability
 
 Relays are very light and cheap to operate, making them easy to run altruistically. Private and paid relays are also possible.
