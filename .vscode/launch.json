@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'pkarr-relay'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=pkarr-relay",
+                    "--package=pkarr-relay"
+                ],
+                "filter": {
+                    "name": "pkarr-relay",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "--config=./config.toml"
+            ],
+            "cwd": "${workspaceFolder}/relay"
+        },
+    ]
+}
