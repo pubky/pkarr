@@ -1,4 +1,4 @@
-//! Implementation of [Tls](https://pkarr.org/tls) spec.
+//! Implementation of [Tls](https://github.com/pubky/pkarr/blob/main/design/tls.md) spec.
 //!
 
 use std::{fmt::Debug, sync::Arc};
@@ -138,7 +138,7 @@ impl From<Client> for CertVerifier {
 
 impl From<Client> for rustls::ClientConfig {
     /// Creates a [rustls::ClientConfig] that uses [rustls::crypto::ring::default_provider()]
-    /// and no client auth and follows the [tls for pkarr domains](https://pkarr.org/tls) spec.
+    /// and no client auth and follows the [tls for pkarr domains](https://github.com/pubky/pkarr/blob/main/design/tls.md) spec.
     ///
     /// If you want more control, create a [CertVerifier] from this [Client] to use as a [custom certificate verifier][DangerousClientConfigBuilder::with_custom_certificate_verifier].
     fn from(client: Client) -> Self {

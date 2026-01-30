@@ -21,7 +21,7 @@ mod signed_packet;
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
 /// Default maximum TTL: 24 hours.
 pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
-/// Default [Relays](https://pkarr.org/relays).
+/// Default [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
 pub const DEFAULT_RELAYS: [&str; 2] = ["https://relay.pkarr.org", "https://pkarr.pubky.org"];
 #[cfg(feature = "__client")]
 /// Default cache size: 1000

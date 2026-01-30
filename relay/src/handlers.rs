@@ -153,7 +153,7 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
 </head>
 <body>
     <h1>Pkarr Relay</h1>
-    <p>This server is a <a href="https://pkarr.org">Pkarr</a> <a href="https://pkarr.org/relays">relay</a>.</p>
+    <p>This server is a <a href="https://github.com/pubky/pkarr/">Pkarr</a> <a href="https://github.com/pubky/pkarr/blob/main/design/relays.md">relay</a>.</p>
 
     <h2>Versioning</h2>
     <pre>

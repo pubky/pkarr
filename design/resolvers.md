@@ -1,7 +1,7 @@
 # Resolvers
 
 > [!WARNING]  
-> Deprecated: it is advised to combine a DHT client with an HTTP client to use [Relays](https://pkarr.org/relays) instead.
+> Deprecated: it is advised to combine a DHT client with an HTTP client to use [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) instead.
 
 Resolvers are a special kind of DHT nodes. Like to bootstrapping nodes they are well-known and long running. Unlike normal DHT nodes though, Resolvers act more like DNS resolvers.
 
