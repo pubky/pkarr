@@ -12,27 +12,23 @@ use std::{
 
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
-pub struct Endpoint<'a> {
+pub struct Endpoint {
     target: String,
     public_key: PublicKey,
     port: u16,
     /// SocketAddrs from the [SignedPacket]
     addrs: Vec<IpAddr>,
-    params: BTreeMap<u16, SVCParam<'a>>,
+    params: BTreeMap<u16, SVCParam<'static>>,
 }
 
-impl<'a> Endpoint<'a> {
+impl Endpoint {
     /// Returns a stack of endpoints from a SignedPacket
     ///
     /// 1. Find the SVCB or HTTPS records
     /// 2. Sort them by priority (reverse)
     /// 3. Shuffle records within each priority
     /// 3. If the target is `.`, keep track of A and AAAA records see [rfc9460](https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
-    pub(crate) fn parse(
-        signed_packet: &SignedPacket,
-        target: &str,
-        https: bool,
-    ) -> Vec<Endpoint<'a>> {
+    pub(crate) fn parse(signed_packet: &SignedPacket, target: &str, https: bool) -> Vec<Endpoint> {
         let mut records = signed_packet
             .resource_records(target)
             .filter_map(|record| get_svcb(record, https))

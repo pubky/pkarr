@@ -15,7 +15,7 @@ impl crate::Client {
     pub fn resolve_https_endpoints<'a>(
         &'a self,
         qname: &'a str,
-    ) -> impl Stream<Item = Endpoint<'a>> {
+    ) -> impl Stream<Item = Endpoint> + 'a {
         self.resolve_endpoints(qname, true)
     }
 
@@ -23,15 +23,15 @@ impl crate::Client {
     pub fn resolve_svcb_endpoints<'a>(
         &'a self,
         qname: &'a str,
-    ) -> impl Stream<Item = Endpoint<'a>> {
+    ) -> impl Stream<Item = Endpoint> + 'a {
         self.resolve_endpoints(qname, false)
     }
 
     /// Helper method that returns the first [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint] in the Async stream from [Self::resolve_https_endpoints]
-    pub async fn resolve_https_endpoint<'a>(
-        &'a self,
-        qname: &'a str,
-    ) -> Result<Endpoint<'a>, CouldNotResolveEndpoint> {
+    pub async fn resolve_https_endpoint(
+        &self,
+        qname: &str,
+    ) -> Result<Endpoint, CouldNotResolveEndpoint> {
         let stream = self.resolve_https_endpoints(qname);
 
         pin!(stream);
@@ -50,10 +50,10 @@ impl crate::Client {
     }
 
     /// Helper method that returns the first [SVCB][crate::dns::rdata::RData::SVCB] [Endpoint] in the Async stream from [Self::resolve_svcb_endpoints]
-    pub async fn resolve_svcb_endpoint<'a>(
-        &'a self,
-        qname: &'a str,
-    ) -> Result<Endpoint<'a>, CouldNotResolveEndpoint> {
+    pub async fn resolve_svcb_endpoint(
+        &self,
+        qname: &str,
+    ) -> Result<Endpoint, CouldNotResolveEndpoint> {
         let stream = self.resolve_https_endpoints(qname);
 
         pin!(stream);
@@ -69,7 +69,7 @@ impl crate::Client {
         &'a self,
         qname: &'a str,
         https: bool,
-    ) -> impl Stream<Item = Endpoint<'a>> {
+    ) -> impl Stream<Item = Endpoint> + 'a {
         Gen::new(|co| async move {
             let mut depth = 0;
             let mut stack: Vec<Endpoint> = Vec::new();
@@ -217,8 +217,10 @@ mod tests {
 
         let tld = generate(&client, 1, 1, Some("example.com".to_string()), vec![], None).await;
 
-        let qname = tld.to_string();
-        let endpoint = client.resolve_https_endpoint(&qname).await.unwrap();
+        let endpoint = client
+            .resolve_https_endpoint(&tld.to_string())
+            .await
+            .unwrap();
 
         assert_eq!(endpoint.domain(), Some("example.com"));
         assert_eq!(endpoint.public_key(), &tld);
@@ -236,8 +238,10 @@ mod tests {
 
         let tld = generate(&client, 3, 3, Some("example.com".to_string()), vec![], None).await;
 
-        let qname = tld.to_string();
-        let endpoint = client.resolve_https_endpoint(&qname).await.unwrap();
+        let endpoint = client
+            .resolve_https_endpoint(&tld.to_string())
+            .await
+            .unwrap();
 
         assert_eq!(endpoint.domain(), Some("example.com"));
     }
@@ -254,8 +258,7 @@ mod tests {
 
         let public_key = Keypair::random().public_key();
 
-        let qname = public_key.to_string();
-        let endpoint = client.resolve_https_endpoint(&qname).await;
+        let endpoint = client.resolve_https_endpoint(&public_key.to_string()).await;
 
         assert!(endpoint.is_err());
     }
@@ -273,8 +276,7 @@ mod tests {
 
         let tld = generate(&client, 4, 3, Some("example.com".to_string()), vec![], None).await;
 
-        let qname = tld.to_string();
-        let endpoint = client.resolve_https_endpoint(&qname).await;
+        let endpoint = client.resolve_https_endpoint(&tld.to_string()).await;
 
         assert!(endpoint.is_err());
     }
@@ -299,8 +301,10 @@ mod tests {
         )
         .await;
 
-        let qname = tld.to_string();
-        let endpoint = client.resolve_https_endpoint(&qname).await.unwrap();
+        let endpoint = client
+            .resolve_https_endpoint(&tld.to_string())
+            .await
+            .unwrap();
 
         assert_eq!(endpoint.target(), ".");
         assert_eq!(endpoint.domain(), None);
