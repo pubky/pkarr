@@ -54,10 +54,7 @@ fn parse_param_value_from_param(param: &SVCParam) -> String {
         SVCParam::Port(port) => port.to_string(),
         SVCParam::Ipv4Hint(ips) => ips
             .iter()
-            .map(|&ip| {
-                let bytes = ip.to_be_bytes();
-                format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3])
-            })
+            .map(|&ip| std::net::Ipv4Addr::from(ip).to_string())
             .collect::<Vec<_>>()
             .join(","),
         SVCParam::Ipv6Hint(ips) => ips
