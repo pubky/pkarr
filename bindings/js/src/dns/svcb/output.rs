@@ -1,5 +1,7 @@
 //! SVCB parameter output - converting Rust data to JavaScript objects
 
+use crate::error::ClientError;
+
 use super::constants::*;
 use super::utils::bytes_to_hex;
 use simple_dns::rdata::{SVCParam, SVCB};
@@ -22,10 +24,14 @@ pub fn to_js_object(svcb: &SVCB) -> Result<js_sys::Object, JsValue> {
         } else {
             // For unknown parameters, use the format "param{number}" with hex values
             let unknown_key = format!("param{}", key);
-            let hex_value = match param {
-                SVCParam::Unknown(_, data) => bytes_to_hex(data.as_ref()),
-                _ => bytes_to_hex(&[]), // This shouldn't happen for truly unknown params
+            let SVCParam::Unknown(_, data) = param else {
+                return Err(ClientError::ParseError {
+                    input_type: "svcb".to_string(),
+                    message: "Expected unknown SVCParam for key {key}, got known one".into(),
+                }
+                .into());
             };
+            let hex_value = bytes_to_hex(data.as_ref());
             js_sys::Reflect::set(
                 &params_obj,
                 &JsValue::from_str(&unknown_key),
