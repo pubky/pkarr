@@ -74,6 +74,15 @@ pkarr = "5"  # Equivalent to features = ["full-client"]
 
 RFC 9460 HTTPS/SVCB service discovery for resolving service endpoints.
 
+This feature enables URLs like `https://<pkarr-key>` by implementing the full
+[endpoints resolution algorithm](../design/endpoints.md). It recursively
+interprets and resolves SVCB records - when a target points to another Pkarr
+key, it fetches that packet and continues resolution. Records are sorted by
+priority for failover and shuffled within priority levels for load balancing.
+
+Returns an async `Stream` of endpoints. Downstream applications need `futures-lite`
+(or equivalent) to consume the stream with `.next()` and `StreamExt`.
+
 ```toml
 pkarr = { version = "5", features = ["endpoints"] }
 ```
