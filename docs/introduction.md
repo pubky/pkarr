@@ -149,7 +149,6 @@ names on blockchains. However, they introduce significant drawbacks:
 
 - **Cost**: Registering and updating records requires transaction fees
 - **Speed**: Blockchain confirmations take time
-- **Environmental impact**: Proof-of-work chains consume substantial energy
 - **Chain lock-in**: Your identity becomes tied to a specific blockchain's
   fortunes
 - **Artificial scarcity**: Human-readable names create speculation and
