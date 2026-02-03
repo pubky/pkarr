@@ -12,23 +12,27 @@ use std::{
 
 #[derive(Debug, Clone)]
 /// An alternative Endpoint for a `qname`, from either [RData::SVCB] or [RData::HTTPS] dns records
-pub struct Endpoint {
+pub struct Endpoint<'a> {
     target: String,
     public_key: PublicKey,
     port: u16,
     /// SocketAddrs from the [SignedPacket]
     addrs: Vec<IpAddr>,
-    params: BTreeMap<u16, Box<[u8]>>,
+    params: BTreeMap<u16, SVCParam<'a>>,
 }
 
-impl Endpoint {
+impl<'a> Endpoint<'a> {
     /// Returns a stack of endpoints from a SignedPacket
     ///
     /// 1. Find the SVCB or HTTPS records
     /// 2. Sort them by priority (reverse)
     /// 3. Shuffle records within each priority
     /// 3. If the target is `.`, keep track of A and AAAA records see [rfc9460](https://www.rfc-editor.org/rfc/rfc9460#name-special-handling-of-in-targ)
-    pub(crate) fn parse(signed_packet: &SignedPacket, target: &str, https: bool) -> Vec<Endpoint> {
+    pub(crate) fn parse(
+        signed_packet: &SignedPacket,
+        target: &str,
+        https: bool,
+    ) -> Vec<Endpoint<'a>> {
         let mut records = signed_packet
             .resource_records(target)
             .filter_map(|record| get_svcb(record, https))
@@ -85,7 +89,7 @@ impl Endpoint {
                     addrs,
                     params: s
                         .iter_params()
-                        .map(|(key, value)| (key, value.into()))
+                        .map(|param| (param.key_code(), param.clone().into_owned()))
                         .collect(),
                 }
             })
@@ -155,8 +159,8 @@ impl Endpoint {
     }
 
     /// Returns a service parameter.
-    pub fn get_param(&self, key: u16) -> Option<&[u8]> {
-        self.params.get(&key).map(|v| v.as_ref())
+    pub fn get_param(&self, key: u16) -> Option<&SVCParam<'_>> {
+        self.params.get(&key)
     }
 }
 
