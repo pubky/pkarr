@@ -12,4 +12,4 @@ name = "pkarr"
 [workspace.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-simple-dns = "0.9.3"
+simple-dns = "0.11.2"
