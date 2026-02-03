@@ -8,9 +8,15 @@ updates:
       directory: "/"
       schedule:
           interval: "weekly"
+      commit-message:
+          prefix: "deps"
+      rebase-strategy: "auto"
 
     # npm dependencies for JS bindings
     - package-ecosystem: "npm"
       directory: "/bindings/js/pkg"
       schedule:
           interval: "weekly"
+      commit-message:
+          prefix: "deps"
+      rebase-strategy: "auto"
