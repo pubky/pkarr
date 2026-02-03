@@ -1,0 +1,16 @@
+# Dependabot configuration for automated dependency updates
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+    # Cargo dependencies for all workspace members
+    - package-ecosystem: "cargo"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+
+    # npm dependencies for JS bindings
+    - package-ecosystem: "npm"
+      directory: "/bindings/js/pkg"
+      schedule:
+          interval: "weekly"
