@@ -103,3 +103,16 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --all-features --no-deps --document-private-items
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check MSRV compatibility
+        run: cargo check --workspace --all-features
