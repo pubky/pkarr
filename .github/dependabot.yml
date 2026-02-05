@@ -7,7 +7,7 @@ updates:
     - package-ecosystem: "cargo"
       directory: "/"
       schedule:
-          interval: "weekly"
+          interval: "monthly"
       commit-message:
           prefix: "deps"
       rebase-strategy: "auto"
@@ -16,7 +16,7 @@ updates:
     - package-ecosystem: "npm"
       directory: "/bindings/js/pkg"
       schedule:
-          interval: "weekly"
+          interval: "monthly"
       commit-message:
           prefix: "deps"
       rebase-strategy: "auto"
