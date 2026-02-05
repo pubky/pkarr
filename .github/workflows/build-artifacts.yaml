@@ -1,54 +1,112 @@
-# This workflow builds the artifacts for the release.
-# It creates the gzips and uploads them as artifacts.
-# The artifacts can then be used to create a release on Github.
-
-name: Build Artifacts
+name: Release
 
 on:
   push:
     tags: ['v*']
-  # TODO: Remove this after testing
+  # TODO: Remove after testing
   pull_request:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   packages: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: linux-amd64
+            musl: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest-arm64
+            name: linux-arm64
+            musl: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: osx-amd64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: osx-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: windows-amd64
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          targets: ${{ matrix.target }}
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
+      - name: Install musl-tools
+        if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Build artifacts
-        run: .scripts/build-artifacts.sh
+      - name: Build
+        run: cargo build -p pkarr-relay --release --target ${{ matrix.target }}
 
-      - name: Create archive
-        run: tar -czf github-release.tar.gz -C target github-release
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(cargo pkgid -p pkarr-relay | sed 's/.*@//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Upload artifacts
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          FOLDER="pkarr-relay-v${{ steps.version.outputs.version }}-${{ matrix.name }}"
+          mkdir -p "$FOLDER"
+          cp target/${{ matrix.target }}/release/pkarr-relay "$FOLDER/"
+          tar -czvf "$FOLDER.tar.gz" "$FOLDER"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          FOLDER="pkarr-relay-v${{ steps.version.outputs.version }}-${{ matrix.name }}"
+          mkdir -p "$FOLDER"
+          cp target/${{ matrix.target }}/release/pkarr-relay.exe "$FOLDER/"
+          tar -czvf "$FOLDER.tar.gz" "$FOLDER"
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pkarr-artifacts.tar.gz
-          path: github-release.tar.gz
-          if-no-files-found: error
-          overwrite: true
+          name: pkarr-relay-${{ matrix.name }}
+          path: "*.tar.gz"
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
