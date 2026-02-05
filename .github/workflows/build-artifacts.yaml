@@ -3,10 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*']
-  # TODO: Remove after testing
-  pull_request:
-    branches: [main]
-
+    
 permissions:
   contents: write
   packages: read
