@@ -7,9 +7,6 @@ name: Build Artifacts
 on:
   push:
     tags: ['v*']
-  # TODO: Remove this after testing
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -37,7 +34,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cross
-        uses: taiki-e/install-action@cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
 
       - name: Build artifacts
         run: .scripts/build-artifacts.sh
