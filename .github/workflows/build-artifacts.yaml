@@ -1,0 +1,54 @@
+# This workflow builds the artifacts for the release.
+# It creates the gzips and uploads them as artifacts.
+# The artifacts can then be used to create a release on Github.
+
+name: Build Artifacts
+
+on:
+  push:
+    tags: ['v*']
+  # TODO: Remove this after testing
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cross
+        uses: taiki-e/install-action@cross
+
+      - name: Build artifacts
+        run: .scripts/build-artifacts.sh
+
+      - name: Create archive
+        run: tar -czf github-release.tar.gz -C target github-release
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkarr-artifacts.tar.gz
+          path: github-release.tar.gz
+          if-no-files-found: error
+          overwrite: true
