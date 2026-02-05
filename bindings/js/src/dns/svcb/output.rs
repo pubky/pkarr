@@ -94,7 +94,7 @@ fn parse_ip_hint_param(
     hint_type: &str,
     format_addr: impl Fn(&[u8]) -> String,
 ) -> String {
-    if !value.len().is_multiple_of(bytes_per_addr) {
+    if value.len() % bytes_per_addr != 0 {
         return format!("invalid_{}_({}_bytes)", hint_type, value.len());
     }
 
