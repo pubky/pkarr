@@ -215,7 +215,7 @@ where
     } else if let Some(uint8_array) = value_js.dyn_ref::<js_sys::Uint8Array>() {
         // Raw bytes
         let bytes_len = uint8_array.length() as usize;
-        if bytes_len % bytes_per_addr != 0 {
+        if !bytes_len.is_multiple_of(bytes_per_addr) {
             return Err(JsValue::from_str(&format!(
                 "{} raw bytes must be multiple of {} bytes",
                 hint_type, bytes_per_addr

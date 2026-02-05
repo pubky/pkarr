@@ -42,10 +42,10 @@ jobs:
           # Ensure server is killed on exit
           trap "kill $SERVER_PID 2>/dev/null" EXIT
 
-          # Wait for server to be ready
+          # Wait for server to be ready (testnet runs on port 15411)
           echo "Waiting for server to start..."
           for i in {1..30}; do
-            if curl -s http://127.0.0.1:6881 > /dev/null 2>&1; then
+            if curl -s http://127.0.0.1:15411 > /dev/null 2>&1; then
               echo "Server is ready"
               break
             fi
