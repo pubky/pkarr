@@ -27,7 +27,7 @@ console_error_panic_hook = "0.1.7"
 wasm-bindgen-futures = "0.4.50"
 
 # Dependencies needed by the WASM bindings
-simple-dns = { version = "0.9.3" }
+simple-dns = { version = "0.11.2" }
 ntimestamp = { version = "1.0.0", features = ["full"] }
 thiserror = "2.0.11"
 url = { version = "2.5.4" }
