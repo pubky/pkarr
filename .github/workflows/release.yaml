@@ -59,6 +59,7 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             name: windows-amd64
+            bin_suffix: ".exe"
 
     steps:
       - uses: actions/checkout@v4
@@ -85,21 +86,12 @@ jobs:
           VERSION=$(cargo pkgid -p pkarr-relay | sed 's/.*@//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          FOLDER="pkarr-relay-v${{ steps.version.outputs.version }}-${{ matrix.name }}"
-          mkdir -p "$FOLDER"
-          cp target/${{ matrix.target }}/release/pkarr-relay "$FOLDER/"
-          tar -czvf "$FOLDER.tar.gz" "$FOLDER"
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
+      - name: Package
         shell: bash
         run: |
           FOLDER="pkarr-relay-v${{ steps.version.outputs.version }}-${{ matrix.name }}"
           mkdir -p "$FOLDER"
-          cp target/${{ matrix.target }}/release/pkarr-relay.exe "$FOLDER/"
+          cp "target/${{ matrix.target }}/release/pkarr-relay${{ matrix.bin_suffix }}" "$FOLDER/"
           tar -czvf "$FOLDER.tar.gz" "$FOLDER"
 
       - name: Upload artifact
