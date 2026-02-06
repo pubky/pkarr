@@ -1,6 +1,7 @@
 [package]
 name = "pkarr-relay"
 version = "0.11.3"
+rust-version = "1.85"
 authors = [
     "Nuh <nuh@nuh.dev>",
     "SeverinAlexB <severin@synonym.to>",

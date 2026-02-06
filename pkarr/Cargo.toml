@@ -1,6 +1,7 @@
 [package]
 name = "pkarr"
 version = "5.0.2"
+rust-version = "1.85"
 authors = [
   "Nuh <nuh@nuh.dev>",
   "SeverinAlexB <severin@synonym.to>",
