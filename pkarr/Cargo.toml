@@ -19,28 +19,28 @@ categories = ["network-programming"]
 [dependencies]
 base32 = "0.5.1"
 ed25519-dalek = { version = "3.0.0-pre.1", features = ["alloc"] }
-thiserror = "2.0.11"
-serde = { version = "1.0.217", features = ["derive"] }
+thiserror = "2.0.18"
+serde = { version = "1.0.228", features = ["derive"] }
 
-document-features = "0.2.10"
+document-features = "0.2.12"
 
 #feat: signed_packet dependencies
 simple-dns = { version = "0.9.3", optional = true }
-bytes = { version = "1.10.0", optional = true }
-self_cell = { version = "1.1.0", optional = true }
+bytes = { version = "1.11.1", optional = true }
+self_cell = { version = "1.2.2", optional = true }
 ntimestamp = { version = "1.0.0", features = ["full"], optional = true }
 
 #feat: client dependencies
-futures-lite = { version = "2.6.0", default-features = false, optional = true, features = [
+futures-lite = { version = "2.6.1", default-features = false, optional = true, features = [
   "std",
 ] }
-futures-buffered = { version = "0.2.9", optional = true }
-dyn-clone = { version = "1.0.18", optional = true }
+futures-buffered = { version = "0.2.12", optional = true }
+dyn-clone = { version = "1.0.20", optional = true }
 lru = { version = "0.16.3", default-features = false, optional = true }
 
 #feat: relay dependencies
 sha1_smol = { version = "1.0.1", optional = true }
-url = { version = "2.5.4", optional = true }
+url = { version = "2.5.8", optional = true }
 
 # feat: endpoints dependencies
 genawaiter = { version = "0.99.1", default-features = false, features = [
@@ -48,60 +48,60 @@ genawaiter = { version = "0.99.1", default-features = false, features = [
 ], optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-getrandom = { version = "0.3", default-features = false }
+getrandom = { version = "0.4.1", default-features = false }
 
 #feat: client dependencies
-tracing = { version = "0.1.41", optional = true }
+tracing = { version = "0.1.44", optional = true }
 
 # feat: dht dependencies
-mainline = { version = "6.0.1", optional = true }
+mainline = { version = "6.1.1", optional = true }
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
-tokio = { version = "1.43.0", default-features = false, optional = true }
-async-compat = { version = "0.2.4", optional = true }
+tokio = { version = "1.49.0", default-features = false, optional = true }
+async-compat = { version = "0.2.5", optional = true }
 
 # feat: lmdb-cache defendencies
-heed = { version = "0.21.0", default-features = false, optional = true }
+heed = { version = "0.22.0", default-features = false, optional = true }
 byteorder = { version = "1.5.0", default-features = false, optional = true }
 page_size = { version = "0.6.0", optional = true }
 
 # feat: tls
 rustls = { workspace = true, optional = true }
-webpki = { package = "rustls-webpki", version = "0.102", optional = true }
+webpki = { package = "rustls-webpki", version = "0.103", optional = true }
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3", default-features = false, features = [
+getrandom = { version = "0.4.1", default-features = false, features = [
   "wasm_js",
 ] }
 
 #feat: client dependencies
-log = { version = "0.4.25", optional = true }
-wasm-bindgen-futures = { version = "0.4.50", optional = true }
+log = { version = "0.4.29", optional = true }
+wasm-bindgen-futures = { version = "0.4.58", optional = true }
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.95"
-postcard = { version = "1.1.1", features = ["alloc"] }
+anyhow = "1.0.100"
+postcard = { version = "1.1.3", features = ["alloc"] }
 reqwest = { workspace = true }
-rstest = "0.24.0"
+rstest = "0.26.1"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 pkarr-relay = { path = "../relay" }
-clap = { version = "4.5.29", features = ["derive"] }
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-mainline = "6.0.1"
-tempfile = "3.20"
-tokio-rustls = { version = "0.26.1", default-features = false }
-axum = "0.8.1"
+clap = { version = "4.5.57", features = ["derive"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+mainline = "6.1.1"
+tempfile = "3.24.0"
+tokio-rustls = { version = "0.26.4", default-features = false }
+axum = "0.8.8"
 axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
-tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
-wasm-bindgen = { version = "0.2.100", features = ["serde-serialize"] }
-wasm-bindgen-test = "0.3"
+wasm-bindgen = { version = "0.2.108", features = ["serde-serialize"] }
+wasm-bindgen-test = "0.3.58"
 console_log = { version = "1.0.0", features = ["color"] }
 
 [build-dependencies]
