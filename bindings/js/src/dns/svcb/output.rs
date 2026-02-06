@@ -51,7 +51,8 @@ fn parse_param_value(key: u16, value: &[u8]) -> String {
 }
 
 /// Parse ALPN parameter to comma-separated protocol list
-/// Format: [length1][protocol1_bytes][length2][protocol2_bytes]...
+///
+/// Format: `[length1][protocol1_bytes][length2][protocol2_bytes]...`
 fn parse_alpn_param(value: &[u8]) -> String {
     let mut protocols = Vec::new();
     let mut offset = 0;

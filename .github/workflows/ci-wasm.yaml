@@ -1,0 +1,62 @@
+name: WASM Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build server
+        run: cargo build
+
+      - name: Start server and run tests
+        run: |
+          # Start the server binary in the background
+          ./target/debug/pkarr-relay --testnet &
+          SERVER_PID=$!
+
+          # Ensure server is killed on exit
+          trap "kill $SERVER_PID 2>/dev/null" EXIT
+
+          # Wait for server to be ready (testnet runs on port 15411)
+          echo "Waiting for server to start..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:15411 > /dev/null 2>&1; then
+              echo "Server is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Server failed to start"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          # Run wasm-pack tests
+          cd ./pkarr
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg=getrandom_backend="wasm_js"' \
+            wasm-pack test --headless --firefox --chrome --lib
