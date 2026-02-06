@@ -1,6 +1,7 @@
 [package]
 name = "pkarr-relay"
 version = "0.11.3"
+rust-version = "1.85"
 authors = [
     "Nuh <nuh@nuh.dev>",
     "SeverinAlexB <severin@synonym.to>",
@@ -17,25 +18,25 @@ categories = ["network-programming"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.95"
-axum = "0.8.1"
-tokio = { version = "1.43.0", features = ["full"] }
-tower-http = { version = "0.6.2", features = ["cors", "trace"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+anyhow = "1.0.100"
+axum = "0.8.8"
+tokio = { version = "1.49.0", features = ["full"] }
+tower-http = { version = "0.6.8", features = ["cors", "trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 rustls = { workspace = true }
-http = "1.2.0"
-thiserror = "2.0.11"
-bytes = "1.10.0"
-tower_governor = "0.6.0"
-governor = "0.8.0"
-serde = { version = "1.0.217", features = ["derive"] }
-toml = "0.8.20"
-clap = { version = "4.5.28", features = ["derive"] }
+http = "1.4.0"
+thiserror = "2.0.18"
+bytes = "1.11.1"
+tower_governor = "0.8.0"
+governor = "0.10.4"
+serde = { version = "1.0.228", features = ["derive"] }
+toml = "0.9.11"
+clap = { version = "4.5.57", features = ["derive"] }
 dirs-next = "2.0.0"
 httpdate = "1.0.3"
-url = "2.5.4"
+url = "2.5.8"
 pkarr = { path = "../pkarr", version = "5.0.0", default-features = false, features = [
     "dht",
     "lmdb-cache",

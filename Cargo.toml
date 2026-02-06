@@ -10,6 +10,9 @@ resolver = "2"
 name = "pkarr"
 
 [workspace.dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-simple-dns = "0.11.2"
+simple-dns = { version = "0.11.2" }
+# Pinned: digest 0.11.0-rc.11+ removed crypto_common re-export, breaking curve25519-dalek
+# See: https://github.com/pubky/mainline/issues/80
+digest = "=0.11.0-rc.9"

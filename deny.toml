@@ -26,5 +26,6 @@ allow = [
     "Unicode-3.0",
     "ISC",
     "CDLA-Permissive-2.0",
-    "Unlicense"
+    "Unlicense",
+    "OpenSSL",
 ]

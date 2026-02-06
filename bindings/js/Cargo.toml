@@ -1,6 +1,7 @@
 [package]
 name = "pkarr-js"
 version = "3.8.0"
+rust-version = "1.85"
 authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
 description = "JavaScript/WebAssembly bindings for Pkarr - Public-Key Addressable Resource Records"
