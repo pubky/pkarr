@@ -25,7 +25,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 document-features = "0.2.12"
 
 #feat: signed_packet dependencies
-simple-dns = { version = "0.9.3", optional = true }
+simple-dns = { workspace = true, optional = true }
 bytes = { version = "1.11.1", optional = true }
 self_cell = { version = "1.2.2", optional = true }
 ntimestamp = { version = "1.0.0", features = ["full"], optional = true }

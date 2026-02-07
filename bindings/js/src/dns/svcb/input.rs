@@ -89,19 +89,17 @@ fn set_alpn_protocols(svcb: &mut SVCB, protocol_strings: Vec<String>) -> Result<
         }
     }
 
-    // Then convert to CharacterString and set on SVCB
-    let protocols: Result<Vec<simple_dns::CharacterString>, _> = protocol_strings
-        .iter()
-        .map(|s| s.as_str().try_into())
-        .collect();
+    // Then convert to owned CharacterStrings using TryFrom<String>
+    let protocols: Result<Vec<simple_dns::CharacterString>, _> =
+        protocol_strings.into_iter().map(|s| s.try_into()).collect();
 
     match protocols {
-        Ok(alpn_list) => svcb
-            .set_alpn(alpn_list)
-            .map_err(|e| JsValue::from_str(&format!("Failed to set ALPN parameter: {}", e))),
+        Ok(alpn_list) => {
+            svcb.set_alpn(&alpn_list);
+            Ok(())
+        }
         Err(e) => Err(JsValue::from_str(&format!(
-            "Invalid ALPN protocol format: {}",
-            e
+            "Invalid ALPN protocol format: {e}"
         ))),
     }
 }
@@ -148,8 +146,8 @@ fn set_ipv4hint_from_js(svcb: &mut SVCB, value_js: &JsValue) -> Result<(), JsVal
         },
     )?;
 
-    svcb.set_ipv4hint(addrs)
-        .map_err(|e| JsValue::from_str(&format!("Failed to set IPv4hint parameter: {}", e)))
+    svcb.set_ipv4hint(&addrs);
+    Ok(())
 }
 
 /// Set IPv6 address hints from JavaScript value (string, array, or Uint8Array)
@@ -167,8 +165,8 @@ fn set_ipv6hint_from_js(svcb: &mut SVCB, value_js: &JsValue) -> Result<(), JsVal
         },
     )?;
 
-    svcb.set_ipv6hint(addrs)
-        .map_err(|e| JsValue::from_str(&format!("Failed to set IPv6hint parameter: {}", e)))
+    svcb.set_ipv6hint(&addrs);
+    Ok(())
 }
 
 /// Generic helper function for parsing IP address hints (IPv4 or IPv6)

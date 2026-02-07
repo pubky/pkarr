@@ -1,18 +1,21 @@
 //! SVCB parameter output - converting Rust data to JavaScript objects
 
+use crate::error::ClientError;
+
 use super::constants::*;
 use super::utils::bytes_to_hex;
-use simple_dns::rdata::SVCB;
+use simple_dns::rdata::{SVCParam, SVCB};
 use wasm_bindgen::JsValue;
 
 /// Convert SVCB parameters to JavaScript object with descriptive keys and parsed values
 pub fn to_js_object(svcb: &SVCB) -> Result<js_sys::Object, JsValue> {
     let params_obj = js_sys::Object::new();
 
-    for (key, value) in svcb.iter_params() {
+    for param in svcb.iter_params() {
+        let key = param.key_code();
         if is_known_param(key) {
             let key_name = param_key_to_name(key);
-            let parsed_value = parse_param_value(key, value);
+            let parsed_value = parse_param_value_from_param(param);
             js_sys::Reflect::set(
                 &params_obj,
                 &JsValue::from_str(key_name),
@@ -21,7 +24,14 @@ pub fn to_js_object(svcb: &SVCB) -> Result<js_sys::Object, JsValue> {
         } else {
             // For unknown parameters, use the format "param{number}" with hex values
             let unknown_key = format!("param{}", key);
-            let hex_value = bytes_to_hex(value);
+            let SVCParam::Unknown(_, data) = param else {
+                return Err(ClientError::ParseError {
+                    input_type: "svcb".to_string(),
+                    message: "Expected unknown SVCParam for key {key}, got known one".into(),
+                }
+                .into());
+            };
+            let hex_value = bytes_to_hex(data.as_ref());
             js_sys::Reflect::set(
                 &params_obj,
                 &JsValue::from_str(&unknown_key),
@@ -33,20 +43,34 @@ pub fn to_js_object(svcb: &SVCB) -> Result<js_sys::Object, JsValue> {
     Ok(params_obj)
 }
 
-/// Parse parameter value based on its type
-fn parse_param_value(key: u16, value: &[u8]) -> String {
-    match key {
-        PARAM_ALPN => parse_alpn_param(value),
-        PARAM_PORT => parse_port_param(value),
-        PARAM_IPV4HINT => parse_ip_hint_param(value, 4, "ipv4hint", |chunk| {
-            format!("{}.{}.{}.{}", chunk[0], chunk[1], chunk[2], chunk[3])
-        }),
-        PARAM_IPV6HINT => parse_ip_hint_param(value, 16, "ipv6hint", |chunk| {
-            let mut addr_bytes = [0u8; 16];
-            addr_bytes.copy_from_slice(chunk);
-            std::net::Ipv6Addr::from(addr_bytes).to_string()
-        }),
-        _ => bytes_to_hex(value),
+/// Parse parameter value from SVCParam
+fn parse_param_value_from_param(param: &SVCParam) -> String {
+    match param {
+        SVCParam::Alpn(alpns) => alpns
+            .iter()
+            .map(|cs| cs.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        SVCParam::Port(port) => port.to_string(),
+        SVCParam::Ipv4Hint(ips) => ips
+            .iter()
+            .map(|&ip| std::net::Ipv4Addr::from(ip).to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        SVCParam::Ipv6Hint(ips) => ips
+            .iter()
+            .map(|&ip| std::net::Ipv6Addr::from(ip).to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        SVCParam::NoDefaultAlpn => String::new(),
+        SVCParam::Ech(data) => bytes_to_hex(data.as_ref()),
+        SVCParam::Mandatory(keys) => keys
+            .iter()
+            .map(|k| k.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        SVCParam::Unknown(_, data) => bytes_to_hex(data.as_ref()),
+        SVCParam::InvalidKey => String::from("invalid_key"),
     }
 }
 
