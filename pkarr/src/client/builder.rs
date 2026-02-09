@@ -38,7 +38,7 @@ pub(crate) struct Config {
     #[cfg(dht)]
     pub dht: Option<mainline::DhtBuilder>,
 
-    /// Pkarr [Relays](https://pkarr.org/relays) Urls
+    /// Pkarr [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) Urls
     #[cfg(feature = "relays")]
     pub relays: Option<Vec<Url>>,
 
@@ -124,9 +124,9 @@ pub struct ClientBuilder(Config);
 
 impl ClientBuilder {
     /// Similar to crates `no-default-features`, this method will remove the default [Self::bootstrap], and [Self::relays]
-    /// effectively disabling the use of both [mainline] and [Relays](https://pkarr.org/relays).
+    /// effectively disabling the use of both [mainline] and [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
-    /// Or you can use [Self::relays] to use custom [Relays](https://pkarr.org/relays).
+    /// Or you can use [Self::relays] to use custom [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
     /// Similarly you can use [Self::bootstrap] or [Self::dht] to use [mainline] with custom configurations.
     pub fn no_default_network(&mut self) -> &mut Self {
@@ -197,7 +197,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Set custom set of [Relays](https://pkarr.org/relays).
+    /// Set custom set of [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
     /// If you want to disable relays use [Self::no_relays] instead.
     #[cfg(feature = "relays")]
@@ -290,7 +290,7 @@ impl ClientBuilder {
     }
 
     #[cfg(feature = "endpoints")]
-    /// Sets the maximum depth of recursion in [Endpoints](https://pkarr.org/endpoints) resolution.
+    /// Sets the maximum depth of recursion in [Endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) resolution.
     ///
     /// Similar to `bind9`'s [option](https://bind9.readthedocs.io/en/latest/reference.html#namedconf-statement-max-recursion-depth)
     ///

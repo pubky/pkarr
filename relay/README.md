@@ -1,6 +1,6 @@
 # Pkarr Relay
 
-A server that functions as a [pkarr relay](https://pkarr.org/relays).
+A server that functions as a [pkarr relay](https://github.com/pubky/pkarr/blob/main/design/relays.md).
 
 ## Installation & Usage
 
@@ -25,3 +25,4 @@ pkarr-relay  -t=pkarr=debug,tower_http=debug
 ```
 
 Once running, the Pkarr relay will be accessible at http://localhost:6881 (unless the config file specifies another port number).
+

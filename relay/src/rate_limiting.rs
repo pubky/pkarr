@@ -116,12 +116,8 @@ impl IpRateLimiter {
     /// Add a [GovernorLayer] on the provided [Router]
     pub fn layer(&self, router: Router) -> Router {
         match self {
-            IpRateLimiter::Peer(config) => router.layer(GovernorLayer {
-                config: config.clone(),
-            }),
-            IpRateLimiter::Proxy(config) => router.layer(GovernorLayer {
-                config: config.clone(),
-            }),
+            IpRateLimiter::Peer(config) => router.layer(GovernorLayer::new(config.clone())),
+            IpRateLimiter::Proxy(config) => router.layer(GovernorLayer::new(config.clone())),
         }
     }
 }

@@ -1,0 +1,224 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Phase 1: Validate everything builds ──────────────────────────
+
+  verify-version:
+    name: Verify tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify pkarr version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION=$(
+            cargo metadata --no-deps --format-version 1 \
+              | jq -r '.packages[] | select(.name == "pkarr") | .version'
+          )
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match pkarr \
+          Cargo.toml version $CARGO_VERSION"
+            exit 1
+          fi
+          echo "Version verified: $TAG_VERSION"
+
+  build-relay:
+    name: Build relay ${{ matrix.name }}
+    needs: verify-version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            name: linux-amd64
+            musl: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest-arm64
+            name: linux-arm64
+            musl: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: osx-amd64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: osx-arm64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: windows-amd64
+            bin_suffix: ".exe"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install musl-tools
+        if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build -p pkarr-relay --release --target ${{ matrix.target }}
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(cargo pkgid -p pkarr-relay | sed 's/.*@//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Package
+        shell: bash
+        run: |
+          FOLDER="pkarr-relay-v${{ steps.version.outputs.version }}-${{ matrix.name }}"
+          mkdir -p "$FOLDER"
+          cp "target/${{ matrix.target }}/release/pkarr-relay${{ matrix.bin_suffix }}" "$FOLDER/"
+          tar -czvf "$FOLDER.tar.gz" "$FOLDER"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkarr-relay-${{ matrix.name }}
+          path: "*.tar.gz"
+
+  dry-run-crates:
+    name: Dry-run crates.io publish
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Dry-run publish pkarr
+        run: cargo publish -p pkarr --dry-run
+
+      - name: Dry-run publish pkarr-relay
+        run: cargo publish -p pkarr-relay --dry-run
+
+  build-npm:
+    name: Build npm package
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build WASM package
+        run: |
+          cd ./bindings/js/pkg
+          npm run build
+
+      - name: Dry-run npm publish
+        run: npm publish --access public --dry-run
+        working-directory: ./bindings/js/pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Upload npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: bindings/js/pkg/
+
+  # ── Phase 2: Publish (only after all builds succeed) ─────────────
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: [build-relay, dry-run-crates, build-npm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish pkarr
+        run: cargo publish -p pkarr
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish pkarr-relay
+        run: cargo publish -p pkarr-relay
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: [build-relay, dry-run-crates, build-npm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download npm package
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: npm-package
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish to npm
+        run: npm publish --access public
+        working-directory: npm-package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    name: Create GitHub Release
+    needs: [publish-crates, publish-npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: pkarr-relay-*
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

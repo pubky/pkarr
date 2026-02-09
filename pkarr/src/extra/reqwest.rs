@@ -1,4 +1,4 @@
-//! implementation of Reqwest [Resolve] using Pkarr's [Endpoints](https://pkarr.org/endpoints) spec.
+//! implementation of Reqwest [Resolve] using Pkarr's [Endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) and [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) spec.
 //!
 
 use reqwest::dns::{Addrs, Resolve};
@@ -55,7 +55,7 @@ mod reqwest_builder {
         /// using it as a [dns_resolver][::reqwest::ClientBuilder::dns_resolver],
         /// and a [preconfigured_tls][::reqwest::ClientBuilder::use_preconfigured_tls] client
         /// config that uses [rustls::crypto::ring::default_provider()] and follows the
-        /// [tls for pkarr domains](https://pkarr.org/tls) spec.
+        /// [tls for pkarr domains](https://github.com/pubky/pkarr/blob/main/design/tls.md) spec.
         fn from(client: crate::Client) -> Self {
             ::reqwest::ClientBuilder::new()
                 .dns_resolver(std::sync::Arc::new(client.clone()))

@@ -291,7 +291,7 @@ impl SignedPacket {
         })
     }
 
-    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://pkarr.org/relays) payload.
+    /// Creates a [SignedPacket] from a [PublicKey] and the [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) payload.
     pub fn from_relay_payload(
         public_key: &PublicKey,
         payload: &Bytes,
@@ -344,7 +344,7 @@ impl SignedPacket {
     }
 
     /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
-    /// to be sent as a request/response body to or from [relays](https://pkarr.org/relays).
+    /// to be sent as a request/response body to or from [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     pub fn to_relay_payload(&self) -> Bytes {
         self.inner.borrow_owner().slice(32..)
     }
@@ -381,7 +381,7 @@ impl SignedPacket {
     }
 
     /// Return the DNS [Packet].
-    pub(crate) fn packet(&self) -> &Packet {
+    pub(crate) fn packet(&self) -> &Packet<'_> {
         self.inner.borrow_dependent()
     }
 
@@ -431,7 +431,7 @@ impl SignedPacket {
     /// You can use `@` to filter the resource records at the Apex (the public key).
     ///
     /// Wildcards are also supported, so `*.foo.<key>` will match `bar.foo.<key>`.
-    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
+    pub fn resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord<'_>> {
         let origin = self.public_key().to_z32();
         let normalized_name = normalize_name(&origin, name.to_string());
         let is_wildcard = normalized_name.starts_with('*');
@@ -451,13 +451,13 @@ impl SignedPacket {
 
     /// Similar to [resource_records](SignedPacket::resource_records), but filters out
     /// expired records, according the the [Self::last_seen] value and each record's `ttl`.
-    pub fn fresh_resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord> {
+    pub fn fresh_resource_records(&self, name: &str) -> impl Iterator<Item = &ResourceRecord<'_>> {
         self.resource_records(name)
             .filter(move |rr| rr.ttl > self.elapsed())
     }
 
     /// Returns all resource records in this packet
-    pub fn all_resource_records(&self) -> impl Iterator<Item = &ResourceRecord> {
+    pub fn all_resource_records(&self) -> impl Iterator<Item = &ResourceRecord<'_>> {
         self.packet().answers.iter()
     }
 

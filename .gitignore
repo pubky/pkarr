@@ -3,3 +3,5 @@ target/
 /.direnv
 
 relay/config.toml
+.claude/
+.vscode/
