@@ -1,3 +1,6 @@
+#![allow(clippy::bool_assert_comparison)]
+#![allow(clippy::field_reassign_with_default)]
+
 use pkarr_relay::{
     rate_limiter::{Operation, OperationLimit, QuotaValue},
     rate_limiting::RateLimiterConfig,
@@ -105,7 +108,7 @@ fn test_whitelist_parsing() {
 
 #[test]
 fn test_multiple_http_rate_limits() {
-    let limits = vec![
+    let limits = [
         OperationLimit::new(
             Operation::Publish,
             QuotaValue::from_str("5r/s").unwrap(),
