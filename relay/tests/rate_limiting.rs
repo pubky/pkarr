@@ -791,6 +791,44 @@ async fn test_behind_proxy_mode() {
 }
 
 #[tokio::test]
+async fn test_burst_override_applies() {
+    // Burst should be 3 (from OperationLimit.burst), NOT 1 (from "1r/s" rate).
+    // If burst config is silently ignored, only 1 request succeeds.
+    let mut config = Config::default();
+    config.dht_rate_limiter = None;
+    config.http_rate_limiter = Some(vec![OperationLimit::new(
+        Operation::Publish,
+        QuotaValue::from_str("1r/s").unwrap(),
+        NonZero::new(3), // burst of 3
+    )]);
+
+    let (url, _relay) = start_test_relay(config).await;
+
+    let client = reqwest::Client::new();
+    let endpoint = create_endpoint(&url, TEST_KEY);
+
+    let mut success_count = 0;
+    for _ in 0..6 {
+        let response = client
+            .put(&endpoint)
+            .body(vec![0u8; 100])
+            .send()
+            .await
+            .unwrap();
+
+        if response.status() != 429 {
+            success_count += 1;
+        }
+    }
+
+    assert!(
+        success_count >= 3,
+        "Burst of 3 should allow at least 3 requests, but only {} succeeded",
+        success_count
+    );
+}
+
+#[tokio::test]
 async fn test_burst_capacity_exhaustion() {
     let mut config = Config::default();
     config.dht_rate_limiter = None;

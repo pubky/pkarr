@@ -380,9 +380,9 @@ impl std::fmt::Display for OperationLimit {
 
 impl From<OperationLimit> for governor::Quota {
     fn from(value: OperationLimit) -> Self {
-        let quota: governor::Quota = value.quota.into();
+        let mut quota: governor::Quota = value.quota.into();
         if let Some(burst) = value.burst {
-            quota.allow_burst(burst);
+            quota = quota.allow_burst(burst);
         }
         quota
     }
