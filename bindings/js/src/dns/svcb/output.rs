@@ -15,7 +15,7 @@ pub fn to_js_object(svcb: &SVCB) -> Result<js_sys::Object, JsValue> {
         let key = param.key_code();
         if is_known_param(key) {
             let key_name = param_key_to_name(key);
-            let parsed_value = parse_param_value_from_param(param);
+            let parsed_value = parse_param_value(param);
             js_sys::Reflect::set(
                 &params_obj,
                 &JsValue::from_str(key_name),
@@ -23,11 +23,11 @@ pub fn to_js_object(svcb: &SVCB) -> Result<js_sys::Object, JsValue> {
             )?;
         } else {
             // For unknown parameters, use the format "param{number}" with hex values
-            let unknown_key = format!("param{}", key);
+            let unknown_key = format!("param{key}");
             let SVCParam::Unknown(_, data) = param else {
                 return Err(ClientError::ParseError {
                     input_type: "svcb".to_string(),
-                    message: "Expected unknown SVCParam for key {key}, got known one".into(),
+                    message: format!("Expected unknown SVCParam for key {key}, got known one"),
                 }
                 .into());
             };
@@ -44,7 +44,7 @@ pub fn to_js_object(svcb: &SVCB) -> Result<js_sys::Object, JsValue> {
 }
 
 /// Parse parameter value from SVCParam
-fn parse_param_value_from_param(param: &SVCParam) -> String {
+fn parse_param_value(param: &SVCParam) -> String {
     match param {
         SVCParam::Alpn(alpns) => alpns
             .iter()

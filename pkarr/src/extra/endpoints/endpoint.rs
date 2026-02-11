@@ -75,7 +75,7 @@ impl Endpoint {
                 let addrs = if &target == "." {
                     addrs.clone()
                 } else {
-                    Vec::with_capacity(0)
+                    Vec::new()
                 };
 
                 Endpoint {
