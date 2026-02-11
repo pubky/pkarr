@@ -1,10 +1,10 @@
-# Pkarr
+# PKARR
 
 > Own your identity. No registrars. No platforms. Just your keys.
 
 [![Crates.io](https://img.shields.io/crates/v/pkarr)](https://crates.io/crates/pkarr) [![Documentation](https://docs.rs/pkarr/badge.svg)](https://docs.rs/pkarr) [![License](https://img.shields.io/badge/license-MIT-purple)](./LICENSE)
 
-Pkarr turns Ed25519 public keys into domain names that you truly own. Publish DNS records to the Bittorrent peer-to-peer network with 10+ million nodes. No registrar can seize your domain. No platform can deplatform your identity.
+PKARR turns Ed25519 public keys into domain names that you truly own. Publish DNS records to the Bittorrent peer-to-peer network with 10+ million nodes. No registrar can seize your domain. No platform can deplatform your identity.
 
 Where we are going, this https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy resolves everywhere!
 
@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
 
 | Guide | Description |
 |-------|-------------|
-| **[Introduction](./docs/introduction.md)** | Philosophy, concepts, and why Pkarr exists |
+| **[Introduction](./docs/introduction.md)** | Philosophy, concepts, and why PKARR exists |
 | **[Quickstart](./docs/quickstart.md)** | Get started in 5 minutes |
 | **[Integration Guide](./docs/integration.md)** | Embedding Pkarr in your application |
 | **[Feature Reference](./docs/features.md)** | Cargo feature flags and configurations |
@@ -77,29 +77,29 @@ sequenceDiagram
 
 ### The Network
 
-Pkarr uses the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT), the same peer-to-peer network that powers BitTorrent. Records are stored using [BEP44](https://www.bittorrent.org/beps/bep_0044.html) (mutable items). With 15 years of proven reliability and 10+ million active nodes, there's no need to bootstrap a new network.
+PKARR uses the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT), the same peer-to-peer network that powers BitTorrent. Records are stored using [BEP44](https://www.bittorrent.org/beps/bep_0044.html) (mutable items). With 15 years of proven reliability and 10+ million active nodes, there's no need to bootstrap a new network.
 
 ### Key Points
 
 - **Records are ephemeral** — The DHT drops records after hours; republish periodically
-- **1000-byte limit** — Pkarr is for discovery, not storage
+- **1000-byte limit** — PKARR is for discovery, not storage
 - **Caching everywhere** — Clients and relays cache aggressively for performance
 - **Relays for browsers** — Web apps use HTTP relays since browsers cannot open UDP sockets
 
-Pkarr is the I/O library that reads and writes DNS records to the DHT.
+PKARR is the I/O library that reads and writes DNS records to the DHT.
 
 ## FAQ
 
 <details>
 <summary><strong>Why not blockchain domains (ENS, Handshake)?</strong></summary>
 
-Blockchain domains introduce artificial scarcity, transaction fees, and chain dependencies. Pkarr uses public keys directly—infinite supply, zero fees, no chain lock-in.
+Blockchain domains introduce artificial scarcity, transaction fees, and chain dependencies. PKARR uses public keys directly—infinite supply, zero fees, no chain lock-in.
 </details>
 
 <details>
 <summary><strong>Why not GNU Name System?</strong></summary>
 
-GNS is sophisticated but requires the full GNU net stack. Pkarr takes a minimalist approach: leverage existing infrastructure (Mainline DHT) and leave advanced features to application layers. Both use Ed25519, so migration paths exist.
+GNS is sophisticated but requires the full GNU net stack. PKARR takes a minimalist approach: leverage existing infrastructure (Mainline DHT) and leave advanced features to application layers. Both use Ed25519, so migration paths exist.
 </details>
 
 <details>
@@ -111,7 +111,7 @@ It already exists. 15 years of reliability, 10+ million nodes, implementations i
 <details>
 <summary><strong>What about human-readable names?</strong></summary>
 
-Public keys are not memorable by design—memorable names require registries, and registries introduce centralization. Build petname systems, phonebooks, or DNS bridges on top of Pkarr if you need human-friendly names.
+Public keys are not memorable by design—memorable names require registries, and registries introduce centralization. Build petname systems, phonebooks, or DNS bridges on top of PKARR if you need human-friendly names.
 </details>
 
 ## License
