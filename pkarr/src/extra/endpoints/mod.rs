@@ -130,7 +130,7 @@ mod tests {
     use crate::{PublicKey, SignedPacket};
 
     use std::future::Future;
-    use std::net::IpAddr;
+    use std::net::{IpAddr, Ipv4Addr};
     use std::pin::Pin;
     use std::str::FromStr;
     use std::time::Duration;
@@ -208,10 +208,11 @@ mod tests {
 
     #[tokio::test]
     async fn direct_endpoint_resolution() {
-        let testnet = Testnet::new_async(5).await.unwrap();
+        let testnet = Testnet::builder(5).build().unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
             .build()
             .unwrap();
 
@@ -228,10 +229,11 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_endpoints() {
-        let testnet = Testnet::new_async(5).await.unwrap();
+        let testnet = Testnet::builder(5).build().unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
             .request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();
@@ -248,10 +250,11 @@ mod tests {
 
     #[tokio::test]
     async fn empty() {
-        let testnet = Testnet::new_async(5).await.unwrap();
+        let testnet = Testnet::builder(5).build().unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
             .request_timeout(Duration::from_millis(20))
             .build()
             .unwrap();
@@ -265,10 +268,11 @@ mod tests {
 
     #[tokio::test]
     async fn max_recursion_exceeded() {
-        let testnet = Testnet::new_async(5).await.unwrap();
+        let testnet = Testnet::builder(5).build().unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
             .request_timeout(Duration::from_millis(100))
             .max_recursion_depth(3)
             .build()
@@ -283,10 +287,11 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_addresses() {
-        let testnet = Testnet::new_async(5).await.unwrap();
+        let testnet = Testnet::builder(5).build().unwrap();
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
+            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
             .request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();
