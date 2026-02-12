@@ -240,7 +240,7 @@ impl Relay {
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async unsafe fn run_testnet() -> anyhow::Result<Self> {
-        let testnet = pkarr::mainline::Testnet::new_async(10).await?;
+        let testnet = pkarr::mainline::Testnet::builder(10).build()?;
 
         // Leaking the testnet to avoid dropping and shutting them down.
         for node in testnet.nodes {
