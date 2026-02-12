@@ -35,7 +35,7 @@ futures-lite = { version = "2.6.0", default-features = false, features = ["std"]
 
 # Required for WASM target
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3", default-features = false, features = ["wasm_js"] }
+getrandom = { version = "0.4", default-features = false, features = ["wasm_js"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.50"
