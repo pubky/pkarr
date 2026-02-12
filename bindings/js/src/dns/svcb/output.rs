@@ -73,4 +73,3 @@ fn parse_param_value(param: &SVCParam) -> String {
         SVCParam::InvalidKey => String::from("invalid_key"),
     }
 }
-
