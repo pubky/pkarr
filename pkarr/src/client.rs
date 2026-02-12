@@ -101,8 +101,11 @@ impl Client {
                 return Err(BuildError::EmptyListOfRelays);
             }
 
-            let relays_client =
-                RelaysClient::new(relays.clone().into_boxed_slice(), config.request_timeout);
+            let relays_client = RelaysClient::new(
+                relays.clone().into_boxed_slice(),
+                config.request_timeout,
+                config.resolve_most_recent,
+            );
 
             Some(relays_client)
         } else {

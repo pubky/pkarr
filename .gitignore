@@ -1,5 +1,7 @@
 target/
 /result
 /.direnv
+
+relay/config.toml
 .claude/
 .vscode/

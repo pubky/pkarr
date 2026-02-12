@@ -10,32 +10,36 @@
 mod config;
 mod error;
 mod handlers;
-mod rate_limiting;
+/// Operation-based rate limiting
+pub mod rate_limiter;
+/// IP-based rate limiting
+pub mod rate_limiting;
 
+use axum::{extract::DefaultBodyLimit, Router};
+use axum_server::Handle;
+pub use config::Config;
+use config::CACHE_DIR;
+use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
+pub use rate_limiter::*;
 use std::{
     net::{SocketAddr, TcpListener},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
-
-use axum::{extract::DefaultBodyLimit, Router};
-use axum_server::Handle;
-
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
-
-use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
 use url::Url;
-
-use config::{Config, CACHE_DIR};
-
-pub use rate_limiting::RateLimiterConfig;
 
 /// A builder for Pkarr [Relay]
 pub struct RelayBuilder(Config);
 
 impl RelayBuilder {
+    /// Create a new RelayBuilder from a Config.
+    pub fn new(config: Config) -> Self {
+        RelayBuilder(config)
+    }
+
     /// Set the port for the HTTP endpoint.
     pub fn http_port(&mut self, port: u16) -> &mut Self {
         self.0.http_port = port;
@@ -68,16 +72,26 @@ impl RelayBuilder {
     ///
     /// Useful when running in a local test network.
     pub fn disable_rate_limiter(&mut self) -> &mut Self {
-        self.0.rate_limiter = None;
+        self.0.dht_rate_limiter = None;
+        self.0.http_rate_limiter = None;
 
         self
     }
 
-    /// Set the [RateLimiterConfig].
+    /// Set the operation-based rate limiter configuration.
     ///
-    /// Defaults to [RateLimiterConfig::default].
-    pub fn rate_limiter_config(&mut self, config: RateLimiterConfig) -> &mut Self {
-        self.0.rate_limiter = Some(config);
+    /// Defaults to None (no operation-based rate limiting).
+    pub fn rate_limiter_config(&mut self, limits: Option<Vec<OperationLimit>>) -> &mut Self {
+        self.0.http_rate_limiter = limits;
+
+        self
+    }
+
+    /// Set whether to respect the most_recent query parameter.
+    ///
+    /// Defaults to false.
+    pub fn set_resolve_most_recent(&mut self, value: bool) -> &mut Self {
+        self.0.resolve_most_recent = value;
 
         self
     }
@@ -139,13 +153,18 @@ impl Relay {
 
         let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
-        let rate_limiter = config
-            .rate_limiter
-            .map(|rate_limiter| rate_limiting::IpRateLimiter::new(&rate_limiter));
+        let dht_rate_limiter = config.dht_rate_limiter.map(|mut dht_config| {
+            // Override behind_proxy with global setting
+            dht_config.behind_proxy = config.behind_proxy;
+            rate_limiting::IpRateLimiter::new(&dht_config)
+        });
+
+        let http_rate_limiter = config.http_rate_limiter.clone();
 
         config.pkarr.cache(cache);
 
-        if let Some(ref rate_limiter) = rate_limiter {
+        // Apply DHT rate limiting (if enabled)
+        if let Some(ref rate_limiter) = dht_rate_limiter {
             config.pkarr.dht(|builder| {
                 builder.server_settings(pkarr::mainline::ServerSettings {
                     filter: Box::new(rate_limiter.clone()),
@@ -172,7 +191,13 @@ impl Relay {
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let app = create_app(AppState { client }, rate_limiter);
+        let app = create_app(AppState {
+            client,
+            resolve_most_recent: config.resolve_most_recent,
+            dht_rate_limiter,
+            http_rate_limiter,
+            behind_proxy: config.behind_proxy,
+        });
 
         let handle = Handle::new();
 
@@ -216,7 +241,7 @@ impl Relay {
         let mut config = Config {
             cache_path: None,
             http_port: 0,
-            rate_limiter: None,
+            dht_rate_limiter: None,
             ..Default::default()
         };
 
@@ -250,7 +275,7 @@ impl Relay {
         let mut config = Config {
             http_port: 15411,
             cache_path: None,
-            rate_limiter: None,
+            dht_rate_limiter: None,
             ..Default::default()
         };
 
@@ -284,7 +309,13 @@ impl Relay {
     }
 }
 
-fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
+fn create_app(state: AppState) -> Router {
+    // Extract values before state is moved
+    let dht_rate_limiter = state.dht_rate_limiter.clone();
+    let http_rate_limiter = state.http_rate_limiter.clone();
+    let behind_proxy = state.behind_proxy;
+    let resolve_most_recent = state.resolve_most_recent;
+
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -296,8 +327,16 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
         .layer(CorsLayer::very_permissive())
         .layer(TraceLayer::new_for_http());
 
-    if let Some(rate_limiter) = rate_limiter {
-        router = rate_limiter.layer(router);
+    // Apply operation-based rate limiting (if configured)
+    if let Some(limits) = http_rate_limiter {
+        router = router.layer(RateLimiterLayer::new(
+            limits,
+            behind_proxy,
+            resolve_most_recent,
+        ));
+    } else if let Some(dht_limiter) = dht_rate_limiter {
+        // Fallback to IP-based rate limiting for HTTP if no operation-based limits
+        router = dht_limiter.layer(router);
     }
 
     router
@@ -307,4 +346,12 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
 struct AppState {
     /// The Pkarr client for DHT operations.
     client: Client,
+    /// Whether to respect the most_recent query parameter
+    resolve_most_recent: bool,
+    /// DHT rate limiter (IP-based, protects DHT node)
+    dht_rate_limiter: Option<rate_limiting::IpRateLimiter>,
+    /// HTTP rate limiter (operation-based, protects HTTP server)
+    http_rate_limiter: Option<Vec<OperationLimit>>,
+    /// Whether this relay is behind a proxy
+    behind_proxy: bool,
 }
