@@ -37,7 +37,7 @@ clap = { version = "4.5.57", features = ["derive"] }
 dirs-next = "2.0.0"
 httpdate = "1.0.3"
 url = "2.5.8"
-pkarr = { path = "../pkarr", version = "5.0.0", default-features = false, features = [
+pkarr = { path = "../pkarr", version = "5.0.3", default-features = false, features = [
     "dht",
     "lmdb-cache",
 ] }
