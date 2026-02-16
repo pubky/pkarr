@@ -172,12 +172,26 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Publish pkarr
-        run: cargo publish -p pkarr
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "pkarr") | .version')
+          if curl -sSf "https://crates.io/api/v1/crates/pkarr/$VERSION" > /dev/null 2>&1; then
+            echo "::warning::pkarr $VERSION already published, skipping"
+          else
+            cargo publish -p pkarr
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Publish pkarr-relay
-        run: cargo publish -p pkarr-relay
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "pkarr-relay") | .version')
+          if curl -sSf "https://crates.io/api/v1/crates/pkarr-relay/$VERSION" > /dev/null 2>&1; then
+            echo "::warning::pkarr-relay $VERSION already published, skipping"
+          else
+            cargo publish -p pkarr-relay
+          fi
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -200,14 +214,20 @@ jobs:
 
       - name: Publish to npm
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          if [[ "$TAG_VERSION" == *-* ]]; then
-            PRE="${TAG_VERSION#*-}"
-            NPM_TAG="${PRE%%.*}"
+          PKG_VERSION=$(jq -r .version package.json)
+          PKG_NAME=$(jq -r .name package.json)
+          if npm view "${PKG_NAME}@${PKG_VERSION}" version > /dev/null 2>&1; then
+            echo "::warning::${PKG_NAME}@${PKG_VERSION} already published, skipping"
           else
-            NPM_TAG="latest"
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [[ "$TAG_VERSION" == *-* ]]; then
+              PRE="${TAG_VERSION#*-}"
+              NPM_TAG="${PRE%%.*}"
+            else
+              NPM_TAG="latest"
+            fi
+            npm publish --access public --provenance --tag "$NPM_TAG"
           fi
-          npm publish --access public --provenance --tag "$NPM_TAG"
         working-directory: npm-package
 
   release:
