@@ -51,7 +51,7 @@ jobs:
             os: ubuntu-latest
             name: linux-arm64
             musl: true
-            cross_linker: aarch64-linux-gnu-gcc
+            cross_musl: aarch64-linux-musl
           - target: x86_64-apple-darwin
             os: macos-latest
             name: osx-amd64
@@ -78,13 +78,16 @@ jobs:
         if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
-      - name: Install cross-compiler
-        if: matrix.cross_linker
+      - name: Install musl cross-compiler
+        if: matrix.cross_musl
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          TARGET_UPPER=$(echo "${{ matrix.target }}" | tr '[:lower:]-' '[:upper:]_')
-          echo "CARGO_TARGET_${TARGET_UPPER}_LINKER=${{ matrix.cross_linker }}" >> $GITHUB_ENV
+          curl -fsSL "https://musl.cc/${{ matrix.cross_musl }}-cross.tgz" \
+            | tar xz -C /opt
+          echo "/opt/${{ matrix.cross_musl }}-cross/bin" >> $GITHUB_PATH
+          TARGET_US=$(echo "${{ matrix.target }}" | tr '-' '_')
+          TARGET_UPPER=$(echo "$TARGET_US" | tr '[:lower:]' '[:upper:]')
+          echo "CC_${TARGET_US}=${{ matrix.cross_musl }}-gcc" >> $GITHUB_ENV
+          echo "CARGO_TARGET_${TARGET_UPPER}_LINKER=${{ matrix.cross_musl }}-gcc" >> $GITHUB_ENV
 
       - name: Build
         run: cargo build -p pkarr-relay --release --target ${{ matrix.target }}
