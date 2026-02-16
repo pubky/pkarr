@@ -27,12 +27,13 @@ jobs:
             cargo metadata --no-deps --format-version 1 \
               | jq -r '.packages[] | select(.name == "pkarr") | .version'
           )
-          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "::error::Tag v$TAG_VERSION does not match pkarr \
-          Cargo.toml version $CARGO_VERSION"
+          BASE_VERSION="${TAG_VERSION%%-*}"
+          if [ "$BASE_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION (base $BASE_VERSION) \
+          does not match pkarr Cargo.toml version $CARGO_VERSION"
             exit 1
           fi
-          echo "Version verified: $TAG_VERSION"
+          echo "Version verified: $TAG_VERSION (Cargo.toml: $CARGO_VERSION)"
 
   build-relay:
     name: Build relay ${{ matrix.name }}
