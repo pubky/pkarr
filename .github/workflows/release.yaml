@@ -46,10 +46,6 @@ jobs:
             os: ubuntu-latest
             name: linux-amd64
             musl: true
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest-arm64
-            name: linux-arm64
-            musl: true
           - target: x86_64-apple-darwin
             os: macos-latest
             name: osx-amd64
