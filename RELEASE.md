@@ -31,11 +31,13 @@ allowed for early testing on npm or crates.io.
 
 ## Files to Update
 
-### Always (every release)
+### If changed
 
 1. **`pkarr/Cargo.toml`** -- bump `version`.
 
 ### When the relay is included in the release
+
+If pkarr is bumped the relay should also be bumped.
 
 2. **`relay/Cargo.toml`** -- bump the crate `version`.
 3. **`relay/Cargo.toml`** -- update the `pkarr` dependency version
@@ -53,7 +55,23 @@ allowed for early testing on npm or crates.io.
 
 ## Release Process
 
-### 1. Open a version-bump PR
+### 1. Dry run
+
+After bumping versions, verify that everything compiles and
+packages correctly **before** opening the PR.
+
+```sh
+# Rust crates
+cargo publish -p pkarr --dry-run
+cargo publish -p pkarr-relay --dry-run
+
+# JS bindings (if included in the release)
+cd bindings/js/pkg && npm run build
+```
+
+Fix any errors before proceeding.
+
+### 2. Open a version-bump PR
 
 Create a branch (e.g. `chore/v5.1.0`) and commit the version
 changes listed above. The PR title should follow the pattern:
@@ -65,11 +83,11 @@ chore: release v5.1.0
 Include a summary of what changed since the last release in the
 PR description.
 
-### 2. Review and merge
+### 3. Review and merge
 
 Get the PR reviewed and merge it into `main`.
 
-### 3. Create a GitHub release (and tag)
+### 4. Create a GitHub release (and tag)
 
 Create the release on the GitHub website -- this also creates the
 git tag in one step:
@@ -86,7 +104,7 @@ git tag in one step:
 There is no changelog file; the GitHub release is the canonical
 record of what changed.
 
-### 4. Publish packages
+### 5. Publish packages
 
 Publish **in order** -- `pkarr` first, since the relay depends
 on it.
@@ -131,6 +149,7 @@ npm publish --access public --tag rc
 [ ] Relay's pkarr dependency version updated (if pkarr bumped)
 [ ] Version bumped in bindings/js/pkg/package.json (if applicable)
 [ ] Cargo.lock updated (cargo check)
+[ ] Dry run passed (cargo publish --dry-run, npm build)
 [ ] PR opened, reviewed, and merged
 [ ] GitHub release created (tag + release notes)
 [ ] pkarr published to crates.io
