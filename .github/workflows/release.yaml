@@ -143,7 +143,15 @@ jobs:
           npm run build
 
       - name: Dry-run npm publish
-        run: npm publish --access public --provenance --dry-run
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            PRE="${TAG_VERSION#*-}"
+            NPM_TAG="${PRE%%.*}"
+          else
+            NPM_TAG="latest"
+          fi
+          npm publish --access public --provenance --tag "$NPM_TAG" --dry-run
         working-directory: ./bindings/js/pkg
 
       - name: Upload npm package
@@ -191,7 +199,15 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            PRE="${TAG_VERSION#*-}"
+            NPM_TAG="${PRE%%.*}"
+          else
+            NPM_TAG="latest"
+          fi
+          npm publish --access public --provenance --tag "$NPM_TAG"
         working-directory: npm-package
 
   release:
