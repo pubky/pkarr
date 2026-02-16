@@ -1749,7 +1749,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pkarr"
-version = "5.0.2"
+version = "5.0.3"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -1818,7 +1818,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.11.3"
+version = "0.11.4"
 dependencies = [
  "anyhow",
  "axum",
