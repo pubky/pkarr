@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+  pull_request:
 
 permissions:
   contents: write
@@ -16,6 +17,7 @@ jobs:
 
   verify-version:
     name: Verify tag matches Cargo.toml
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +38,6 @@ jobs:
 
   build-relay:
     name: Build relay ${{ matrix.name }}
-    needs: verify-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -47,9 +48,10 @@ jobs:
             name: linux-amd64
             musl: true
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest-arm64
+            os: ubuntu-latest
             name: linux-arm64
             musl: true
+            cross_linker: aarch64-linux-gnu-gcc
           - target: x86_64-apple-darwin
             os: macos-latest
             name: osx-amd64
@@ -75,6 +77,14 @@ jobs:
       - name: Install musl-tools
         if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Install cross-compiler
+        if: matrix.cross_linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          TARGET_UPPER=$(echo "${{ matrix.target }}" | tr '[:lower:]-' '[:upper:]_')
+          echo "CARGO_TARGET_${TARGET_UPPER}_LINKER=${{ matrix.cross_linker }}" >> $GITHUB_ENV
 
       - name: Build
         run: cargo build -p pkarr-relay --release --target ${{ matrix.target }}
@@ -102,7 +112,6 @@ jobs:
 
   dry-run-crates:
     name: Dry-run crates.io publish
-    needs: verify-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -119,7 +128,6 @@ jobs:
 
   build-npm:
     name: Build npm package
-    needs: verify-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -160,7 +168,7 @@ jobs:
 
   publish-crates:
     name: Publish to crates.io
-    needs: [build-relay, dry-run-crates, build-npm]
+    needs: [verify-version, build-relay, dry-run-crates, build-npm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -179,7 +187,7 @@ jobs:
 
   publish-npm:
     name: Publish to npm
-    needs: [build-relay, dry-run-crates, build-npm]
+    needs: [verify-version, build-relay, dry-run-crates, build-npm]
     runs-on: ubuntu-latest
     steps:
       - name: Download npm package
