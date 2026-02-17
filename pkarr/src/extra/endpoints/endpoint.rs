@@ -1,6 +1,6 @@
 use crate::{
     dns::{
-        rdata::{RData, SVCB},
+        rdata::{RData, SVCParam, SVCB},
         ResourceRecord,
     },
     PublicKey, SignedPacket,
@@ -18,7 +18,7 @@ pub struct Endpoint {
     port: u16,
     /// SocketAddrs from the [SignedPacket]
     addrs: Vec<IpAddr>,
-    params: BTreeMap<u16, Box<[u8]>>,
+    params: BTreeMap<u16, SVCParam<'static>>,
 }
 
 impl Endpoint {
@@ -65,20 +65,17 @@ impl Endpoint {
                 };
 
                 let port = s
-                    .get_param(SVCB::PORT)
-                    .map(|bytes| {
-                        let mut arr = [0_u8; 2];
-                        arr[0] = bytes[0];
-                        arr[1] = bytes[1];
-
-                        u16::from_be_bytes(arr)
+                    .iter_params()
+                    .find_map(|p| match p {
+                        SVCParam::Port(port) => Some(*port),
+                        _ => None,
                     })
                     .unwrap_or_default();
 
                 let addrs = if &target == "." {
                     addrs.clone()
                 } else {
-                    Vec::with_capacity(0)
+                    Vec::new()
                 };
 
                 Endpoint {
@@ -88,7 +85,7 @@ impl Endpoint {
                     addrs,
                     params: s
                         .iter_params()
-                        .map(|(key, value)| (key, value.into()))
+                        .map(|param| (param.key_code(), param.clone().into_owned()))
                         .collect(),
                 }
             })
@@ -158,8 +155,8 @@ impl Endpoint {
     }
 
     /// Returns a service parameter.
-    pub fn get_param(&self, key: u16) -> Option<&[u8]> {
-        self.params.get(&key).map(|v| v.as_ref())
+    pub fn get_param(&self, key: u16) -> Option<&SVCParam<'_>> {
+        self.params.get(&key)
     }
 }
 
