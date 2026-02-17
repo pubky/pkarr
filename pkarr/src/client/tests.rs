@@ -1,5 +1,6 @@
 //! Client native tests
 
+use std::net::Ipv4Addr;
 use std::{thread, time::Duration};
 
 use ntimestamp::Timestamp;
@@ -30,7 +31,8 @@ pub(crate) fn builder(
     builder
         .no_default_network()
         // Because of pkarr_relay crate, dht is always enabled.
-        .bootstrap(&testnet.bootstrap);
+        .bootstrap(&testnet.bootstrap)
+        .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST));
 
     if std::env::var("CI").is_ok() {
         builder.request_timeout(Duration::from_millis(1000));
@@ -64,7 +66,7 @@ pub(crate) fn builder(
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn publish_resolve(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
@@ -94,7 +96,7 @@ async fn publish_resolve(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn client_send(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
@@ -128,7 +130,7 @@ async fn client_send(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn return_expired_packet_fallback(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks)
@@ -159,7 +161,7 @@ async fn return_expired_packet_fallback(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn ttl_0_test(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks)
@@ -192,7 +194,7 @@ async fn ttl_0_test(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn not_found(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -218,7 +220,7 @@ fn no_network() {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn repeated_publish_query(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -240,7 +242,7 @@ async fn repeated_publish_query(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_resolve(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
@@ -271,7 +273,7 @@ async fn concurrent_resolve(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_publish_same_packet(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -304,7 +306,7 @@ async fn concurrent_publish_same_packet(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -355,7 +357,7 @@ async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_publish_different_with_cas(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
 
     let relay = Relay::run_test(&testnet).await.unwrap();
 
@@ -398,7 +400,7 @@ async fn concurrent_publish_different_with_cas(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn conflict_302(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(10).await.unwrap();
+    let testnet = mainline::Testnet::builder(10).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -440,7 +442,7 @@ async fn conflict_302(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn conflict_301_cas(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -480,7 +482,7 @@ async fn conflict_301_cas(#[case] networks: Networks) {
 #[test]
 fn blocking(#[case] networks: Networks) {
     let (relay, testnet) = futures_lite::future::block_on(async_compat::Compat::new(async {
-        let testnet = mainline::Testnet::new_async(5).await.unwrap();
+        let testnet = mainline::Testnet::builder(5).build().unwrap();
         let relay = Relay::run_test(&testnet).await.unwrap();
 
         (relay, testnet)
@@ -521,7 +523,7 @@ fn blocking(#[case] networks: Networks) {
 fn no_tokio(#[case] networks: Networks) {
     futures_lite::future::block_on(async {
         let (relay, testnet) = async_compat::Compat::new(async {
-            let testnet = mainline::Testnet::new_async(5).await.unwrap();
+            let testnet = mainline::Testnet::builder(5).build().unwrap();
             let relay = Relay::run_test(&testnet).await.unwrap();
 
             (relay, testnet)
@@ -556,7 +558,7 @@ fn no_tokio(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn zero_cache_size(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
@@ -581,7 +583,7 @@ async fn zero_cache_size(#[case] networks: Networks) {
 // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 // #[tokio::test]
 // async fn clear_inflight_requests(#[case] networks: Networks) {
-//     let testnet = mainline::Testnet::new_async(5).await.unwrap();
+//     let testnet = mainline::Testnet::builder(5).build().unwrap();
 //     let relay = Relay::run_test(&testnet).await.unwrap();
 //
 //     let client = builder(&relay, &testnet, networks).build().unwrap();
@@ -611,7 +613,7 @@ async fn zero_cache_size(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
@@ -640,7 +642,7 @@ async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn regression_relay_cas(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::new_async(5).await.unwrap();
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
     let keypair = Keypair::random();
@@ -671,7 +673,7 @@ async fn regression_relay_cas(#[case] networks: Networks) {
 
 #[tokio::test]
 async fn discard_cache_with_zero_capacity() {
-    let testnet = crate::mainline::Testnet::new_async(2).await.unwrap();
+    let testnet = crate::mainline::Testnet::builder(2).build().unwrap();
 
     // Create relay
     let storage = std::env::temp_dir().join(Timestamp::now().to_string());
@@ -684,6 +686,7 @@ async fn discard_cache_with_zero_capacity() {
         .pkarr(|builder| {
             builder.no_default_network();
             builder.bootstrap(&testnet.bootstrap);
+            builder.dht(|b| b.bind_address(Ipv4Addr::LOCALHOST));
             builder
         });
     let relay = unsafe { builder.run().await.unwrap() };
@@ -695,6 +698,7 @@ async fn discard_cache_with_zero_capacity() {
     let client = Client::builder()
         .no_default_network()
         .bootstrap(&testnet.bootstrap)
+        .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
         .build()
         .unwrap();
 
@@ -783,7 +787,7 @@ mod reqwest_builder {
     #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn reqwest_pkarr_domain(#[case] networks: Networks) {
-        let testnet = mainline::Testnet::new_async(5).await.unwrap();
+        let testnet = mainline::Testnet::builder(5).build().unwrap();
         let relay = Relay::run_test(&testnet).await.unwrap();
 
         let keypair = Keypair::random();

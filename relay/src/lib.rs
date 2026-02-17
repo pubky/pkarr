@@ -230,7 +230,7 @@ impl Relay {
     }
 
     /// Run an ephemeral Pkarr relay on a random port number for testing purposes.
-    ///
+    /// Binds to `127.0.0.1`.
     /// # Arguments
     /// * `testnet` - A reference to a `mainline::Testnet` for bootstrapping the DHT.
     ///
@@ -250,7 +250,11 @@ impl Relay {
             .bootstrap(&testnet.bootstrap)
             .request_timeout(Duration::from_millis(100))
             .bootstrap(&testnet.bootstrap)
-            .dht(|builder| builder.server_mode());
+            .dht(|builder| {
+                builder
+                    .server_mode()
+                    .bind_address(std::net::Ipv4Addr::LOCALHOST)
+            });
 
         Ok(unsafe { Self::run(config).await? })
     }
@@ -261,7 +265,7 @@ impl Relay {
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async unsafe fn run_testnet() -> anyhow::Result<Self> {
-        let testnet = pkarr::mainline::Testnet::new(10)?;
+        let testnet = pkarr::mainline::Testnet::builder(10).build()?;
 
         // Leaking the testnet to avoid dropping and shutting them down.
         for node in testnet.nodes {
@@ -279,7 +283,11 @@ impl Relay {
             .pkarr
             .request_timeout(Duration::from_millis(100))
             .bootstrap(&testnet.bootstrap)
-            .dht(|builder| builder.server_mode());
+            .dht(|builder| {
+                builder
+                    .server_mode()
+                    .bind_address(std::net::Ipv4Addr::LOCALHOST)
+            });
 
         Self::run(config).await
     }
