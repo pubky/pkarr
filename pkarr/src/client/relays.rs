@@ -27,7 +27,6 @@ pub struct RelaysClient {
     relays: Box<[Url]>,
     http_client: Client,
     timeout: Duration,
-    resolve_most_recent: bool,
     pub(crate) inflight_publish: InflightPublishRequests,
 }
 
@@ -50,7 +49,7 @@ impl Debug for RelaysClient {
 }
 
 impl RelaysClient {
-    pub fn new(relays: Box<[Url]>, timeout: Duration, resolve_most_recent: bool) -> Self {
+    pub fn new(relays: Box<[Url]>, timeout: Duration) -> Self {
         let inflight_publish = InflightPublishRequests::new(relays.len());
 
         Self {
@@ -60,7 +59,6 @@ impl RelaysClient {
                 .expect("Client building should be infallible"),
 
             timeout,
-            resolve_most_recent,
             inflight_publish,
         }
     }
@@ -123,9 +121,10 @@ impl RelaysClient {
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
+        most_recent: bool,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
         Box::pin(
-            self.resolve_futures(public_key, more_recent_than)
+            self.resolve_futures(public_key, more_recent_than, most_recent)
                 .filter_map(|opt| opt),
         )
     }
@@ -134,6 +133,7 @@ impl RelaysClient {
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
+        most_recent: bool,
     ) -> FuturesUnorderedBounded<impl futures_lite::Future<Output = Option<SignedPacket>>> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
 
@@ -145,14 +145,13 @@ impl RelaysClient {
             let public_key = public_key.clone();
             let if_modified_since = if_modified_since.clone();
             let timeout = self.timeout;
-            let resolve_most_recent = self.resolve_most_recent;
 
             futures.push(resolve_from_relay(
                 http_client,
                 relay,
                 public_key,
                 if_modified_since,
-                resolve_most_recent,
+                most_recent,
                 timeout,
             ));
         });
