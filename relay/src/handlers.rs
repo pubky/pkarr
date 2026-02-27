@@ -1,22 +1,25 @@
 use std::str::FromStr;
 
-use axum::extract::Path;
+use crate::error::Error;
+use crate::AppState;
+use axum::extract::{Path, Query};
 use axum::http::HeaderMap;
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
-
 use bytes::Bytes;
 use http::{header, StatusCode};
 use httpdate::HttpDate;
 use pkarr::errors::{ConcurrencyError, PublishError};
 use pkarr::Timestamp;
+use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
+use serde::Deserialize;
 use tracing::debug;
 
-use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
-
-use crate::error::Error;
-
-use crate::AppState;
+#[derive(Deserialize)]
+pub struct GetQuery {
+    #[serde(default)]
+    most_recent: bool,
+}
 
 pub async fn put(
     State(state): State<AppState>,
@@ -63,12 +66,19 @@ pub async fn put(
 pub async fn get(
     State(state): State<AppState>,
     Path(public_key): Path<String>,
+    Query(query): Query<GetQuery>,
     request_headers: HeaderMap,
 ) -> Result<impl IntoResponse, Error> {
     let public_key = PublicKey::try_from(public_key.as_str())
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    if let Some(signed_packet) = state.client.resolve(&public_key).await {
+    let signed_packet = if query.most_recent && state.resolve_most_recent {
+        state.client.resolve_most_recent(&public_key).await
+    } else {
+        state.client.resolve(&public_key).await
+    };
+
+    if let Some(signed_packet) = signed_packet {
         tracing::debug!(?public_key, "cache hit responding with packet!");
 
         let mut response_headers = HeaderMap::new();

@@ -276,6 +276,7 @@ impl Client {
                 Some(cache.clone()),
                 cache_key,
                 cache.get(&cache_key).map(|s| s.timestamp()),
+                true,
             );
             while stream.next().await.is_some() {}
 
@@ -384,6 +385,7 @@ impl Client {
             self.0.cache.clone(),
             cache_key,
             cached_packet.as_ref().map(|s| s.timestamp()),
+            false,
         );
 
         if let Some(cached_packet) = cached_packet {
@@ -421,13 +423,14 @@ impl Client {
         cache: Option<Arc<dyn Cache>>,
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
+        most_recent: bool,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket>>> {
         let stream = self
             .0
             .relays
             .as_ref()
             .expect("infallible")
-            .resolve_futures(&public_key, more_recent_than)
+            .resolve_futures(&public_key, more_recent_than, most_recent)
             .filter_map(|opt| opt)
             .filter_map(move |signed_packet| {
                 filter_incoming_signed_packet(&public_key, cache.clone(), &cache_key, signed_packet)
@@ -444,8 +447,9 @@ impl Client {
         cache: Option<Arc<dyn Cache>>,
         cache_key: CacheKey,
         more_recent_than: Option<Timestamp>,
+        most_recent: bool,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
-        self.merged_resolve_stream(&public_key, more_recent_than)
+        self.merged_resolve_stream(&public_key, more_recent_than, most_recent)
             .filter_map(move |signed_packet| {
                 filter_incoming_signed_packet(&public_key, cache.clone(), &cache_key, signed_packet)
             })
@@ -458,6 +462,7 @@ impl Client {
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
+        most_recent: bool,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
         use futures::select_stream;
 
@@ -476,7 +481,7 @@ impl Client {
             .0
             .relays
             .as_ref()
-            .map(|relays| relays.resolve(public_key, more_recent_than));
+            .map(|relays| relays.resolve(public_key, more_recent_than, most_recent));
 
         #[cfg(all(dht, not(relays)))]
         return dht_stream.expect("infallible");

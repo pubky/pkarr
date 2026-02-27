@@ -121,9 +121,10 @@ impl RelaysClient {
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
+        most_recent: bool,
     ) -> Pin<Box<dyn Stream<Item = SignedPacket> + Send>> {
         Box::pin(
-            self.resolve_futures(public_key, more_recent_than)
+            self.resolve_futures(public_key, more_recent_than, most_recent)
                 .filter_map(|opt| opt),
         )
     }
@@ -132,6 +133,7 @@ impl RelaysClient {
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
+        most_recent: bool,
     ) -> FuturesUnorderedBounded<impl futures_lite::Future<Output = Option<SignedPacket>>> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
 
@@ -149,6 +151,7 @@ impl RelaysClient {
                 relay,
                 public_key,
                 if_modified_since,
+                most_recent,
                 timeout,
             ));
         });
@@ -403,9 +406,15 @@ pub async fn resolve_from_relay(
     relay: Url,
     public_key: PublicKey,
     if_modified_since: Option<String>,
+    resolve_most_recent: bool,
     timeout: Duration,
 ) -> Option<SignedPacket> {
-    let url = format_url(&relay, &public_key);
+    let mut url = format_url(&relay, &public_key);
+
+    // Add most_recent query parameter if enabled
+    if resolve_most_recent {
+        url.query_pairs_mut().append_pair("most_recent", "true");
+    }
 
     let mut request = reqwest::Request::new(Method::GET, url.clone());
 
