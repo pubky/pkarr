@@ -56,6 +56,13 @@ pub(crate) struct Inner {
     pub(crate) max_recursion_depth: u8,
 }
 
+/// Returned by [Client::publish_with_info] with details about how the publish went.
+#[derive(Debug, Clone)]
+pub struct PublishResult {
+    /// Number of DHT nodes that stored the packet, or None for relay-only publishes.
+    pub stored_at: Option<u8>,
+}
+
 /// Pkarr client for publishing and resolving [SignedPacket]s over
 /// [mainline] Dht and/or [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
 #[derive(Clone, Debug)]
@@ -241,6 +248,17 @@ impl Client {
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
     ) -> Result<(), PublishError> {
+        async_compat_if_necessary(self.publish_inner(signed_packet, cas))
+            .await
+            .map(|_| ())
+    }
+
+    /// Same as publish, but returns a [PublishResult] instead of `()`.
+    pub async fn publish_with_info(
+        &self,
+        signed_packet: &SignedPacket,
+        cas: Option<Timestamp>,
+    ) -> Result<PublishResult, PublishError> {
         async_compat_if_necessary(self.publish_inner(signed_packet, cas)).await
     }
 
@@ -290,7 +308,7 @@ impl Client {
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<(), PublishError> {
+    ) -> Result<PublishResult, PublishError> {
         let cache_key: CacheKey = signed_packet.public_key().into();
 
         // Check conflict
@@ -320,26 +338,32 @@ impl Client {
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<(), PublishError> {
+    ) -> Result<PublishResult, PublishError> {
         // Handle DHT and Relay futures based on feature flags and target family
         #[cfg(dht)]
         let dht_future = {
             let signed_packet = signed_packet.clone();
             self.dht().map(|node| async move {
-                node.as_async()
-                    .put_mutable((&signed_packet).into(), cas.map(|t| t.as_u64() as i64))
-                    .await
-                    .map(|_| Ok(()))?
+                let result = node
+                    .as_async()
+                    .put_mutable_with_info(
+                        (&signed_packet).into(),
+                        cas.map(|t| t.as_u64() as i64),
+                    )
+                    .await?;
+                Ok::<PublishResult, PublishError>(PublishResult {
+                    stored_at: Some(result.stored_at),
+                })
             })
         };
 
         #[cfg(relays)]
         let relays_future = {
             let signed_packet = signed_packet.clone();
-            self.0
-                .relays
-                .clone()
-                .map(|relays| async move { relays.publish(&signed_packet, cas).await })
+            self.0.relays.clone().map(|relays| async move {
+                relays.publish(&signed_packet, cas).await?;
+                Ok::<PublishResult, PublishError>(PublishResult { stored_at: None })
+            })
         };
 
         #[cfg(all(dht, not(relays)))]
