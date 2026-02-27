@@ -33,7 +33,7 @@ pub use client::blocking::ClientBlocking;
 #[cfg(client)]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
-pub use client::{builder::ClientBuilder, Client};
+pub use client::{builder::ClientBuilder, Client, PublishResult};
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
 #[cfg(feature = "signed_packet")]

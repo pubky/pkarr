@@ -6,16 +6,16 @@ use std::task::{Context, Poll};
 use crate::client::ConcurrencyError;
 use crate::SignedPacket;
 
-use super::PublishError;
+use super::{PublishError, PublishResult};
 
 /// Publish to both DHT and configured Relays, resolve after queries on both network are complete.
 ///
 /// If Relays network completes succeeds first, it is possible for the query to the
 /// DHT to fail because CAS is outdated, in that case, we should ignore that error.
 pub async fn publish_both_networks(
-    dht_future: impl Future<Output = Result<(), PublishError>> + Send + 'static,
-    relays_future: impl Future<Output = Result<(), PublishError>> + Send + 'static,
-) -> Result<(), PublishError> {
+    dht_future: impl Future<Output = Result<PublishResult, PublishError>> + Send + 'static,
+    relays_future: impl Future<Output = Result<PublishResult, PublishError>> + Send + 'static,
+) -> Result<PublishResult, PublishError> {
     SelectFuture {
         first_result: None,
         dht_future: dht_future.boxed(),
@@ -25,9 +25,9 @@ pub async fn publish_both_networks(
 }
 
 pub struct SelectFuture {
-    first_result: Option<(Network, Result<(), PublishError>)>,
-    dht_future: Pin<Box<dyn Future<Output = Result<(), PublishError>> + Send>>,
-    relays_future: Pin<Box<dyn Future<Output = Result<(), PublishError>> + Send>>,
+    first_result: Option<(Network, Result<PublishResult, PublishError>)>,
+    dht_future: Pin<Box<dyn Future<Output = Result<PublishResult, PublishError>> + Send>>,
+    relays_future: Pin<Box<dyn Future<Output = Result<PublishResult, PublishError>> + Send>>,
 }
 
 impl SelectFuture {
@@ -35,13 +35,20 @@ impl SelectFuture {
     fn process_result(
         &mut self,
         network: Network,
-        result: Result<(), PublishError>,
-    ) -> Poll<Result<(), PublishError>> {
-        match self.first_result {
-            // We already have a success, ignore CAS failures
-            Some((_, Ok(()))) => Poll::Ready(match result {
-                Err(PublishError::Concurrency(ConcurrencyError::CasFailed)) => Ok(()),
-                _ => result,
+        result: Result<PublishResult, PublishError>,
+    ) -> Poll<Result<PublishResult, PublishError>> {
+        match self.first_result.take() {
+            // We already have a success, ignore CAS failures from the second network
+            Some((_, Ok(first_publish_result))) => Poll::Ready(match result {
+                Err(PublishError::Concurrency(ConcurrencyError::CasFailed)) => {
+                    Ok(first_publish_result)
+                }
+                Ok(second_publish_result) => Ok(PublishResult {
+                    stored_at: first_publish_result
+                        .stored_at
+                        .or(second_publish_result.stored_at),
+                }),
+                err => err,
             }),
             // We already have a failure, return the later network's result
             Some(_) => Poll::Ready(result),
@@ -56,7 +63,7 @@ impl SelectFuture {
 }
 
 impl Future for SelectFuture {
-    type Output = Result<(), PublishError>;
+    type Output = Result<PublishResult, PublishError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
