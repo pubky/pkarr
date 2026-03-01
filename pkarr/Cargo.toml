@@ -25,7 +25,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 document-features = "0.2.12"
 
 #feat: signed_packet dependencies
-simple-dns = { version = "0.9.3", optional = true }
+simple-dns = { version = "0.11.2", optional = true }
 bytes = { version = "1.11.1", optional = true }
 self_cell = { version = "1.2.2", optional = true }
 ntimestamp = { version = "1.0.0", features = ["full"], optional = true }
@@ -34,7 +34,7 @@ ntimestamp = { version = "1.0.0", features = ["full"], optional = true }
 futures-lite = { version = "2.6.1", default-features = false, optional = true, features = [
   "std",
 ] }
-futures-buffered = { version = "0.2.12", optional = true }
+futures-buffered = { version = "0.2.13", optional = true }
 dyn-clone = { version = "1.0.20", optional = true }
 lru = { version = "0.16.3", default-features = false, optional = true }
 
@@ -83,17 +83,17 @@ wasm-bindgen-futures = { version = "0.4.58", optional = true }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 postcard = { version = "1.1.3", features = ["alloc"] }
 reqwest = { workspace = true }
 rstest = "0.26.1"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 pkarr-relay = { path = "../relay" }
-clap = { version = "4.5.57", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 mainline = "6.1.1"
-tempfile = "3.24.0"
+tempfile = "3.26.0"
 tokio-rustls = { version = "0.26.4", default-features = false }
 axum = "0.8.8"
 axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }

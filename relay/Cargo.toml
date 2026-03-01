@@ -18,7 +18,7 @@ categories = ["network-programming"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 axum = "0.8.8"
 tokio = { version = "1.49.0", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["cors", "trace"] }
@@ -33,7 +33,7 @@ tower_governor = "0.8.0"
 governor = "0.10.4"
 serde = { version = "1.0.228", features = ["derive"] }
 toml = "0.9.11"
-clap = { version = "4.5.57", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 dirs-next = "2.0.0"
 httpdate = "1.0.3"
 url = "2.5.8"
