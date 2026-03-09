@@ -101,7 +101,9 @@ mod tests {
 
         let handle = tokio::spawn(publish_both_networks(dht_future, relay_future));
 
-        dht_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
+        dht_tx
+            .send(Err(PublishError::Query(QueryError::Timeout)))
+            .unwrap();
         relay_tx.send(Ok(())).unwrap();
 
         let result = handle.await.unwrap();
@@ -116,7 +118,9 @@ mod tests {
         let handle = tokio::spawn(publish_both_networks(dht_future, relay_future));
 
         dht_tx.send(Ok(())).unwrap();
-        relay_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
+        relay_tx
+            .send(Err(PublishError::Query(QueryError::Timeout)))
+            .unwrap();
 
         let result = handle.await.unwrap();
         assert!(result.is_ok());
@@ -129,8 +133,12 @@ mod tests {
 
         let handle = tokio::spawn(publish_both_networks(dht_future, relay_future));
 
-        dht_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
-        relay_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
+        dht_tx
+            .send(Err(PublishError::Query(QueryError::Timeout)))
+            .unwrap();
+        relay_tx
+            .send(Err(PublishError::Query(QueryError::Timeout)))
+            .unwrap();
 
         let result = handle.await.unwrap();
         assert!(result.is_err());
