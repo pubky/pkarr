@@ -3,7 +3,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::client::ConcurrencyError;
 use crate::SignedPacket;
 
 use super::PublishError;
@@ -37,12 +36,9 @@ impl SelectFuture {
         network: Network,
         result: Result<(), PublishError>,
     ) -> Poll<Result<(), PublishError>> {
-        match self.first_result {
-            // We already have a success, ignore CAS failures
-            Some((_, Ok(()))) => Poll::Ready(match result {
-                Err(PublishError::Concurrency(ConcurrencyError::CasFailed)) => Ok(()),
-                _ => result,
-            }),
+        match &self.first_result {
+            // We already have a success on one network, the publish is done.
+            Some((_, Ok(()))) => Poll::Ready(Ok(())),
             // We already have a failure, return the later network's result
             Some(_) => Poll::Ready(result),
             // This is our first result, store it and continue polling
@@ -66,7 +62,10 @@ impl Future for SelectFuture {
         // Poll DHT future if not completed yet
         if !matches!(done_network, Some(Network::Dht)) {
             if let Poll::Ready(result) = this.dht_future.as_mut().poll(cx) {
-                return this.process_result(Network::Dht, result);
+                let poll = this.process_result(Network::Dht, result);
+                if poll.is_ready() {
+                    return poll;
+                }
             }
         }
 
@@ -78,6 +77,77 @@ impl Future for SelectFuture {
         }
 
         Poll::Pending
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::client::{PublishError, QueryError};
+    use tokio::sync::oneshot;
+
+    async fn channel_future() -> (
+        oneshot::Sender<Result<(), PublishError>>,
+        impl Future<Output = Result<(), PublishError>> + Send + 'static,
+    ) {
+        let (tx, rx) = oneshot::channel();
+        (tx, async move { rx.await.unwrap() })
+    }
+
+    #[tokio::test]
+    async fn relay_success_dht_timeout_returns_ok() {
+        let (dht_tx, dht_future) = channel_future().await;
+        let (relay_tx, relay_future) = channel_future().await;
+
+        let handle = tokio::spawn(publish_both_networks(dht_future, relay_future));
+
+        dht_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
+        relay_tx.send(Ok(())).unwrap();
+
+        let result = handle.await.unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn dht_success_relay_timeout_returns_ok() {
+        let (dht_tx, dht_future) = channel_future().await;
+        let (relay_tx, relay_future) = channel_future().await;
+
+        let handle = tokio::spawn(publish_both_networks(dht_future, relay_future));
+
+        dht_tx.send(Ok(())).unwrap();
+        relay_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
+
+        let result = handle.await.unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn both_fail_returns_error() {
+        let (dht_tx, dht_future) = channel_future().await;
+        let (relay_tx, relay_future) = channel_future().await;
+
+        let handle = tokio::spawn(publish_both_networks(dht_future, relay_future));
+
+        dht_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
+        relay_tx.send(Err(PublishError::Query(QueryError::Timeout))).unwrap();
+
+        let result = handle.await.unwrap();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn both_succeed_returns_ok() {
+        let (dht_tx, dht_future) = channel_future().await;
+        let (relay_tx, relay_future) = channel_future().await;
+
+        let handle = tokio::spawn(publish_both_networks(dht_future, relay_future));
+
+        dht_tx.send(Ok(())).unwrap();
+        relay_tx.send(Ok(())).unwrap();
+
+        let result = handle.await.unwrap();
+        assert!(result.is_ok());
     }
 }
 
