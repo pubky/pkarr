@@ -12,7 +12,7 @@ pub fn apply_svcb_params(svcb: &mut SVCB, params: &js_sys::Object) -> Result<(),
     for i in 0..keys.length() {
         let key_js = keys.get(i);
         let key_str = key_js.as_string().ok_or_else(|| {
-            JsValue::from_str(&format!("Parameter key at index {} must be a string", i))
+            JsValue::from_str(&format!("Parameter key at index {i} must be a string"))
         })?;
 
         // Hybrid approach: try numeric first, then descriptive names
@@ -29,8 +29,7 @@ pub fn apply_svcb_params(svcb: &mut SVCB, params: &js_sys::Object) -> Result<(),
                 SVCB_PARAM_IPV6HINT => PARAM_IPV6HINT,
                 _ => {
                     return Err(JsValue::from_str(&format!(
-                        "Unknown SVCB parameter: {}",
-                        key_str
+                        "Unknown SVCB parameter: {key_str}"
                     )))
                 }
             }
@@ -83,25 +82,22 @@ fn set_alpn_protocols(svcb: &mut SVCB, protocol_strings: Vec<String>) -> Result<
     for protocol in &protocol_strings {
         if !is_valid_alpn_protocol(protocol) {
             return Err(JsValue::from_str(&format!(
-                "Invalid ALPN protocol: {}",
-                protocol
+                "Invalid ALPN protocol: {protocol}"
             )));
         }
     }
 
-    // Then convert to CharacterString and set on SVCB
-    let protocols: Result<Vec<simple_dns::CharacterString>, _> = protocol_strings
-        .iter()
-        .map(|s| s.as_str().try_into())
-        .collect();
+    // Then convert to owned CharacterStrings using TryFrom<String>
+    let protocols: Result<Vec<simple_dns::CharacterString>, _> =
+        protocol_strings.into_iter().map(|s| s.try_into()).collect();
 
     match protocols {
-        Ok(alpn_list) => svcb
-            .set_alpn(alpn_list)
-            .map_err(|e| JsValue::from_str(&format!("Failed to set ALPN parameter: {}", e))),
+        Ok(alpn_list) => {
+            svcb.set_alpn(&alpn_list);
+            Ok(())
+        }
         Err(e) => Err(JsValue::from_str(&format!(
-            "Invalid ALPN protocol format: {}",
-            e
+            "Invalid ALPN protocol format: {e}"
         ))),
     }
 }
@@ -148,8 +144,8 @@ fn set_ipv4hint_from_js(svcb: &mut SVCB, value_js: &JsValue) -> Result<(), JsVal
         },
     )?;
 
-    svcb.set_ipv4hint(addrs)
-        .map_err(|e| JsValue::from_str(&format!("Failed to set IPv4hint parameter: {}", e)))
+    svcb.set_ipv4hint(&addrs);
+    Ok(())
 }
 
 /// Set IPv6 address hints from JavaScript value (string, array, or Uint8Array)
@@ -167,8 +163,8 @@ fn set_ipv6hint_from_js(svcb: &mut SVCB, value_js: &JsValue) -> Result<(), JsVal
         },
     )?;
 
-    svcb.set_ipv6hint(addrs)
-        .map_err(|e| JsValue::from_str(&format!("Failed to set IPv6hint parameter: {}", e)))
+    svcb.set_ipv6hint(&addrs);
+    Ok(())
 }
 
 /// Generic helper function for parsing IP address hints (IPv4 or IPv6)
@@ -190,8 +186,7 @@ where
             Ok(addr) => vec![addr],
             Err(_) => {
                 return Err(JsValue::from_str(&format!(
-                    "Invalid {} address format",
-                    hint_type
+                    "Invalid {hint_type} address format"
                 )))
             }
         }
@@ -204,8 +199,7 @@ where
                     Ok(addr) => addrs.push(addr),
                     Err(_) => {
                         return Err(JsValue::from_str(&format!(
-                            "Invalid {} address: {}",
-                            hint_type, addr_str
+                            "Invalid {hint_type} address: {addr_str}"
                         )));
                     }
                 }
@@ -217,8 +211,7 @@ where
         let bytes_len = uint8_array.length() as usize;
         if bytes_len % bytes_per_addr != 0 {
             return Err(JsValue::from_str(&format!(
-                "{} raw bytes must be multiple of {} bytes",
-                hint_type, bytes_per_addr
+                "{hint_type} raw bytes must be multiple of {bytes_per_addr} bytes"
             )));
         }
         let mut bytes = vec![0u8; bytes_len];
@@ -227,15 +220,13 @@ where
         bytes.chunks(bytes_per_addr).map(parse_bytes).collect()
     } else {
         return Err(JsValue::from_str(&format!(
-            "{} parameter must be a string, array, or Uint8Array",
-            hint_type
+            "{hint_type} parameter must be a string, array, or Uint8Array"
         )));
     };
 
     if addrs.is_empty() {
         return Err(JsValue::from_str(&format!(
-            "{} parameter cannot be empty",
-            hint_type
+            "{hint_type} parameter cannot be empty"
         )));
     }
 
@@ -247,13 +238,11 @@ fn set_unknown_param_from_js(key_num: u16, value_js: &JsValue) -> Result<(), JsV
     if value_js.dyn_ref::<js_sys::Uint8Array>().is_some() {
         // For now, we can't set generic parameters without a generic method
         Err(JsValue::from_str(&format!(
-            "Parameter {} is not yet supported - needs generic parameter setting in SVCB",
-            key_num
+            "Parameter {key_num} is not yet supported - needs generic parameter setting in SVCB"
         )))
     } else {
         Err(JsValue::from_str(&format!(
-            "Parameter {} must be provided as Uint8Array",
-            key_num
+            "Parameter {key_num} must be provided as Uint8Array"
         )))
     }
 }
