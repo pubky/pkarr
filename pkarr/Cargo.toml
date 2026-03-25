@@ -34,7 +34,7 @@ ntimestamp = { version = "1.0.0", features = ["full"], optional = true }
 futures-lite = { version = "2.6.1", default-features = false, optional = true, features = [
   "std",
 ] }
-futures-buffered = { version = "0.2.12", optional = true }
+futures-buffered = { version = "0.2.13", optional = true }
 dyn-clone = { version = "1.0.20", optional = true }
 lru = { version = "0.16.3", default-features = false, optional = true }
 
@@ -48,7 +48,7 @@ genawaiter = { version = "0.99.1", default-features = false, features = [
 ], optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-getrandom = { version = "0.4.1", default-features = false }
+getrandom = { version = "0.4.2", default-features = false }
 
 #feat: client dependencies
 tracing = { version = "0.1.44", optional = true }
@@ -58,7 +58,7 @@ mainline = { version = "6.1.1", optional = true }
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
-tokio = { version = "1.49.0", default-features = false, optional = true }
+tokio = { version = "1.50.0", default-features = false, optional = true }
 async-compat = { version = "0.2.5", optional = true }
 
 # feat: lmdb-cache defendencies
@@ -83,21 +83,21 @@ wasm-bindgen-futures = { version = "0.4.58", optional = true }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.101"
+anyhow = "1.0.102"
 postcard = { version = "1.1.3", features = ["alloc"] }
 reqwest = { workspace = true }
 rstest = "0.26.1"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 pkarr-relay = { path = "../relay" }
-clap = { version = "4.5.57", features = ["derive"] }
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+clap = { version = "4.6.0", features = ["derive"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 mainline = "6.1.1"
-tempfile = "3.24.0"
+tempfile = "3.27.0"
 tokio-rustls = { version = "0.26.4", default-features = false }
 axum = "0.8.8"
 axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
-tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
 wasm-bindgen = { version = "0.2.108", features = ["serde-serialize"] }
