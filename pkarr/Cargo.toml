@@ -101,7 +101,7 @@ tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
 wasm-bindgen = { version = "0.2.108", features = ["serde-serialize"] }
-wasm-bindgen-test = "0.3.58"
+wasm-bindgen-test = "0.3.67"
 console_log = { version = "1.0.0", features = ["color"] }
 
 [build-dependencies]
