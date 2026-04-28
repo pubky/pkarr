@@ -97,15 +97,11 @@ impl Cache for InMemoryCache {
         let mut lock = self.inner.write().expect("InMemoryCache RwLock");
 
         match lock.get_mut(key) {
-            Some(existing) => {
-                if existing.as_bytes() == signed_packet.as_bytes() {
-                    // just refresh the last_seen
-                    existing.set_last_seen(signed_packet.last_seen())
-                } else {
-                    lock.put(*key, signed_packet.clone());
-                }
+            Some(existing) if existing.as_bytes() == signed_packet.as_bytes() => {
+                // just refresh the last_seen
+                existing.set_last_seen(signed_packet.last_seen())
             }
-            None => {
+            _ => {
                 lock.put(*key, signed_packet.clone());
             }
         }
