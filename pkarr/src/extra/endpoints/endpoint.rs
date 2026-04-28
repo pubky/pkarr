@@ -37,7 +37,7 @@ impl Endpoint {
         // Shuffle the vector first
         shuffle(&mut records);
         // Sort by priority
-        records.sort_by(|a, b| b.priority.cmp(&a.priority));
+        records.sort_by_key(|r| std::cmp::Reverse(r.priority));
 
         let mut addrs = HashSet::new();
         for record in signed_packet.resource_records("@") {

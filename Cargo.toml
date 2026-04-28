@@ -3,8 +3,7 @@ members = [
   "pkarr", "relay", "bindings/js",
 ]
 
-# See: https://github.com/rust-lang/rust/issues/90148#issuecomment-949194352
-resolver = "2"
+resolver = "3"
 
 [workspace.metadata.crane]
 name = "pkarr"
@@ -13,6 +12,3 @@ name = "pkarr"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 simple-dns = { version = "0.11.2" }
-# Pinned: digest 0.11.0-rc.11+ removed crypto_common re-export, breaking curve25519-dalek
-# See: https://github.com/pubky/mainline/issues/80
-digest = "=0.11.0-rc.9"
