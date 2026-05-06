@@ -10,7 +10,8 @@ services:
     
     # need both TCP and UDP
     ports:
-      - "6881:6881"
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
     
     volumes:
       # config file
