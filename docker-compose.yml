@@ -5,7 +5,6 @@ services:
       dockerfile: Dockerfile
       args:
         TARGETARCH: x86_64  # Change to aarch64 for ARM64/Apple Silicon
-    container_name: pkarr-relay
     restart: unless-stopped
     
     # need both TCP and UDP
