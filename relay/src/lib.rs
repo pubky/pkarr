@@ -131,9 +131,8 @@ impl Relay {
 
         let cache_path = config
             .cache_path
-            .unwrap_or({
+            .unwrap_or_else(|| {
                 tracing::warn!("Cache path is not configured, running ephemeral Relay");
-
                 std::env::temp_dir().join(Timestamp::now().to_string())
             })
             .join(CACHE_DIR);
