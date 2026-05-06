@@ -15,7 +15,7 @@ services:
     volumes:
       # config file
       - ./relay/src/config.example.toml:/config.toml:ro
-      # pkarr cache location, modify both this and config to move cache location
+      # pkarr cache location, must match [cache].path in config
       - pkarr-cache:/cache
 
     healthcheck:
