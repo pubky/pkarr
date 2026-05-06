@@ -1,14 +1,10 @@
 use std::{net::IpAddr, sync::Arc, time::Duration};
 
+use crate::real_ip::RealIpKeyExtractor;
 use axum::Router;
 use governor::middleware::StateInformationMiddleware;
 use serde::{Deserialize, Serialize};
-
-use tower_governor::{
-    governor::{GovernorConfig, GovernorConfigBuilder},
-    key_extractor::{PeerIpKeyExtractor, SmartIpKeyExtractor},
-};
-
+use tower_governor::governor::{GovernorConfig, GovernorConfigBuilder};
 pub use tower_governor::GovernorLayer;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -43,10 +39,9 @@ impl Default for RateLimiterConfig {
 }
 
 #[derive(Debug, Clone)]
-/// A rate limiter that works for direct connections (Peer) or behind reverse-proxy (Proxy)
-pub enum IpRateLimiter {
-    Peer(Arc<GovernorConfig<PeerIpKeyExtractor, StateInformationMiddleware>>),
-    Proxy(Arc<GovernorConfig<SmartIpKeyExtractor, StateInformationMiddleware>>),
+/// A rate limiter keyed by the request's normalized real IP.
+pub struct IpRateLimiter {
+    governor_middleware: Arc<GovernorConfig<RealIpKeyExtractor, StateInformationMiddleware>>,
 }
 
 impl IpRateLimiter {
@@ -54,69 +49,39 @@ impl IpRateLimiter {
     ///
     /// This spawns a background thread to clean up the rate limiting cache.
     pub fn new(config: &RateLimiterConfig) -> Self {
-        match config.behind_proxy {
-            true => {
-                let config = Arc::new(
-                    GovernorConfigBuilder::default()
-                        .use_headers()
-                        .per_second(config.per_second)
-                        .burst_size(config.burst_size)
-                        .key_extractor(SmartIpKeyExtractor)
-                        .finish()
-                        .expect("failed to build rate-limiting governor"),
-                );
+        let governor_middleware = Arc::new(
+            GovernorConfigBuilder::default()
+                .use_headers()
+                .per_second(config.per_second)
+                .burst_size(config.burst_size)
+                .key_extractor(RealIpKeyExtractor)
+                .finish()
+                .expect("failed to build rate-limiting governor"),
+        );
 
-                // The governor needs a background task for garbage collection (to clear expired records)
-                let gc_interval = Duration::from_secs(60);
+        // The governor needs a background task for garbage collection (to clear expired records)
+        let gc_interval = Duration::from_secs(60);
 
-                let governor_limiter = config.limiter().clone();
-                std::thread::spawn(move || loop {
-                    std::thread::sleep(gc_interval);
-                    tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
-                    governor_limiter.retain_recent();
-                });
+        let governor_limiter = governor_middleware.limiter().clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(gc_interval);
+            tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
+            governor_limiter.retain_recent();
+        });
 
-                Self::Proxy(config)
-            }
-            false => {
-                let config = Arc::new(
-                    GovernorConfigBuilder::default()
-                        .use_headers()
-                        .per_second(config.per_second)
-                        .burst_size(config.burst_size)
-                        .finish()
-                        .expect("failed to build rate-limiting governor"),
-                );
-
-                // The governor needs a background task for garbage collection (to clear expired records)
-                let gc_interval = Duration::from_secs(60);
-
-                let governor_limiter = config.limiter().clone();
-                std::thread::spawn(move || loop {
-                    std::thread::sleep(gc_interval);
-                    tracing::debug!("rate limiting storage size: {}", governor_limiter.len());
-                    governor_limiter.retain_recent();
-                });
-
-                Self::Peer(config)
-            }
+        Self {
+            governor_middleware,
         }
     }
 
     /// Check if the Ip is allowed to make more requests
     pub fn is_limited(&self, ip: &IpAddr) -> bool {
-        match self {
-            IpRateLimiter::Peer(config) => config.limiter().check_key(ip).is_err(),
-            IpRateLimiter::Proxy(config) => config.limiter().check_key(ip).is_err(),
-        }
+        self.governor_middleware.limiter().check_key(ip).is_err()
     }
 
     /// Add a [GovernorLayer] on the provided [Router]
-    pub fn layer(&self, router: Router) -> Router {
-        match self {
-            IpRateLimiter::Peer(config) => router.layer(GovernorLayer::new(config.clone())),
-            IpRateLimiter::Proxy(config) => router.layer(GovernorLayer::new(config.clone())),
-        }
+    pub fn layer(self, router: Router) -> Router {
+        router.layer(GovernorLayer::new(self.governor_middleware))
     }
 }
 

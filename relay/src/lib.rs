@@ -11,6 +11,7 @@ mod config;
 mod error;
 mod handlers;
 mod rate_limiting;
+mod real_ip;
 
 use std::{
     net::{SocketAddr, TcpListener},
@@ -139,6 +140,11 @@ impl Relay {
 
         let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
 
+        let behind_proxy = config
+            .rate_limiter
+            .as_ref()
+            .map(|rate_limiter| rate_limiter.behind_proxy)
+            .unwrap_or(false);
         let rate_limiter = config
             .rate_limiter
             .map(|rate_limiter| rate_limiting::IpRateLimiter::new(&rate_limiter));
@@ -172,7 +178,7 @@ impl Relay {
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let app = create_app(AppState { client }, rate_limiter);
+        let app = create_app(AppState { client }, rate_limiter, behind_proxy);
 
         let handle = Handle::new();
 
@@ -284,7 +290,11 @@ impl Relay {
     }
 }
 
-fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
+fn create_app(
+    state: AppState,
+    rate_limiter: Option<rate_limiting::IpRateLimiter>,
+    behind_proxy: bool,
+) -> Router {
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -297,7 +307,9 @@ fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter
         .layer(TraceLayer::new_for_http());
 
     if let Some(rate_limiter) = rate_limiter {
-        router = rate_limiter.layer(router);
+        router = rate_limiter
+            .layer(router)
+            .layer(real_ip::middleware(behind_proxy));
     }
 
     router
