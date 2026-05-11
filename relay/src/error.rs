@@ -5,6 +5,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use pkarr::mainline::errors::{ConcurrencyError, PutMutableError};
 
 #[derive(Debug, Clone)]
 pub struct Error {
@@ -64,5 +65,22 @@ impl From<ExtensionRejection> for Error {
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
+    }
+}
+
+impl From<PutMutableError> for Error {
+    fn from(error: PutMutableError) -> Self {
+        match error {
+            PutMutableError::Query(_) => Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error)),
+            PutMutableError::Concurrency(ConcurrencyError::CasFailed) => {
+                Self::new(StatusCode::PRECONDITION_FAILED, Some(error))
+            }
+            PutMutableError::Concurrency(ConcurrencyError::ConflictRisk) => {
+                Self::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
+            }
+            PutMutableError::Concurrency(ConcurrencyError::NotMostRecent) => {
+                Self::new(StatusCode::CONFLICT, Some(error))
+            }
+        }
     }
 }

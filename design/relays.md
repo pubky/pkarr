@@ -63,12 +63,15 @@ Content-Type: application/pkarr.org/relays#payload
 Cache-Control: public, max-age=300
 
 Last-Modified: Fri, 18 Oct 2024 13:24:21 GMT
+Memento-Datetime: Fri, 8 May 2026 04:21:21 GMT
 
 <body>
 ```
 
 `Cache-Control` header would help browsers reduce their reliance on the relay, the `max-age` should be set to be the minimum `ttl` in the resource records in the packet or some minimum ttl chosen by the relay.
 `If-Modified-Since` can be sent by the client to avoid downloading packets they already have, when the relay responds with `304 Not Modified`.
+
+`Memento-Datetime` will tell when the last time the packet was observed on the DHT network.
 
 Body is described at [Payload](#Payload) encoding section.
 
