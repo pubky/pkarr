@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "0.11.7"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "axum",
