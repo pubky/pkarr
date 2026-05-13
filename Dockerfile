@@ -1,11 +1,7 @@
 # ========================
 # Build Stage
 # ========================
-FROM rust:1.86.0-alpine3.20 AS builder
-
-# Build platform argument (x86_64 or aarch64) (default: x86_64)
-ARG TARGETARCH
-RUN echo "TARGETARCH: $TARGETARCH"
+FROM rust:alpine3.23 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \
@@ -13,9 +9,6 @@ RUN apk add --no-cache \
     pkgconfig \
     build-base \
     curl
-
-# Set PATH only if we installed the cross compiler (will be empty string for x86)
-ENV PATH="$(cat /tmp/musl_cross_path):$PATH"
 
 # Set the working directory
 WORKDIR /usr/src/app
@@ -26,8 +19,8 @@ COPY Cargo.toml Cargo.lock ./
 # Copy over all the source code
 COPY . .
 
-# Build only the relay crate in release mode for the MUSL target
-RUN cargo build --release -p pkarr-relay
+# Build the relay in release mode
+RUN cargo build -p pkarr-relay --release
 
 # Strip the binary to reduce size
 RUN strip target/release/pkarr-relay
@@ -50,4 +43,4 @@ WORKDIR /usr/local/bin
 EXPOSE 6881
 
 # Set the default command to run the relay binary
-CMD ["pkarr-relay", "--config=./config.toml"]
+CMD ["pkarr-relay", "--config=/config.toml"]

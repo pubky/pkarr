@@ -16,7 +16,7 @@ port = 6881
 # Cache will be stored in a `pkarr-cache` directory inside the provided directory.
 # 
 # Defaults to a random temporary directory.
-path = "./storage/location"
+path = "./cache"
 # Maximum number of SignedPackets to store, before evicting the oldest packets.
 size = 1_000_000
 
