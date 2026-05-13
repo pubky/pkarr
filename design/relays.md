@@ -71,7 +71,7 @@ Memento-Datetime: Fri, 8 May 2026 04:21:21 GMT
 `Cache-Control` header would help browsers reduce their reliance on the relay, the `max-age` should be set to be the minimum `ttl` in the resource records in the packet or some minimum ttl chosen by the relay.
 `If-Modified-Since` can be sent by the client to avoid downloading packets they already have, when the relay responds with `304 Not Modified`.
 
-`Memento-Datetime` will tell when the last time the packet was observed on the DHT network.
+`Memento-Datetime` will tell you when the packet was last observed on the DHT network.
 
 Body is described at [Payload](#Payload) encoding section.
 

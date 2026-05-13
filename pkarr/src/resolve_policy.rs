@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 
-/// controls whether resolution may use only cached packets,
+/// Controls whether resolution may use only cached packets,
 /// prefer cached packets before querying the DHT, or bypass the cache and query
 /// the DHT network directly.
 ///
@@ -10,7 +10,7 @@ use serde::Deserialize;
 /// | --- | --- | --- | --- |
 /// | [`ResolvePolicy::LocalOrRelayCacheOnly`] | Returns a cached packet, even if expired | Never queried | Fast local reads and republishing |
 /// | [`ResolvePolicy::CacheFirst`] | Returns a cached packet only while it is fresh | Queries the first responder on cache miss or expiry | Normal application resolution while respecting TTLs |
-/// | [`ResolvePolicy::DhtNetworkOnly`] | Ignores cached packets for lookup, but updates the cache after success | Queries relevant DHT nodes for the newest packet | Recovering after stale sequence errors |
+/// | [`ResolvePolicy::DhtNetworkOnly`] | Ignores cached packets for the lookup, but updates the cache after retrieval | Queries all relevant DHT nodes for the newest packet. Slow but accurate. | When you need the absolute most recent packet, for example for recovering after stale sequence errors |
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub enum ResolvePolicy {
     /// Return only a locally cached packet, even if expired.
