@@ -66,7 +66,7 @@ let client = Client::builder()
 
 // Custom relays
 let client = Client::builder()
-    .relays(&["https://relay.pkarr.org", "https://my-relay.example.com"])?
+    .relays(&["https://pkarr.pubky.app", "https://my-relay.example.com"])?
     .build()?;
 
 // Custom DHT bootstrap nodes
