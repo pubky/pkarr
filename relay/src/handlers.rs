@@ -1,52 +1,29 @@
-use std::str::FromStr;
-
 use axum::extract::{Path, Query};
-use axum::http::HeaderMap;
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use futures_lite::StreamExt;
-use http::{header, StatusCode};
-use httpdate::HttpDate;
+use http::StatusCode;
 use pkarr::mainline::async_dht::AsyncDht;
 use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
 
 use crate::error::Error;
+use crate::extractors::{IfMatch, IfModifiedSince, PublicKeyParam};
+use crate::response::SignedPacketResponse;
 use crate::AppState;
 
 pub async fn put(
     State(state): State<AppState>,
-    Path(public_key): Path<String>,
-    request_headers: HeaderMap,
+    Path(PublicKeyParam(public_key)): Path<PublicKeyParam>,
+    IfMatch(cas): IfMatch,
     body: Bytes,
 ) -> Result<impl IntoResponse, Error> {
-    let public_key = PublicKey::try_from(public_key.as_str())
-        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
-    let key = CacheKey::from(&public_key);
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
-    let cas = request_headers
-        .get(header::IF_MATCH)
-        .map(|h| h.to_str())
-        .transpose()
-        .map_err(|_| {
-            Error::new(
-                StatusCode::BAD_REQUEST,
-                Some("Invalid IF_MATCH header value"),
-            )
-        })?
-        .map(|s| s.parse::<u64>())
-        .transpose()
-        .map_err(|_| {
-            Error::new(
-                StatusCode::BAD_REQUEST,
-                Some("Invalid IF_MATCH header value"),
-            )
-        })?
-        .map(Timestamp::from);
 
+    let key = CacheKey::from(&public_key);
     if let Some(cached) = state.cache.get_read_only(&key) {
         if cached.more_recent_than(&signed_packet) {
             return Err(Error::new(
@@ -66,12 +43,10 @@ pub async fn put(
 
 pub async fn get(
     State(state): State<AppState>,
-    Path(public_key): Path<String>,
+    Path(PublicKeyParam(public_key)): Path<PublicKeyParam>,
     Query(query): Query<GetQuery>,
-    request_headers: HeaderMap,
-) -> Result<impl IntoResponse, Error> {
-    let public_key = PublicKey::try_from(public_key.as_str())
-        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
+    IfModifiedSince(if_modified_since): IfModifiedSince,
+) -> Result<SignedPacketResponse, Error> {
     let key = CacheKey::from(&public_key);
 
     let policy = query.policy.unwrap_or(ResolvePolicy::CacheFirst);
@@ -108,58 +83,12 @@ pub async fn get(
     if let Some(signed_packet) = signed_packet {
         update_cache(&state, &key, &signed_packet);
 
-        let mut response_headers = HeaderMap::new();
-
-        response_headers.insert(
-            header::CONTENT_TYPE,
-            "application/pkarr.org/relays#payload"
-                .try_into()
-                .expect("pkarr payload content-type header should be valid"),
-        );
-        response_headers.insert(
-            header::CACHE_CONTROL,
-            format!(
-                "public, max-age={}",
-                signed_packet.ttl(state.minimum_ttl, state.maximum_ttl)
-            )
-            .try_into()
-            .expect("pkarr cache-control header should be valid."),
-        );
-        response_headers.insert(
-            header::LAST_MODIFIED,
-            signed_packet
-                .timestamp()
-                .format_http_date()
-                .try_into()
-                .expect("expect last-modified to be a valid HeaderValue"),
-        );
-        response_headers.insert(
-            "memento-datetime",
-            signed_packet
-                .last_seen()
-                .format_http_date()
-                .try_into()
-                .expect("expect memento-datetime to be a valid HeaderValue"),
-        );
-
-        let mut response = response_headers.into_response();
-
-        // Handle IF_MODIFIED_SINCE
-        if let Some(condition_http_date) = request_headers
-            .get(header::IF_MODIFIED_SINCE)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|s| HttpDate::from_str(s).ok())
-        {
-            let entry_http_date: HttpDate = signed_packet.timestamp().into();
-
-            if condition_http_date >= entry_http_date {
-                *response.status_mut() = StatusCode::NOT_MODIFIED;
-            }
-        } else {
-            *response.body_mut() = signed_packet.to_relay_payload().into();
-        };
-
-        Ok(response)
+        let ttl = signed_packet.ttl(state.minimum_ttl, state.maximum_ttl);
+        Ok(SignedPacketResponse::new(
+            signed_packet,
+            ttl,
+            if_modified_since,
+        ))
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
     }
