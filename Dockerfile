@@ -3,8 +3,6 @@
 # ========================
 FROM rust:alpine3.23 AS builder
 
-# Build platform argument
-
 # Install build dependencies
 RUN apk add --no-cache \
     musl-dev \

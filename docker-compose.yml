@@ -1,10 +1,6 @@
 services:
   pkarr-relay:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        TARGETARCH: x86_64  # Change to aarch64 for ARM64/Apple Silicon
+    build: .
     restart: unless-stopped
     
     # need both TCP and UDP
