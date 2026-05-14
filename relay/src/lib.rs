@@ -144,18 +144,22 @@ impl Relay {
             .as_ref()
             .map(|rate_limiter| rate_limiter.behind_proxy)
             .unwrap_or(false);
-        let rate_limiter = config
-            .rate_limiter
-            .map(|rate_limiter| rate_limiting::IpRateLimiter::new(&rate_limiter));
 
-        if let Some(ref rate_limiter) = rate_limiter {
-            config.pkarr.dht(|builder| {
-                builder.server_settings(pkarr::mainline::ServerSettings {
-                    filter: Box::new(rate_limiter.clone()),
-                    ..Default::default()
-                })
-            });
-        }
+        let (rate_limiter, user_dht_rate_limiter) = match config.rate_limiter.as_ref() {
+            Some(rate_limiter_config) => {
+                let rate_limiter = rate_limiting::IpRateLimiter::new(rate_limiter_config).await;
+                let user_dht_rate_limiter =
+                    rate_limiting::UserDhtRateLimiter::new(rate_limiter_config).await;
+                config.pkarr.dht(|builder| {
+                    builder.server_settings(pkarr::mainline::ServerSettings {
+                        filter: Box::new(rate_limiter.clone()),
+                        ..Default::default()
+                    })
+                });
+                (Some(rate_limiter), Some(user_dht_rate_limiter))
+            }
+            None => (None, None),
+        };
 
         let client = config.pkarr.build()?;
 
@@ -177,6 +181,7 @@ impl Relay {
             maximum_ttl: config.maximum_ttl,
             cache,
             cache_write_lock: Arc::new(Mutex::new(())),
+            user_dht_rate_limiter,
             dht,
         };
         let app = create_app(state, rate_limiter, behind_proxy);
@@ -323,5 +328,109 @@ struct AppState {
     cache: Arc<LmdbCache>,
     // Synchronous mutex is fine here; handlers only hold it across cache reads/writes, never await points.
     cache_write_lock: Arc<Mutex<()>>,
+    // Rate limiter for DHT operations initiated by HTTP user requests.
+    user_dht_rate_limiter: Option<rate_limiting::UserDhtRateLimiter>,
     dht: AsyncDht,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{net::Ipv4Addr, time::Duration};
+
+    use http::StatusCode;
+    use pkarr::{Keypair, SignedPacket, Timestamp};
+
+    use super::{RateLimiterConfig, Relay};
+
+    #[tokio::test]
+    async fn user_dht_rate_limit_only_blocks_dht_operations() {
+        let testnet = pkarr::mainline::Testnet::builder(2).build().unwrap();
+        let relay = run_rate_limited_relay(&testnet).await;
+        let http = reqwest::Client::new();
+        let keypair = Keypair::random();
+        let signed_packet = signed_packet(&keypair);
+        let relay_url = relay.local_url();
+
+        let put_response = http
+            .put(relay_url.join(&keypair.public_key().to_string()).unwrap())
+            .body(signed_packet.to_relay_payload())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(put_response.status(), StatusCode::NO_CONTENT);
+
+        let local_cache_response = http
+            .get(
+                relay_url
+                    .join(&format!(
+                        "{}?policy=LocalOrRelayCacheOnly",
+                        keypair.public_key()
+                    ))
+                    .unwrap(),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(local_cache_response.status(), StatusCode::OK);
+
+        let cache_first_response = http
+            .get(
+                relay_url
+                    .join(&format!("{}?policy=CacheFirst", keypair.public_key()))
+                    .unwrap(),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(cache_first_response.status(), StatusCode::OK);
+
+        let dht_response = http
+            .get(
+                relay_url
+                    .join(&format!("{}?policy=DhtNetworkOnly", keypair.public_key()))
+                    .unwrap(),
+            )
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(dht_response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        relay.shutdown();
+    }
+
+    async fn run_rate_limited_relay(testnet: &pkarr::mainline::Testnet) -> Relay {
+        let storage = std::env::temp_dir().join(format!("pkarr-relay-{}", Timestamp::now()));
+        let mut builder = Relay::builder();
+        builder
+            .cache_size(10)
+            .http_port(0)
+            .storage(storage)
+            .rate_limiter_config(RateLimiterConfig {
+                behind_proxy: false,
+                per_second: 60,
+                burst_size: 100,
+                user_dht_per_second: 60,
+                user_dht_burst_size: 1,
+            })
+            .pkarr(|builder| {
+                builder
+                    .no_default_network()
+                    .bootstrap(&testnet.bootstrap)
+                    .request_timeout(Duration::from_millis(100))
+                    .dht(|builder| builder.bind_address(Ipv4Addr::LOCALHOST))
+            });
+
+        unsafe { builder.run().await.unwrap() }
+    }
+
+    fn signed_packet(keypair: &Keypair) -> SignedPacket {
+        SignedPacket::builder()
+            .txt(
+                "example.com".try_into().unwrap(),
+                "rate-limited".try_into().unwrap(),
+                300,
+            )
+            .sign(keypair)
+            .unwrap()
+    }
 }

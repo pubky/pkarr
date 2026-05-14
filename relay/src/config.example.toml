@@ -41,3 +41,7 @@ behind_proxy = false
 burst_size = 10
 # Number of seconds after which one request of the quota is replenished.
 per_second = 2
+# Maximum number of DHT operations (initiated by user's request) per second.
+user_dht_burst_size = 5
+# Number of seconds after which one user DHT operation quota is replenished.
+user_dht_per_second = 2

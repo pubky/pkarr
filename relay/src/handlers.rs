@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query};
+use axum::extract::{Extension, Path, Query};
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use crate::error::Error;
 use crate::extractors::{IfMatch, IfModifiedSince, PublicKeyParam};
+use crate::real_ip::RealIp;
 use crate::response::SignedPacketResponse;
 use crate::AppState;
 
@@ -18,6 +19,7 @@ pub async fn put(
     State(state): State<AppState>,
     Path(PublicKeyParam(public_key)): Path<PublicKeyParam>,
     IfMatch(cas): IfMatch,
+    real_ip: Option<Extension<RealIp>>,
     body: Bytes,
 ) -> Result<impl IntoResponse, Error> {
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
@@ -33,8 +35,9 @@ pub async fn put(
         }
     }
 
+    enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
+
     let cas = cas.map(|t| t.as_u64() as i64);
-    // TODO: Ratelimit.
     state.dht.put_mutable((&signed_packet).into(), cas).await?;
     update_cache_if_needed(&state, &key, &signed_packet);
 
@@ -45,6 +48,7 @@ pub async fn get(
     State(state): State<AppState>,
     Path(PublicKeyParam(public_key)): Path<PublicKeyParam>,
     Query(query): Query<GetQuery>,
+    real_ip: Option<Extension<RealIp>>,
     IfModifiedSince(if_modified_since): IfModifiedSince,
 ) -> Result<SignedPacketResponse, Error> {
     let key = CacheKey::from(&public_key);
@@ -58,6 +62,7 @@ pub async fn get(
                 Some(packet)
             }
             Some(packet) => {
+                enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
                 resolve(
                     &state.dht,
                     &public_key,
@@ -66,9 +71,13 @@ pub async fn get(
                 )
                 .await
             }
-            None => resolve(&state.dht, &public_key, Mode::First, None).await,
+            None => {
+                enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
+                resolve(&state.dht, &public_key, Mode::First, None).await
+            }
         },
         ResolvePolicy::DhtNetworkOnly => {
+            enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
             let at_least_that_recent = cached_packet.as_ref().map(SignedPacket::timestamp);
             resolve(
                 &state.dht,
@@ -247,4 +256,21 @@ fn update_cache_if_needed(state: &AppState, key: &CacheKey, signed_packet: &Sign
     if should_update {
         state.cache.put(key, signed_packet);
     }
+}
+
+fn enforce_user_dht_rate_limit(
+    state: &AppState,
+    real_ip: Option<&Extension<RealIp>>,
+) -> Result<(), Error> {
+    if let (Some(rate_limiter), Some(Extension(real_ip))) = (&state.user_dht_rate_limiter, real_ip)
+    {
+        if rate_limiter.is_limited(&real_ip.0) {
+            return Err(Error::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                Some("Too many requests to DHT nodes"),
+            ));
+        }
+    }
+
+    Ok(())
 }
