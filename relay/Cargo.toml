@@ -38,6 +38,7 @@ pkarr = { path = "../pkarr", version = "6.0", default-features = false, features
     "dht",
     "lmdb-cache",
 ] }
+futures-lite = "2.6.1"
 
 [package.metadata.docs.rs]
 all-features = true

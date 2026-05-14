@@ -9,14 +9,16 @@
 
 mod config;
 mod error;
+mod extractors;
 mod handlers;
 mod rate_limiting;
 mod real_ip;
+mod response;
 
 use std::{
     net::{SocketAddr, TcpListener},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -26,7 +28,7 @@ use axum_server::Handle;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{extra::lmdb_cache::LmdbCache, Client, Timestamp};
+use pkarr::{extra::lmdb_cache::LmdbCache, mainline::async_dht::AsyncDht, Timestamp};
 use url::Url;
 
 use config::{Config, CACHE_DIR};
@@ -124,9 +126,7 @@ impl Relay {
     ///
     /// # Returns
     /// A `Result` containing the `Relay` instance or an error.
-    async unsafe fn run(config: Config) -> anyhow::Result<Self> {
-        let mut config = config;
-
+    async unsafe fn run(mut config: Config) -> anyhow::Result<Self> {
         tracing::debug!(?config, "Pkarr server config");
 
         let cache_path = config
@@ -148,8 +148,6 @@ impl Relay {
             .rate_limiter
             .map(|rate_limiter| rate_limiting::IpRateLimiter::new(&rate_limiter));
 
-        config.pkarr.cache(cache);
-
         if let Some(ref rate_limiter) = rate_limiter {
             config.pkarr.dht(|builder| {
                 builder.server_settings(pkarr::mainline::ServerSettings {
@@ -166,18 +164,22 @@ impl Relay {
         // See open issue https://github.com/programatik29/axum-server/issues/181
         listener.set_nonblocking(true)?;
 
-        let node_address = client
-            .dht()
-            .expect("dht network is enabled")
-            .info()
-            .local_addr();
+        let dht = client.dht().expect("dht network is enabled").as_async();
+        let node_address = dht.info().await.local_addr();
         let relay_address = listener.local_addr()?;
 
         info!("Cache path: {:?}", cache_path);
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let app = create_app(AppState { client }, rate_limiter, behind_proxy);
+        let state = AppState {
+            minimum_ttl: config.minimum_ttl,
+            maximum_ttl: config.maximum_ttl,
+            cache,
+            cache_write_lock: Arc::new(Mutex::new(())),
+            dht,
+        };
+        let app = create_app(state, rate_limiter, behind_proxy);
 
         let handle = Handle::new();
 
@@ -316,6 +318,10 @@ fn create_app(
 
 #[derive(Debug, Clone)]
 struct AppState {
-    /// The Pkarr client for DHT operations.
-    client: Client,
+    minimum_ttl: u32,
+    maximum_ttl: u32,
+    cache: Arc<LmdbCache>,
+    // Synchronous mutex is fine here; handlers only hold it across cache reads/writes, never await points.
+    cache_write_lock: Arc<Mutex<()>>,
+    dht: AsyncDht,
 }

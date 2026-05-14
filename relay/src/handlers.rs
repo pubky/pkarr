@@ -1,133 +1,112 @@
-use std::str::FromStr;
-
-use axum::extract::Path;
-use axum::http::HeaderMap;
+use axum::extract::{Path, Query};
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
-
 use bytes::Bytes;
-use http::{header, StatusCode};
-use httpdate::HttpDate;
-use pkarr::errors::{ConcurrencyError, PublishError};
-use pkarr::Timestamp;
-use tracing::debug;
-
-use pkarr::{PublicKey, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
+use futures_lite::StreamExt;
+use http::StatusCode;
+use pkarr::mainline::async_dht::AsyncDht;
+use pkarr::mainline::errors::ConcurrencyError;
+use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, Timestamp};
+use serde::Deserialize;
 
 use crate::error::Error;
-
+use crate::extractors::{IfMatch, IfModifiedSince, PublicKeyParam};
+use crate::response::SignedPacketResponse;
 use crate::AppState;
 
 pub async fn put(
     State(state): State<AppState>,
-    Path(public_key): Path<String>,
-    request_headers: HeaderMap,
+    Path(PublicKeyParam(public_key)): Path<PublicKeyParam>,
+    IfMatch(cas): IfMatch,
     body: Bytes,
 ) -> Result<impl IntoResponse, Error> {
-    let public_key = PublicKey::try_from(public_key.as_str())
-        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
-
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
 
-    let cas = request_headers
-        .get(header::IF_MATCH)
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(Timestamp::from);
+    let key = CacheKey::from(&public_key);
+    if let Some(cached) = state.cache.get_read_only(&key) {
+        if cached.more_recent_than(&signed_packet) {
+            return Err(Error::new(
+                StatusCode::CONFLICT,
+                Some(ConcurrencyError::NotMostRecent),
+            ));
+        }
+    }
 
-    state
-        .client
-        .publish(&signed_packet, cas)
-        .await
-        .map_err(|error| match error {
-            PublishError::Concurrency(error) => match error {
-                ConcurrencyError::NotMostRecent => Error::new(StatusCode::CONFLICT, Some(error)),
-                ConcurrencyError::CasFailed => {
-                    Error::new(StatusCode::PRECONDITION_FAILED, Some(error))
-                }
-                ConcurrencyError::ConflictRisk => {
-                    Error::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
-                }
-            },
-            PublishError::Query(_) | PublishError::UnexpectedResponses => {
-                debug!(?error, "Query error while publishing");
-
-                Error::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
-            }
-        })?;
+    let cas = cas.map(|t| t.as_u64() as i64);
+    // TODO: Ratelimit.
+    state.dht.put_mutable((&signed_packet).into(), cas).await?;
+    update_cache_if_needed(&state, &key, &signed_packet);
 
     Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn get(
     State(state): State<AppState>,
-    Path(public_key): Path<String>,
-    request_headers: HeaderMap,
-) -> Result<impl IntoResponse, Error> {
-    let public_key = PublicKey::try_from(public_key.as_str())
-        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
+    Path(PublicKeyParam(public_key)): Path<PublicKeyParam>,
+    Query(query): Query<GetQuery>,
+    IfModifiedSince(if_modified_since): IfModifiedSince,
+) -> Result<SignedPacketResponse, Error> {
+    let key = CacheKey::from(&public_key);
 
-    if let Some(signed_packet) = state.client.resolve(&public_key).await {
-        tracing::debug!(?public_key, "cache hit responding with packet!");
-
-        let mut response_headers = HeaderMap::new();
-
-        response_headers.insert(
-            header::CONTENT_TYPE,
-            "application/pkarr.org/relays#payload"
-                .try_into()
-                .expect("pkarr payload content-type header should be valid"),
-        );
-        response_headers.insert(
-            header::CACHE_CONTROL,
-            format!(
-                "public, max-age={}",
-                signed_packet.ttl(DEFAULT_MINIMUM_TTL, DEFAULT_MAXIMUM_TTL)
-            )
-            .try_into()
-            .expect("pkarr cache-control header should be valid."),
-        );
-        response_headers.insert(
-            header::LAST_MODIFIED,
-            signed_packet
-                .timestamp()
-                .format_http_date()
-                .try_into()
-                .expect("expect last-modified to be a valid HeaderValue"),
-        );
-
-        let mut response = response_headers.into_response();
-
-        // Handle IF_MODIFIED_SINCE
-        if let Some(condition_http_date) = request_headers
-            .get(header::IF_MODIFIED_SINCE)
-            .and_then(|h| h.to_str().ok())
-            .and_then(|s| HttpDate::from_str(s).ok())
-        {
-            let entry_http_date: HttpDate = signed_packet.timestamp().into();
-
-            if condition_http_date >= entry_http_date {
-                *response.status_mut() = StatusCode::NOT_MODIFIED;
+    let policy = query.policy.unwrap_or(ResolvePolicy::CacheFirst);
+    let cached_packet = state.cache.get_read_only(&key);
+    let signed_packet = match policy {
+        ResolvePolicy::LocalOrRelayCacheOnly => cached_packet,
+        ResolvePolicy::CacheFirst => match cached_packet {
+            Some(packet) if !packet.is_expired(state.minimum_ttl, state.maximum_ttl) => {
+                Some(packet)
             }
-        } else {
-            *response.body_mut() = signed_packet.to_relay_payload().into();
-        };
+            Some(packet) => {
+                resolve(
+                    &state.dht,
+                    &public_key,
+                    Mode::First,
+                    Some(packet.timestamp()),
+                )
+                .await
+            }
+            None => resolve(&state.dht, &public_key, Mode::First, None).await,
+        },
+        ResolvePolicy::DhtNetworkOnly => {
+            let at_least_that_recent = cached_packet.as_ref().map(SignedPacket::timestamp);
+            resolve(
+                &state.dht,
+                &public_key,
+                Mode::MostRecent,
+                at_least_that_recent,
+            )
+            .await
+        }
+    };
 
-        Ok(response)
+    if let Some(signed_packet) = signed_packet {
+        update_cache_if_needed(&state, &key, &signed_packet);
+
+        let ttl = signed_packet.ttl(state.minimum_ttl, state.maximum_ttl);
+        Ok(SignedPacketResponse::new(
+            signed_packet,
+            ttl,
+            if_modified_since,
+        ))
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct GetQuery {
+    policy: Option<ResolvePolicy>,
+}
+
 pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
-    let cache = state.client.cache().expect("lmdb_cache");
+    let cache = state.cache;
 
     let size = cache.len();
     let capacity = cache.capacity();
     let utilization = 100.0 * size as f32 / capacity as f32;
 
-    let info = state.client.dht().expect("dht node").info();
+    let info = state.dht.info().await;
 
     let html_content = format!(
         r#"<!DOCTYPE html>
@@ -171,7 +150,7 @@ pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, E
     <pre>
     node port         : {node_port}
     node firewalled   : {firewalled}
-    dht size estimate : {dht_size} Nodes +-{confidence:.2}% 
+    dht size estimate : {dht_size} Nodes ±{confidence:.2}%
     </pre>
 </body>
 </html>"#,
@@ -215,4 +194,57 @@ fn format_number(num: usize) -> String {
     }
 
     result
+}
+
+enum Mode {
+    First,
+    MostRecent,
+}
+
+async fn resolve(
+    dht: &AsyncDht,
+    public_key: &PublicKey,
+    mode: Mode,
+    at_least_that_recent: Option<Timestamp>,
+) -> Option<SignedPacket> {
+    // TODO: Ratelimit.
+    let key = public_key.as_bytes();
+    // It is safe to subtract 1, because even the very first item has a timestamp
+    // greater than 0.
+    let more_recent_than = at_least_that_recent
+        .map(|timestamp| timestamp.as_u64() as i64 - 1)
+        .unwrap_or_default();
+    let item = match mode {
+        Mode::First => {
+            dht.get_mutable(key, None, Some(more_recent_than))
+                .next()
+                .await
+        }
+        Mode::MostRecent => dht
+            .get_mutable_most_recent(key, None)
+            .await
+            .filter(|item| more_recent_than < item.seq()),
+    };
+    item.map(SignedPacket::try_from).transpose().ok().flatten()
+}
+
+fn update_cache_if_needed(state: &AppState, key: &CacheKey, signed_packet: &SignedPacket) {
+    let _lock = state
+        .cache_write_lock
+        .lock()
+        .expect("AppState cache_write_lock");
+
+    let should_update = match state.cache.get_read_only(key) {
+        None => true,
+        Some(cached) if signed_packet.more_recent_than(&cached) => true,
+        Some(cached) if signed_packet.is_same_as(&cached) => {
+            // The packet is the same but we refresh the last seen.
+            signed_packet.last_seen() > cached.last_seen()
+        }
+        _ => false,
+    };
+
+    if should_update {
+        state.cache.put(key, signed_packet);
+    }
 }

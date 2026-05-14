@@ -14,6 +14,7 @@ mod client;
 pub mod extra;
 #[cfg(feature = "keys")]
 mod keys;
+mod resolve_policy;
 #[cfg(feature = "signed_packet")]
 mod signed_packet;
 
@@ -36,6 +37,7 @@ pub use client::cache::{Cache, CacheKey, InMemoryCache};
 pub use client::{builder::ClientBuilder, Client};
 #[cfg(feature = "keys")]
 pub use keys::{Keypair, PublicKey};
+pub use resolve_policy::ResolvePolicy;
 #[cfg(feature = "signed_packet")]
 pub use signed_packet::{SignedPacket, SignedPacketBuilder};
 

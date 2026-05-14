@@ -126,7 +126,7 @@ signed_packet = [
   "dep:simple-dns",
   "dep:ntimestamp",
   "dep:bytes",
-  'dep:self_cell',
+  "dep:self_cell",
 ]
 
 # Clients
@@ -136,8 +136,8 @@ dht = ["dep:mainline", "__client"]
 relays = ["dep:url", "dep:reqwest", "dep:futures-buffered", "__client"]
 
 # Extra
-## Use [LmdbCache][extra::lmdb_cache::LmdbCache] implementation. Only available if the `client` module is enabled.
-lmdb-cache = ["__client", "dep:heed", "dep:byteorder", "dep:page_size"]
+## Use [LmdbCache][extra::lmdb_cache::LmdbCache] implementation.
+lmdb-cache = ["dep:heed", "dep:byteorder", "dep:page_size"]
 ## Enables [endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) spec.
 ##
 ## Only available if the `client` module is enabled.

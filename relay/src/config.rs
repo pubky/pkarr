@@ -1,6 +1,7 @@
 //! Configuration for Pkarr relay
 
 use anyhow::{Context, Result};
+use pkarr::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
@@ -59,6 +60,10 @@ pub struct Config {
     ///
     /// Defaults to 1000_000
     pub cache_size: usize,
+
+    pub minimum_ttl: u32,
+    pub maximum_ttl: u32,
+
     /// IP rete limiter configuration
     pub rate_limiter: Option<RateLimiterConfig>,
 }
@@ -70,6 +75,8 @@ impl Default for Config {
             pkarr: Default::default(),
             cache_path: None,
             cache_size: DEFAULT_CACHE_SIZE,
+            minimum_ttl: DEFAULT_MINIMUM_TTL,
+            maximum_ttl: DEFAULT_MAXIMUM_TTL,
             rate_limiter: Some(RateLimiterConfig::default()),
         };
 
@@ -95,9 +102,11 @@ impl Config {
         if let Some(cache_config) = config_toml.cache {
             if let Some(ttl) = cache_config.minimum_ttl {
                 config.pkarr.minimum_ttl(ttl);
+                config.minimum_ttl = ttl;
             }
             if let Some(ttl) = cache_config.maximum_ttl {
                 config.pkarr.maximum_ttl(ttl);
+                config.maximum_ttl = ttl;
             }
 
             if let Some(cache_path) = cache_config.path.as_ref() {
