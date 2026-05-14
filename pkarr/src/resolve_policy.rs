@@ -26,8 +26,7 @@ pub enum ResolvePolicy {
     /// update the cache after retrieval.
     /// This is slower, but more accurate.
     ///
-    /// This returns the most recent packet found during the query, but does not
-    /// guarantee global consistency.
+    /// This is guaranteed to return the newest packet.
     /// Useful when you need the most recent packet, for example for recovering
     /// after stale sequence errors.
     DhtNetworkOnly,

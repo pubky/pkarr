@@ -36,7 +36,7 @@ pub async fn put(
     let cas = cas.map(|t| t.as_u64() as i64);
     // TODO: Ratelimit.
     state.dht.put_mutable((&signed_packet).into(), cas).await?;
-    update_cache(&state, &key, &signed_packet);
+    update_cache_if_needed(&state, &key, &signed_packet);
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -81,7 +81,7 @@ pub async fn get(
     };
 
     if let Some(signed_packet) = signed_packet {
-        update_cache(&state, &key, &signed_packet);
+        update_cache_if_needed(&state, &key, &signed_packet);
 
         let ttl = signed_packet.ttl(state.minimum_ttl, state.maximum_ttl);
         Ok(SignedPacketResponse::new(
@@ -228,17 +228,23 @@ async fn resolve(
     item.map(SignedPacket::try_from).transpose().ok().flatten()
 }
 
-fn update_cache(state: &AppState, key: &CacheKey, signed_packet: &SignedPacket) {
+fn update_cache_if_needed(state: &AppState, key: &CacheKey, signed_packet: &SignedPacket) {
     let _lock = state
         .cache_write_lock
         .lock()
         .expect("AppState cache_write_lock");
 
-    if !state
-        .cache
-        .get_read_only(key)
-        .is_some_and(|cached| cached.more_recent_than(signed_packet))
-    {
+    let should_update = match state.cache.get_read_only(key) {
+        None => true,
+        Some(cached) if signed_packet.more_recent_than(&cached) => true,
+        Some(cached) if signed_packet.is_same_as(&cached) => {
+            // The packet is the same but we refresh the last seen.
+            signed_packet.last_seen() > cached.last_seen()
+        }
+        _ => false,
+    };
+
+    if should_update {
         state.cache.put(key, signed_packet);
     }
 }
