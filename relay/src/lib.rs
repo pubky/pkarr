@@ -11,6 +11,7 @@ mod config;
 mod error;
 mod extractors;
 mod handlers;
+mod quota_config;
 mod rate_limiting;
 mod real_ip;
 mod response;
@@ -22,6 +23,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::anyhow;
 use axum::{extract::DefaultBodyLimit, Router};
 use axum_server::Handle;
 
@@ -33,6 +35,7 @@ use url::Url;
 
 use config::{Config, CACHE_DIR};
 
+pub use quota_config::{RequestCountQuota, TimeUnit};
 pub use rate_limiting::RateLimiterConfig;
 
 /// A builder for Pkarr [Relay]
@@ -147,9 +150,13 @@ impl Relay {
 
         let (rate_limiter, user_dht_rate_limiter) = match config.rate_limiter.as_ref() {
             Some(rate_limiter_config) => {
-                let rate_limiter = rate_limiting::IpRateLimiter::new(rate_limiter_config).await;
+                let rate_limiter = rate_limiting::IpRateLimiter::new(rate_limiter_config)
+                    .await
+                    .map_err(|e| anyhow!("Failed to build IpRateLimiter: {e}"))?;
                 let user_dht_rate_limiter =
-                    rate_limiting::UserDhtRateLimiter::new(rate_limiter_config).await;
+                    rate_limiting::UserDhtRateLimiter::new(rate_limiter_config)
+                        .await
+                        .map_err(|e| anyhow!("Failed to build UserDhtRateLimiter: {e}"))?;
                 config.pkarr.dht(|builder| {
                     builder.server_settings(pkarr::mainline::ServerSettings {
                         filter: Box::new(rate_limiter.clone()),
@@ -335,12 +342,12 @@ struct AppState {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, time::Duration};
+    use std::{net::Ipv4Addr, num::NonZeroU32, time::Duration};
 
     use http::StatusCode;
     use pkarr::{Keypair, SignedPacket, Timestamp};
 
-    use super::{RateLimiterConfig, Relay};
+    use super::{RateLimiterConfig, Relay, RequestCountQuota};
 
     #[tokio::test]
     async fn user_dht_rate_limit_only_blocks_dht_operations() {
@@ -407,10 +414,10 @@ mod tests {
             .storage(storage)
             .rate_limiter_config(RateLimiterConfig {
                 behind_proxy: false,
-                per_second: 60,
-                burst_size: 100,
-                user_dht_per_second: 60,
-                user_dht_burst_size: 1,
+                quota: "60r/s".parse::<RequestCountQuota>().unwrap(),
+                burst: NonZeroU32::new(100),
+                user_dht_quota: "1r/h".parse::<RequestCountQuota>().unwrap(),
+                user_dht_burst: NonZeroU32::new(1),
             })
             .pkarr(|builder| {
                 builder

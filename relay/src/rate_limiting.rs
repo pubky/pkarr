@@ -1,13 +1,19 @@
-use std::{net::IpAddr, sync::Arc, time::Duration};
+use std::{net::IpAddr, num::NonZeroU32, sync::Arc, time::Duration};
 
+use crate::quota_config::{RequestCountQuota, TimeUnit};
 use crate::real_ip::RealIpKeyExtractor;
 use axum::Router;
-use governor::middleware::{NoOpMiddleware, StateInformationMiddleware};
-use serde::{Deserialize, Deserializer, Serialize};
+use governor::{
+    clock::QuantaInstant,
+    middleware::{NoOpMiddleware, RateLimitingMiddleware, StateInformationMiddleware},
+};
+use serde::{Deserialize, Serialize};
 use tower_governor::governor::{GovernorConfig, GovernorConfigBuilder};
+use tower_governor::key_extractor::KeyExtractor;
 pub use tower_governor::GovernorLayer;
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 /// Configurations for rate limitng.
 pub struct RateLimiterConfig {
     /// Enable rate limit based on headers commonly used by reverse proxies.
@@ -16,67 +22,38 @@ pub struct RateLimiterConfig {
     /// falling back to the connection's peer IP address.
     /// <https://docs.rs/tower_governor/latest/tower_governor/key_extractor/struct.SmartIpKeyExtractor.html>
     pub behind_proxy: bool,
-    /// Set the interval after which one element of the quota is replenished in seconds.
-    ///
-    /// **The interval must not be zero.**
-    pub per_second: u64,
-    /// Set quota size that defines how many requests can occur
-    /// before the governor middleware starts blocking requests from an IP address and
-    /// clients have to wait until the elements of the quota are replenished.
-    ///
-    /// **The burst_size must not be zero.**
-    pub burst_size: u32,
-    /// Set the interval after which one user-initiated DHT operation quota item
-    /// is replenished in seconds.
-    ///
-    /// When omitted from configuration, this defaults to [`Self::per_second`].
-    ///
-    /// **The interval must not be zero.**
-    pub user_dht_per_second: u64,
-    /// Set quota size for DHT operations initiated by HTTP user requests.
-    ///
-    /// When omitted from configuration, this defaults to [`Self::burst_size`].
-    ///
-    /// **The burst_size must not be zero.**
-    pub user_dht_burst_size: u32,
-}
 
-#[derive(Deserialize)]
-struct RateLimiterConfigToml {
-    behind_proxy: bool,
-    per_second: u64,
-    burst_size: u32,
+    /// HTTP request quota applied per normalized real IP.
+    pub quota: RequestCountQuota,
+    /// Optional HTTP request burst size.
+    ///
+    /// When omitted, this defaults to the rate configured in [`Self::quota`].
     #[serde(default)]
-    user_dht_per_second: Option<u64>,
+    pub burst: Option<NonZeroU32>,
+
+    /// User-initiated DHT operation quota applied per normalized real IP.
+    pub user_dht_quota: RequestCountQuota,
+    /// Optional user-initiated DHT operation burst size.
+    ///
+    /// When omitted, this defaults to the rate configured in [`Self::user_dht_quota`].
     #[serde(default)]
-    user_dht_burst_size: Option<u32>,
-}
-
-impl<'de> Deserialize<'de> for RateLimiterConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let config = RateLimiterConfigToml::deserialize(deserializer)?;
-
-        Ok(Self {
-            behind_proxy: config.behind_proxy,
-            per_second: config.per_second,
-            burst_size: config.burst_size,
-            user_dht_per_second: config.user_dht_per_second.unwrap_or(config.per_second),
-            user_dht_burst_size: config.user_dht_burst_size.unwrap_or(config.burst_size),
-        })
-    }
+    pub user_dht_burst: Option<NonZeroU32>,
 }
 
 impl Default for RateLimiterConfig {
     fn default() -> Self {
         Self {
             behind_proxy: false,
-            per_second: 2,
-            burst_size: 10,
-            user_dht_per_second: 2,
-            user_dht_burst_size: 10,
+            quota: RequestCountQuota {
+                rate: NonZeroU32::new(2).unwrap_or(NonZeroU32::MIN),
+                time_unit: TimeUnit::Second,
+            },
+            burst: NonZeroU32::new(10),
+            user_dht_quota: RequestCountQuota {
+                rate: NonZeroU32::new(2).unwrap_or(NonZeroU32::MIN),
+                time_unit: TimeUnit::Second,
+            },
+            user_dht_burst: NonZeroU32::new(10),
         }
     }
 }
@@ -91,16 +68,13 @@ impl IpRateLimiter {
     /// Create an [IpRateLimiter]
     ///
     /// This spawns a background task to clean up the rate limiting cache.
-    pub async fn new(config: &RateLimiterConfig) -> Self {
-        let governor_middleware = Arc::new(
-            GovernorConfigBuilder::default()
-                .use_headers()
-                .per_second(config.per_second)
-                .burst_size(config.burst_size)
-                .key_extractor(RealIpKeyExtractor)
-                .finish()
-                .expect("failed to build rate-limiting governor"),
-        );
+    pub async fn new(config: &RateLimiterConfig) -> Result<Self, String> {
+        let quota = config.quota.to_governor_quota(config.burst)?;
+        let builder = GovernorConfigBuilder::default()
+            .use_headers()
+            .key_extractor(RealIpKeyExtractor);
+        let governor_middleware = build_with_quota(builder, &quota);
+        let governor_middleware = Arc::new(governor_middleware);
 
         // The governor needs a background task for garbage collection (to clear expired records)
         let gc_interval = Duration::from_secs(60);
@@ -114,9 +88,9 @@ impl IpRateLimiter {
             }
         });
 
-        Self {
+        Ok(Self {
             governor_middleware,
-        }
+        })
     }
 
     /// Check if the Ip is allowed to make more requests
@@ -140,15 +114,13 @@ impl UserDhtRateLimiter {
     /// Create a [UserDhtRateLimiter].
     ///
     /// This spawns a background task to clean up the rate limiting cache.
-    pub async fn new(config: &RateLimiterConfig) -> Self {
-        let governor_middleware = Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(config.user_dht_per_second)
-                .burst_size(config.user_dht_burst_size)
-                .key_extractor(RealIpKeyExtractor)
-                .finish()
-                .expect("failed to build user DHT rate-limiting governor"),
-        );
+    pub async fn new(config: &RateLimiterConfig) -> Result<Self, String> {
+        let quota = config
+            .user_dht_quota
+            .to_governor_quota(config.user_dht_burst)?;
+        let builder = GovernorConfigBuilder::default().key_extractor(RealIpKeyExtractor);
+        let governor_middleware = build_with_quota(builder, &quota);
+        let governor_middleware = Arc::new(governor_middleware);
 
         let gc_interval = Duration::from_secs(60);
 
@@ -164,9 +136,9 @@ impl UserDhtRateLimiter {
             }
         });
 
-        Self {
+        Ok(Self {
             governor_middleware,
-        }
+        })
     }
 
     /// Check if the IP is allowed to initiate more DHT operations.
@@ -185,20 +157,39 @@ impl pkarr::mainline::RequestFilter for IpRateLimiter {
     }
 }
 
+fn build_with_quota<K, M>(
+    mut builder: GovernorConfigBuilder<K, M>,
+    quota: &governor::Quota,
+) -> GovernorConfig<K, M>
+where
+    K: KeyExtractor,
+    M: RateLimitingMiddleware<QuantaInstant>,
+{
+    builder
+        .period(quota.replenish_interval())
+        .burst_size(quota.burst_size().get())
+        .finish()
+        .expect("failed to build GovernorConfig from governor::Quota")
+}
+
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        num::NonZeroU32,
+    };
 
     use super::{RateLimiterConfig, UserDhtRateLimiter};
+    use crate::quota_config::RequestCountQuota;
 
     #[tokio::test]
     async fn user_dht_limiter_uses_configured_quota() {
         let config = RateLimiterConfig {
-            user_dht_per_second: 60,
-            user_dht_burst_size: 1,
+            user_dht_quota: "60r/s".parse::<RequestCountQuota>().unwrap(),
+            user_dht_burst: NonZeroU32::new(1),
             ..Default::default()
         };
-        let limiter = UserDhtRateLimiter::new(&config).await;
+        let limiter = UserDhtRateLimiter::new(&config).await.unwrap();
         let ip = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 10));
 
         assert!(!limiter.is_limited(&ip));
@@ -206,17 +197,79 @@ mod tests {
     }
 
     #[test]
-    fn user_dht_limits_default_when_missing_from_toml() {
+    fn rate_limiter_config_deserializes_new_quota_fields() {
         let config: RateLimiterConfig = toml::from_str(
+            r#"
+behind_proxy = false
+quota = "7r/s"
+burst = 13
+user_dht_quota = "3r/m"
+user_dht_burst = 5
+"#,
+        )
+        .expect("rate limiter config should deserialize");
+
+        assert_eq!(config.quota.to_string(), "7r/s");
+        assert_eq!(config.burst, NonZeroU32::new(13));
+        assert_eq!(config.user_dht_quota.to_string(), "3r/m");
+        assert_eq!(config.user_dht_burst, NonZeroU32::new(5));
+    }
+
+    #[test]
+    fn omitted_bursts_default_to_quota_rate() {
+        let config: RateLimiterConfig = toml::from_str(
+            r#"
+behind_proxy = false
+quota = "7r/s"
+user_dht_quota = "3r/m"
+"#,
+        )
+        .expect("rate limiter config should deserialize");
+
+        assert_eq!(
+            config
+                .quota
+                .to_governor_quota(config.burst)
+                .unwrap()
+                .burst_size(),
+            NonZeroU32::new(7).unwrap()
+        );
+        assert_eq!(
+            config
+                .user_dht_quota
+                .to_governor_quota(config.user_dht_burst)
+                .unwrap()
+                .burst_size(),
+            NonZeroU32::new(3).unwrap()
+        );
+    }
+
+    #[test]
+    fn zero_burst_is_rejected() {
+        let err = toml::from_str::<RateLimiterConfig>(
+            r#"
+behind_proxy = false
+quota = "7r/s"
+burst = 0
+user_dht_quota = "3r/m"
+"#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("invalid value"));
+    }
+
+    #[test]
+    fn legacy_rate_limiter_fields_are_rejected() {
+        let err = toml::from_str::<RateLimiterConfig>(
             r#"
 behind_proxy = false
 per_second = 7
 burst_size = 13
 "#,
         )
-        .expect("legacy rate limiter config should deserialize");
+        .unwrap_err();
 
-        assert_eq!(config.user_dht_per_second, 7);
-        assert_eq!(config.user_dht_burst_size, 13);
+        assert!(err.to_string().contains("unknown field"));
     }
 }

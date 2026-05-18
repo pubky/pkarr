@@ -37,11 +37,11 @@ maximum_ttl =  86400
 # Ip rate limiting by setting the trusted headers to 
 # a random IP address on every request.
 behind_proxy = false
-# Maximum number of requests per second.
-burst_size = 10
-# Number of seconds after which one request of the quota is replenished.
-per_second = 2
-# Maximum number of DHT operations (initiated by user's request) per second.
-user_dht_burst_size = 5
-# Number of seconds after which one user DHT operation quota is replenished.
-user_dht_per_second = 2
+# HTTP request quota per IP address.
+quota = "2r/s"
+# Optional HTTP request burst size. Defaults to the quota rate when omitted.
+burst = 10
+# DHT operation quota per IP address for operations initiated by user's request.
+user_dht_quota = "2r/s"
+# Optional user DHT operation burst size. Defaults to the quota rate when omitted.
+user_dht_burst = 10
