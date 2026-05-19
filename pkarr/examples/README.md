@@ -29,14 +29,17 @@ Arguments:
 
 ## Benchmark
 
-Publish packets to the DHT, clear the local Pkarr cache, then resolve them from the DHT and report latency statistics.
+Publish packets to the DHT, save their public keys, reload the client, then resolve them from the DHT and report latency statistics.
 
 ```sh
 cargo run -p pkarr --example benchmark -- --count 100
+cargo run -p pkarr --example benchmark -- --resolve-only
 ```
 ```
 Options:
-  --count <COUNT>  Number of packets to publish and resolve [default: 100]
+  --count <COUNT>          Number of packets to publish and resolve [default: 100]
+  --keys-file <KEYS_FILE>  File used to save or load public keys, one key per line [default: pkarr-benchmark-public-keys.txt]
+  --resolve-only           Skip publishing and resolve the public keys from --keys-file
 ```
 
 ## HTTP
