@@ -38,10 +38,17 @@ maximum_ttl =  86400
 # a random IP address on every request.
 behind_proxy = false
 # HTTP request quota per IP address.
+# Always applied before request handling to every HTTP request.
+# This includes GET, PUT, the index route, cache hits, and cache-only requests.
 quota = "2r/s"
 # Optional HTTP request burst size. Defaults to the quota rate when omitted.
 burst = 10
-# DHT operation quota per IP address for operations initiated by user's request.
+# User-initiated DHT operation quota per IP address.
+# This is separate from the HTTP quota above and is consumed only when a
+# request makes the relay contact the DHT: PUT publishes, GET cache misses,
+# expired CacheFirst entries, and DhtNetworkOnly requests. Cache hits and
+# LocalOrRelayCacheOnly requests do not consume this quota.
 user_dht_quota = "2r/s"
-# Optional user DHT operation burst size. Defaults to the quota rate when omitted.
+# Optional user-initiated DHT operation burst size.
+# Defaults to the DHT quota rate when omitted.
 user_dht_burst = 10
