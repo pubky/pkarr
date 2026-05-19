@@ -27,6 +27,18 @@ Arguments:
   [RELAYS]...   List of relays (only valid if mode is 'relays')
 ```
 
+## Benchmark
+
+Publish packets to the DHT, clear the local Pkarr cache, then resolve them from the DHT and report latency statistics.
+
+```sh
+cargo run -p pkarr --example benchmark -- --count 100
+```
+```
+Options:
+  --count <COUNT>  Number of packets to publish and resolve [default: 100]
+```
+
 ## HTTP
 
 ### Serve
