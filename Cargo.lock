@@ -1816,6 +1816,7 @@ dependencies = [
  "http",
  "httpdate",
  "pkarr",
+ "reqwest",
  "serde",
  "tokio",
  "toml",

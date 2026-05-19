@@ -40,5 +40,8 @@ pkarr = { path = "../pkarr", version = "6.0", default-features = false, features
 ] }
 futures-lite = "2.6.1"
 
+[dev-dependencies]
+reqwest = { workspace = true }
+
 [package.metadata.docs.rs]
 all-features = true
