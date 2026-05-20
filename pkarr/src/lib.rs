@@ -10,13 +10,11 @@
 // Modules
 #[cfg(client)]
 mod client;
+#[cfg(dht)]
+mod dht;
 #[cfg(client)]
 pub mod extra;
-#[cfg(feature = "keys")]
-mod keys;
-mod resolve_policy;
-#[cfg(feature = "signed_packet")]
-mod signed_packet;
+pub mod types;
 
 /// Default minimum TTL: 5 minutes.
 pub const DEFAULT_MINIMUM_TTL: u32 = 300;
@@ -35,11 +33,7 @@ pub use client::blocking::ClientBlocking;
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
 pub use client::{builder::ClientBuilder, Client};
-#[cfg(feature = "keys")]
-pub use keys::{Keypair, PublicKey};
-pub use resolve_policy::ResolvePolicy;
-#[cfg(feature = "signed_packet")]
-pub use signed_packet::{SignedPacket, SignedPacketBuilder};
+pub use types::*;
 
 // Rexports
 #[cfg(dht)]
@@ -52,11 +46,8 @@ pub use simple_dns as dns;
 pub mod errors {
     //! Exported errors
 
-    #[cfg(feature = "keys")]
-    pub use super::keys::PublicKeyError;
-
-    #[cfg(feature = "signed_packet")]
-    pub use super::signed_packet::{SignedPacketBuildError, SignedPacketVerifyError};
+    #[cfg(any(feature = "keys", feature = "signed_packet"))]
+    pub use super::types::errors::*;
 
     #[cfg(client)]
     pub use super::client::{BuildError, ConcurrencyError, PublishError, QueryError};
