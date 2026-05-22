@@ -11,7 +11,7 @@
 #[cfg(client)]
 mod client;
 #[cfg(dht)]
-mod dht;
+pub mod dht;
 #[cfg(client)]
 pub mod extra;
 pub mod types;

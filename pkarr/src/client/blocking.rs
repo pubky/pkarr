@@ -23,16 +23,6 @@ impl ClientBlocking {
         self.0.cache()
     }
 
-    /// Returns a reference to the internal [mainline::Dht] node.
-    ///
-    /// Gives you access to methods like [mainline::Dht::info],
-    /// [mainline::Dht::bootstrapped], and [mainline::Dht::to_bootstrap]
-    /// among the rest of the API.
-    #[cfg(dht)]
-    pub fn dht(&self) -> Option<mainline::Dht> {
-        self.0.dht()
-    }
-
     // === Publish ===
 
     /// Publishes a [SignedPacket] to the [mainline] Dht and or [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).

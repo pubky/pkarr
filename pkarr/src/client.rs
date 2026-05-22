@@ -34,7 +34,7 @@ use std::sync::Arc;
 use std::{hash::Hash, num::NonZeroUsize};
 
 #[cfg(dht)]
-use mainline::{errors::PutMutableError, Dht};
+use crate::dht::DhtClient;
 
 use builder::{ClientBuilder, Config};
 
@@ -49,7 +49,7 @@ pub(crate) struct Inner {
     maximum_ttl: u32,
     cache: Option<Arc<dyn Cache>>,
     #[cfg(dht)]
-    dht: Option<Dht>,
+    dht: Option<DhtClient>,
     #[cfg(relays)]
     relays: Option<RelaysClient>,
     #[cfg(feature = "endpoints")]
@@ -87,8 +87,8 @@ impl Client {
         cross_debug!("Starting Pkarr Client {:?}", config);
 
         #[cfg(dht)]
-        let dht = if let Some(builder) = config.dht {
-            Some(builder.build().map_err(BuildError::DhtBuildError)?)
+        let dht = if let Some(config) = config.dht {
+            Some(DhtClient::build(config).map_err(BuildError::DhtBuildError)?)
         } else {
             None
         };
@@ -145,14 +145,10 @@ impl Client {
         self.0.cache.as_deref()
     }
 
-    /// Returns a reference to the internal [mainline::Dht] node.
-    ///
-    /// Gives you access to methods like [mainline::Dht::info],
-    /// [mainline::Dht::bootstrapped], and [mainline::Dht::to_bootstrap]
-    /// among the rest of the API.
+    /// Returns a reference to the internal DHT client.
     #[cfg(dht)]
-    pub fn dht(&self) -> Option<mainline::Dht> {
-        self.0.dht.as_ref().cloned()
+    pub fn dht(&self) -> Option<&DhtClient> {
+        self.0.dht.as_ref()
     }
 
     // === Publish ===
@@ -325,11 +321,8 @@ impl Client {
         #[cfg(dht)]
         let dht_future = {
             let signed_packet = signed_packet.clone();
-            self.dht().map(|node| async move {
-                node.as_async()
-                    .put_mutable((&signed_packet).into(), cas.map(|t| t.as_u64() as i64))
-                    .await
-                    .map(|_| Ok(()))?
+            self.dht().cloned().map(|dht| async move {
+                dht.publish(&signed_packet, cas).await.map_err(Into::into)
             })
         };
 
@@ -462,14 +455,10 @@ impl Client {
         use futures::select_stream;
 
         #[cfg(dht)]
-        let dht_stream = match self.dht() {
-            Some(node) => map_dht_stream(node.as_async().get_mutable(
-                public_key.as_bytes(),
-                None,
-                more_recent_than.map(|t| t.as_u64() as i64),
-            )),
-            None => None,
-        };
+        let dht_stream = self.dht().cloned().map(|dht| {
+            let public_key = public_key.clone();
+            dht.resolve(&public_key, more_recent_than).boxed()
+        });
 
         #[cfg(relays)]
         let relays_stream = self
@@ -525,25 +514,6 @@ fn filter_incoming_signed_packet(
     } else {
         None
     }
-}
-
-#[cfg(dht)]
-fn map_dht_stream(
-    stream: mainline::async_dht::GetStream<mainline::MutableItem>,
-) -> Option<Pin<Box<dyn Stream<Item = SignedPacket> + Send>>> {
-    Some(
-        stream
-            .filter_map(
-                move |mutable_item| match SignedPacket::try_from(mutable_item) {
-                    Ok(signed_packet) => Some(signed_packet),
-                    Err(error) => {
-                        cross_debug!("Got an invalid signed packet from the DHT. Error: {error}");
-                        None
-                    }
-                },
-            )
-            .boxed(),
-    )
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -624,23 +594,25 @@ pub enum ConcurrencyError {
 }
 
 #[cfg(dht)]
-impl From<PutMutableError> for PublishError {
-    fn from(value: PutMutableError) -> Self {
+impl From<crate::dht::PublishError> for PublishError {
+    fn from(value: crate::dht::PublishError) -> Self {
         match value {
-            PutMutableError::Query(error) => PublishError::Query(match error {
-                mainline::errors::PutQueryError::Timeout => QueryError::Timeout,
-                mainline::errors::PutQueryError::NoClosestNodes => QueryError::NoClosestNodes,
-                mainline::errors::PutQueryError::ErrorResponse(error) => {
-                    QueryError::DhtErrorResponse(error.code, error.description)
-                }
-            }),
-            PutMutableError::Concurrency(error) => PublishError::Concurrency(match error {
-                mainline::errors::ConcurrencyError::ConflictRisk => ConcurrencyError::ConflictRisk,
-                mainline::errors::ConcurrencyError::NotMostRecent => {
-                    ConcurrencyError::NotMostRecent
-                }
-                mainline::errors::ConcurrencyError::CasFailed => ConcurrencyError::CasFailed,
-            }),
+            crate::dht::PublishError::Timeout => PublishError::Query(QueryError::Timeout),
+            crate::dht::PublishError::NoClosestNodes => {
+                PublishError::Query(QueryError::NoClosestNodes)
+            }
+            crate::dht::PublishError::ErrorResponse { code, description } => {
+                PublishError::Query(QueryError::DhtErrorResponse(code, description))
+            }
+            crate::dht::PublishError::ConflictRisk => {
+                PublishError::Concurrency(ConcurrencyError::ConflictRisk)
+            }
+            crate::dht::PublishError::NotMostRecent => {
+                PublishError::Concurrency(ConcurrencyError::NotMostRecent)
+            }
+            crate::dht::PublishError::CasFailed => {
+                PublishError::Concurrency(ConcurrencyError::CasFailed)
+            }
         }
     }
 }

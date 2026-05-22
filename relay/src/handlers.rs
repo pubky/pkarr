@@ -4,9 +4,8 @@ use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use futures_lite::StreamExt;
 use http::StatusCode;
-use pkarr::mainline::async_dht::AsyncDht;
 use pkarr::mainline::errors::ConcurrencyError;
-use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, Timestamp};
+use pkarr::{Cache, CacheKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
 
 use crate::error::Error;
@@ -37,8 +36,7 @@ pub async fn put(
 
     enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
 
-    let cas = cas.map(|t| t.as_u64() as i64);
-    state.dht.put_mutable((&signed_packet).into(), cas).await?;
+    state.dht.publish(&signed_packet, cas).await?;
     update_cache_if_needed(&state, &key, &signed_packet);
 
     Ok(StatusCode::NO_CONTENT)
@@ -55,49 +53,45 @@ pub async fn get(
 
     let policy = query.policy.unwrap_or(ResolvePolicy::CacheFirst);
     let cached_packet = state.cache.get_read_only(&key);
-    let signed_packet = match policy {
+    // It is safe to subtract 1, because even the very first item has a timestamp
+    // greater than 0.
+    let more_recent_than = cached_packet
+        .as_ref()
+        .map(SignedPacket::timestamp)
+        .map(|timestamp| Timestamp::from(timestamp.as_u64() - 1));
+
+    let packet = match policy {
         ResolvePolicy::LocalOrRelayCacheOnly => cached_packet,
         ResolvePolicy::CacheFirst => match cached_packet {
             Some(packet) if !packet.is_expired(state.minimum_ttl, state.maximum_ttl) => {
                 Some(packet)
             }
-            Some(packet) => {
+            _ => {
                 enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-                resolve(
-                    &state.dht,
-                    &public_key,
-                    Mode::First,
-                    Some(packet.timestamp()),
-                )
-                .await
-            }
-            None => {
-                enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-                resolve(&state.dht, &public_key, Mode::First, None).await
+                let mut stream = state.dht.resolve(&public_key, more_recent_than);
+                let packet = stream.next().await;
+                let state = state.clone();
+                // Do not waste late responses with potentially newer packets.
+                tokio::spawn(async move {
+                    if let Some(packet) = stream.fold(None, most_recent_packet).await {
+                        update_cache_if_needed(&state, &key, &packet);
+                    }
+                });
+                packet
             }
         },
         ResolvePolicy::DhtNetworkOnly => {
             enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-            let at_least_that_recent = cached_packet.as_ref().map(SignedPacket::timestamp);
-            resolve(
-                &state.dht,
-                &public_key,
-                Mode::MostRecent,
-                at_least_that_recent,
-            )
-            .await
+            let stream = state.dht.resolve(&public_key, more_recent_than);
+            stream.fold(None, most_recent_packet).await
         }
     };
 
-    if let Some(signed_packet) = signed_packet {
-        update_cache_if_needed(&state, &key, &signed_packet);
+    if let Some(packet) = packet {
+        update_cache_if_needed(&state, &key, &packet);
 
-        let ttl = signed_packet.ttl(state.minimum_ttl, state.maximum_ttl);
-        Ok(SignedPacketResponse::new(
-            signed_packet,
-            ttl,
-            if_modified_since,
-        ))
+        let ttl = packet.ttl(state.minimum_ttl, state.maximum_ttl);
+        Ok(SignedPacketResponse::new(packet, ttl, if_modified_since))
     } else {
         Err(Error::with_status(StatusCode::NOT_FOUND))
     }
@@ -205,38 +199,6 @@ fn format_number(num: usize) -> String {
     result
 }
 
-enum Mode {
-    First,
-    MostRecent,
-}
-
-async fn resolve(
-    dht: &AsyncDht,
-    public_key: &PublicKey,
-    mode: Mode,
-    at_least_that_recent: Option<Timestamp>,
-) -> Option<SignedPacket> {
-    // TODO: Ratelimit.
-    let key = public_key.as_bytes();
-    // It is safe to subtract 1, because even the very first item has a timestamp
-    // greater than 0.
-    let more_recent_than = at_least_that_recent
-        .map(|timestamp| timestamp.as_u64() as i64 - 1)
-        .unwrap_or_default();
-    let item = match mode {
-        Mode::First => {
-            dht.get_mutable(key, None, Some(more_recent_than))
-                .next()
-                .await
-        }
-        Mode::MostRecent => dht
-            .get_mutable_most_recent(key, None)
-            .await
-            .filter(|item| more_recent_than < item.seq()),
-    };
-    item.map(SignedPacket::try_from).transpose().ok().flatten()
-}
-
 fn update_cache_if_needed(state: &AppState, key: &CacheKey, signed_packet: &SignedPacket) {
     let _lock = state
         .cache_write_lock
@@ -273,4 +235,85 @@ fn enforce_user_dht_rate_limit(
     }
 
     Ok(())
+}
+
+fn most_recent_packet(
+    most_recent: Option<SignedPacket>,
+    packet: SignedPacket,
+) -> Option<SignedPacket> {
+    match most_recent {
+        Some(mr)
+            if mr.timestamp() > packet.timestamp()
+                || (mr.timestamp() == packet.timestamp() && mr.as_bytes() >= packet.as_bytes()) =>
+        {
+            Some(mr)
+        }
+        _ => Some(packet),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::most_recent_packet;
+    use pkarr::{Keypair, SignedPacket, Timestamp};
+
+    fn signed_packet(timestamp: u64, text: &str) -> SignedPacket {
+        SignedPacket::builder()
+            .timestamp(Timestamp::from(timestamp))
+            .txt("test".try_into().unwrap(), text.try_into().unwrap(), 30)
+            .sign(&Keypair::random())
+            .unwrap()
+    }
+
+    #[test]
+    fn most_recent_packet_selects_newest_packet() {
+        let packet = signed_packet(1, "first");
+
+        assert_eq!(
+            most_recent_packet(None, packet.clone()).unwrap().as_bytes(),
+            packet.as_bytes()
+        );
+
+        let existing = signed_packet(2, "existing");
+        let packet = signed_packet(1, "packet");
+
+        assert_eq!(
+            most_recent_packet(Some(existing.clone()), packet)
+                .unwrap()
+                .as_bytes(),
+            existing.as_bytes()
+        );
+
+        let existing = signed_packet(1, "existing");
+        let packet = signed_packet(2, "packet");
+
+        assert_eq!(
+            most_recent_packet(Some(existing), packet.clone())
+                .unwrap()
+                .as_bytes(),
+            packet.as_bytes()
+        );
+
+        let a = signed_packet(1, "a");
+        let b = signed_packet(1, "b");
+        let (smaller, larger) = if a.as_bytes() < b.as_bytes() {
+            (a, b)
+        } else {
+            (b, a)
+        };
+
+        assert_eq!(
+            most_recent_packet(Some(larger.clone()), smaller.clone())
+                .unwrap()
+                .as_bytes(),
+            larger.as_bytes()
+        );
+
+        assert_eq!(
+            most_recent_packet(Some(smaller), larger.clone())
+                .unwrap()
+                .as_bytes(),
+            larger.as_bytes()
+        );
+    }
 }

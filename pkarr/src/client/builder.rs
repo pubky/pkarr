@@ -1,5 +1,5 @@
 #[cfg(dht)]
-use std::net::ToSocketAddrs;
+use std::net::{SocketAddr, SocketAddrV4, ToSocketAddrs};
 use std::{sync::Arc, time::Duration};
 
 #[cfg(feature = "relays")]
@@ -36,7 +36,7 @@ pub(crate) struct Config {
     pub cache: Option<Arc<dyn Cache>>,
 
     #[cfg(dht)]
-    pub dht: Option<mainline::DhtBuilder>,
+    pub dht: Option<mainline::Config>,
 
     /// Pkarr [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) Urls
     #[cfg(feature = "relays")]
@@ -62,7 +62,7 @@ impl Default for Config {
             cache: None,
 
             #[cfg(dht)]
-            dht: Some(mainline::Dht::builder()),
+            dht: Some(mainline::Config::default()),
 
             #[cfg(feature = "relays")]
             relays: Some(
@@ -138,10 +138,10 @@ impl ClientBuilder {
     }
 
     #[cfg(dht)]
-    /// Create a [mainline::DhtBuilder] if `None`, and allows mutating it with a callback function.
+    /// Create a [mainline::Config] if `None`, and allows mutating it with a callback function.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
-        F: FnOnce(&mut mainline::DhtBuilder) -> &mut mainline::DhtBuilder,
+        F: FnOnce(&mut mainline::Config) -> &mut mainline::Config,
     {
         if self.0.dht.is_none() {
             self.0.dht = Some(Default::default());
@@ -158,11 +158,14 @@ impl ClientBuilder {
     ///
     /// You can start a separate Dht network by setting this to an empty array.
     ///
-    /// If you want to extend [bootstrap][mainline::DhtBuilder::bootstrap] nodes with more nodes, you can
+    /// If you want to extend bootstrap nodes with more nodes, you can
     /// use [Self::extra_bootstrap].
     #[cfg(dht)]
     pub fn bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
-        self.dht(|b| b.bootstrap(bootstrap));
+        self.dht(|config| {
+            config.bootstrap = Some(to_socket_address_v4(bootstrap));
+            config
+        });
 
         self
     }
@@ -173,7 +176,12 @@ impl ClientBuilder {
     /// If you want to set (override) the DHT bootstrapping nodes,
     /// use [Self::bootstrap] directly.
     pub fn extra_bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
-        self.dht(|b| b.extra_bootstrap(bootstrap));
+        self.dht(|config| {
+            let mut existing = config.bootstrap.clone().unwrap_or_default();
+            existing.extend(to_socket_address_v4(bootstrap));
+            config.bootstrap = Some(existing);
+            config
+        });
 
         self
     }
@@ -263,7 +271,9 @@ impl ClientBuilder {
     pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.0.request_timeout = timeout;
         #[cfg(dht)]
-        self.0.dht.as_mut().map(|b| b.request_timeout(timeout));
+        if let Some(config) = self.0.dht.as_mut() {
+            config.request_timeout = timeout;
+        }
 
         self
     }
@@ -284,6 +294,24 @@ impl ClientBuilder {
     pub fn build(&self) -> Result<Client, BuildError> {
         Client::new(self.0.clone())
     }
+}
+
+#[cfg(dht)]
+fn to_socket_address_v4<T: ToSocketAddrs>(bootstrap: &[T]) -> Vec<SocketAddrV4> {
+    bootstrap
+        .iter()
+        .flat_map(|s| {
+            s.to_socket_addrs().map(|addrs| {
+                addrs
+                    .filter_map(|addr| match addr {
+                        SocketAddr::V4(addr_v4) => Some(addr_v4),
+                        _ => None,
+                    })
+                    .collect::<Box<[_]>>()
+            })
+        })
+        .flatten()
+        .collect()
 }
 
 #[cfg(relays)]
