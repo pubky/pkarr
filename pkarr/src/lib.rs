@@ -46,7 +46,6 @@ pub use simple_dns as dns;
 pub mod errors {
     //! Exported errors
 
-    #[cfg(any(feature = "keys", feature = "signed_packet"))]
     pub use super::types::errors::*;
 
     #[cfg(client)]
