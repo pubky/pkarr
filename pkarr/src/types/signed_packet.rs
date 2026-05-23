@@ -140,7 +140,7 @@ impl SignedPacketBuilder {
 const DOT: char = '.';
 
 self_cell!(
-    struct Inner {
+    pub(crate) struct Inner {
         owner: Bytes,
 
         #[covariant]
@@ -151,7 +151,7 @@ self_cell!(
 );
 
 impl Inner {
-    fn try_from_parts(
+    pub(crate) fn try_from_parts(
         public_key: &PublicKey,
         signature: &Signature,
         timestamp: u64,
@@ -176,8 +176,8 @@ impl Inner {
 #[derive(PartialEq, Eq)]
 /// Signed DNS packet
 pub struct SignedPacket {
-    inner: Inner,
-    last_seen: Timestamp,
+    pub(crate) inner: Inner,
+    pub(crate) last_seen: Timestamp,
 }
 
 impl SignedPacket {
@@ -585,49 +585,7 @@ fn normalize_name(origin: &str, name: String) -> String {
     format!("{name}.{origin}")
 }
 
-#[cfg(dht)]
-use mainline::MutableItem;
-
 use super::keys::PublicKeyError;
-
-#[cfg(dht)]
-impl From<&SignedPacket> for MutableItem {
-    fn from(s: &SignedPacket) -> Self {
-        Self::new_signed_unchecked(
-            s.public_key().to_bytes(),
-            s.signature().to_bytes(),
-            // Packet
-            s.inner.borrow_owner()[104..].into(),
-            s.timestamp().as_u64() as i64,
-            None,
-        )
-    }
-}
-
-#[cfg(dht)]
-impl TryFrom<&MutableItem> for SignedPacket {
-    type Error = SignedPacketVerifyError;
-
-    fn try_from(i: &MutableItem) -> Result<Self, SignedPacketVerifyError> {
-        let public_key = PublicKey::try_from(i.key())?;
-        let seq = i.seq() as u64;
-        let signature: Signature = i.signature().into();
-
-        Ok(Self {
-            inner: Inner::try_from_parts(&public_key, &signature, seq, i.value())?,
-            last_seen: Timestamp::now(),
-        })
-    }
-}
-
-#[cfg(dht)]
-impl TryFrom<MutableItem> for SignedPacket {
-    type Error = SignedPacketVerifyError;
-
-    fn try_from(i: MutableItem) -> Result<Self, SignedPacketVerifyError> {
-        SignedPacket::try_from(&i)
-    }
-}
 
 impl AsRef<[u8]> for SignedPacket {
     /// Returns the SignedPacket as a bytes slice with the format:
@@ -878,33 +836,6 @@ mod tests {
         for record in signed_packet.resource_records("_derp_region.iroh") {
             assert_eq!(record.rdata, target.rdata);
         }
-    }
-
-    #[cfg(dht)]
-    #[test]
-    fn to_mutable() {
-        let keypair = Keypair::random();
-
-        let signed_packet = SignedPacket::builder()
-            .address(
-                "_derp_region.iroh.".try_into().unwrap(),
-                "1.1.1.1".parse().unwrap(),
-                30,
-            )
-            .sign(&keypair)
-            .unwrap();
-
-        let item: MutableItem = (&signed_packet).into();
-        let seq = signed_packet.timestamp().as_u64() as i64;
-
-        let expected = MutableItem::new(
-            keypair.secret_key().into(),
-            &signed_packet.packet().build_bytes_vec_compressed().unwrap(),
-            seq,
-            None,
-        );
-
-        assert_eq!(item, expected);
     }
 
     #[test]
