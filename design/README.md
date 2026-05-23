@@ -11,3 +11,6 @@ Optional spec for resolving query names to endpoints details using RFC 9460 (HTT
 
 ### 4. [TLS](./tls.md)
 Optional spec for end to end encryption of connections to Pkarr domains.
+
+### 5. [Bridges](./bridges.md)
+Optional convention for declaring back-pointers from a Pkarr identity to a human-readable name held in another naming system (e.g. traditional DNS, Namecoin).
