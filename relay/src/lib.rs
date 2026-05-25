@@ -30,7 +30,7 @@ use axum_server::Handle;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{extra::lmdb_cache::LmdbCache, mainline::async_dht::AsyncDht, Timestamp};
+use pkarr::{dht::DhtClient, extra::lmdb_cache::LmdbCache, Timestamp};
 use url::Url;
 
 use config::{Config, CACHE_DIR};
@@ -157,11 +157,12 @@ impl Relay {
                     rate_limiting::UserDhtRateLimiter::new(rate_limiter_config)
                         .await
                         .map_err(|e| anyhow!("Failed to build UserDhtRateLimiter: {e}"))?;
-                config.pkarr.dht(|builder| {
-                    builder.server_settings(pkarr::mainline::ServerSettings {
+                config.pkarr.dht(|config| {
+                    config.server_settings = pkarr::mainline::ServerSettings {
                         filter: Box::new(rate_limiter.clone()),
                         ..Default::default()
-                    })
+                    };
+                    config
                 });
                 (Some(rate_limiter), Some(user_dht_rate_limiter))
             }
@@ -175,7 +176,7 @@ impl Relay {
         // See open issue https://github.com/programatik29/axum-server/issues/181
         listener.set_nonblocking(true)?;
 
-        let dht = client.dht().expect("dht network is enabled").as_async();
+        let dht = client.dht().expect("dht network is enabled").clone();
         let node_address = dht.info().await.local_addr();
         let relay_address = listener.local_addr()?;
 
@@ -244,10 +245,10 @@ impl Relay {
             .bootstrap(&testnet.bootstrap)
             .request_timeout(Duration::from_millis(100))
             .bootstrap(&testnet.bootstrap)
-            .dht(|builder| {
-                builder
-                    .server_mode()
-                    .bind_address(std::net::Ipv4Addr::LOCALHOST)
+            .dht(|config| {
+                config.server_mode = true;
+                config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
+                config
             });
 
         Ok(unsafe { Self::run(config).await? })
@@ -277,10 +278,10 @@ impl Relay {
             .pkarr
             .request_timeout(Duration::from_millis(100))
             .bootstrap(&testnet.bootstrap)
-            .dht(|builder| {
-                builder
-                    .server_mode()
-                    .bind_address(std::net::Ipv4Addr::LOCALHOST)
+            .dht(|config| {
+                config.server_mode = true;
+                config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
+                config
             });
 
         Self::run(config).await
@@ -337,7 +338,7 @@ struct AppState {
     cache_write_lock: Arc<Mutex<()>>,
     // Rate limiter for DHT operations initiated by HTTP user requests.
     user_dht_rate_limiter: Option<rate_limiting::UserDhtRateLimiter>,
-    dht: AsyncDht,
+    dht: DhtClient,
 }
 
 #[cfg(test)]
@@ -424,7 +425,10 @@ mod tests {
                     .no_default_network()
                     .bootstrap(&testnet.bootstrap)
                     .request_timeout(Duration::from_millis(100))
-                    .dht(|builder| builder.bind_address(Ipv4Addr::LOCALHOST))
+                    .dht(|config| {
+                        config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                        config
+                    })
             });
 
         unsafe { builder.run().await.unwrap() }

@@ -129,7 +129,10 @@ impl Config {
         }
 
         if let Some(port) = config_toml.mainline.and_then(|m| m.port) {
-            config.pkarr.dht(|builder| builder.port(port));
+            config.pkarr.dht(|dht| {
+                dht.port = Some(port);
+                dht
+            });
         }
 
         if let Some(HttpConfig { port: Some(port) }) = config_toml.http {

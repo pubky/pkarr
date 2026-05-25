@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use pkarr::mainline::errors::{ConcurrencyError, PutMutableError};
+use pkarr::dht;
 
 #[derive(Debug, Clone)]
 pub struct Error {
@@ -68,19 +68,19 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<PutMutableError> for Error {
-    fn from(error: PutMutableError) -> Self {
+impl From<dht::PublishError> for Error {
+    fn from(error: dht::PublishError) -> Self {
         match error {
-            PutMutableError::Query(_) => Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error)),
-            PutMutableError::Concurrency(ConcurrencyError::CasFailed) => {
-                Self::new(StatusCode::PRECONDITION_FAILED, Some(error))
+            dht::PublishError::Timeout
+            | dht::PublishError::NoClosestNodes
+            | dht::PublishError::ErrorResponse { .. } => {
+                Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
             }
-            PutMutableError::Concurrency(ConcurrencyError::ConflictRisk) => {
+            dht::PublishError::CasFailed => Self::new(StatusCode::PRECONDITION_FAILED, Some(error)),
+            dht::PublishError::ConflictRisk => {
                 Self::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
             }
-            PutMutableError::Concurrency(ConcurrencyError::NotMostRecent) => {
-                Self::new(StatusCode::CONFLICT, Some(error))
-            }
+            dht::PublishError::NotMostRecent => Self::new(StatusCode::CONFLICT, Some(error)),
         }
     }
 }

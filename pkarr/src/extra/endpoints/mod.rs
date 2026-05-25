@@ -212,7 +212,10 @@ mod tests {
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
+            .dht(|config| {
+                config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                config
+            })
             .build()
             .unwrap();
 
@@ -233,7 +236,10 @@ mod tests {
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
+            .dht(|config| {
+                config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                config
+            })
             .request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();
@@ -254,7 +260,10 @@ mod tests {
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
+            .dht(|config| {
+                config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                config
+            })
             .request_timeout(Duration::from_millis(20))
             .build()
             .unwrap();
@@ -272,7 +281,10 @@ mod tests {
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
+            .dht(|config| {
+                config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                config
+            })
             .request_timeout(Duration::from_millis(100))
             .max_recursion_depth(3)
             .build()
@@ -291,7 +303,10 @@ mod tests {
         let client = Client::builder()
             .no_default_network()
             .bootstrap(&testnet.bootstrap)
-            .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
+            .dht(|config| {
+                config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                config
+            })
             .request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();

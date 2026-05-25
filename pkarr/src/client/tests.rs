@@ -32,7 +32,10 @@ pub(crate) fn builder(
         .no_default_network()
         // Because of pkarr_relay crate, dht is always enabled.
         .bootstrap(&testnet.bootstrap)
-        .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST));
+        .dht(|config| {
+            config.bind_address = Some(Ipv4Addr::LOCALHOST);
+            config
+        });
 
     if std::env::var("CI").is_ok() {
         builder.request_timeout(Duration::from_millis(1000));
@@ -686,7 +689,10 @@ async fn discard_cache_with_zero_capacity() {
         .pkarr(|builder| {
             builder.no_default_network();
             builder.bootstrap(&testnet.bootstrap);
-            builder.dht(|b| b.bind_address(Ipv4Addr::LOCALHOST));
+            builder.dht(|config| {
+                config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                config
+            });
             builder
         });
     let relay = unsafe { builder.run().await.unwrap() };
@@ -698,7 +704,10 @@ async fn discard_cache_with_zero_capacity() {
     let client = Client::builder()
         .no_default_network()
         .bootstrap(&testnet.bootstrap)
-        .dht(|b| b.bind_address(Ipv4Addr::LOCALHOST))
+        .dht(|config| {
+            config.bind_address = Some(Ipv4Addr::LOCALHOST);
+            config
+        })
         .build()
         .unwrap();
 
