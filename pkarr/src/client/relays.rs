@@ -5,28 +5,20 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use bytes::Bytes;
 use futures_buffered::FuturesUnorderedBounded;
 #[cfg(not(wasm_browser))]
 use futures_lite::Stream;
 use futures_lite::StreamExt;
 use ntimestamp::Timestamp;
-use reqwest::Method;
 use url::Url;
 
-use reqwest::{
-    header::{self, HeaderValue},
-    Client, StatusCode,
-};
-
 use super::{ConcurrencyError, PublishError, QueryError};
+use crate::relay_client::{RelayClient, RelayError};
 use crate::{PublicKey, SignedPacket};
 
 #[derive(Clone)]
 pub struct RelaysClient {
-    relays: Box<[Url]>,
-    http_client: Client,
-    timeout: Duration,
+    relays: Box<[RelayClient]>,
     pub(crate) inflight_publish: InflightPublishRequests,
 }
 
@@ -40,7 +32,7 @@ impl Debug for RelaysClient {
                 .relays
                 .as_ref()
                 .iter()
-                .map(|url| url.as_str())
+                .map(|relay| relay.base_url().as_str())
                 .collect::<Vec<_>>(),
         );
 
@@ -51,14 +43,16 @@ impl Debug for RelaysClient {
 impl RelaysClient {
     pub fn new(relays: Box<[Url]>, timeout: Duration) -> Self {
         let inflight_publish = InflightPublishRequests::new(relays.len());
+        let relays = relays
+            .into_vec()
+            .into_iter()
+            .map(|url| {
+                RelayClient::new(url, timeout).expect("Client building should be infallible")
+            })
+            .collect();
 
         Self {
             relays,
-            http_client: Client::builder()
-                .build()
-                .expect("Client building should be infallible"),
-
-            timeout,
             inflight_publish,
         }
     }
@@ -75,25 +69,17 @@ impl RelaysClient {
 
         let mut futures = futures_buffered::FuturesUnorderedBounded::new(self.relays.len());
 
-        let body = signed_packet.to_relay_payload();
-        let cas = cas.map(|timestamp| timestamp.as_u64().to_string());
-
         for relay in &self.relays {
-            let http_client = self.http_client.clone();
-            let timeout = self.timeout;
-
-            let cas = cas.clone();
-            let body = body.clone();
-
-            let public_key = public_key.clone();
             let relay = relay.clone();
-
+            let signed_packet = signed_packet.clone();
+            let public_key = public_key.clone();
             let mut inflight = self.inflight_publish.clone();
 
             futures.push(async move {
-                let result = publish_to_relay(http_client, relay, &public_key, body, cas, timeout)
+                let result = relay
+                    .publish(&signed_packet, cas)
                     .await
-                    .map_err(map_reqwest_error);
+                    .map_err(map_relay_error);
 
                 inflight.add_result(&public_key, result)
             });
@@ -135,22 +121,26 @@ impl RelaysClient {
     ) -> FuturesUnorderedBounded<impl futures_lite::Future<Output = Option<SignedPacket>>> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
 
-        let if_modified_since = more_recent_than.map(|t| t.format_http_date());
-
         self.relays.iter().for_each(|relay| {
-            let http_client = self.http_client.clone();
             let relay = relay.clone();
             let public_key = public_key.clone();
-            let if_modified_since = if_modified_since.clone();
-            let timeout = self.timeout;
 
-            futures.push(resolve_from_relay(
-                http_client,
-                relay,
-                public_key,
-                if_modified_since,
-                timeout,
-            ));
+            futures.push(async move {
+                match relay
+                    .resolve(
+                        &public_key,
+                        crate::ResolvePolicy::CacheFirst,
+                        more_recent_than,
+                    )
+                    .await
+                {
+                    Ok(signed_packet) => signed_packet,
+                    Err(error) => {
+                        cross_debug!("GET {} {:?}", relay.base_url(), error);
+                        None
+                    }
+                }
+            });
         });
 
         futures
@@ -312,200 +302,23 @@ impl InflightPublishRequests {
     }
 }
 
-pub async fn publish_to_relay(
-    http_client: reqwest::Client,
-    relay: Url,
-    public_key: &PublicKey,
-    body: Bytes,
-    cas: Option<String>,
-    timeout: Duration,
-) -> Result<(), reqwest::Error> {
-    let url = format_url(&relay, public_key);
-
-    let mut request = http_client.put(url.clone());
-
-    request = request
-        // Publish combines the http latency with the PUT query to the dht
-        // on the relay side, so we should be as generous as possible
-        .timeout(timeout * 3);
-
-    if let Some(cas) = cas {
-        request = request.header(header::IF_MATCH, cas);
-    }
-
-    let response = request.body(body).send().await.inspect_err(|error| {
-        cross_debug!("PUT {:?}", error);
-    })?;
-
-    let status = response.status();
-
-    if let Err(error) = response.error_for_status_ref() {
-        let text = response.text().await.unwrap_or("".to_string());
-
-        cross_debug!("Got error response for PUT {url} {status} {text}");
-
-        return Err(error);
-    };
-
-    if status.is_success() {
-        cross_debug!("Successfully published to {url}");
-    } else {
-        cross_debug!("Got neither 2xx nor >=400 status code {status} for PUT {url}",);
-    }
-
-    Ok(())
-}
-
-fn map_reqwest_error(error: reqwest::Error) -> PublishError {
-    if error.is_timeout() {
-        PublishError::Query(QueryError::Timeout)
-    } else if error.is_status() {
-        match error
-            .status()
-            .expect("previously verified that it is a status error")
-        {
-            StatusCode::BAD_REQUEST => {
-                // This should be very unlikely unless relays are misbehaving, still worth
-                // returning to the user to know that relays are misbehaving, and not just a
-                // network issue.
-                PublishError::Query(QueryError::BadRequest)
-            }
-            StatusCode::CONFLICT => PublishError::Concurrency(ConcurrencyError::NotMostRecent),
-            StatusCode::PRECONDITION_FAILED => {
-                PublishError::Concurrency(ConcurrencyError::CasFailed)
-            }
-            StatusCode::PRECONDITION_REQUIRED => {
-                PublishError::Concurrency(ConcurrencyError::ConflictRisk)
-            }
-            _ => PublishError::UnexpectedResponses,
+fn map_relay_error(error: RelayError) -> PublishError {
+    match error {
+        RelayError::Timeout => PublishError::Query(QueryError::Timeout),
+        RelayError::BadRequest => {
+            // This should be very unlikely unless relays are misbehaving, still worth
+            // returning to the user to know that relays are misbehaving, and not just a
+            // network issue.
+            PublishError::Query(QueryError::BadRequest)
         }
-    } else {
-        PublishError::UnexpectedResponses
+        RelayError::NotMostRecent => PublishError::Concurrency(ConcurrencyError::NotMostRecent),
+        RelayError::CasFailed => PublishError::Concurrency(ConcurrencyError::CasFailed),
+        RelayError::ConflictRisk => PublishError::Concurrency(ConcurrencyError::ConflictRisk),
+        RelayError::Build(_)
+        | RelayError::Request(_)
+        | RelayError::BodyTooLarge { .. }
+        | RelayError::InvalidSignedPacket(_)
+        | RelayError::InvalidHeader(_)
+        | RelayError::UnexpectedStatus(_) => PublishError::UnexpectedResponses,
     }
-}
-
-pub fn format_url(relay: &Url, public_key: &PublicKey) -> Url {
-    let mut url = relay.clone();
-
-    let mut segments = url
-        .path_segments_mut()
-        .expect("Relay url cannot be base, is it http(s)?");
-
-    segments.push(&public_key.to_string());
-
-    drop(segments);
-
-    url
-}
-
-pub async fn resolve_from_relay(
-    http_client: reqwest::Client,
-    relay: Url,
-    public_key: PublicKey,
-    if_modified_since: Option<String>,
-    timeout: Duration,
-) -> Option<SignedPacket> {
-    let url = format_url(&relay, &public_key);
-
-    let mut request = reqwest::Request::new(Method::GET, url.clone());
-
-    *request.timeout_mut() = Some(timeout);
-
-    if let Some(ref httpdate) = if_modified_since {
-        request.headers_mut().insert(
-            header::IF_MODIFIED_SINCE,
-            HeaderValue::from_str(httpdate).expect("httpdate to be valid header value"),
-        );
-    }
-
-    let response = loop {
-        let response = match http_client
-            .execute(request.try_clone().expect("infallible"))
-            .await
-        {
-            Ok(response) => response,
-            Err(error) => {
-                cross_debug!("GET {:?}", error);
-
-                return None;
-            }
-        };
-
-        let status = response.status();
-
-        if response.error_for_status_ref().is_err() {
-            let text = response.text().await.unwrap_or("".to_string());
-
-            cross_debug!("Got error response for GET {url} {status} {text}");
-
-            return None;
-        };
-
-        if should_retry_with_cache_disabled(
-            &mut request,
-            &if_modified_since,
-            &status,
-            response.content_length(),
-        ) {
-            continue;
-        } else {
-            break response;
-        }
-    };
-
-    if response.content_length().unwrap_or_default() > SignedPacket::MAX_BYTES {
-        cross_debug!("Response too large for GET {url}");
-
-        return None;
-    }
-
-    let payload = match response.bytes().await {
-        Ok(payload) => payload,
-        Err(error) => {
-            cross_debug!("Failed to read relay response from GET {url} {error}");
-
-            return None;
-        }
-    };
-
-    match SignedPacket::from_relay_payload(&public_key, &payload) {
-        Ok(signed_packet) => Some(signed_packet),
-        Err(error) => {
-            cross_debug!("Invalid signed_packet {url}:{error}");
-
-            None
-        }
-    }
-}
-
-fn should_retry_with_cache_disabled(
-    request: &mut reqwest::Request,
-    if_modified_since: &Option<String>,
-    status: &StatusCode,
-    content_length: Option<u64>,
-) -> bool {
-    // We got a 304 not modified, even though we don't have any packet in cache.
-    let unexpected_not_modified =
-        (*status == StatusCode::NOT_MODIFIED) && if_modified_since.is_none();
-
-    // We got a success response, but the packet is empty.
-    let broken_cache = status.is_success() && (content_length.unwrap_or_default() == 0);
-
-    let needs_retry_with_cache_disabled = unexpected_not_modified || broken_cache;
-
-    let havent_retried_with_cache_disabled_already =
-        request.headers().get(header::CACHE_CONTROL).is_none();
-
-    if needs_retry_with_cache_disabled && havent_retried_with_cache_disabled_already {
-        request.headers_mut().insert(
-            header::CACHE_CONTROL,
-            "no-cache, no-store, must-revalidate"
-                .try_into()
-                .expect("cache control is valid http header value"),
-        );
-
-        return true;
-    }
-
-    false
 }

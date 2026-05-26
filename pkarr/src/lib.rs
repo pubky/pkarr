@@ -14,6 +14,8 @@ mod client;
 pub mod dht;
 #[cfg(client)]
 pub mod extra;
+#[cfg(relays)]
+pub mod relay_client;
 pub mod types;
 
 /// Default minimum TTL: 5 minutes.
