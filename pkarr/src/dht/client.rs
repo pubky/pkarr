@@ -1,8 +1,63 @@
 use ed25519_dalek::Signature;
-use mainline::MutableItem;
+use futures_lite::{Stream, StreamExt};
+use mainline::{async_dht::AsyncDht, Config, Dht, MutableItem};
 use ntimestamp::Timestamp;
 
 use crate::{PublicKey, SignedPacket};
+
+use super::{DhtInfo, PublishError};
+
+/// Pkarr DHT client.
+#[derive(Clone, Debug)]
+pub struct DhtClient {
+    inner: AsyncDht,
+}
+
+impl DhtClient {
+    /// Build a DHT client from a Mainline configuration.
+    pub fn build(config: Config) -> Result<Self, std::io::Error> {
+        let dht = Dht::new(config)?;
+        Ok(Self {
+            inner: dht.as_async(),
+        })
+    }
+
+    /// Publish a signed packet to the DHT.
+    pub async fn publish(
+        &self,
+        signed_packet: &SignedPacket,
+        cas: Option<Timestamp>,
+    ) -> Result<(), PublishError> {
+        let cas = cas.map(|timestamp| timestamp.as_u64() as i64);
+        self.inner.put_mutable(signed_packet.into(), cas).await?;
+        Ok(())
+    }
+
+    /// Resolve signed packets newer than the given timestamp.
+    pub fn resolve(
+        &self,
+        public_key: &PublicKey,
+        more_recent_than: Option<Timestamp>,
+    ) -> impl Stream<Item = SignedPacket> + Send {
+        let more_recent_than = more_recent_than.map(|timestamp| timestamp.as_u64() as i64);
+
+        self.inner
+            .get_mutable(public_key.as_bytes(), None, more_recent_than)
+            .filter_map(|item| SignedPacket::try_from(item).ok())
+    }
+
+    /// Return information about the underlying DHT node.
+    pub async fn info(&self) -> DhtInfo {
+        let info = self.inner.info().await;
+
+        DhtInfo::new(
+            info.local_addr(),
+            info.public_address(),
+            info.firewalled(),
+            info.dht_size_estimate(),
+        )
+    }
+}
 
 impl From<&SignedPacket> for MutableItem {
     fn from(s: &SignedPacket) -> Self {
