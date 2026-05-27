@@ -41,20 +41,24 @@ impl Debug for RelaysClient {
 }
 
 impl RelaysClient {
-    pub fn new(relays: Box<[Url]>, timeout: Duration) -> Self {
+    pub fn new(relays: Box<[Url]>, timeout: Duration) -> Result<Self, RelayError> {
         let inflight_publish = InflightPublishRequests::new(relays.len());
+        let resolve_timeout = timeout;
+        // Publish combines HTTP latency with the relay-side DHT PUT query.
+        let publish_timeout = resolve_timeout
+            .checked_mul(3)
+            .ok_or_else(|| RelayError::Build("publish timeout overflow".to_string()))?;
         let relays = relays
             .into_vec()
             .into_iter()
-            .map(|url| {
-                RelayClient::new(url, timeout).expect("Client building should be infallible")
-            })
-            .collect();
+            .map(|url| RelayClient::new(url, resolve_timeout, publish_timeout))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice();
 
-        Self {
+        Ok(Self {
             relays,
             inflight_publish,
-        }
+        })
     }
 
     pub async fn publish(

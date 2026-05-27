@@ -28,7 +28,8 @@ macro_rules! debug {
 pub struct RelayClient {
     base_url: Url,
     client: Client,
-    timeout: Duration,
+    resolve_timeout: Duration,
+    publish_timeout: Duration,
 }
 
 impl RelayClient {
@@ -37,13 +38,25 @@ impl RelayClient {
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client cannot be built.
-    pub fn new(base_url: Url, timeout: Duration) -> Result<Self, RelayError> {
-        let client = Client::builder().build().map_err(RelayError::Build)?;
+    pub fn new(
+        base_url: Url,
+        resolve_timeout: Duration,
+        publish_timeout: Duration,
+    ) -> Result<Self, RelayError> {
+        let client = Client::builder()
+            .build()
+            .map_err(|e| RelayError::Build(e.to_string()))?;
+        if base_url.cannot_be_a_base() {
+            return Err(RelayError::Build(format!(
+                "Invalid base url of a relay: `{base_url}`"
+            )));
+        }
 
         Ok(Self {
             base_url,
             client,
-            timeout,
+            resolve_timeout,
+            publish_timeout,
         })
     }
 
@@ -68,8 +81,7 @@ impl RelayClient {
         let mut request = self
             .client
             .put(url.clone())
-            // Publish combines HTTP latency with the relay-side DHT PUT query.
-            .timeout(self.timeout * 3)
+            .timeout(self.publish_timeout)
             .body(packet.to_relay_payload());
 
         if let Some(cas) = cas {
@@ -128,7 +140,7 @@ impl RelayClient {
             return Err(RelayError::from_status(status));
         }
 
-        let last_seen = memento_datetime(&response);
+        let last_seen = extract_memento_datetime(&response);
         let payload = read_body_with_limit(response, SignedPacket::MAX_BYTES as usize).await?;
 
         let mut signed_packet = SignedPacket::from_relay_payload(key, &payload)
@@ -147,7 +159,7 @@ impl RelayClient {
         newer_than: Option<&Timestamp>,
         bypass_cache: bool,
     ) -> Result<Response, RelayError> {
-        let mut request = self.client.get(url.clone()).timeout(self.timeout);
+        let mut request = self.client.get(url.clone()).timeout(self.resolve_timeout);
 
         if let Some(newer_than) = newer_than {
             let newer_than = newer_than.format_http_date();
@@ -186,9 +198,9 @@ impl RelayClient {
 /// Relay-client error.
 #[derive(thiserror::Error, Debug)]
 pub enum RelayError {
-    /// Failed to build the HTTP client.
-    #[error("failed to build relay HTTP client: {0}")]
-    Build(reqwest::Error),
+    /// Failed to build the relay client.
+    #[error("failed to build relay client: {0}")]
+    Build(String),
 
     /// Relay request timed out.
     #[error("relay request timed out")]
@@ -256,7 +268,7 @@ impl RelayError {
     }
 }
 
-fn memento_datetime(response: &Response) -> Option<Timestamp> {
+fn extract_memento_datetime(response: &Response) -> Option<Timestamp> {
     response
         .headers()
         .get(MEMENTO_DATETIME)
@@ -323,6 +335,8 @@ mod tests {
     use super::*;
     use crate::Keypair;
 
+    const TIMEOUT: Duration = Duration::from_secs(1);
+
     #[tokio::test]
     async fn resolve_returns_none_on_not_found() {
         let keypair = Keypair::random();
@@ -330,7 +344,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get(|| async { HttpStatusCode::NOT_FOUND }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let resolved = client
             .resolve(
@@ -351,7 +365,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get(|| async { HttpStatusCode::NOT_MODIFIED }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let resolved = client
             .resolve(
@@ -389,7 +403,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let resolved = client
             .resolve(
@@ -428,7 +442,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let resolved = client
             .resolve(
@@ -450,7 +464,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get(|| async { vec![0; SignedPacket::MAX_BYTES as usize + 1] }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let error = client
             .resolve(
@@ -478,7 +492,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get(|| async { vec![0; 1] }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let error = client
             .resolve(
@@ -515,7 +529,7 @@ mod tests {
 
         let base_url = serve(app).await;
 
-        let client = RelayClient::new(base_url, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(base_url, TIMEOUT, TIMEOUT).unwrap();
         let resolved = client
             .resolve(
                 &keypair.public_key(),
@@ -546,7 +560,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let resolved = client
             .resolve(
@@ -585,7 +599,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let resolved = client
             .resolve(
@@ -617,7 +631,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, Duration::from_secs(1)).unwrap();
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
 
         let resolved = client
             .resolve(
