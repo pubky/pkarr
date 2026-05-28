@@ -30,7 +30,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 # Drop once that issue is closed (gated on a fixed `ed25519-dalek`
 # release, not just `ed25519`).
 ed25519 = { version = "=3.0.0-rc.4", default-features = false }
-pkcs8 = { version = "=0.11.0-rc.11", default-features = false }
+pkcs8 = { version = "=0.11.0", default-features = false }
 
 document-features = "0.2.12"
 
@@ -46,7 +46,7 @@ futures-lite = { version = "2.6.1", default-features = false, optional = true, f
 ] }
 futures-buffered = { version = "0.2.12", optional = true }
 dyn-clone = { version = "1.0.20", optional = true }
-lru = { version = "0.16.3", default-features = false, optional = true }
+lru = { version = "0.18.0", default-features = false, optional = true }
 
 #feat: relay dependencies
 sha1_smol = { version = "1.0.1", optional = true }
@@ -68,14 +68,14 @@ mainline = { version = "6.2.0", default-features = false, features = ["async"], 
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
-tokio = { version = "1.49.0", default-features = false, optional = true }
+tokio = { version = "1.52.3", default-features = false, optional = true }
 async-compat = { version = "0.2.5", optional = true }
 
 # feat: lmdb-cache defendencies
 # Pinned: heed 0.22.1 uses `is_multiple_of` (stable in 1.87) without
 # declaring `rust-version = "1.87"`, so resolver 3 cannot exclude it.
 # Drop once heed declares its true MSRV or stops using 1.87-only APIs.
-heed = { version = "=0.22.0", default-features = false, optional = true }
+heed = { version = "=0.22.1", default-features = false, optional = true }
 byteorder = { version = "1.5.0", default-features = false, optional = true }
 page_size = { version = "0.6.0", optional = true }
 
@@ -89,7 +89,7 @@ getrandom = { version = "0.4.1", default-features = false, features = [
 ] }
 
 #feat: client dependencies
-log = { version = "0.4.29", optional = true }
+log = { version = "0.4.30", optional = true }
 wasm-bindgen-futures = { version = "0.4.58", optional = true }
 
 # feat: relay dependencies
@@ -108,7 +108,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 tempfile = "3.24.0"
 axum = "0.8.8"
 axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
-tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
 wasm-bindgen = { version = "0.2.108", features = ["serde-serialize"] }
