@@ -43,6 +43,13 @@ behind_proxy = false
 quota = "2r/s"
 # Optional HTTP request burst size. Defaults to the quota rate when omitted.
 burst = 10
+# Incoming DHT request quota per DHT peer IP address.
+# This is enforced by the internal Mainline DHT node before handling requests
+# from other DHT peers.
+dht_quota = "2r/s"
+# Optional incoming DHT request burst size.
+# Defaults to the DHT quota rate when omitted.
+dht_burst = 10
 # User-initiated DHT operation quota per IP address.
 # This is separate from the HTTP quota above and is consumed only when a
 # request makes the relay contact the DHT: PUT publishes, GET cache misses,

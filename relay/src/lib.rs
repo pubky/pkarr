@@ -17,7 +17,7 @@ mod real_ip;
 mod response;
 
 use std::{
-    net::{SocketAddr, TcpListener},
+    net::{SocketAddr, SocketAddrV4, TcpListener, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -30,21 +30,24 @@ use axum_server::Handle;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{dht::DhtClient, extra::lmdb_cache::LmdbCache, Timestamp};
+use pkarr::{dht::DhtClient, extra::lmdb_cache::LmdbCache, mainline, Timestamp};
 use url::Url;
 
-use config::{Config, CACHE_DIR};
+use config::{RelayConfig, CACHE_DIR};
 
 pub use quota_config::{RequestCountQuota, TimeUnit};
 pub use rate_limiting::RateLimiterConfig;
 
 /// A builder for Pkarr [Relay]
-pub struct RelayBuilder(Config);
+pub struct RelayBuilder {
+    config: RelayConfig,
+    dht: mainline::Config,
+}
 
 impl RelayBuilder {
     /// Set the port for the HTTP endpoint.
     pub fn http_port(&mut self, port: u16) -> &mut Self {
-        self.0.http_port = port;
+        self.config.http.port = port;
 
         self
     }
@@ -56,7 +59,7 @@ impl RelayBuilder {
     ///
     /// Defaults to the path to the user's data directory
     pub fn storage(&mut self, storage: PathBuf) -> &mut Self {
-        self.0.cache_path = Some(storage.join(CACHE_DIR));
+        self.config.cache.path = Some(storage.join(CACHE_DIR));
 
         self
     }
@@ -65,7 +68,7 @@ impl RelayBuilder {
     ///
     /// Defaults to `1_000_000`
     pub fn cache_size(&mut self, size: usize) -> &mut Self {
-        self.0.cache_size = size;
+        self.config.cache.size = size;
 
         self
     }
@@ -74,7 +77,7 @@ impl RelayBuilder {
     ///
     /// Useful when running in a local test network.
     pub fn disable_rate_limiter(&mut self) -> &mut Self {
-        self.0.rate_limiter = None;
+        self.config.rate_limiter = None;
 
         self
     }
@@ -83,17 +86,24 @@ impl RelayBuilder {
     ///
     /// Defaults to [RateLimiterConfig::default].
     pub fn rate_limiter_config(&mut self, config: RateLimiterConfig) -> &mut Self {
-        self.0.rate_limiter = Some(config);
+        self.config.rate_limiter = Some(config);
 
         self
     }
 
-    /// Allows mutating the internal [pkarr::ClientBuilder] with a callback function.
-    pub fn pkarr<F>(&mut self, f: F) -> &mut Self
+    /// Allows mutating the internal [pkarr::mainline] DHT configuration.
+    pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
-        F: FnOnce(&mut pkarr::ClientBuilder) -> &mut pkarr::ClientBuilder,
+        F: FnOnce(&mut pkarr::mainline::Config) -> &mut pkarr::mainline::Config,
     {
-        f(&mut self.0.pkarr);
+        f(&mut self.dht);
+
+        self
+    }
+
+    /// Set the maximum request timeout for DHT requests.
+    pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.dht.request_timeout = timeout;
 
         self
     }
@@ -104,7 +114,7 @@ impl RelayBuilder {
     /// This method is marked as unsafe because it uses `LmdbCache`, which can lead to
     /// undefined behavior if the lock file is corrupted or improperly handled.
     pub async unsafe fn run(self) -> anyhow::Result<Relay> {
-        unsafe { Relay::run(self.0) }.await
+        unsafe { Relay::run_with_dht(self.config, self.dht) }.await
     }
 }
 
@@ -129,18 +139,28 @@ impl Relay {
     ///
     /// # Returns
     /// A `Result` containing the `Relay` instance or an error.
-    async unsafe fn run(mut config: Config) -> anyhow::Result<Self> {
+    async unsafe fn run(config: RelayConfig) -> anyhow::Result<Self> {
+        let dht_config = mainline_config(&config);
+
+        unsafe { Self::run_with_dht(config, dht_config) }.await
+    }
+
+    async unsafe fn run_with_dht(
+        config: RelayConfig,
+        mut dht_config: mainline::Config,
+    ) -> anyhow::Result<Self> {
         tracing::debug!(?config, "Pkarr server config");
 
         let cache_path = config
-            .cache_path
+            .cache
+            .path
             .unwrap_or_else(|| {
                 tracing::warn!("Cache path is not configured, running ephemeral Relay");
                 std::env::temp_dir().join(Timestamp::now().to_string())
             })
             .join(CACHE_DIR);
 
-        let cache = Arc::new(LmdbCache::open(&cache_path, config.cache_size)?);
+        let cache = Arc::new(LmdbCache::open(&cache_path, config.cache.size)?);
 
         let behind_proxy = config
             .rate_limiter
@@ -157,36 +177,35 @@ impl Relay {
                     rate_limiting::UserDhtRateLimiter::new(rate_limiter_config)
                         .await
                         .map_err(|e| anyhow!("Failed to build UserDhtRateLimiter: {e}"))?;
-                config.pkarr.dht(|config| {
-                    config.server_settings = pkarr::mainline::ServerSettings {
-                        filter: Box::new(rate_limiter.clone()),
-                        ..Default::default()
-                    };
-                    config
-                });
+                let dht_rate_limiter = rate_limiting::DhtRateLimiter::new(rate_limiter_config)
+                    .await
+                    .map_err(|e| anyhow!("Failed to build DhtRateLimiter: {e}"))?;
+                dht_config.server_settings = pkarr::mainline::ServerSettings {
+                    filter: Box::new(dht_rate_limiter),
+                    ..Default::default()
+                };
                 (Some(rate_limiter), Some(user_dht_rate_limiter))
             }
             None => (None, None),
         };
 
-        let client = config.pkarr.build()?;
+        let dht = DhtClient::build(dht_config)?;
 
-        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http_port)))?;
+        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http.port)))?;
         // On axum-server 0.8.0 the `.set_nonblocking(true)` call does not take place internally anymore
         // See open issue https://github.com/programatik29/axum-server/issues/181
         listener.set_nonblocking(true)?;
 
-        let dht = client.dht().expect("dht network is enabled").clone();
         let node_address = dht.info().await.local_addr();
         let relay_address = listener.local_addr()?;
 
-        info!("Cache path: {:?}", cache_path);
+        info!("Cache path: {cache_path:?}");
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
         let state = AppState {
-            minimum_ttl: config.minimum_ttl,
-            maximum_ttl: config.maximum_ttl,
+            minimum_ttl: config.cache.minimum_ttl,
+            maximum_ttl: config.cache.maximum_ttl,
             cache,
             cache_write_lock: Arc::new(Mutex::new(())),
             user_dht_rate_limiter,
@@ -210,7 +229,10 @@ impl Relay {
 
     /// Create a builder for running a [Relay]
     pub fn builder() -> RelayBuilder {
-        RelayBuilder(Default::default())
+        RelayBuilder {
+            config: Default::default(),
+            dht: Default::default(),
+        }
     }
 
     /// Run a [Relay] with a configuration file path.
@@ -221,7 +243,7 @@ impl Relay {
     pub async unsafe fn run_with_config_file(
         config_path: impl AsRef<Path>,
     ) -> anyhow::Result<Self> {
-        unsafe { Self::run(Config::load(config_path).await?) }.await
+        unsafe { Self::run(RelayConfig::load(config_path).await?) }.await
     }
 
     /// Run an ephemeral Pkarr relay on a random port number for testing purposes.
@@ -233,25 +255,19 @@ impl Relay {
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async fn run_test(testnet: &pkarr::mainline::Testnet) -> anyhow::Result<Self> {
-        let mut config = Config {
-            cache_path: None,
-            http_port: 0,
+        let config = RelayConfig {
+            http: config::HttpConfig { port: 0 },
             rate_limiter: None,
             ..Default::default()
         };
 
-        config
-            .pkarr
-            .bootstrap(&testnet.bootstrap)
-            .request_timeout(Duration::from_millis(100))
-            .bootstrap(&testnet.bootstrap)
-            .dht(|config| {
-                config.server_mode = true;
-                config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
-                config
-            });
+        let mut dht_config = mainline_config(&config);
+        dht_config.bootstrap = Some(to_socket_address_v4(&testnet.bootstrap));
+        dht_config.request_timeout = Duration::from_millis(100);
+        dht_config.server_mode = true;
+        dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
 
-        Ok(unsafe { Self::run(config).await? })
+        Ok(unsafe { Self::run_with_dht(config, dht_config).await? })
     }
 
     /// Run a Pkarr relay in a Testnet mode (on port 15411).
@@ -267,24 +283,19 @@ impl Relay {
             Box::leak(Box::new(node));
         }
 
-        let mut config = Config {
-            http_port: 15411,
-            cache_path: None,
+        let config = RelayConfig {
+            http: config::HttpConfig { port: 15411 },
             rate_limiter: None,
             ..Default::default()
         };
 
-        config
-            .pkarr
-            .request_timeout(Duration::from_millis(100))
-            .bootstrap(&testnet.bootstrap)
-            .dht(|config| {
-                config.server_mode = true;
-                config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
-                config
-            });
+        let mut dht_config = mainline_config(&config);
+        dht_config.bootstrap = Some(to_socket_address_v4(&testnet.bootstrap));
+        dht_config.request_timeout = Duration::from_millis(100);
+        dht_config.server_mode = true;
+        dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
 
-        Self::run(config).await
+        Self::run_with_dht(config, dht_config).await
     }
 
     /// Returns the HTTP socket address of the relay.
@@ -301,6 +312,13 @@ impl Relay {
     /// Shutdown the relay server.
     pub fn shutdown(&self) {
         self.handle.shutdown();
+    }
+}
+
+fn mainline_config(config: &RelayConfig) -> mainline::Config {
+    mainline::Config {
+        port: config.mainline.port,
+        ..Default::default()
     }
 }
 
@@ -329,6 +347,23 @@ fn create_app(
     router
 }
 
+fn to_socket_address_v4<T: ToSocketAddrs>(bootstrap: &[T]) -> Vec<SocketAddrV4> {
+    bootstrap
+        .iter()
+        .flat_map(|address| {
+            address.to_socket_addrs().map(|addresses| {
+                addresses
+                    .filter_map(|address| match address {
+                        SocketAddr::V4(address) => Some(address),
+                        SocketAddr::V6(_) => None,
+                    })
+                    .collect::<Box<[_]>>()
+            })
+        })
+        .flatten()
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 struct AppState {
     minimum_ttl: u32,
@@ -348,7 +383,7 @@ mod tests {
     use http::StatusCode;
     use pkarr::{Keypair, SignedPacket, Timestamp};
 
-    use super::{RateLimiterConfig, Relay, RequestCountQuota};
+    use super::{to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
 
     #[tokio::test]
     async fn user_dht_rate_limit_only_blocks_dht_operations() {
@@ -417,18 +452,16 @@ mod tests {
                 behind_proxy: false,
                 quota: "60r/s".parse::<RequestCountQuota>().unwrap(),
                 burst: NonZeroU32::new(100),
+                dht_quota: "60r/s".parse::<RequestCountQuota>().unwrap(),
+                dht_burst: NonZeroU32::new(100),
                 user_dht_quota: "1r/h".parse::<RequestCountQuota>().unwrap(),
                 user_dht_burst: NonZeroU32::new(1),
             })
-            .pkarr(|builder| {
-                builder
-                    .no_default_network()
-                    .bootstrap(&testnet.bootstrap)
-                    .request_timeout(Duration::from_millis(100))
-                    .dht(|config| {
-                        config.bind_address = Some(Ipv4Addr::LOCALHOST);
-                        config
-                    })
+            .request_timeout(Duration::from_millis(100))
+            .dht(|config| {
+                config.bootstrap = Some(to_socket_address_v4(&testnet.bootstrap));
+                config.bind_address = Some(Ipv4Addr::LOCALHOST);
+                config
             });
 
         unsafe { builder.run().await.unwrap() }
