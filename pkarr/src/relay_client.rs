@@ -323,6 +323,11 @@ fn reject_known_too_large(content_length: Option<u64>, limit: usize) -> Result<(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
     use axum::{
         http::{HeaderMap, StatusCode as HttpStatusCode},
         routing::get,
@@ -644,6 +649,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+    }
+
+    // We test that the client can work with HTTPS endpoints; however, this does
+    // not guarantee that it will work in a release build because, in tests, we
+    // also have dev dependencies.
+    #[tokio::test]
+    async fn client_works_with_https() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let https_url = format!("https://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let reached_listener = Arc::new(AtomicBool::new(false));
+
+        tokio::spawn({
+            let reached_listener = reached_listener.clone();
+            async move {
+                if listener.accept().await.is_ok() {
+                    reached_listener.store(true, Ordering::SeqCst);
+                }
+            }
+        });
+
+        let client = RelayClient::new(https_url, TIMEOUT, TIMEOUT).unwrap();
+        let keypair = Keypair::random();
+        let err = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::LocalOrRelayCacheOnly,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            reached_listener.load(Ordering::SeqCst),
+            "HTTPS request never reached the TCP listener, got {err:?}"
+        );
     }
 
     async fn serve(app: Router) -> Url {
