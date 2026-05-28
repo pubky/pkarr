@@ -102,7 +102,8 @@ impl Client {
             }
 
             let relays_client =
-                RelaysClient::new(relays.clone().into_boxed_slice(), config.request_timeout);
+                RelaysClient::new(relays.clone().into_boxed_slice(), config.request_timeout)
+                    .map_err(BuildError::RelayBuildError)?;
 
             Some(relays_client)
         } else {
@@ -526,6 +527,11 @@ pub enum BuildError {
     #[error("Failed to build the Dht client {0}")]
     /// Failed to build the Dht client.
     DhtBuildError(std::io::Error),
+
+    #[cfg(relays)]
+    #[error("Failed to build the relays client {0}")]
+    /// Failed to build the relays client.
+    RelayBuildError(crate::relay_client::RelayError),
 
     #[error("Passed an empty list of relays")]
     /// Passed an empty list of relays
