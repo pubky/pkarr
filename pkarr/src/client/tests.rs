@@ -1,6 +1,6 @@
 //! Client native tests
 
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, ToSocketAddrs};
 use std::{thread, time::Duration};
 
 use ntimestamp::Timestamp;
@@ -686,14 +686,21 @@ async fn discard_cache_with_zero_capacity() {
         .cache_size(0) // Comment this line out and it works
         .http_port(0)
         .storage(storage)
-        .pkarr(|builder| {
-            builder.no_default_network();
-            builder.bootstrap(&testnet.bootstrap);
-            builder.dht(|config| {
-                config.bind_address = Some(Ipv4Addr::LOCALHOST);
-                config
-            });
-            builder
+        .dht(|config| {
+            config.bootstrap = Some(
+                testnet
+                    .bootstrap
+                    .iter()
+                    .filter_map(|address| address.to_socket_addrs().ok())
+                    .flatten()
+                    .filter_map(|address| match address {
+                        std::net::SocketAddr::V4(address) => Some(address),
+                        std::net::SocketAddr::V6(_) => None,
+                    })
+                    .collect(),
+            );
+            config.bind_address = Some(Ipv4Addr::LOCALHOST);
+            config
         });
     let relay = unsafe { builder.run().await.unwrap() };
     let relay_url = relay.local_url();
