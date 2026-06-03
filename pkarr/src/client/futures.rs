@@ -126,27 +126,36 @@ impl Stream for SelectStream {
 
         match this.mode {
             Mode::RoundRobin(current) => {
-                // Alternate which stream to poll next
+                // The non-primary network this round.
+                let other = match current {
+                    Network::Dht => Network::Relays,
+                    Network::Relays => Network::Dht,
+                };
+
                 let (primary, secondary) = match current {
                     Network::Dht => (this.dht_stream.as_mut(), this.relays_stream.as_mut()),
                     Network::Relays => (this.relays_stream.as_mut(), this.dht_stream.as_mut()),
                 };
 
-                // Update the Network for next poll
-                this.mode = Mode::RoundRobin(match current {
-                    Network::Dht => Network::Relays,
-                    Network::Relays => Network::Dht,
-                });
+                // Alternate priority on the next poll.
+                this.mode = Mode::RoundRobin(other);
 
-                // Try polling the current primary stream
+                // Poll the primary first, but fall back to the secondary when it
+                // is pending so a ready secondary is never starved behind it.
                 match primary.poll_next(cx) {
                     Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
                     Poll::Ready(None) => {
-                        // Primary is exhausted, now only poll the remaining one
                         this.mode = Mode::Exhausted(current);
                         secondary.poll_next(cx)
                     }
-                    Poll::Pending => Poll::Pending,
+                    Poll::Pending => match secondary.poll_next(cx) {
+                        // Secondary exhausted: keep the pending primary alive.
+                        Poll::Ready(None) => {
+                            this.mode = Mode::Exhausted(other);
+                            Poll::Pending
+                        }
+                        poll => poll,
+                    },
                 }
             }
             Mode::Exhausted(exhausted) => match exhausted {
@@ -154,5 +163,66 @@ impl Stream for SelectStream {
                 Network::Relays => this.dht_stream.poll_next(cx),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::task::{Context, Poll, Waker};
+
+    use futures_lite::stream;
+
+    use crate::{Keypair, PublicKey, SignedPacket};
+
+    type BoxStream = Pin<Box<dyn Stream<Item = SignedPacket> + Send>>;
+
+    fn packet() -> SignedPacket {
+        SignedPacket::builder().sign(&Keypair::random()).unwrap()
+    }
+
+    fn pending() -> BoxStream {
+        Box::pin(stream::pending())
+    }
+
+    fn ready(packet: SignedPacket) -> BoxStream {
+        Box::pin(stream::once(packet))
+    }
+
+    /// A ready stream must be yielded on the first poll even when the
+    /// round-robin primary is pending. Regression test for a starvation bug
+    /// where `SelectStream` returned `Pending` without polling the secondary,
+    /// so a fast relay response sat unyielded until the slow DHT woke the task.
+    fn assert_yields(mut select: SelectStream, expected: PublicKey) {
+        let mut cx = Context::from_waker(Waker::noop());
+        match Pin::new(&mut select).poll_next(&mut cx) {
+            Poll::Ready(Some(got)) => assert_eq!(got.public_key(), expected),
+            Poll::Ready(None) => panic!("stream terminated unexpectedly"),
+            Poll::Pending => panic!("ready secondary starved behind a pending primary"),
+        }
+    }
+
+    #[test]
+    fn ready_relay_not_starved_by_pending_dht() {
+        // Starts in RoundRobin(Dht): DHT (primary) pending, relay ready.
+        let p = packet();
+        let expected = p.public_key();
+        assert_yields(select_stream(pending(), ready(p)), expected);
+    }
+
+    #[test]
+    fn ready_dht_not_starved_by_pending_relay() {
+        // Symmetric: round-robin pointer on Relays, relay (primary) pending.
+        let p = packet();
+        let expected = p.public_key();
+        assert_yields(
+            SelectStream {
+                mode: Mode::RoundRobin(Network::Relays),
+                dht_stream: ready(p),
+                relays_stream: pending(),
+            },
+            expected,
+        );
     }
 }
