@@ -33,6 +33,6 @@ jobs:
           platforms: |
             linux/arm64
             linux/amd64
-          image: pkarr
+          image: pubky-pkarr
           cache_from: type=gha
           cache_to: type=gha,mode=max
