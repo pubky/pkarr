@@ -308,7 +308,9 @@ impl InflightPublishRequests {
 
 fn map_relay_error(error: RelayError) -> PublishError {
     match error {
-        RelayError::Timeout => PublishError::Query(QueryError::Timeout),
+        RelayError::Timeout | RelayError::NoDhtResponses => {
+            PublishError::Query(QueryError::Timeout)
+        }
         RelayError::BadRequest => {
             // This should be very unlikely unless relays are misbehaving, still worth
             // returning to the user to know that relays are misbehaving, and not just a
@@ -323,6 +325,29 @@ fn map_relay_error(error: RelayError) -> PublishError {
         | RelayError::BodyTooLarge { .. }
         | RelayError::InvalidSignedPacket(_)
         | RelayError::InvalidHeader(_)
+        | RelayError::NoValidDhtResponses
+        | RelayError::NoDhtNodesQueried
         | RelayError::UnexpectedStatus(_) => PublishError::UnexpectedResponses,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dht_relay_errors_map_to_publish_errors() {
+        assert!(matches!(
+            map_relay_error(RelayError::NoDhtResponses),
+            PublishError::Query(QueryError::Timeout)
+        ));
+        assert!(matches!(
+            map_relay_error(RelayError::NoValidDhtResponses),
+            PublishError::UnexpectedResponses
+        ));
+        assert!(matches!(
+            map_relay_error(RelayError::NoDhtNodesQueried),
+            PublishError::UnexpectedResponses
+        ));
     }
 }

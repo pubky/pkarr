@@ -2,11 +2,12 @@ use axum::extract::{Extension, Path, Query};
 use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
-use futures_lite::StreamExt;
 use http::StatusCode;
+use pkarr::dht::MINIMUM_PUBLISH_STORED_NODES;
 use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
+use tracing::warn;
 
 use crate::error::Error;
 use crate::extractors::{IfMatch, IfModifiedSince, PublicKeyParam};
@@ -22,21 +23,24 @@ pub async fn put(
     body: Bytes,
 ) -> Result<impl IntoResponse, Error> {
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
-        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, Some(error)))?;
+        .map_err(|error| Error::new(StatusCode::BAD_REQUEST, error))?;
 
     let key = CacheKey::from(&public_key);
     if let Some(cached) = state.cache.get_read_only(&key) {
         if cached.more_recent_than(&signed_packet) {
             return Err(Error::new(
                 StatusCode::CONFLICT,
-                Some(ConcurrencyError::NotMostRecent),
+                ConcurrencyError::NotMostRecent,
             ));
         }
     }
 
     enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
 
-    state.dht.publish(&signed_packet, cas).await?;
+    let stored_at = state.dht.publish(&signed_packet, cas).await?;
+    if stored_at < MINIMUM_PUBLISH_STORED_NODES {
+        warn!(public_key = ?signed_packet.public_key(), stored_at, "suspicious DHT publish report");
+    }
     update_cache_if_needed(&state, &key, &signed_packet);
 
     Ok(StatusCode::NO_CONTENT)
@@ -59,40 +63,53 @@ pub async fn get(
         .and_then(decrement);
 
     let packet = match policy {
-        ResolvePolicy::LocalOrRelayCacheOnly => cached_packet,
+        ResolvePolicy::LocalOrRelayCacheOnly => match cached_packet {
+            Some(packet) => packet,
+            None => return Err(Error::with_status(StatusCode::NOT_FOUND)),
+        },
         ResolvePolicy::CacheFirst => match cached_packet {
-            Some(packet) if !packet.is_expired(state.minimum_ttl, state.maximum_ttl) => {
-                Some(packet)
-            }
+            Some(packet) if !packet.is_expired(state.minimum_ttl, state.maximum_ttl) => packet,
             _ => {
                 enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-                let mut stream = state.dht.resolve(&public_key, more_recent_than);
-                let packet = stream.next().await;
+                let result = state.dht.resolve(&public_key, more_recent_than).await?;
                 let state = state.clone();
                 // Do not waste late responses with potentially newer packets.
                 tokio::spawn(async move {
-                    if let Some(packet) = stream.fold(None, most_recent_packet).await {
-                        update_cache_if_needed(&state, &key, &packet);
+                    let (packet, report) = result.completion.await;
+                    if report.is_suspicious() {
+                        warn!(
+                            ?public_key,
+                            suspicions = ?report.suspicions(),
+                            "suspicious DHT resolve report"
+                        );
                     }
+                    update_cache_if_needed(&state, &key, &packet);
                 });
-                packet
+                result.first
             }
         },
         ResolvePolicy::DhtNetworkOnly => {
             enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-            let stream = state.dht.resolve(&public_key, more_recent_than);
-            stream.fold(None, most_recent_packet).await
+            let (packet, report) = state
+                .dht
+                .resolve(&public_key, more_recent_than)
+                .await?
+                .completion
+                .await;
+            if report.is_suspicious() {
+                warn!(
+                    ?public_key,
+                    suspicions = ?report.suspicions(),
+                    "suspicious DHT resolve report"
+                );
+            }
+            packet
         }
     };
 
-    if let Some(packet) = packet {
-        update_cache_if_needed(&state, &key, &packet);
-
-        let ttl = packet.ttl(state.minimum_ttl, state.maximum_ttl);
-        Ok(SignedPacketResponse::new(packet, ttl, if_modified_since))
-    } else {
-        Err(Error::with_status(StatusCode::NOT_FOUND))
-    }
+    update_cache_if_needed(&state, &key, &packet);
+    let ttl = packet.ttl(state.minimum_ttl, state.maximum_ttl);
+    Ok(SignedPacketResponse::new(packet, ttl, if_modified_since))
 }
 
 #[derive(Debug, Deserialize)]
@@ -231,7 +248,7 @@ fn enforce_user_dht_rate_limit(
         if rate_limiter.is_limited(&real_ip.0) {
             return Err(Error::new(
                 StatusCode::TOO_MANY_REQUESTS,
-                Some("Too many requests to DHT nodes"),
+                "Too many requests to DHT nodes",
             ));
         }
     }
@@ -239,112 +256,10 @@ fn enforce_user_dht_rate_limit(
     Ok(())
 }
 
-fn most_recent_packet(
-    most_recent: Option<SignedPacket>,
-    packet: SignedPacket,
-) -> Option<SignedPacket> {
-    match most_recent {
-        Some(mr) if mr.more_recent_than(&packet) => Some(mr),
-        _ => Some(packet),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{decrement, most_recent_packet};
-    use pkarr::{Keypair, SignedPacket, Timestamp};
-
-    fn signed_packet(timestamp: u64, text: &str) -> SignedPacket {
-        signed_packet_for_key(&Keypair::random(), timestamp, text)
-    }
-
-    fn signed_packet_for_key(keypair: &Keypair, timestamp: u64, text: &str) -> SignedPacket {
-        SignedPacket::builder()
-            .timestamp(Timestamp::from(timestamp))
-            .txt("test".try_into().unwrap(), text.try_into().unwrap(), 30)
-            .sign(keypair)
-            .unwrap()
-    }
-
-    #[test]
-    fn most_recent_packet_selects_newest_packet() {
-        let packet = signed_packet(1, "first");
-
-        assert_eq!(
-            most_recent_packet(None, packet.clone()).unwrap().as_bytes(),
-            packet.as_bytes()
-        );
-
-        let existing = signed_packet(2, "existing");
-        let packet = signed_packet(1, "packet");
-
-        assert_eq!(
-            most_recent_packet(Some(existing.clone()), packet)
-                .unwrap()
-                .as_bytes(),
-            existing.as_bytes()
-        );
-
-        let existing = signed_packet(1, "existing");
-        let packet = signed_packet(2, "packet");
-
-        assert_eq!(
-            most_recent_packet(Some(existing), packet.clone())
-                .unwrap()
-                .as_bytes(),
-            packet.as_bytes()
-        );
-
-        let keypair = Keypair::random();
-        let a = signed_packet_for_key(&keypair, 1, "a");
-        let b = signed_packet_for_key(&keypair, 1, "b");
-        let (smaller, larger) = if a.encoded_packet() < b.encoded_packet() {
-            (a, b)
-        } else {
-            (b, a)
-        };
-
-        assert_eq!(
-            most_recent_packet(Some(larger.clone()), smaller.clone())
-                .unwrap()
-                .as_bytes(),
-            larger.as_bytes()
-        );
-
-        assert_eq!(
-            most_recent_packet(Some(smaller), larger.clone())
-                .unwrap()
-                .as_bytes(),
-            larger.as_bytes()
-        );
-    }
-
-    #[test]
-    fn most_recent_packet_uses_value_tie_breaker_for_same_timestamp() {
-        let keypair = Keypair::random();
-        let (smaller_value, larger_value) = (0..1000)
-            .find_map(|i| {
-                let a = signed_packet_for_key(&keypair, 1, &format!("a{i}"));
-                let b = signed_packet_for_key(&keypair, 1, &format!("b{i}"));
-
-                (a.encoded_packet().cmp(&b.encoded_packet()) != a.as_bytes().cmp(b.as_bytes()))
-                    .then(|| {
-                        if a.more_recent_than(&b) {
-                            (b, a)
-                        } else {
-                            (a, b)
-                        }
-                    })
-            })
-            .expect("test packet pair with conflicting signature and DNS value ordering");
-
-        assert_eq!(
-            most_recent_packet(Some(smaller_value), larger_value.clone())
-                .unwrap()
-                .encoded_packet(),
-            larger_value.encoded_packet()
-        );
-    }
+    use super::decrement;
+    use pkarr::Timestamp;
 
     #[test]
     fn zero_timestamp_has_no_dht_lower_bound() {

@@ -1,11 +1,19 @@
+use std::future::Future;
+
 use ed25519_dalek::Signature;
 use futures_lite::{Stream, StreamExt};
-use mainline::{async_dht::AsyncDht, Config, Dht, MutableItem};
+use mainline::{
+    async_dht::{AsyncDht, GetMutableDetailed},
+    Config, Dht, MutableItem,
+};
 use ntimestamp::Timestamp;
 
 use crate::{PublicKey, SignedPacket};
 
-use super::{DhtInfo, PublishError};
+use super::{DhtInfo, PublishError, ResolveFound, ResolveReport};
+
+/// Minimum DHT nodes expected to acknowledge storing a published packet.
+pub const MINIMUM_PUBLISH_STORED_NODES: u32 = 10;
 
 /// Pkarr DHT client.
 #[derive(Clone, Debug)]
@@ -27,14 +35,17 @@ impl DhtClient {
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<(), PublishError> {
+    ) -> Result<u32, PublishError> {
         let cas = cas.map(|timestamp| timestamp.as_u64() as i64);
-        self.inner.put_mutable(signed_packet.into(), cas).await?;
-        Ok(())
+        Ok(self
+            .inner
+            .put_mutable(signed_packet.into(), cas)
+            .await?
+            .stored_at)
     }
 
     /// Resolve signed packets newer than the given timestamp.
-    pub fn resolve(
+    pub fn resolve_stream(
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
@@ -44,6 +55,45 @@ impl DhtClient {
         self.inner
             .get_mutable(public_key.as_bytes(), None, more_recent_than)
             .filter_map(|item| SignedPacket::try_from(item).ok())
+    }
+
+    /// Resolve signed packets newer than the given timestamp and return query diagnostics.
+    pub async fn resolve(
+        &self,
+        public_key: &PublicKey,
+        more_recent_than: Option<Timestamp>,
+    ) -> Result<
+        ResolveFound<impl Future<Output = (SignedPacket, ResolveReport)> + Send>,
+        ResolveReport,
+    > {
+        let more_recent_than = more_recent_than.map(|timestamp| timestamp.as_u64() as i64);
+        let mut detailed =
+            self.inner
+                .get_mutable_detailed(public_key.as_bytes(), None, more_recent_than);
+
+        let mut invalid_signed_packet_count = 0;
+        while let Some(item) = detailed.items.next().await {
+            match SignedPacket::try_from(item) {
+                Ok(first) => {
+                    let most_recent = first.clone();
+                    return Ok(ResolveFound {
+                        first,
+                        completion: finish_resolve(
+                            detailed,
+                            most_recent,
+                            invalid_signed_packet_count,
+                        ),
+                    });
+                }
+                Err(_) => invalid_signed_packet_count += 1,
+            }
+        }
+
+        let report = ResolveReport::with_invalid_signed_packets(
+            detailed.outcome.recv().await,
+            invalid_signed_packet_count,
+        );
+        Err(report)
     }
 
     /// Return information about the underlying DHT node.
@@ -98,6 +148,27 @@ impl TryFrom<MutableItem> for SignedPacket {
     fn try_from(i: MutableItem) -> Result<Self, crate::errors::SignedPacketVerifyError> {
         SignedPacket::try_from(&i)
     }
+}
+
+async fn finish_resolve(
+    mut detailed: GetMutableDetailed,
+    mut most_recent: SignedPacket,
+    mut invalid_signed_packet_count: u32,
+) -> (SignedPacket, ResolveReport) {
+    while let Some(item) = detailed.items.next().await {
+        match SignedPacket::try_from(item) {
+            Ok(packet) if packet.more_recent_than(&most_recent) => most_recent = packet,
+            Ok(_) => {}
+            Err(_) => invalid_signed_packet_count += 1,
+        }
+    }
+
+    let report = ResolveReport::with_invalid_signed_packets(
+        detailed.outcome.recv().await,
+        invalid_signed_packet_count,
+    );
+
+    (most_recent, report)
 }
 
 #[cfg(test)]

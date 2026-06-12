@@ -64,7 +64,7 @@ getrandom = { version = "0.4.1", default-features = false }
 tracing = { version = "0.1.44", optional = true }
 
 # feat: dht dependencies
-mainline = { version = "6.2.0", default-features = false, features = ["async"], optional = true }
+mainline = { version = "7.0.0", default-features = false, features = ["async"], optional = true }
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }

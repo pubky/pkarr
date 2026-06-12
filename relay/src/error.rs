@@ -32,11 +32,11 @@ impl Error {
     }
 
     /// Create a new [`Error`].
-    pub fn new(status_code: StatusCode, message: Option<impl ToString>) -> Error {
+    pub fn new(status_code: StatusCode, message: impl ToString) -> Error {
         Self {
             status: status_code,
             // title: Self::canonical_reason_to_string(&status_code),
-            detail: message.map(|m| m.to_string()),
+            detail: Some(message.to_string()),
         }
     }
 }
@@ -52,19 +52,19 @@ impl IntoResponse for Error {
 
 impl From<QueryRejection> for Error {
     fn from(value: QueryRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(value))
+        Self::new(StatusCode::BAD_REQUEST, value)
     }
 }
 
 impl From<ExtensionRejection> for Error {
     fn from(value: ExtensionRejection) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, Some(value))
+        Self::new(StatusCode::BAD_REQUEST, value)
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(value))
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, value)
     }
 }
 
@@ -74,13 +74,31 @@ impl From<dht::PublishError> for Error {
             dht::PublishError::Timeout
             | dht::PublishError::NoClosestNodes
             | dht::PublishError::ErrorResponse { .. } => {
-                Self::new(StatusCode::INTERNAL_SERVER_ERROR, Some(error))
+                Self::new(StatusCode::INTERNAL_SERVER_ERROR, error)
             }
-            dht::PublishError::CasFailed => Self::new(StatusCode::PRECONDITION_FAILED, Some(error)),
-            dht::PublishError::ConflictRisk => {
-                Self::new(StatusCode::PRECONDITION_REQUIRED, Some(error))
-            }
-            dht::PublishError::NotMostRecent => Self::new(StatusCode::CONFLICT, Some(error)),
+            dht::PublishError::CasFailed => Self::new(StatusCode::PRECONDITION_FAILED, error),
+            dht::PublishError::ConflictRisk => Self::new(StatusCode::PRECONDITION_REQUIRED, error),
+            dht::PublishError::NotMostRecent => Self::new(StatusCode::CONFLICT, error),
+        }
+    }
+}
+
+impl From<dht::ResolveReport> for Error {
+    fn from(report: dht::ResolveReport) -> Self {
+        if report.queried() == 0 {
+            Error::new(StatusCode::SERVICE_UNAVAILABLE, "No DHT nodes were queried")
+        } else if report.responded() == 0 {
+            Error::new(
+                StatusCode::GATEWAY_TIMEOUT,
+                "No queried DHT nodes responded",
+            )
+        } else if report.valid_responses() == 0 {
+            Error::new(
+                StatusCode::BAD_GATEWAY,
+                "No responded DHT nodes returned valid response",
+            )
+        } else {
+            Error::with_status(StatusCode::NOT_FOUND)
         }
     }
 }

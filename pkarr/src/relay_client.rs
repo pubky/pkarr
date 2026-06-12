@@ -241,6 +241,18 @@ pub enum RelayError {
     #[error("relay requires compare-and-swap")]
     ConflictRisk,
 
+    /// Relay's DHT query found no valid responses.
+    #[error("relay DHT query found no valid responses")]
+    NoValidDhtResponses,
+
+    /// Relay did not query any DHT nodes.
+    #[error("relay queried no DHT nodes")]
+    NoDhtNodesQueried,
+
+    /// Relay queried DHT nodes, but none responded.
+    #[error("relay DHT query received no responses")]
+    NoDhtResponses,
+
     /// Relay returned an unexpected status code.
     #[error("relay returned unexpected status code {0}")]
     UnexpectedStatus(StatusCode),
@@ -263,6 +275,9 @@ impl RelayError {
             StatusCode::CONFLICT => Self::NotMostRecent,
             StatusCode::PRECONDITION_FAILED => Self::CasFailed,
             StatusCode::PRECONDITION_REQUIRED => Self::ConflictRisk,
+            StatusCode::BAD_GATEWAY => Self::NoValidDhtResponses,
+            StatusCode::SERVICE_UNAVAILABLE => Self::NoDhtNodesQueried,
+            StatusCode::GATEWAY_TIMEOUT => Self::NoDhtResponses,
             status => Self::UnexpectedStatus(status),
         }
     }
@@ -341,6 +356,38 @@ mod tests {
     use crate::Keypair;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
+
+    #[test]
+    fn relay_5xx_statuses_map_to_specific_errors() {
+        assert!(matches!(
+            RelayError::from_status(StatusCode::BAD_GATEWAY),
+            RelayError::NoValidDhtResponses
+        ));
+        assert!(matches!(
+            RelayError::from_status(StatusCode::SERVICE_UNAVAILABLE),
+            RelayError::NoDhtNodesQueried
+        ));
+        assert!(matches!(
+            RelayError::from_status(StatusCode::GATEWAY_TIMEOUT),
+            RelayError::NoDhtResponses
+        ));
+    }
+
+    #[tokio::test]
+    async fn resolve_maps_dht_5xx_statuses_to_specific_errors() {
+        assert!(matches!(
+            resolve_error_for_status(HttpStatusCode::BAD_GATEWAY).await,
+            RelayError::NoValidDhtResponses
+        ));
+        assert!(matches!(
+            resolve_error_for_status(HttpStatusCode::SERVICE_UNAVAILABLE).await,
+            RelayError::NoDhtNodesQueried
+        ));
+        assert!(matches!(
+            resolve_error_for_status(HttpStatusCode::GATEWAY_TIMEOUT).await,
+            RelayError::NoDhtResponses
+        ));
+    }
 
     #[tokio::test]
     async fn resolve_returns_none_on_not_found() {
@@ -685,6 +732,24 @@ mod tests {
             reached_listener.load(Ordering::SeqCst),
             "HTTPS request never reached the TCP listener, got {err:?}"
         );
+    }
+
+    async fn resolve_error_for_status(status: HttpStatusCode) -> RelayError {
+        let keypair = Keypair::random();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get(move || async move { status }),
+        );
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+
+        client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::LocalOrRelayCacheOnly,
+                None,
+            )
+            .await
+            .unwrap_err()
     }
 
     async fn serve(app: Router) -> Url {
