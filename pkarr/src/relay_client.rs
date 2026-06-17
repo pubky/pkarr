@@ -241,17 +241,9 @@ pub enum RelayError {
     #[error("relay requires compare-and-swap")]
     ConflictRisk,
 
-    /// Relay's DHT query found no valid responses.
-    #[error("relay DHT query found no valid responses")]
-    NoValidDhtResponses,
-
-    /// Relay did not query any DHT nodes.
-    #[error("relay queried no DHT nodes")]
-    NoDhtNodesQueried,
-
-    /// Relay queried DHT nodes, but none responded.
-    #[error("relay DHT query received no responses")]
-    NoDhtResponses,
+    /// Relay could not complete a DHT query.
+    #[error("relay DHT query is unavailable")]
+    DhtUnavailable,
 
     /// Relay returned an unexpected status code.
     #[error("relay returned unexpected status code {0}")]
@@ -275,9 +267,7 @@ impl RelayError {
             StatusCode::CONFLICT => Self::NotMostRecent,
             StatusCode::PRECONDITION_FAILED => Self::CasFailed,
             StatusCode::PRECONDITION_REQUIRED => Self::ConflictRisk,
-            StatusCode::BAD_GATEWAY => Self::NoValidDhtResponses,
-            StatusCode::SERVICE_UNAVAILABLE => Self::NoDhtNodesQueried,
-            StatusCode::GATEWAY_TIMEOUT => Self::NoDhtResponses,
+            StatusCode::SERVICE_UNAVAILABLE => Self::DhtUnavailable,
             status => Self::UnexpectedStatus(status),
         }
     }
@@ -358,34 +348,18 @@ mod tests {
     const TIMEOUT: Duration = Duration::from_secs(1);
 
     #[test]
-    fn relay_5xx_statuses_map_to_specific_errors() {
-        assert!(matches!(
-            RelayError::from_status(StatusCode::BAD_GATEWAY),
-            RelayError::NoValidDhtResponses
-        ));
+    fn relay_503_status_maps_to_dht_unavailable() {
         assert!(matches!(
             RelayError::from_status(StatusCode::SERVICE_UNAVAILABLE),
-            RelayError::NoDhtNodesQueried
-        ));
-        assert!(matches!(
-            RelayError::from_status(StatusCode::GATEWAY_TIMEOUT),
-            RelayError::NoDhtResponses
+            RelayError::DhtUnavailable
         ));
     }
 
     #[tokio::test]
-    async fn resolve_maps_dht_5xx_statuses_to_specific_errors() {
-        assert!(matches!(
-            resolve_error_for_status(HttpStatusCode::BAD_GATEWAY).await,
-            RelayError::NoValidDhtResponses
-        ));
+    async fn resolve_maps_503_to_dht_unavailable() {
         assert!(matches!(
             resolve_error_for_status(HttpStatusCode::SERVICE_UNAVAILABLE).await,
-            RelayError::NoDhtNodesQueried
-        ));
-        assert!(matches!(
-            resolve_error_for_status(HttpStatusCode::GATEWAY_TIMEOUT).await,
-            RelayError::NoDhtResponses
+            RelayError::DhtUnavailable
         ));
     }
 

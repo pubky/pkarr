@@ -83,22 +83,21 @@ impl From<dht::PublishError> for Error {
     }
 }
 
-impl From<dht::ResolveReport> for Error {
-    fn from(report: dht::ResolveReport) -> Self {
-        if report.queried() == 0 {
-            Error::new(StatusCode::SERVICE_UNAVAILABLE, "No DHT nodes were queried")
-        } else if report.responded() == 0 {
-            Error::new(
-                StatusCode::GATEWAY_TIMEOUT,
+impl From<dht::ResolveError> for Error {
+    fn from(error: dht::ResolveError) -> Self {
+        match error {
+            dht::ResolveError::NoNodesQueried => {
+                Error::new(StatusCode::SERVICE_UNAVAILABLE, "No DHT nodes were queried")
+            }
+            dht::ResolveError::NoNodesResponded => Error::new(
+                StatusCode::SERVICE_UNAVAILABLE,
                 "No queried DHT nodes responded",
-            )
-        } else if report.valid_responses() == 0 {
-            Error::new(
-                StatusCode::BAD_GATEWAY,
+            ),
+            dht::ResolveError::NoValidResponses => Error::new(
+                StatusCode::SERVICE_UNAVAILABLE,
                 "No responded DHT nodes returned valid response",
-            )
-        } else {
-            Error::with_status(StatusCode::NOT_FOUND)
+            ),
+            dht::ResolveError::NotFound => Error::with_status(StatusCode::NOT_FOUND),
         }
     }
 }

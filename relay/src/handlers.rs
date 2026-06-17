@@ -3,7 +3,7 @@ use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
-use pkarr::dht::MINIMUM_PUBLISH_STORED_NODES;
+use pkarr::dht::{ResolveReport, ResolveReportPolicy, MINIMUM_PUBLISH_STORED_NODES};
 use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
@@ -39,7 +39,7 @@ pub async fn put(
 
     let stored_at = state.dht.publish(&signed_packet, cas).await?;
     if stored_at < MINIMUM_PUBLISH_STORED_NODES {
-        warn!(public_key = ?signed_packet.public_key(), stored_at, "suspicious DHT publish report");
+        warn!(public_key = ?signed_packet.public_key(), stored_at, "DHT publish completed with warnings");
     }
     update_cache_if_needed(&state, &key, &signed_packet);
 
@@ -72,38 +72,27 @@ pub async fn get(
             _ => {
                 enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
                 let result = state.dht.resolve(&public_key, more_recent_than).await?;
+                let packet = result.first().clone();
                 let state = state.clone();
                 // Do not waste late responses with potentially newer packets.
                 tokio::spawn(async move {
-                    let (packet, report) = result.completion.await;
-                    if report.is_suspicious() {
-                        warn!(
-                            ?public_key,
-                            suspicions = ?report.suspicions(),
-                            "suspicious DHT resolve report"
-                        );
-                    }
-                    update_cache_if_needed(&state, &key, &packet);
+                    let resolved = result.complete().await;
+                    log_resolve_warnings(&public_key, &resolved.report);
+                    update_cache_if_needed(&state, &key, &resolved.most_recent);
                 });
-                result.first
+                packet
             }
         },
         ResolvePolicy::DhtNetworkOnly => {
             enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-            let (packet, report) = state
+            let resolved = state
                 .dht
                 .resolve(&public_key, more_recent_than)
                 .await?
-                .completion
+                .complete()
                 .await;
-            if report.is_suspicious() {
-                warn!(
-                    ?public_key,
-                    suspicions = ?report.suspicions(),
-                    "suspicious DHT resolve report"
-                );
-            }
-            packet
+            log_resolve_warnings(&public_key, &resolved.report);
+            resolved.most_recent
         }
     };
 
@@ -237,6 +226,17 @@ fn update_cache_if_needed(state: &AppState, key: &CacheKey, signed_packet: &Sign
 
 fn decrement(timestamp: Timestamp) -> Option<Timestamp> {
     timestamp.as_u64().checked_sub(1).map(Timestamp::from)
+}
+
+fn log_resolve_warnings(public_key: &pkarr::PublicKey, report: &ResolveReport) {
+    let warnings = report.classify_warnings(ResolveReportPolicy::default());
+    if !warnings.is_empty() {
+        warn!(
+            ?public_key,
+            ?warnings,
+            "DHT resolve completed with warnings"
+        );
+    }
 }
 
 fn enforce_user_dht_rate_limit(

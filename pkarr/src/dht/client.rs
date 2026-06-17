@@ -1,5 +1,3 @@
-use std::future::Future;
-
 use ed25519_dalek::Signature;
 use futures_lite::{Stream, StreamExt};
 use mainline::{
@@ -10,7 +8,7 @@ use ntimestamp::Timestamp;
 
 use crate::{PublicKey, SignedPacket};
 
-use super::{DhtInfo, PublishError, ResolveFound, ResolveReport};
+use super::{DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse};
 
 /// Minimum DHT nodes expected to acknowledge storing a published packet.
 pub const MINIMUM_PUBLISH_STORED_NODES: u32 = 10;
@@ -31,6 +29,10 @@ impl DhtClient {
     }
 
     /// Publish a signed packet to the DHT.
+    ///
+    /// # Returns
+    ///
+    /// The number of DHT nodes that acknowledged storing the packet.
     pub async fn publish(
         &self,
         signed_packet: &SignedPacket,
@@ -58,14 +60,17 @@ impl DhtClient {
     }
 
     /// Resolve signed packets newer than the given timestamp and return query diagnostics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when no signed packet is found or the DHT query did not
+    /// receive enough useful responses to distinguish a miss from a query
+    /// failure.
     pub async fn resolve(
         &self,
         public_key: &PublicKey,
         more_recent_than: Option<Timestamp>,
-    ) -> Result<
-        ResolveFound<impl Future<Output = (SignedPacket, ResolveReport)> + Send>,
-        ResolveReport,
-    > {
+    ) -> Result<ResolveResponse, ResolveError> {
         let more_recent_than = more_recent_than.map(|timestamp| timestamp.as_u64() as i64);
         let mut detailed =
             self.inner
@@ -76,14 +81,10 @@ impl DhtClient {
             match SignedPacket::try_from(item) {
                 Ok(first) => {
                     let most_recent = first.clone();
-                    return Ok(ResolveFound {
+                    return Ok(ResolveResponse::new(
                         first,
-                        completion: finish_resolve(
-                            detailed,
-                            most_recent,
-                            invalid_signed_packet_count,
-                        ),
-                    });
+                        finish_resolve(detailed, most_recent, invalid_signed_packet_count),
+                    ));
                 }
                 Err(_) => invalid_signed_packet_count += 1,
             }
@@ -93,7 +94,7 @@ impl DhtClient {
             detailed.outcome.recv().await,
             invalid_signed_packet_count,
         );
-        Err(report)
+        Err(report.into())
     }
 
     /// Return information about the underlying DHT node.
@@ -154,7 +155,7 @@ async fn finish_resolve(
     mut detailed: GetMutableDetailed,
     mut most_recent: SignedPacket,
     mut invalid_signed_packet_count: u32,
-) -> (SignedPacket, ResolveReport) {
+) -> ResolveOutcome {
     while let Some(item) = detailed.items.next().await {
         match SignedPacket::try_from(item) {
             Ok(packet) if packet.more_recent_than(&most_recent) => most_recent = packet,
@@ -167,8 +168,10 @@ async fn finish_resolve(
         detailed.outcome.recv().await,
         invalid_signed_packet_count,
     );
-
-    (most_recent, report)
+    ResolveOutcome {
+        most_recent,
+        report,
+    }
 }
 
 #[cfg(test)]

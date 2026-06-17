@@ -308,7 +308,7 @@ impl InflightPublishRequests {
 
 fn map_relay_error(error: RelayError) -> PublishError {
     match error {
-        RelayError::Timeout | RelayError::NoDhtResponses => {
+        RelayError::Timeout | RelayError::DhtUnavailable => {
             PublishError::Query(QueryError::Timeout)
         }
         RelayError::BadRequest => {
@@ -325,8 +325,6 @@ fn map_relay_error(error: RelayError) -> PublishError {
         | RelayError::BodyTooLarge { .. }
         | RelayError::InvalidSignedPacket(_)
         | RelayError::InvalidHeader(_)
-        | RelayError::NoValidDhtResponses
-        | RelayError::NoDhtNodesQueried
         | RelayError::UnexpectedStatus(_) => PublishError::UnexpectedResponses,
     }
 }
@@ -338,16 +336,8 @@ mod tests {
     #[test]
     fn dht_relay_errors_map_to_publish_errors() {
         assert!(matches!(
-            map_relay_error(RelayError::NoDhtResponses),
+            map_relay_error(RelayError::DhtUnavailable),
             PublishError::Query(QueryError::Timeout)
-        ));
-        assert!(matches!(
-            map_relay_error(RelayError::NoValidDhtResponses),
-            PublishError::UnexpectedResponses
-        ));
-        assert!(matches!(
-            map_relay_error(RelayError::NoDhtNodesQueried),
-            PublishError::UnexpectedResponses
         ));
     }
 }

@@ -1,13 +1,3 @@
-use crate::SignedPacket;
-
-/// Successful immediate DHT resolve result.
-pub struct ResolveFound<F> {
-    /// First valid signed packet returned by the DHT query.
-    pub first: SignedPacket,
-    /// Future that drains the rest of the query and returns the most recent packet and report.
-    pub completion: F,
-}
-
 /// Default minimum number of DHT nodes a resolve query should visit.
 const DEFAULT_MINIMUM_QUERIED_NODES: u32 = 20;
 
@@ -17,19 +7,28 @@ const DEFAULT_MINIMUM_RESPONDED_NODES: u32 = 3;
 /// Default minimum number of valid responses expected from a resolve query.
 const DEFAULT_MINIMUM_VALID_RESPONSES: u32 = 1;
 
+/// Testnet minimum number of DHT nodes a resolve query should visit.
+const TESTNET_MINIMUM_QUERIED_NODES: u32 = 2;
+
+/// Testnet minimum number of DHT nodes that should respond to a resolve query.
+const TESTNET_MINIMUM_RESPONDED_NODES: u32 = 1;
+
+/// Testnet minimum number of valid responses expected from a resolve query.
+const TESTNET_MINIMUM_VALID_RESPONSES: u32 = 1;
+
 /// Policy used to classify DHT resolve query diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ResolveReportPolicy {
+pub struct ResolveReportPolicy {
     /// Minimum number of unique DHT nodes that should be queried.
-    minimum_queried_nodes: u32,
+    pub minimum_queried_nodes: u32,
     /// Minimum number of queried DHT nodes that should respond.
-    minimum_responded_nodes: u32,
+    pub minimum_responded_nodes: u32,
     /// Minimum number of responses with a valid mutable GET shape.
-    minimum_valid_responses: u32,
-    /// Whether invalid values or invalid response shapes should be reported as suspicious.
-    flag_invalid_responses: bool,
-    /// Whether KRPC error responses should be reported as suspicious.
-    flag_krpc_errors: bool,
+    pub minimum_valid_responses: u32,
+    /// Whether invalid values or invalid response shapes should be reported as warnings.
+    pub warn_on_invalid_responses: bool,
+    /// Whether KRPC error responses should be reported as warnings.
+    pub warn_on_krpc_errors: bool,
 }
 
 impl Default for ResolveReportPolicy {
@@ -38,101 +37,95 @@ impl Default for ResolveReportPolicy {
             minimum_queried_nodes: DEFAULT_MINIMUM_QUERIED_NODES,
             minimum_responded_nodes: DEFAULT_MINIMUM_RESPONDED_NODES,
             minimum_valid_responses: DEFAULT_MINIMUM_VALID_RESPONSES,
-            flag_invalid_responses: true,
-            flag_krpc_errors: true,
+            warn_on_invalid_responses: true,
+            warn_on_krpc_errors: true,
         }
     }
 }
 
 impl ResolveReportPolicy {
-    /// Classify a raw Mainline mutable GET outcome with invalid signed packet diagnostics.
-    fn classify_with_invalid_signed_packets(
-        &self,
-        outcome: mainline::GetMutableOutcome,
-        invalid_signed_packet_count: u32,
-    ) -> ResolveReport {
-        ResolveReport {
-            suspicions: self.suspicions(&outcome, invalid_signed_packet_count),
-            outcome,
-            invalid_signed_packet_count,
+    /// Create a policy with thresholds suitable for small local testnets.
+    pub fn testnet() -> Self {
+        Self {
+            minimum_queried_nodes: TESTNET_MINIMUM_QUERIED_NODES,
+            minimum_responded_nodes: TESTNET_MINIMUM_RESPONDED_NODES,
+            minimum_valid_responses: TESTNET_MINIMUM_VALID_RESPONSES,
+            warn_on_invalid_responses: true,
+            warn_on_krpc_errors: true,
         }
     }
 
-    fn suspicions(
+    fn classify(
         &self,
         outcome: &mainline::GetMutableOutcome,
         invalid_signed_packet_count: u32,
-    ) -> Vec<ResolveSuspicion> {
-        let mut suspicions = Vec::new();
+    ) -> Vec<ResolveWarning> {
+        let mut warnings = Vec::new();
         let responded = outcome.responded();
         let valid_responses = outcome
             .valid_responses()
             .saturating_sub(invalid_signed_packet_count);
 
         if outcome.queried < self.minimum_queried_nodes {
-            suspicions.push(ResolveSuspicion::TooFewNodesQueried {
+            warnings.push(ResolveWarning::TooFewNodesQueried {
                 queried: outcome.queried,
                 minimum: self.minimum_queried_nodes,
             });
         }
 
         if responded < self.minimum_responded_nodes {
-            suspicions.push(ResolveSuspicion::TooFewNodesResponded {
+            warnings.push(ResolveWarning::TooFewNodesResponded {
                 responded,
                 minimum: self.minimum_responded_nodes,
             });
         }
 
         if valid_responses < self.minimum_valid_responses {
-            suspicions.push(ResolveSuspicion::TooFewValidResponses {
+            warnings.push(ResolveWarning::TooFewValidResponses {
                 valid_responses,
                 minimum: self.minimum_valid_responses,
             });
         }
 
-        if self.flag_invalid_responses
+        if self.warn_on_invalid_responses
             && (outcome.invalid_values > 0
                 || outcome.invalid_responses > 0
                 || invalid_signed_packet_count > 0)
         {
-            suspicions.push(ResolveSuspicion::InvalidResponses {
+            warnings.push(ResolveWarning::InvalidResponses {
                 invalid_values: outcome.invalid_values,
                 invalid_responses: outcome.invalid_responses,
                 invalid_signed_packets: invalid_signed_packet_count,
             });
         }
 
-        if self.flag_krpc_errors && outcome.krpc_errors > 0 {
-            suspicions.push(ResolveSuspicion::KrpcErrors {
+        if self.warn_on_krpc_errors && outcome.krpc_errors > 0 {
+            warnings.push(ResolveWarning::KrpcErrors {
                 krpc_errors: outcome.krpc_errors,
             });
         }
 
-        suspicions
+        warnings
     }
 }
 
-/// Classified diagnostics for a DHT resolve query.
+/// Diagnostics for a DHT resolve query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolveReport {
     outcome: mainline::GetMutableOutcome,
     invalid_signed_packet_count: u32,
-    suspicions: Vec<ResolveSuspicion>,
 }
 
 impl ResolveReport {
-    /// Classify a raw Mainline mutable GET outcome with invalid signed packet diagnostics.
+    /// Build a report from a raw Mainline mutable GET outcome with invalid signed packet diagnostics.
     pub(crate) fn with_invalid_signed_packets(
         outcome: mainline::GetMutableOutcome,
         invalid_signed_packet_count: u32,
     ) -> Self {
-        ResolveReportPolicy::default()
-            .classify_with_invalid_signed_packets(outcome, invalid_signed_packet_count)
-    }
-
-    /// Returns true when the resolve query had suspicious diagnostics.
-    pub fn is_suspicious(&self) -> bool {
-        !self.suspicions.is_empty()
+        Self {
+            outcome,
+            invalid_signed_packet_count,
+        }
     }
 
     /// Number of unique DHT nodes queried.
@@ -152,16 +145,16 @@ impl ResolveReport {
             .saturating_sub(self.invalid_signed_packet_count)
     }
 
-    /// Suspicious diagnostics found for this resolve query.
-    pub fn suspicions(&self) -> &[ResolveSuspicion] {
-        &self.suspicions
+    /// Classify warning diagnostics for this resolve query using the given policy.
+    pub fn classify_warnings(&self, policy: ResolveReportPolicy) -> Vec<ResolveWarning> {
+        policy.classify(&self.outcome, self.invalid_signed_packet_count)
     }
 }
 
-/// Suspicious diagnostics found in a DHT resolve query.
+/// Warning diagnostics found in a DHT resolve query.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ResolveSuspicion {
+pub enum ResolveWarning {
     /// The query visited fewer unique DHT nodes than expected.
     TooFewNodesQueried {
         /// Number of unique DHT nodes queried.
@@ -203,6 +196,10 @@ pub enum ResolveSuspicion {
 mod tests {
     use super::*;
 
+    fn classify(report: &ResolveReport) -> Vec<ResolveWarning> {
+        report.classify_warnings(ResolveReportPolicy::default())
+    }
+
     #[test]
     fn healthy_outcome_is_ok() {
         let report = ResolveReport::with_invalid_signed_packets(
@@ -218,12 +215,11 @@ mod tests {
             0,
         );
 
-        assert!(!report.is_suspicious());
-        assert!(report.suspicions().is_empty());
+        assert!(classify(&report).is_empty());
     }
 
     #[test]
-    fn sparse_outcome_is_suspicious() {
+    fn sparse_outcome_produces_warnings() {
         let report = ResolveReport::with_invalid_signed_packets(
             mainline::GetMutableOutcome {
                 queried: 2,
@@ -237,19 +233,18 @@ mod tests {
             0,
         );
 
-        assert!(report.is_suspicious());
         assert_eq!(
-            report.suspicions(),
-            &[
-                ResolveSuspicion::TooFewNodesQueried {
+            classify(&report),
+            vec![
+                ResolveWarning::TooFewNodesQueried {
                     queried: 2,
                     minimum: DEFAULT_MINIMUM_QUERIED_NODES,
                 },
-                ResolveSuspicion::TooFewNodesResponded {
+                ResolveWarning::TooFewNodesResponded {
                     responded: 0,
                     minimum: DEFAULT_MINIMUM_RESPONDED_NODES,
                 },
-                ResolveSuspicion::TooFewValidResponses {
+                ResolveWarning::TooFewValidResponses {
                     valid_responses: 0,
                     minimum: DEFAULT_MINIMUM_VALID_RESPONSES,
                 },
@@ -258,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_and_error_responses_are_suspicious() {
+    fn invalid_and_error_responses_produce_warnings() {
         let report = ResolveReport::with_invalid_signed_packets(
             mainline::GetMutableOutcome {
                 queried: 20,
@@ -272,22 +267,21 @@ mod tests {
             0,
         );
 
-        assert!(report.is_suspicious());
         assert_eq!(
-            report.suspicions(),
-            &[
-                ResolveSuspicion::InvalidResponses {
+            classify(&report),
+            vec![
+                ResolveWarning::InvalidResponses {
                     invalid_values: 1,
                     invalid_responses: 1,
                     invalid_signed_packets: 0,
                 },
-                ResolveSuspicion::KrpcErrors { krpc_errors: 1 },
+                ResolveWarning::KrpcErrors { krpc_errors: 1 },
             ]
         );
     }
 
     #[test]
-    fn invalid_signed_packets_are_suspicious() {
+    fn invalid_signed_packets_produce_warnings() {
         let report = ResolveReport::with_invalid_signed_packets(
             mainline::GetMutableOutcome {
                 queried: 20,
@@ -301,10 +295,9 @@ mod tests {
             2,
         );
 
-        assert!(report.is_suspicious());
         assert_eq!(
-            report.suspicions(),
-            &[ResolveSuspicion::InvalidResponses {
+            classify(&report),
+            vec![ResolveWarning::InvalidResponses {
                 invalid_values: 0,
                 invalid_responses: 0,
                 invalid_signed_packets: 2,
@@ -327,16 +320,15 @@ mod tests {
             3,
         );
 
-        assert!(report.is_suspicious());
         assert_eq!(report.valid_responses(), 0);
         assert_eq!(
-            report.suspicions(),
-            &[
-                ResolveSuspicion::TooFewValidResponses {
+            classify(&report),
+            vec![
+                ResolveWarning::TooFewValidResponses {
                     valid_responses: 0,
                     minimum: DEFAULT_MINIMUM_VALID_RESPONSES,
                 },
-                ResolveSuspicion::InvalidResponses {
+                ResolveWarning::InvalidResponses {
                     invalid_values: 0,
                     invalid_responses: 0,
                     invalid_signed_packets: 3,
@@ -362,22 +354,68 @@ mod tests {
 
         assert_eq!(report.valid_responses(), 0);
         assert_eq!(
-            report.suspicions(),
-            &[
-                ResolveSuspicion::TooFewNodesResponded {
+            classify(&report),
+            vec![
+                ResolveWarning::TooFewNodesResponded {
                     responded: 1,
                     minimum: DEFAULT_MINIMUM_RESPONDED_NODES,
                 },
-                ResolveSuspicion::TooFewValidResponses {
+                ResolveWarning::TooFewValidResponses {
                     valid_responses: 0,
                     minimum: DEFAULT_MINIMUM_VALID_RESPONSES,
                 },
-                ResolveSuspicion::InvalidResponses {
+                ResolveWarning::InvalidResponses {
                     invalid_values: 0,
                     invalid_responses: 0,
                     invalid_signed_packets: 2,
                 },
             ]
         );
+    }
+
+    #[test]
+    fn testnet_policy_relaxes_topology_thresholds() {
+        let report = ResolveReport::with_invalid_signed_packets(
+            mainline::GetMutableOutcome {
+                queried: 2,
+                values: 0,
+                no_values: 1,
+                no_more_recent: 0,
+                invalid_values: 0,
+                invalid_responses: 0,
+                krpc_errors: 0,
+            },
+            0,
+        );
+
+        assert!(report
+            .classify_warnings(ResolveReportPolicy::testnet())
+            .is_empty());
+    }
+
+    #[test]
+    fn custom_policy_controls_warning_thresholds() {
+        let report = ResolveReport::with_invalid_signed_packets(
+            mainline::GetMutableOutcome {
+                queried: 2,
+                values: 0,
+                no_values: 1,
+                no_more_recent: 0,
+                invalid_values: 1,
+                invalid_responses: 0,
+                krpc_errors: 1,
+            },
+            0,
+        );
+
+        let warnings = report.classify_warnings(ResolveReportPolicy {
+            minimum_queried_nodes: 2,
+            minimum_responded_nodes: 1,
+            minimum_valid_responses: 1,
+            warn_on_invalid_responses: false,
+            warn_on_krpc_errors: false,
+        });
+
+        assert!(warnings.is_empty());
     }
 }
