@@ -30,7 +30,11 @@ use axum_server::Handle;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{dht::DhtClient, extra::lmdb_cache::LmdbCache, mainline, Timestamp};
+use pkarr::{
+    dht::{DhtClient, ReportPolicy},
+    extra::lmdb_cache::LmdbCache,
+    mainline, Timestamp,
+};
 use url::Url;
 
 use config::{RelayConfig, CACHE_DIR};
@@ -42,6 +46,7 @@ pub use rate_limiting::RateLimiterConfig;
 pub struct RelayBuilder {
     config: RelayConfig,
     dht: mainline::Config,
+    report_policy: ReportPolicy,
 }
 
 impl RelayBuilder {
@@ -114,7 +119,7 @@ impl RelayBuilder {
     /// This method is marked as unsafe because it uses `LmdbCache`, which can lead to
     /// undefined behavior if the lock file is corrupted or improperly handled.
     pub async unsafe fn run(self) -> anyhow::Result<Relay> {
-        unsafe { Relay::run_with_dht(self.config, self.dht) }.await
+        unsafe { Relay::run_with_dht(self.config, self.dht, self.report_policy) }.await
     }
 }
 
@@ -142,12 +147,13 @@ impl Relay {
     async unsafe fn run(config: RelayConfig) -> anyhow::Result<Self> {
         let dht_config = mainline_config(&config);
 
-        unsafe { Self::run_with_dht(config, dht_config) }.await
+        unsafe { Self::run_with_dht(config, dht_config, ReportPolicy::mainnet()) }.await
     }
 
     async unsafe fn run_with_dht(
         config: RelayConfig,
         mut dht_config: mainline::Config,
+        report_policy: ReportPolicy,
     ) -> anyhow::Result<Self> {
         tracing::debug!(?config, "Pkarr server config");
 
@@ -209,6 +215,7 @@ impl Relay {
             cache,
             cache_write_lock: Arc::new(Mutex::new(())),
             user_dht_rate_limiter,
+            report_policy,
             dht,
         };
         let app = create_app(state, rate_limiter, behind_proxy);
@@ -232,6 +239,7 @@ impl Relay {
         RelayBuilder {
             config: Default::default(),
             dht: Default::default(),
+            report_policy: ReportPolicy::mainnet(),
         }
     }
 
@@ -267,7 +275,7 @@ impl Relay {
         dht_config.server_mode = true;
         dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
 
-        Ok(unsafe { Self::run_with_dht(config, dht_config).await? })
+        Ok(unsafe { Self::run_with_dht(config, dht_config, ReportPolicy::testnet()).await? })
     }
 
     /// Run a Pkarr relay in a Testnet mode (on port 15411).
@@ -295,7 +303,7 @@ impl Relay {
         dht_config.server_mode = true;
         dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
 
-        Self::run_with_dht(config, dht_config).await
+        Self::run_with_dht(config, dht_config, ReportPolicy::testnet()).await
     }
 
     /// Returns the HTTP socket address of the relay.
@@ -373,6 +381,7 @@ struct AppState {
     cache_write_lock: Arc<Mutex<()>>,
     // Rate limiter for DHT operations initiated by HTTP user requests.
     user_dht_rate_limiter: Option<rate_limiting::UserDhtRateLimiter>,
+    report_policy: ReportPolicy,
     dht: DhtClient,
 }
 

@@ -10,9 +10,6 @@ use crate::{PublicKey, SignedPacket};
 
 use super::{DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse};
 
-/// Minimum DHT nodes expected to acknowledge storing a published packet.
-pub const MINIMUM_PUBLISH_STORED_NODES: u32 = 10;
-
 /// Pkarr DHT client.
 #[derive(Clone, Debug)]
 pub struct DhtClient {

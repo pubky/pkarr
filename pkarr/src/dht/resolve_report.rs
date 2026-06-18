@@ -1,119 +1,8 @@
-/// Default minimum number of DHT nodes a resolve query should visit.
-const DEFAULT_MINIMUM_QUERIED_NODES: u32 = 20;
-
-/// Default minimum number of DHT nodes that should respond to a resolve query.
-const DEFAULT_MINIMUM_RESPONDED_NODES: u32 = 3;
-
-/// Default minimum number of valid responses expected from a resolve query.
-const DEFAULT_MINIMUM_VALID_RESPONSES: u32 = 1;
-
-/// Testnet minimum number of DHT nodes a resolve query should visit.
-const TESTNET_MINIMUM_QUERIED_NODES: u32 = 2;
-
-/// Testnet minimum number of DHT nodes that should respond to a resolve query.
-const TESTNET_MINIMUM_RESPONDED_NODES: u32 = 1;
-
-/// Testnet minimum number of valid responses expected from a resolve query.
-const TESTNET_MINIMUM_VALID_RESPONSES: u32 = 1;
-
-/// Policy used to classify DHT resolve query diagnostics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ResolveReportPolicy {
-    /// Minimum number of unique DHT nodes that should be queried.
-    pub minimum_queried_nodes: u32,
-    /// Minimum number of queried DHT nodes that should respond.
-    pub minimum_responded_nodes: u32,
-    /// Minimum number of responses with a valid mutable GET shape.
-    pub minimum_valid_responses: u32,
-    /// Whether invalid values or invalid response shapes should be reported as warnings.
-    pub warn_on_invalid_responses: bool,
-    /// Whether KRPC error responses should be reported as warnings.
-    pub warn_on_krpc_errors: bool,
-}
-
-impl Default for ResolveReportPolicy {
-    fn default() -> Self {
-        Self {
-            minimum_queried_nodes: DEFAULT_MINIMUM_QUERIED_NODES,
-            minimum_responded_nodes: DEFAULT_MINIMUM_RESPONDED_NODES,
-            minimum_valid_responses: DEFAULT_MINIMUM_VALID_RESPONSES,
-            warn_on_invalid_responses: true,
-            warn_on_krpc_errors: true,
-        }
-    }
-}
-
-impl ResolveReportPolicy {
-    /// Create a policy with thresholds suitable for small local testnets.
-    pub fn testnet() -> Self {
-        Self {
-            minimum_queried_nodes: TESTNET_MINIMUM_QUERIED_NODES,
-            minimum_responded_nodes: TESTNET_MINIMUM_RESPONDED_NODES,
-            minimum_valid_responses: TESTNET_MINIMUM_VALID_RESPONSES,
-            warn_on_invalid_responses: true,
-            warn_on_krpc_errors: true,
-        }
-    }
-
-    fn classify(
-        &self,
-        outcome: &mainline::GetMutableOutcome,
-        invalid_signed_packet_count: u32,
-    ) -> Vec<ResolveWarning> {
-        let mut warnings = Vec::new();
-        let responded = outcome.responded();
-        let valid_responses = outcome
-            .valid_responses()
-            .saturating_sub(invalid_signed_packet_count);
-
-        if outcome.queried < self.minimum_queried_nodes {
-            warnings.push(ResolveWarning::TooFewNodesQueried {
-                queried: outcome.queried,
-                minimum: self.minimum_queried_nodes,
-            });
-        }
-
-        if responded < self.minimum_responded_nodes {
-            warnings.push(ResolveWarning::TooFewNodesResponded {
-                responded,
-                minimum: self.minimum_responded_nodes,
-            });
-        }
-
-        if valid_responses < self.minimum_valid_responses {
-            warnings.push(ResolveWarning::TooFewValidResponses {
-                valid_responses,
-                minimum: self.minimum_valid_responses,
-            });
-        }
-
-        if self.warn_on_invalid_responses
-            && (outcome.invalid_values > 0
-                || outcome.invalid_responses > 0
-                || invalid_signed_packet_count > 0)
-        {
-            warnings.push(ResolveWarning::InvalidResponses {
-                invalid_values: outcome.invalid_values,
-                invalid_responses: outcome.invalid_responses,
-                invalid_signed_packets: invalid_signed_packet_count,
-            });
-        }
-
-        if self.warn_on_krpc_errors && outcome.krpc_errors > 0 {
-            warnings.push(ResolveWarning::KrpcErrors {
-                krpc_errors: outcome.krpc_errors,
-            });
-        }
-
-        warnings
-    }
-}
-
 /// Diagnostics for a DHT resolve query.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolveReport {
-    outcome: mainline::GetMutableOutcome,
-    invalid_signed_packet_count: u32,
+    pub(super) outcome: mainline::GetMutableOutcome,
+    pub(super) invalid_signed_packet_count: u32,
 }
 
 impl ResolveReport {
@@ -144,60 +33,15 @@ impl ResolveReport {
             .valid_responses()
             .saturating_sub(self.invalid_signed_packet_count)
     }
-
-    /// Classify warning diagnostics for this resolve query using the given policy.
-    pub fn classify_warnings(&self, policy: ResolveReportPolicy) -> Vec<ResolveWarning> {
-        policy.classify(&self.outcome, self.invalid_signed_packet_count)
-    }
-}
-
-/// Warning diagnostics found in a DHT resolve query.
-#[non_exhaustive]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ResolveWarning {
-    /// The query visited fewer unique DHT nodes than expected.
-    TooFewNodesQueried {
-        /// Number of unique DHT nodes queried.
-        queried: u32,
-        /// Minimum number of queried nodes expected by the policy.
-        minimum: u32,
-    },
-    /// The query received responses from fewer DHT nodes than expected.
-    TooFewNodesResponded {
-        /// Number of queried DHT nodes that responded.
-        responded: u32,
-        /// Minimum number of responses expected by the policy.
-        minimum: u32,
-    },
-    /// The query received fewer valid mutable GET responses than expected.
-    TooFewValidResponses {
-        /// Number of valid mutable GET responses.
-        valid_responses: u32,
-        /// Minimum number of valid responses expected by the policy.
-        minimum: u32,
-    },
-    /// The query received invalid values or invalid response shapes.
-    InvalidResponses {
-        /// Number of mutable value responses that failed validation.
-        invalid_values: u32,
-        /// Number of invalid response shapes returned.
-        invalid_responses: u32,
-        /// Number of mutable values that failed signed packet validation.
-        invalid_signed_packets: u32,
-    },
-    /// The query received KRPC error responses.
-    KrpcErrors {
-        /// Number of KRPC error responses returned.
-        krpc_errors: u32,
-    },
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::report_policy::{ReportPolicy, ResolveWarning};
     use super::*;
 
     fn classify(report: &ResolveReport) -> Vec<ResolveWarning> {
-        report.classify_warnings(ResolveReportPolicy::default())
+        ReportPolicy::mainnet().classify_resolve_report(report)
     }
 
     #[test]
@@ -233,20 +77,21 @@ mod tests {
             0,
         );
 
+        let policy = ReportPolicy::mainnet();
         assert_eq!(
             classify(&report),
             vec![
                 ResolveWarning::TooFewNodesQueried {
                     queried: 2,
-                    minimum: DEFAULT_MINIMUM_QUERIED_NODES,
+                    minimum: policy.minimum_queried_nodes,
                 },
                 ResolveWarning::TooFewNodesResponded {
                     responded: 0,
-                    minimum: DEFAULT_MINIMUM_RESPONDED_NODES,
+                    minimum: policy.minimum_responded_nodes,
                 },
                 ResolveWarning::TooFewValidResponses {
                     valid_responses: 0,
-                    minimum: DEFAULT_MINIMUM_VALID_RESPONSES,
+                    minimum: policy.minimum_valid_responses,
                 },
             ]
         );
@@ -321,12 +166,13 @@ mod tests {
         );
 
         assert_eq!(report.valid_responses(), 0);
+        let policy = ReportPolicy::mainnet();
         assert_eq!(
             classify(&report),
             vec![
                 ResolveWarning::TooFewValidResponses {
                     valid_responses: 0,
-                    minimum: DEFAULT_MINIMUM_VALID_RESPONSES,
+                    minimum: policy.minimum_valid_responses,
                 },
                 ResolveWarning::InvalidResponses {
                     invalid_values: 0,
@@ -353,16 +199,17 @@ mod tests {
         );
 
         assert_eq!(report.valid_responses(), 0);
+        let policy = ReportPolicy::mainnet();
         assert_eq!(
             classify(&report),
             vec![
                 ResolveWarning::TooFewNodesResponded {
                     responded: 1,
-                    minimum: DEFAULT_MINIMUM_RESPONDED_NODES,
+                    minimum: policy.minimum_responded_nodes,
                 },
                 ResolveWarning::TooFewValidResponses {
                     valid_responses: 0,
-                    minimum: DEFAULT_MINIMUM_VALID_RESPONSES,
+                    minimum: policy.minimum_valid_responses,
                 },
                 ResolveWarning::InvalidResponses {
                     invalid_values: 0,
@@ -388,8 +235,8 @@ mod tests {
             0,
         );
 
-        assert!(report
-            .classify_warnings(ResolveReportPolicy::testnet())
+        assert!(ReportPolicy::testnet()
+            .classify_resolve_report(&report)
             .is_empty());
     }
 
@@ -408,13 +255,15 @@ mod tests {
             0,
         );
 
-        let warnings = report.classify_warnings(ResolveReportPolicy {
+        let warnings = ReportPolicy {
+            minimum_publish_stored_nodes: 1,
             minimum_queried_nodes: 2,
             minimum_responded_nodes: 1,
             minimum_valid_responses: 1,
-            warn_on_invalid_responses: false,
-            warn_on_krpc_errors: false,
-        });
+            report_invalid_responses: false,
+            report_krpc_errors: false,
+        }
+        .classify_resolve_report(&report);
 
         assert!(warnings.is_empty());
     }

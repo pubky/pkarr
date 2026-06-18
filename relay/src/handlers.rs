@@ -3,7 +3,7 @@ use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
-use pkarr::dht::{ResolveReport, ResolveReportPolicy, MINIMUM_PUBLISH_STORED_NODES};
+use pkarr::dht::{ReportPolicy, ResolveReport};
 use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
@@ -38,8 +38,13 @@ pub async fn put(
     enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
 
     let stored_at = state.dht.publish(&signed_packet, cas).await?;
-    if stored_at < MINIMUM_PUBLISH_STORED_NODES {
-        warn!(public_key = ?signed_packet.public_key(), stored_at, "DHT publish completed with warnings");
+    let warnings = state.report_policy.classify_publish_result(stored_at);
+    if !warnings.is_empty() {
+        warn!(
+            ?public_key,
+            ?warnings,
+            "DHT publish completed with warnings"
+        );
     }
     update_cache_if_needed(&state, &key, &signed_packet);
 
@@ -77,7 +82,7 @@ pub async fn get(
                 // Do not waste late responses with potentially newer packets.
                 tokio::spawn(async move {
                     let resolved = result.complete().await;
-                    log_resolve_warnings(&public_key, &resolved.report);
+                    log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
                     update_cache_if_needed(&state, &key, &resolved.most_recent);
                 });
                 packet
@@ -91,7 +96,7 @@ pub async fn get(
                 .await?
                 .complete()
                 .await;
-            log_resolve_warnings(&public_key, &resolved.report);
+            log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
             resolved.most_recent
         }
     };
@@ -228,8 +233,12 @@ fn decrement(timestamp: Timestamp) -> Option<Timestamp> {
     timestamp.as_u64().checked_sub(1).map(Timestamp::from)
 }
 
-fn log_resolve_warnings(public_key: &pkarr::PublicKey, report: &ResolveReport) {
-    let warnings = report.classify_warnings(ResolveReportPolicy::default());
+fn log_resolve_warnings(
+    public_key: &pkarr::PublicKey,
+    report: &ResolveReport,
+    policy: ReportPolicy,
+) {
+    let warnings = policy.classify_resolve_report(report);
     if !warnings.is_empty() {
         warn!(
             ?public_key,
