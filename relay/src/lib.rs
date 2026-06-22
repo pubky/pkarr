@@ -24,7 +24,7 @@ use std::{
 };
 
 use anyhow::anyhow;
-use axum::{extract::DefaultBodyLimit, Router};
+use axum::{extract::DefaultBodyLimit, http::HeaderName, Router};
 use axum_server::Handle;
 
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -33,7 +33,7 @@ use tracing::info;
 use pkarr::{
     dht::{DhtClient, ReportPolicy},
     extra::lmdb_cache::LmdbCache,
-    mainline, Timestamp,
+    mainline, Timestamp, PKARR_INVALID_SIGNED_PACKET_SEQ,
 };
 use url::Url;
 
@@ -343,7 +343,7 @@ fn create_app(
         .route("/", axum::routing::get(crate::handlers::index))
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
-        .layer(CorsLayer::very_permissive())
+        .layer(cors_layer())
         .layer(TraceLayer::new_for_http());
 
     if let Some(rate_limiter) = rate_limiter {
@@ -353,6 +353,14 @@ fn create_app(
     }
 
     router
+}
+
+fn cors_layer() -> CorsLayer {
+    let invalid_signed_packet_seq_header =
+        HeaderName::from_bytes(PKARR_INVALID_SIGNED_PACKET_SEQ.as_bytes())
+            .expect("Pkarr invalid signed packet seq header name is valid");
+
+    CorsLayer::very_permissive().expose_headers([invalid_signed_packet_seq_header])
 }
 
 fn to_socket_address_v4<T: ToSocketAddrs>(bootstrap: &[T]) -> Vec<SocketAddrV4> {
@@ -390,9 +398,37 @@ mod tests {
     use std::{net::Ipv4Addr, num::NonZeroU32, time::Duration};
 
     use http::StatusCode;
-    use pkarr::{Keypair, SignedPacket, Timestamp};
+    use pkarr::{Keypair, SignedPacket, Timestamp, PKARR_INVALID_SIGNED_PACKET_SEQ};
 
     use super::{to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
+
+    #[tokio::test]
+    async fn cors_exposes_invalid_signed_packet_seq_header() {
+        let testnet = pkarr::mainline::Testnet::builder(2).build().unwrap();
+        let relay = run_rate_limited_relay(&testnet).await;
+
+        let response = reqwest::Client::new()
+            .get(relay.local_url())
+            .header("Origin", "https://example.com")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let exposed_headers = response
+            .headers()
+            .get("access-control-expose-headers")
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        assert!(exposed_headers.split(',').any(|header| header
+            .trim()
+            .eq_ignore_ascii_case(PKARR_INVALID_SIGNED_PACKET_SEQ)));
+
+        relay.shutdown();
+    }
 
     #[tokio::test]
     async fn user_dht_rate_limit_only_blocks_dht_operations() {

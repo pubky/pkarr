@@ -8,7 +8,10 @@ use ntimestamp::Timestamp;
 
 use crate::{PublicKey, SignedPacket};
 
-use super::{DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse};
+use super::{
+    DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse,
+    ResolveValue,
+};
 
 /// Pkarr DHT client.
 #[derive(Clone, Debug)]
@@ -58,11 +61,22 @@ impl DhtClient {
 
     /// Resolve signed packets newer than the given timestamp and return query diagnostics.
     ///
+    /// The first valid signed packet is available immediately from the returned
+    /// [`ResolveResponse`]. Completing the response returns the most recent DHT
+    /// mutable value observed, which may be a newer mutable item that does not
+    /// contain a valid signed packet.
+    ///
+    /// BEP44 sequence numbers define mutable-item freshness. If a mutable item
+    /// with a higher sequence number is not a valid signed packet, that item is
+    /// still treated as the current DHT state and supersedes older valid signed
+    /// packets for the same key.
+    ///
     /// # Errors
     ///
     /// Returns an error when no signed packet is found or the DHT query did not
     /// receive enough useful responses to distinguish a miss from a query
-    /// failure.
+    /// failure. If DHT nodes return mutable values for the key but none verify
+    /// as signed packets, returns the newest observed mutable item sequence number.
     pub async fn resolve(
         &self,
         public_key: &PublicKey,
@@ -73,24 +87,29 @@ impl DhtClient {
             self.inner
                 .get_mutable_detailed(public_key.as_bytes(), None, more_recent_than);
 
-        let mut invalid_signed_packet_count = 0;
+        let mut highest_seq = None;
         while let Some(item) = detailed.items.next().await {
-            match SignedPacket::try_from(item) {
-                Ok(first) => {
-                    let most_recent = first.clone();
+            let seq = item.seq();
+            // BEP44 sequence numbers define the mutable item's freshness.
+            // A newer item that is not a valid signed packet still supersedes
+            // older valid signed packets for this key.
+            if seq >= highest_seq.unwrap_or(seq) {
+                highest_seq = Some(seq);
+                if let Ok(packet) = SignedPacket::try_from(&item) {
+                    let most_recent = packet.clone();
                     return Ok(ResolveResponse::new(
-                        first,
-                        finish_resolve(detailed, most_recent, invalid_signed_packet_count),
+                        packet,
+                        finish_resolve(detailed, most_recent),
                     ));
                 }
-                Err(_) => invalid_signed_packet_count += 1,
             }
         }
 
-        let report = ResolveReport::with_invalid_signed_packets(
-            detailed.outcome.recv().await,
-            invalid_signed_packet_count,
-        );
+        if let Some(seq) = highest_seq {
+            return Err(ResolveError::InvalidSignedPacket { seq });
+        }
+
+        let report = ResolveReport::new(detailed.outcome.recv().await);
         Err(report.into())
     }
 
@@ -151,23 +170,38 @@ impl TryFrom<MutableItem> for SignedPacket {
 async fn finish_resolve(
     mut detailed: GetMutableDetailed,
     mut most_recent: SignedPacket,
-    mut invalid_signed_packet_count: u32,
 ) -> ResolveOutcome {
+    let mut highest_seq = most_recent.timestamp().as_u64() as i64;
+
     while let Some(item) = detailed.items.next().await {
-        match SignedPacket::try_from(item) {
-            Ok(packet) if packet.more_recent_than(&most_recent) => most_recent = packet,
-            Ok(_) => {}
-            Err(_) => invalid_signed_packet_count += 1,
+        let seq = item.seq();
+        if seq >= highest_seq {
+            highest_seq = seq;
+            match SignedPacket::try_from(&item) {
+                Ok(packet) if packet.more_recent_than(&most_recent) => most_recent = packet,
+                _ => (),
+            }
         }
     }
 
-    let report = ResolveReport::with_invalid_signed_packets(
-        detailed.outcome.recv().await,
-        invalid_signed_packet_count,
-    );
+    let most_recent = completed_resolve_value(most_recent, highest_seq);
+    let report = ResolveReport::new(detailed.outcome.recv().await);
+
     ResolveOutcome {
         most_recent,
         report,
+    }
+}
+
+fn completed_resolve_value(most_recent: SignedPacket, highest_seq: i64) -> ResolveValue {
+    let packet_seq = most_recent.timestamp().as_u64() as i64;
+
+    if packet_seq >= highest_seq {
+        ResolveValue::ValidSignedPacket {
+            packet: most_recent,
+        }
+    } else {
+        ResolveValue::InvalidSignedPacket { seq: highest_seq }
     }
 }
 
@@ -201,5 +235,43 @@ mod tests {
         );
 
         assert_eq!(item, expected);
+    }
+
+    #[test]
+    fn completed_resolve_value_preserves_valid_signed_packet_when_invalid_seq_is_not_newer() {
+        let signed_packet = SignedPacket::builder()
+            .timestamp(10.into())
+            .address(
+                "_derp_region.iroh.".try_into().unwrap(),
+                "1.1.1.1".parse().unwrap(),
+                30,
+            )
+            .sign(&Keypair::random())
+            .unwrap();
+
+        assert_eq!(
+            super::completed_resolve_value(signed_packet.clone(), 10),
+            super::ResolveValue::ValidSignedPacket {
+                packet: signed_packet
+            }
+        );
+    }
+
+    #[test]
+    fn completed_resolve_value_respects_newer_invalid_signed_packet_seq() {
+        let signed_packet = SignedPacket::builder()
+            .timestamp(10.into())
+            .address(
+                "_derp_region.iroh.".try_into().unwrap(),
+                "1.1.1.1".parse().unwrap(),
+                30,
+            )
+            .sign(&Keypair::random())
+            .unwrap();
+
+        assert_eq!(
+            super::completed_resolve_value(signed_packet, 11),
+            super::ResolveValue::InvalidSignedPacket { seq: 11 }
+        );
     }
 }

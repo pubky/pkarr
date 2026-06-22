@@ -3,7 +3,7 @@ use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
-use pkarr::dht::{ReportPolicy, ResolveReport};
+use pkarr::dht::{ReportPolicy, ResolveReport, ResolveValue};
 use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
@@ -83,7 +83,9 @@ pub async fn get(
                 tokio::spawn(async move {
                     let resolved = result.complete().await;
                     log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
-                    update_cache_if_needed(&state, &key, &resolved.most_recent);
+                    if let ResolveValue::ValidSignedPacket { packet } = resolved.most_recent {
+                        update_cache_if_needed(&state, &key, &packet);
+                    }
                 });
                 packet
             }
@@ -97,7 +99,12 @@ pub async fn get(
                 .complete()
                 .await;
             log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
-            resolved.most_recent
+            match resolved.most_recent {
+                ResolveValue::ValidSignedPacket { packet } => packet,
+                ResolveValue::InvalidSignedPacket { seq } => {
+                    return Err(Error::invalid_signed_packet(seq))
+                }
+            }
         }
     };
 
@@ -248,6 +255,7 @@ fn log_resolve_warnings(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn enforce_user_dht_rate_limit(
     state: &AppState,
     real_ip: Option<&Extension<RealIp>>,

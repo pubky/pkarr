@@ -7,10 +7,10 @@ const MINIMUM_PUBLISH_STORED_NODES: u32 = 10;
 const DEFAULT_MINIMUM_QUERIED_NODES: u32 = 20;
 
 /// Default minimum number of DHT nodes that should respond to a resolve query.
-const DEFAULT_MINIMUM_RESPONDED_NODES: u32 = 3;
+const DEFAULT_MINIMUM_RESPONDED_NODES: u32 = 5;
 
-/// Default minimum number of valid responses expected from a resolve query.
-const DEFAULT_MINIMUM_VALID_RESPONSES: u32 = 1;
+/// Default minimum number of usable responses expected from a resolve query.
+const DEFAULT_MINIMUM_USABLE_RESPONSES: u32 = 3;
 
 /// Testnet minimum number of DHT nodes expected to acknowledge storing a published packet.
 const TESTNET_MINIMUM_PUBLISH_STORED_NODES: u32 = 1;
@@ -21,8 +21,8 @@ const TESTNET_MINIMUM_QUERIED_NODES: u32 = 1;
 /// Testnet minimum number of DHT nodes that should respond to a resolve query.
 const TESTNET_MINIMUM_RESPONDED_NODES: u32 = 1;
 
-/// Testnet minimum number of valid responses expected from a resolve query.
-const TESTNET_MINIMUM_VALID_RESPONSES: u32 = 1;
+/// Testnet minimum number of usable responses expected from a resolve query.
+const TESTNET_MINIMUM_USABLE_RESPONSES: u32 = 1;
 
 /// Policy used to classify DHT query diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,11 +33,19 @@ pub struct ReportPolicy {
     pub minimum_queried_nodes: u32,
     /// Minimum number of queried DHT nodes that should respond.
     pub minimum_responded_nodes: u32,
-    /// Minimum number of responses with a valid mutable GET shape.
-    pub minimum_valid_responses: u32,
-    /// Whether invalid values or invalid response shapes should be reported as warnings.
-    pub report_invalid_responses: bool,
+    /// Minimum number of responses with a usable mutable GET shape.
+    pub minimum_usable_responses: u32,
+    /// Whether unusable mutable GET responses should be reported as
+    /// [`ResolveWarning::MalformedResponses`].
+    ///
+    /// This covers mutable values that fail validation and malformed response
+    /// shapes, but not explicit KRPC error responses.
+    pub report_malformed_responses: bool,
     /// Whether KRPC error responses should be reported as warnings.
+    ///
+    /// KRPC errors are also unusable resolve responses, but they are kept
+    /// separate from malformed responses because they usually point to a
+    /// protocol-level error returned by the remote node.
     pub report_krpc_errors: bool,
 }
 
@@ -48,8 +56,8 @@ impl ReportPolicy {
             minimum_publish_stored_nodes: MINIMUM_PUBLISH_STORED_NODES,
             minimum_queried_nodes: DEFAULT_MINIMUM_QUERIED_NODES,
             minimum_responded_nodes: DEFAULT_MINIMUM_RESPONDED_NODES,
-            minimum_valid_responses: DEFAULT_MINIMUM_VALID_RESPONSES,
-            report_invalid_responses: true,
+            minimum_usable_responses: DEFAULT_MINIMUM_USABLE_RESPONSES,
+            report_malformed_responses: true,
             report_krpc_errors: true,
         }
     }
@@ -60,8 +68,8 @@ impl ReportPolicy {
             minimum_publish_stored_nodes: TESTNET_MINIMUM_PUBLISH_STORED_NODES,
             minimum_queried_nodes: TESTNET_MINIMUM_QUERIED_NODES,
             minimum_responded_nodes: TESTNET_MINIMUM_RESPONDED_NODES,
-            minimum_valid_responses: TESTNET_MINIMUM_VALID_RESPONSES,
-            report_invalid_responses: true,
+            minimum_usable_responses: TESTNET_MINIMUM_USABLE_RESPONSES,
+            report_malformed_responses: true,
             report_krpc_errors: true,
         }
     }
@@ -80,14 +88,11 @@ impl ReportPolicy {
 
     /// Classify warning diagnostics for a DHT resolve query.
     pub fn classify_resolve_report(&self, report: &ResolveReport) -> Vec<ResolveWarning> {
-        let outcome = &report.outcome;
-        let invalid_signed_packet_count = report.invalid_signed_packet_count;
+        let outcome = &report.0;
 
         let mut warnings = Vec::new();
         let responded = outcome.responded();
-        let valid_responses = outcome
-            .valid_responses()
-            .saturating_sub(invalid_signed_packet_count);
+        let usable_responses = outcome.valid_responses();
 
         if outcome.queried < self.minimum_queried_nodes {
             warnings.push(ResolveWarning::TooFewNodesQueried {
@@ -103,25 +108,26 @@ impl ReportPolicy {
             });
         }
 
-        if valid_responses < self.minimum_valid_responses {
-            warnings.push(ResolveWarning::TooFewValidResponses {
-                valid_responses,
-                minimum: self.minimum_valid_responses,
+        if usable_responses < self.minimum_usable_responses {
+            warnings.push(ResolveWarning::TooFewUsableResponses {
+                usable_responses,
+                minimum: self.minimum_usable_responses,
             });
         }
 
-        if self.report_invalid_responses
-            && (outcome.invalid_values > 0
-                || outcome.invalid_responses > 0
-                || invalid_signed_packet_count > 0)
+        // Values that fail validation and malformed response shapes are grouped
+        // together because both are unusable non-error responses from DHT nodes.
+        if self.report_malformed_responses
+            && (outcome.invalid_values > 0 || outcome.invalid_responses > 0)
         {
-            warnings.push(ResolveWarning::InvalidResponses {
-                invalid_values: outcome.invalid_values,
-                invalid_responses: outcome.invalid_responses,
-                invalid_signed_packets: invalid_signed_packet_count,
+            warnings.push(ResolveWarning::MalformedResponses {
+                malformed_values: outcome.invalid_values,
+                malformed_responses: outcome.invalid_responses,
             });
         }
 
+        // KRPC errors are unusable too, but unlike malformed responses they
+        // were explicit protocol-level errors returned by the queried node.
         if self.report_krpc_errors && outcome.krpc_errors > 0 {
             warnings.push(ResolveWarning::KrpcErrors {
                 krpc_errors: outcome.krpc_errors,
@@ -163,23 +169,28 @@ pub enum ResolveWarning {
         /// Minimum number of responses expected by the policy.
         minimum: u32,
     },
-    /// The query received fewer valid mutable GET responses than expected.
-    TooFewValidResponses {
-        /// Number of valid mutable GET responses.
-        valid_responses: u32,
-        /// Minimum number of valid responses expected by the policy.
+    /// The query received fewer usable mutable GET responses than expected.
+    TooFewUsableResponses {
+        /// Number of usable mutable GET responses.
+        usable_responses: u32,
+        /// Minimum number of usable responses expected by the policy.
         minimum: u32,
     },
-    /// The query received invalid values or invalid response shapes.
-    InvalidResponses {
+    /// The query received malformed or unusable mutable GET responses.
+    ///
+    /// These are responses that did not contain an explicit KRPC error, but
+    /// still could not be used as usable mutable GET responses.
+    MalformedResponses {
         /// Number of mutable value responses that failed validation.
-        invalid_values: u32,
-        /// Number of invalid response shapes returned.
-        invalid_responses: u32,
-        /// Number of mutable values that failed signed packet validation.
-        invalid_signed_packets: u32,
+        malformed_values: u32,
+        /// Number of malformed response shapes returned.
+        malformed_responses: u32,
     },
     /// The query received KRPC error responses.
+    ///
+    /// These are also unusable for resolution, but are kept separate from
+    /// [`ResolveWarning::MalformedResponses`] because the remote node returned an
+    /// explicit protocol-level error.
     KrpcErrors {
         /// Number of KRPC error responses returned.
         krpc_errors: u32,
@@ -188,7 +199,17 @@ pub enum ResolveWarning {
 
 #[cfg(test)]
 mod tests {
-    use super::{PublishWarning, ReportPolicy, MINIMUM_PUBLISH_STORED_NODES};
+    use super::{
+        PublishWarning, ReportPolicy, ResolveReport, ResolveWarning, MINIMUM_PUBLISH_STORED_NODES,
+    };
+
+    fn report(outcome: mainline::GetMutableOutcome) -> ResolveReport {
+        ResolveReport::new(outcome)
+    }
+
+    fn classify(report: &ResolveReport) -> Vec<ResolveWarning> {
+        ReportPolicy::mainnet().classify_resolve_report(report)
+    }
 
     #[test]
     fn mainnet_publish_policy_warns_when_too_few_nodes_store_packet() {
@@ -211,5 +232,118 @@ mod tests {
         assert!(ReportPolicy::testnet()
             .classify_publish_result(1)
             .is_empty());
+    }
+
+    #[test]
+    fn healthy_resolve_outcome_is_ok() {
+        let report = report(mainline::GetMutableOutcome {
+            queried: 20,
+            values: 1,
+            no_values: 4,
+            no_more_recent: 0,
+            invalid_values: 0,
+            invalid_responses: 0,
+            krpc_errors: 0,
+        });
+
+        assert!(classify(&report).is_empty());
+    }
+
+    #[test]
+    fn sparse_resolve_outcome_produces_warnings() {
+        let report = report(mainline::GetMutableOutcome {
+            queried: 2,
+            values: 0,
+            no_values: 0,
+            no_more_recent: 0,
+            invalid_values: 0,
+            invalid_responses: 0,
+            krpc_errors: 0,
+        });
+
+        let policy = ReportPolicy::mainnet();
+        assert_eq!(
+            classify(&report),
+            vec![
+                ResolveWarning::TooFewNodesQueried {
+                    queried: 2,
+                    minimum: policy.minimum_queried_nodes,
+                },
+                ResolveWarning::TooFewNodesResponded {
+                    responded: 0,
+                    minimum: policy.minimum_responded_nodes,
+                },
+                ResolveWarning::TooFewUsableResponses {
+                    usable_responses: 0,
+                    minimum: policy.minimum_usable_responses,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn malformed_and_error_resolve_responses_produce_warnings() {
+        let report = report(mainline::GetMutableOutcome {
+            queried: 20,
+            values: 1,
+            no_values: 2,
+            no_more_recent: 0,
+            invalid_values: 1,
+            invalid_responses: 1,
+            krpc_errors: 1,
+        });
+
+        assert_eq!(
+            classify(&report),
+            vec![
+                ResolveWarning::MalformedResponses {
+                    malformed_values: 1,
+                    malformed_responses: 1,
+                },
+                ResolveWarning::KrpcErrors { krpc_errors: 1 },
+            ]
+        );
+    }
+
+    #[test]
+    fn testnet_resolve_policy_relaxes_topology_thresholds() {
+        let report = report(mainline::GetMutableOutcome {
+            queried: 2,
+            values: 0,
+            no_values: 1,
+            no_more_recent: 0,
+            invalid_values: 0,
+            invalid_responses: 0,
+            krpc_errors: 0,
+        });
+
+        assert!(ReportPolicy::testnet()
+            .classify_resolve_report(&report)
+            .is_empty());
+    }
+
+    #[test]
+    fn custom_resolve_policy_controls_warning_thresholds() {
+        let report = report(mainline::GetMutableOutcome {
+            queried: 2,
+            values: 0,
+            no_values: 1,
+            no_more_recent: 0,
+            invalid_values: 1,
+            invalid_responses: 0,
+            krpc_errors: 1,
+        });
+
+        let warnings = ReportPolicy {
+            minimum_publish_stored_nodes: 1,
+            minimum_queried_nodes: 2,
+            minimum_responded_nodes: 1,
+            minimum_usable_responses: 1,
+            report_malformed_responses: false,
+            report_krpc_errors: false,
+        }
+        .classify_resolve_report(&report);
+
+        assert!(warnings.is_empty());
     }
 }

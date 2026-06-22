@@ -24,6 +24,9 @@ pub const DEFAULT_MINIMUM_TTL: u32 = 300;
 pub const DEFAULT_MAXIMUM_TTL: u32 = 24 * 60 * 60;
 /// Default [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
 pub const DEFAULT_RELAYS: [&str; 2] = ["https://pkarr.pubky.app", "https://pkarr.pubky.org"];
+/// Relay response header carrying the mutable item sequence number when the
+/// DHT has a newer mutable item that is not a valid signed packet for a key.
+pub const PKARR_INVALID_SIGNED_PACKET_SEQ: &str = "Pkarr-Invalid-Signed-Packet-Seq";
 #[cfg(feature = "__client")]
 /// Default cache size: 1000
 pub const DEFAULT_CACHE_SIZE: usize = 1000;

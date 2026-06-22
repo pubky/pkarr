@@ -2,16 +2,16 @@
 
 use axum::{
     extract::rejection::{ExtensionRejection, QueryRejection},
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
-use pkarr::dht;
+use pkarr::{dht, PKARR_INVALID_SIGNED_PACKET_SEQ};
 
 #[derive(Debug, Clone)]
 pub struct Error {
-    // #[serde(with = "serde_status_code")]
     status: StatusCode,
     detail: Option<String>,
+    headers: HeaderMap,
 }
 
 impl Default for Error {
@@ -19,6 +19,7 @@ impl Default for Error {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             detail: None,
+            headers: HeaderMap::new(),
         }
     }
 }
@@ -28,6 +29,7 @@ impl Error {
         Self {
             status,
             detail: None,
+            headers: HeaderMap::new(),
         }
     }
 
@@ -37,16 +39,32 @@ impl Error {
             status: status_code,
             // title: Self::canonical_reason_to_string(&status_code),
             detail: Some(message.to_string()),
+            headers: HeaderMap::new(),
         }
+    }
+
+    pub(crate) fn invalid_signed_packet(seq: i64) -> Error {
+        let mut error = Self::new(
+            StatusCode::NOT_FOUND,
+            format!("DHT mutable item at seq {seq} is not a valid signed packet"),
+        );
+        error.headers.insert(
+            PKARR_INVALID_SIGNED_PACKET_SEQ,
+            HeaderValue::from_str(&seq.to_string())
+                .expect("i64 string is a valid HTTP header value"),
+        );
+        error
     }
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        match self.detail {
+        let mut response = match self.detail {
             Some(detail) => (self.status, detail).into_response(),
             _ => (self.status,).into_response(),
-        }
+        };
+        response.headers_mut().extend(self.headers);
+        response
     }
 }
 
@@ -93,11 +111,31 @@ impl From<dht::ResolveError> for Error {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "No queried DHT nodes responded",
             ),
-            dht::ResolveError::NoValidResponses => Error::new(
+            dht::ResolveError::NoUsableResponses => Error::new(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "No responded DHT nodes returned valid response",
+                "No responded DHT nodes returned usable response",
             ),
             dht::ResolveError::NotFound => Error::with_status(StatusCode::NOT_FOUND),
+            dht::ResolveError::InvalidSignedPacket { seq } => Error::invalid_signed_packet(seq),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_signed_packet_error_returns_not_found_with_seq_header() {
+        let response = Error::invalid_signed_packet(42).into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response
+                .headers()
+                .get(PKARR_INVALID_SIGNED_PACKET_SEQ)
+                .unwrap(),
+            "42"
+        );
     }
 }

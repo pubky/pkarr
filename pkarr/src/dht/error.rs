@@ -68,13 +68,20 @@ pub enum ResolveError {
     #[error("no queried DHT nodes responded")]
     NoNodesResponded,
 
-    /// DHT query did not receive any valid responses.
-    #[error("no responded DHT nodes returned valid response")]
-    NoValidResponses,
+    /// DHT query did not receive any usable responses.
+    #[error("no responded DHT nodes returned usable response")]
+    NoUsableResponses,
 
     /// No signed packet was found.
     #[error("signed packet not found")]
     NotFound,
+
+    /// DHT returned mutable values for the key, but none were valid signed packets.
+    #[error("DHT mutable item at seq {seq} is not a valid signed packet")]
+    InvalidSignedPacket {
+        /// Mutable item sequence number.
+        seq: i64,
+    },
 }
 
 impl From<ResolveReport> for ResolveError {
@@ -83,8 +90,8 @@ impl From<ResolveReport> for ResolveError {
             Self::NoNodesQueried
         } else if report.responded() == 0 {
             Self::NoNodesResponded
-        } else if report.valid_responses() == 0 {
-            Self::NoValidResponses
+        } else if report.usable_responses() == 0 {
+            Self::NoUsableResponses
         } else {
             Self::NotFound
         }
@@ -96,7 +103,7 @@ mod tests {
     use super::*;
 
     fn report(outcome: mainline::GetMutableOutcome) -> ResolveReport {
-        ResolveReport::with_invalid_signed_packets(outcome, 0)
+        ResolveReport::new(outcome)
     }
 
     #[test]
@@ -117,18 +124,18 @@ mod tests {
     }
 
     #[test]
-    fn resolve_report_without_valid_responses_maps_to_no_valid_responses() {
+    fn resolve_report_without_usable_responses_maps_to_no_usable_responses() {
         let error = ResolveError::from(report(mainline::GetMutableOutcome {
             queried: 20,
             invalid_responses: 1,
             ..Default::default()
         }));
 
-        assert_eq!(error, ResolveError::NoValidResponses);
+        assert_eq!(error, ResolveError::NoUsableResponses);
     }
 
     #[test]
-    fn resolve_report_with_valid_responses_maps_to_not_found() {
+    fn resolve_report_with_usable_responses_maps_to_not_found() {
         let error = ResolveError::from(report(mainline::GetMutableOutcome {
             queried: 20,
             no_values: 1,

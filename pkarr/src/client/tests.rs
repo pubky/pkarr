@@ -661,7 +661,7 @@ async fn regression_relay_cas(#[case] networks: Networks) {
     let most_recent = client
         .resolve_most_recent(&keypair.public_key())
         .await
-        .expect("valid packet");
+        .expect("valid signed packet");
 
     let new_packet = SignedPacket::builder()
         .cname("test".try_into().unwrap(), "test2".try_into().unwrap(), 600)

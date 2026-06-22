@@ -324,6 +324,8 @@ fn map_relay_error(error: RelayError) -> PublishError {
         | RelayError::Request(_)
         | RelayError::BodyTooLarge { .. }
         | RelayError::InvalidSignedPacket(_)
+        | RelayError::InvalidSignedPacketSeq { .. }
+        | RelayError::InvalidSignedPacketSeqHeader
         | RelayError::InvalidHeader(_)
         | RelayError::UnexpectedStatus(_) => PublishError::UnexpectedResponses,
     }
