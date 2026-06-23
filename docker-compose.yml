@@ -1,7 +1,6 @@
 services:
   pkarr-relay:
     build: .
-    restart: unless-stopped
     
     # need both TCP and UDP
     ports:

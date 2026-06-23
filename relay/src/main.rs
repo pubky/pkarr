@@ -41,11 +41,27 @@ async fn main() -> Result<()> {
         }
     };
 
-    tokio::signal::ctrl_c().await?;
+    shutdown_signal().await?;
 
     info!("shutdown");
 
     relay.shutdown();
 
     Ok(())
+}
+
+#[cfg(unix)]
+async fn shutdown_signal() -> tokio::io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let mut terminate = signal(SignalKind::terminate())?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => result,
+        _ = terminate.recv() => Ok(()),
+    }
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() -> tokio::io::Result<()> {
+    tokio::signal::ctrl_c().await
 }
