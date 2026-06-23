@@ -32,6 +32,42 @@ pub struct RelayClient {
     publish_timeout: Duration,
 }
 
+/// Build the reqwest client used to talk to a relay.
+///
+/// On native targets the relay's ICANN TLS is validated against the webpki/Mozilla root
+/// bundle WITHOUT certificate revocation checking. reqwest's default rustls config uses
+/// `rustls-platform-verifier`, which on Android (a) panics unless it is first handed the
+/// `JavaVM` + app `Context` before the first handshake, and (b) hard-fails revocation —
+/// with Let's Encrypt's sharded-CRL hierarchy this falsely rejects valid relay
+/// certificates on some devices ("invalid peer certificate: Revoked"). Browsers soft-fail
+/// revocation; this matches that behavior and needs no platform-specific initialization.
+#[cfg(not(wasm_browser))]
+fn build_relay_http_client() -> Result<Client, RelayError> {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let mut tls_config = rustls::ClientConfig::builder_with_provider(
+        rustls::crypto::ring::default_provider().into(),
+    )
+    .with_safe_default_protocol_versions()
+    .expect("version supported by ring")
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
+    tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    Client::builder()
+        .use_preconfigured_tls(tls_config)
+        .build()
+        .map_err(|e| RelayError::Build(e.to_string()))
+}
+
+/// On WASM the browser performs TLS, so no rustls config is needed.
+#[cfg(wasm_browser)]
+fn build_relay_http_client() -> Result<Client, RelayError> {
+    Client::builder()
+        .build()
+        .map_err(|e| RelayError::Build(e.to_string()))
+}
+
 impl RelayClient {
     /// Build a client for one relay endpoint.
     ///
@@ -43,9 +79,7 @@ impl RelayClient {
         resolve_timeout: Duration,
         publish_timeout: Duration,
     ) -> Result<Self, RelayError> {
-        let client = Client::builder()
-            .build()
-            .map_err(|e| RelayError::Build(e.to_string()))?;
+        let client = build_relay_http_client()?;
         if base_url.cannot_be_a_base() {
             return Err(RelayError::Build(format!(
                 "Invalid base url of a relay: `{base_url}`"
