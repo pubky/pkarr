@@ -1,29 +1,5 @@
 use super::resolve_report::ResolveReport;
 
-/// Default minimum number of DHT nodes expected to acknowledge storing a published packet.
-const MINIMUM_PUBLISH_STORED_NODES: u32 = 10;
-
-/// Default minimum number of DHT nodes a resolve query should visit.
-const DEFAULT_MINIMUM_QUERIED_NODES: u32 = 20;
-
-/// Default minimum number of DHT nodes that should respond to a resolve query.
-const DEFAULT_MINIMUM_RESPONDED_NODES: u32 = 5;
-
-/// Default minimum number of usable responses expected from a resolve query.
-const DEFAULT_MINIMUM_USABLE_RESPONSES: u32 = 3;
-
-/// Testnet minimum number of DHT nodes expected to acknowledge storing a published packet.
-const TESTNET_MINIMUM_PUBLISH_STORED_NODES: u32 = 1;
-
-/// Testnet minimum number of DHT nodes a resolve query should visit.
-const TESTNET_MINIMUM_QUERIED_NODES: u32 = 1;
-
-/// Testnet minimum number of DHT nodes that should respond to a resolve query.
-const TESTNET_MINIMUM_RESPONDED_NODES: u32 = 1;
-
-/// Testnet minimum number of usable responses expected from a resolve query.
-const TESTNET_MINIMUM_USABLE_RESPONSES: u32 = 1;
-
 /// Policy used to classify DHT query diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReportPolicy {
@@ -50,28 +26,32 @@ pub struct ReportPolicy {
 }
 
 impl ReportPolicy {
+    const MAINNET: Self = Self {
+        minimum_publish_stored_nodes: 10,
+        minimum_queried_nodes: 20,
+        minimum_responded_nodes: 5,
+        minimum_usable_responses: 3,
+        report_malformed_responses: true,
+        report_krpc_errors: true,
+    };
+
+    const TESTNET: Self = Self {
+        minimum_publish_stored_nodes: 1,
+        minimum_queried_nodes: 1,
+        minimum_responded_nodes: 1,
+        minimum_usable_responses: 1,
+        report_malformed_responses: false,
+        report_krpc_errors: false,
+    };
+
     /// Create a policy with thresholds suitable for the public Mainline DHT.
     pub fn mainnet() -> Self {
-        Self {
-            minimum_publish_stored_nodes: MINIMUM_PUBLISH_STORED_NODES,
-            minimum_queried_nodes: DEFAULT_MINIMUM_QUERIED_NODES,
-            minimum_responded_nodes: DEFAULT_MINIMUM_RESPONDED_NODES,
-            minimum_usable_responses: DEFAULT_MINIMUM_USABLE_RESPONSES,
-            report_malformed_responses: true,
-            report_krpc_errors: true,
-        }
+        Self::MAINNET
     }
 
     /// Create a policy with thresholds suitable for small local testnets.
     pub fn testnet() -> Self {
-        Self {
-            minimum_publish_stored_nodes: TESTNET_MINIMUM_PUBLISH_STORED_NODES,
-            minimum_queried_nodes: TESTNET_MINIMUM_QUERIED_NODES,
-            minimum_responded_nodes: TESTNET_MINIMUM_RESPONDED_NODES,
-            minimum_usable_responses: TESTNET_MINIMUM_USABLE_RESPONSES,
-            report_malformed_responses: true,
-            report_krpc_errors: true,
-        }
+        Self::TESTNET
     }
 
     /// Classify warning diagnostics for a DHT publish query result.
@@ -199,9 +179,7 @@ pub enum ResolveWarning {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        PublishWarning, ReportPolicy, ResolveReport, ResolveWarning, MINIMUM_PUBLISH_STORED_NODES,
-    };
+    use super::{PublishWarning, ReportPolicy, ResolveReport, ResolveWarning};
 
     fn report(outcome: mainline::GetMutableOutcome) -> ResolveReport {
         ResolveReport::new(outcome)
@@ -214,17 +192,16 @@ mod tests {
     #[test]
     fn mainnet_publish_policy_warns_when_too_few_nodes_store_packet() {
         let policy = ReportPolicy::mainnet();
+        let minimum = policy.minimum_publish_stored_nodes;
 
         assert_eq!(
-            policy.classify_publish_result(MINIMUM_PUBLISH_STORED_NODES - 1),
+            policy.classify_publish_result(minimum - 1),
             vec![PublishWarning::TooFewNodesStored {
-                stored_at: MINIMUM_PUBLISH_STORED_NODES - 1,
-                minimum: MINIMUM_PUBLISH_STORED_NODES,
+                stored_at: minimum - 1,
+                minimum,
             }]
         );
-        assert!(policy
-            .classify_publish_result(MINIMUM_PUBLISH_STORED_NODES)
-            .is_empty());
+        assert!(policy.classify_publish_result(minimum).is_empty());
     }
 
     #[test]
