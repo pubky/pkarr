@@ -96,6 +96,15 @@ impl RelayBuilder {
         self
     }
 
+    /// Set the policy used to classify DHT query diagnostics.
+    ///
+    /// Defaults to [`ReportPolicy::mainnet`].
+    pub fn report_policy(&mut self, policy: ReportPolicy) -> &mut Self {
+        self.report_policy = policy;
+
+        self
+    }
+
     /// Allows mutating the internal [pkarr::mainline] DHT configuration.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
