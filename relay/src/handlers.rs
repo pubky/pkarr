@@ -3,7 +3,7 @@ use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
-use pkarr::dht::{ReportPolicy, ResolveReport, ResolveValue};
+use pkarr::dht::{ReportPolicy, ResolveReport};
 use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
@@ -76,18 +76,23 @@ pub async fn get(
             Some(packet) if !packet.is_expired(state.minimum_ttl, state.maximum_ttl) => packet,
             _ => {
                 enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-                let response = state.dht.resolve(&public_key, more_recent_than).await?;
-                let packet = response.first().clone();
-                let state = state.clone();
-                // Do not waste late responses with potentially newer packets.
-                tokio::spawn(async move {
+                let response = state.dht.resolve(&public_key, more_recent_than).await;
+                if let Some(packet) = response.first().cloned() {
+                    let state = state.clone();
+                    // Do not waste late responses with potentially newer packets.
+                    tokio::spawn(async move {
+                        let resolved = response.complete().await;
+                        log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
+                        if let Ok(packet) = resolved.most_recent {
+                            update_cache_if_needed(&state, &key, &packet);
+                        }
+                    });
+                    packet
+                } else {
                     let resolved = response.complete().await;
                     log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
-                    if let ResolveValue::ValidSignedPacket { packet } = resolved.most_recent {
-                        update_cache_if_needed(&state, &key, &packet);
-                    }
-                });
-                packet
+                    resolved.most_recent?
+                }
             }
         },
         ResolvePolicy::DhtNetworkOnly => {
@@ -95,16 +100,11 @@ pub async fn get(
             let resolved = state
                 .dht
                 .resolve(&public_key, more_recent_than)
-                .await?
+                .await
                 .complete()
                 .await;
             log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
-            match resolved.most_recent {
-                ResolveValue::ValidSignedPacket { packet } => packet,
-                ResolveValue::InvalidSignedPacket { seq } => {
-                    return Err(Error::invalid_signed_packet(seq))
-                }
-            }
+            resolved.most_recent?
         }
     };
 

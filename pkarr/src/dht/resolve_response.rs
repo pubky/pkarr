@@ -1,19 +1,19 @@
 use std::{fmt, future::Future, pin::Pin};
 
-use super::resolve_report::ResolveReport;
+use super::{ResolveError, ResolveReport};
 use crate::SignedPacket;
 
 type ResolveCompletion = Pin<Box<dyn Future<Output = ResolveOutcome> + Send + 'static>>;
 
-/// Successful DHT resolve response returned after the first valid signed packet is found.
+/// DHT resolve response with optional first packet and completion diagnostics.
 pub struct ResolveResponse {
-    first: SignedPacket,
+    first: Option<SignedPacket>,
     completion: ResolveCompletion,
 }
 
 impl ResolveResponse {
     pub(crate) fn new(
-        first: SignedPacket,
+        first: Option<SignedPacket>,
         completion: impl Future<Output = ResolveOutcome> + Send + 'static,
     ) -> Self {
         Self {
@@ -23,8 +23,8 @@ impl ResolveResponse {
     }
 
     /// First valid signed packet returned by the DHT query.
-    pub fn first(&self) -> &SignedPacket {
-        &self.first
+    pub fn first(&self) -> Option<&SignedPacket> {
+        self.first.as_ref()
     }
 
     /// Finish the DHT query and return the most recent value and diagnostics.
@@ -44,30 +44,10 @@ impl fmt::Debug for ResolveResponse {
 /// Completed DHT resolve result.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolveOutcome {
-    /// Most recent mutable item returned by the DHT query.
-    pub most_recent: ResolveValue,
+    /// Most recent valid signed packet returned by the DHT query.
+    pub most_recent: Result<SignedPacket, ResolveError>,
     /// Diagnostics collected from the DHT query.
     pub report: ResolveReport,
-}
-
-/// Most recent mutable item returned by a completed DHT resolve query.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ResolveValue {
-    /// The most recent mutable item contains a valid signed packet.
-    ValidSignedPacket {
-        /// Valid signed packet contained by the mutable item.
-        packet: SignedPacket,
-    },
-    /// The most recent mutable item is newer than all valid signed packets, but
-    /// does not contain a valid signed packet.
-    ///
-    /// Older valid signed packets must not be treated as current when this
-    /// variant is returned; the newer invalid mutable item is the current DHT
-    /// state for the key.
-    InvalidSignedPacket {
-        /// Mutable item sequence number.
-        seq: i64,
-    },
 }
 
 #[cfg(test)]
@@ -100,16 +80,14 @@ mod tests {
     #[test]
     fn resolve_response_exposes_first_packet() {
         let first = signed_packet();
-        let response = ResolveResponse::new(first.clone(), async move {
+        let response = ResolveResponse::new(Some(first.clone()), async move {
             ResolveOutcome {
-                most_recent: ResolveValue::ValidSignedPacket {
-                    packet: signed_packet(),
-                },
+                most_recent: Ok(signed_packet()),
                 report: healthy_report(),
             }
         });
 
-        assert_eq!(response.first(), &first);
+        assert_eq!(response.first(), Some(&first));
     }
 
     #[test]
@@ -119,23 +97,16 @@ mod tests {
         let report = healthy_report();
         let expected_packet = most_recent.clone();
         let expected_report = report.clone();
-        let response = ResolveResponse::new(first, async move {
+        let response = ResolveResponse::new(Some(first), async move {
             ResolveOutcome {
-                most_recent: ResolveValue::ValidSignedPacket {
-                    packet: most_recent,
-                },
+                most_recent: Ok(most_recent),
                 report,
             }
         });
 
         let resolved = futures_lite::future::block_on(response.complete());
 
-        assert_eq!(
-            resolved.most_recent,
-            ResolveValue::ValidSignedPacket {
-                packet: expected_packet
-            }
-        );
+        assert_eq!(resolved.most_recent, Ok(expected_packet));
         assert_eq!(resolved.report, expected_report);
     }
 }
