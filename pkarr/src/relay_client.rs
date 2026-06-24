@@ -9,7 +9,7 @@ use reqwest::{
 use std::time::Duration;
 use url::Url;
 
-use crate::{PublicKey, ResolvePolicy, SignedPacket};
+use crate::{PublicKey, ResolvePolicy, SignedPacket, PKARR_INVALID_SIGNED_PACKET_SEQ};
 
 const MEMENTO_DATETIME: &str = "memento-datetime";
 const CACHE_BYPASS: &str = "no-cache, no-store, must-revalidate";
@@ -107,7 +107,8 @@ impl RelayClient {
     /// # Errors
     ///
     /// Returns an error when the relay request fails, the response body is too
-    /// large, or the returned relay payload does not verify.
+    /// large, the returned relay payload does not verify, or the relay reports
+    /// a newer DHT mutable item that is not a valid signed packet.
     pub async fn resolve(
         &self,
         key: &PublicKey,
@@ -129,7 +130,15 @@ impl RelayClient {
         }
 
         let status = response.status();
-        if status == StatusCode::NOT_MODIFIED || status == StatusCode::NOT_FOUND {
+        if status == StatusCode::NOT_FOUND {
+            if let Some(seq) = extract_invalid_signed_packet_seq(&response)? {
+                return Err(RelayError::InvalidSignedPacketSeq { seq });
+            }
+
+            return Ok(None);
+        }
+
+        if status == StatusCode::NOT_MODIFIED {
             return Ok(None);
         }
 
@@ -217,9 +226,22 @@ pub enum RelayError {
         limit: usize,
     },
 
-    /// Relay returned a malformed signed packet payload.
+    /// Relay returned an invalid signed packet payload.
     #[error("relay returned an invalid signed packet: {0}")]
     InvalidSignedPacket(crate::errors::SignedPacketVerifyError),
+
+    /// Relay reported a newer DHT mutable item that is not a valid signed packet.
+    #[error(
+        "relay reported a newer DHT mutable item at seq {seq} that is not a valid signed packet"
+    )]
+    InvalidSignedPacketSeq {
+        /// Mutable item sequence number.
+        seq: i64,
+    },
+
+    /// Relay returned a malformed invalid-signed-packet sequence header.
+    #[error("relay returned a malformed Pkarr-Invalid-Signed-Packet-Seq header")]
+    InvalidSignedPacketSeqHeader,
 
     /// Relay request contained an invalid header.
     #[error("relay request contained an invalid header: {0}")]
@@ -240,6 +262,10 @@ pub enum RelayError {
     /// Relay requires compare-and-swap.
     #[error("relay requires compare-and-swap")]
     ConflictRisk,
+
+    /// Relay could not complete a DHT query.
+    #[error("relay DHT query is unavailable")]
+    DhtUnavailable,
 
     /// Relay returned an unexpected status code.
     #[error("relay returned unexpected status code {0}")]
@@ -263,6 +289,7 @@ impl RelayError {
             StatusCode::CONFLICT => Self::NotMostRecent,
             StatusCode::PRECONDITION_FAILED => Self::CasFailed,
             StatusCode::PRECONDITION_REQUIRED => Self::ConflictRisk,
+            StatusCode::SERVICE_UNAVAILABLE => Self::DhtUnavailable,
             status => Self::UnexpectedStatus(status),
         }
     }
@@ -275,6 +302,20 @@ fn extract_memento_datetime(response: &Response) -> Option<Timestamp> {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| Timestamp::parse_http_date(value).ok())
         .filter(|timestamp| timestamp <= &Timestamp::now())
+}
+
+fn extract_invalid_signed_packet_seq(response: &Response) -> Result<Option<i64>, RelayError> {
+    response
+        .headers()
+        .get(PKARR_INVALID_SIGNED_PACKET_SEQ)
+        .map(|value| {
+            value
+                .to_str()
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .ok_or(RelayError::InvalidSignedPacketSeqHeader)
+        })
+        .transpose()
 }
 
 fn should_retry_with_cache_bypass(response: &Response, newer_than: Option<&Timestamp>) -> bool {
@@ -342,6 +383,22 @@ mod tests {
 
     const TIMEOUT: Duration = Duration::from_secs(1);
 
+    #[test]
+    fn relay_503_status_maps_to_dht_unavailable() {
+        assert!(matches!(
+            RelayError::from_status(StatusCode::SERVICE_UNAVAILABLE),
+            RelayError::DhtUnavailable
+        ));
+    }
+
+    #[tokio::test]
+    async fn resolve_maps_503_to_dht_unavailable() {
+        assert!(matches!(
+            resolve_error_for_status(HttpStatusCode::SERVICE_UNAVAILABLE).await,
+            RelayError::DhtUnavailable
+        ));
+    }
+
     #[tokio::test]
     async fn resolve_returns_none_on_not_found() {
         let keypair = Keypair::random();
@@ -361,6 +418,61 @@ mod tests {
             .unwrap();
 
         assert!(resolved.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_returns_invalid_signed_packet_seq_on_not_found() {
+        let keypair = Keypair::random();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get(|| async {
+                (
+                    HttpStatusCode::NOT_FOUND,
+                    [(PKARR_INVALID_SIGNED_PACKET_SEQ, "42")],
+                )
+            }),
+        );
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+
+        let error = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::LocalOrRelayCacheOnly,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            RelayError::InvalidSignedPacketSeq { seq: 42 }
+        ));
+    }
+
+    #[tokio::test]
+    async fn resolve_rejects_malformed_invalid_signed_packet_seq_header() {
+        let keypair = Keypair::random();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get(|| async {
+                (
+                    HttpStatusCode::NOT_FOUND,
+                    [(PKARR_INVALID_SIGNED_PACKET_SEQ, "not a seq")],
+                )
+            }),
+        );
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+
+        let error = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::LocalOrRelayCacheOnly,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, RelayError::InvalidSignedPacketSeqHeader));
     }
 
     #[tokio::test]
@@ -685,6 +797,24 @@ mod tests {
             reached_listener.load(Ordering::SeqCst),
             "HTTPS request never reached the TCP listener, got {err:?}"
         );
+    }
+
+    async fn resolve_error_for_status(status: HttpStatusCode) -> RelayError {
+        let keypair = Keypair::random();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get(move || async move { status }),
+        );
+        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+
+        client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::LocalOrRelayCacheOnly,
+                None,
+            )
+            .await
+            .unwrap_err()
     }
 
     async fn serve(app: Router) -> Url {

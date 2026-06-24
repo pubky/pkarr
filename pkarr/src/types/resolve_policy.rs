@@ -25,13 +25,15 @@ pub enum ResolvePolicy {
     /// Useful for normal application resolution while respecting TTLs.
     CacheFirst,
 
-    /// Query all relevant DHT nodes for the most recent packet observed and
-    /// update the cache after retrieval.
+    /// Query all relevant DHT nodes for the most recent value observed and
+    /// update the cache when that value contains a valid signed packet.
     /// This is slower, but more accurate.
     ///
-    /// This is guaranteed to return the newest packet.
-    /// Useful when you need the most recent packet, for example for recovering
-    /// after stale sequence errors.
+    /// This is guaranteed to return the newest valid signed packet, or the sequence
+    /// number of a newer mutable item that is not a valid signed packet.
+    /// A newer invalid signed packet is treated as the current DHT state.
+    /// Useful when you need to account for the most recent DHT state, for
+    /// example when recovering after stale sequence errors.
     DhtNetworkOnly,
 }
 

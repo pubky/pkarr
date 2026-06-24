@@ -66,8 +66,5 @@ where
 }
 
 fn invalid_header<T>(_error: T) -> RelayError {
-    RelayError::new(
-        StatusCode::BAD_REQUEST,
-        Some("Invalid IF_MATCH header value"),
-    )
+    RelayError::new(StatusCode::BAD_REQUEST, "Invalid IF_MATCH header value")
 }

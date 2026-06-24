@@ -24,13 +24,17 @@ use std::{
 };
 
 use anyhow::anyhow;
-use axum::{extract::DefaultBodyLimit, Router};
+use axum::{extract::DefaultBodyLimit, http::HeaderName, Router};
 use axum_server::Handle;
 
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
-use pkarr::{dht::DhtClient, extra::lmdb_cache::LmdbCache, mainline, Timestamp};
+use pkarr::{
+    dht::{DhtClient, ReportPolicy},
+    extra::lmdb_cache::LmdbCache,
+    mainline, Timestamp, PKARR_INVALID_SIGNED_PACKET_SEQ,
+};
 use url::Url;
 
 use config::{RelayConfig, CACHE_DIR};
@@ -42,6 +46,7 @@ pub use rate_limiting::RateLimiterConfig;
 pub struct RelayBuilder {
     config: RelayConfig,
     dht: mainline::Config,
+    report_policy: ReportPolicy,
 }
 
 impl RelayBuilder {
@@ -91,6 +96,15 @@ impl RelayBuilder {
         self
     }
 
+    /// Set the policy used to classify DHT query diagnostics.
+    ///
+    /// Defaults to [`ReportPolicy::mainnet`].
+    pub fn report_policy(&mut self, policy: ReportPolicy) -> &mut Self {
+        self.report_policy = policy;
+
+        self
+    }
+
     /// Allows mutating the internal [pkarr::mainline] DHT configuration.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
@@ -114,7 +128,7 @@ impl RelayBuilder {
     /// This method is marked as unsafe because it uses `LmdbCache`, which can lead to
     /// undefined behavior if the lock file is corrupted or improperly handled.
     pub async unsafe fn run(self) -> anyhow::Result<Relay> {
-        unsafe { Relay::run_with_dht(self.config, self.dht) }.await
+        unsafe { Relay::run_with_dht(self.config, self.dht, self.report_policy) }.await
     }
 }
 
@@ -142,12 +156,13 @@ impl Relay {
     async unsafe fn run(config: RelayConfig) -> anyhow::Result<Self> {
         let dht_config = mainline_config(&config);
 
-        unsafe { Self::run_with_dht(config, dht_config) }.await
+        unsafe { Self::run_with_dht(config, dht_config, ReportPolicy::mainnet()) }.await
     }
 
     async unsafe fn run_with_dht(
         config: RelayConfig,
         mut dht_config: mainline::Config,
+        report_policy: ReportPolicy,
     ) -> anyhow::Result<Self> {
         tracing::debug!(?config, "Pkarr server config");
 
@@ -209,6 +224,7 @@ impl Relay {
             cache,
             cache_write_lock: Arc::new(Mutex::new(())),
             user_dht_rate_limiter,
+            report_policy,
             dht,
         };
         let app = create_app(state, rate_limiter, behind_proxy);
@@ -232,6 +248,7 @@ impl Relay {
         RelayBuilder {
             config: Default::default(),
             dht: Default::default(),
+            report_policy: ReportPolicy::mainnet(),
         }
     }
 
@@ -267,7 +284,7 @@ impl Relay {
         dht_config.server_mode = true;
         dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
 
-        Ok(unsafe { Self::run_with_dht(config, dht_config).await? })
+        Ok(unsafe { Self::run_with_dht(config, dht_config, ReportPolicy::testnet()).await? })
     }
 
     /// Run a Pkarr relay in a Testnet mode (on port 15411).
@@ -295,7 +312,7 @@ impl Relay {
         dht_config.server_mode = true;
         dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
 
-        Self::run_with_dht(config, dht_config).await
+        Self::run_with_dht(config, dht_config, ReportPolicy::testnet()).await
     }
 
     /// Returns the HTTP socket address of the relay.
@@ -335,7 +352,7 @@ fn create_app(
         .route("/", axum::routing::get(crate::handlers::index))
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
-        .layer(CorsLayer::very_permissive())
+        .layer(cors_layer())
         .layer(TraceLayer::new_for_http());
 
     if let Some(rate_limiter) = rate_limiter {
@@ -345,6 +362,14 @@ fn create_app(
     }
 
     router
+}
+
+fn cors_layer() -> CorsLayer {
+    let invalid_signed_packet_seq_header =
+        HeaderName::from_bytes(PKARR_INVALID_SIGNED_PACKET_SEQ.as_bytes())
+            .expect("Pkarr invalid signed packet seq header name is valid");
+
+    CorsLayer::very_permissive().expose_headers([invalid_signed_packet_seq_header])
 }
 
 fn to_socket_address_v4<T: ToSocketAddrs>(bootstrap: &[T]) -> Vec<SocketAddrV4> {
@@ -373,6 +398,7 @@ struct AppState {
     cache_write_lock: Arc<Mutex<()>>,
     // Rate limiter for DHT operations initiated by HTTP user requests.
     user_dht_rate_limiter: Option<rate_limiting::UserDhtRateLimiter>,
+    report_policy: ReportPolicy,
     dht: DhtClient,
 }
 
@@ -381,9 +407,37 @@ mod tests {
     use std::{net::Ipv4Addr, num::NonZeroU32, time::Duration};
 
     use http::StatusCode;
-    use pkarr::{Keypair, SignedPacket, Timestamp};
+    use pkarr::{Keypair, SignedPacket, Timestamp, PKARR_INVALID_SIGNED_PACKET_SEQ};
 
     use super::{to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
+
+    #[tokio::test]
+    async fn cors_exposes_invalid_signed_packet_seq_header() {
+        let testnet = pkarr::mainline::Testnet::builder(2).build().unwrap();
+        let relay = run_rate_limited_relay(&testnet).await;
+
+        let response = reqwest::Client::new()
+            .get(relay.local_url())
+            .header("Origin", "https://example.com")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let exposed_headers = response
+            .headers()
+            .get("access-control-expose-headers")
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        assert!(exposed_headers.split(',').any(|header| header
+            .trim()
+            .eq_ignore_ascii_case(PKARR_INVALID_SIGNED_PACKET_SEQ)));
+
+        relay.shutdown();
+    }
 
     #[tokio::test]
     async fn user_dht_rate_limit_only_blocks_dht_operations() {

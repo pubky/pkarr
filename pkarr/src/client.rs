@@ -323,7 +323,10 @@ impl Client {
         let dht_future = {
             let signed_packet = signed_packet.clone();
             self.dht().cloned().map(|dht| async move {
-                dht.publish(&signed_packet, cas).await.map_err(Into::into)
+                dht.publish(&signed_packet, cas)
+                    .await
+                    .map(drop)
+                    .map_err(Into::into)
             })
         };
 
@@ -458,7 +461,7 @@ impl Client {
         #[cfg(dht)]
         let dht_stream = self.dht().cloned().map(|dht| {
             let public_key = public_key.clone();
-            dht.resolve(&public_key, more_recent_than).boxed()
+            dht.resolve_stream(&public_key, more_recent_than).boxed()
         });
 
         #[cfg(relays)]
