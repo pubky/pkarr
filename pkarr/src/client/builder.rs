@@ -12,10 +12,8 @@ use crate::{errors::BuildError, Client};
 #[cfg(feature = "endpoints")]
 pub const DEFAULT_MAX_RECURSION_DEPTH: u8 = 7;
 
-#[cfg(dht)]
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = mainline::DEFAULT_REQUEST_TIMEOUT;
-#[cfg(not(dht))]
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+/// Default request timeout for DHT and relay requests.
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// [Client]'s Config
 #[derive(Clone)]
@@ -46,7 +44,7 @@ pub(crate) struct Config {
     ///
     /// The longer this timeout the longer resolve queries will take before consider failed.
     ///
-    /// Defaults to [DEFAULT_REQUEST_TIMEOUT]
+    /// Defaults to [DEFAULT_REQUEST_TIMEOUT].
     pub request_timeout: Duration,
 
     #[cfg(feature = "endpoints")]
@@ -62,7 +60,7 @@ impl Default for Config {
             cache: None,
 
             #[cfg(dht)]
-            dht: Some(mainline::Config::default()),
+            dht: Some(default_dht_config(DEFAULT_REQUEST_TIMEOUT)),
 
             #[cfg(feature = "relays")]
             relays: Some(
@@ -144,7 +142,7 @@ impl ClientBuilder {
         F: FnOnce(&mut mainline::Config) -> &mut mainline::Config,
     {
         if self.0.dht.is_none() {
-            self.0.dht = Some(Default::default());
+            self.0.dht = Some(default_dht_config(self.0.request_timeout));
         }
 
         if let Some(ref mut builder) = self.0.dht {
@@ -267,7 +265,7 @@ impl ClientBuilder {
     /// Set the maximum request timeout for both Dht and relays client.
     ///
     /// Useful for testing NOT FOUND responses, where you want to reach the timeout
-    /// sooner than the default of [mainline::DEFAULT_REQUEST_TIMEOUT].
+    /// sooner than the default of [DEFAULT_REQUEST_TIMEOUT].
     pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.0.request_timeout = timeout;
         #[cfg(dht)]
@@ -293,6 +291,14 @@ impl ClientBuilder {
     /// Try building a [Client] with the configuration in this builder.
     pub fn build(&self) -> Result<Client, BuildError> {
         Client::new(self.0.clone())
+    }
+}
+
+#[cfg(dht)]
+fn default_dht_config(request_timeout: Duration) -> mainline::Config {
+    mainline::Config {
+        request_timeout,
+        ..Default::default()
     }
 }
 
@@ -342,4 +348,40 @@ pub enum InvalidRelayUrl {
     #[error("Relays Urls should have `http` or `https`: {0}")]
     /// Relays Urls should have `http` or `https`.
     NotHttp(String),
+}
+
+#[cfg(all(test, dht))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_dht_timeout_matches_client_timeout() {
+        let config = Config::default();
+        let dht_config = config
+            .dht
+            .as_ref()
+            .expect("dht should be enabled by default");
+
+        assert_eq!(config.request_timeout, DEFAULT_REQUEST_TIMEOUT);
+        assert_eq!(dht_config.request_timeout, DEFAULT_REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn recreated_dht_config_uses_current_client_timeout() {
+        let timeout = Duration::from_secs(5);
+        let mut builder = Client::builder();
+
+        builder
+            .request_timeout(timeout)
+            .no_dht()
+            .dht(|config| config);
+
+        let dht_config = builder
+            .0
+            .dht
+            .as_ref()
+            .expect("dht config should be recreated");
+
+        assert_eq!(dht_config.request_timeout, timeout);
+    }
 }

@@ -37,7 +37,10 @@ pub use client::blocking::ClientBlocking;
 #[cfg(client)]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
-pub use client::{builder::ClientBuilder, Client};
+pub use client::{
+    builder::{ClientBuilder, DEFAULT_REQUEST_TIMEOUT},
+    Client,
+};
 pub use types::*;
 
 // Rexports
