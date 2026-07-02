@@ -13,7 +13,7 @@ use crate::{errors::BuildError, Client};
 pub const DEFAULT_MAX_RECURSION_DEPTH: u8 = 7;
 
 /// Default request timeout for DHT and relay requests.
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// [Client]'s Config
 #[derive(Clone)]
@@ -60,7 +60,7 @@ impl Default for Config {
             cache: None,
 
             #[cfg(dht)]
-            dht: Some(default_dht_config(DEFAULT_REQUEST_TIMEOUT)),
+            dht: Some(make_dht_config(DEFAULT_REQUEST_TIMEOUT)),
 
             #[cfg(feature = "relays")]
             relays: Some(
@@ -142,7 +142,7 @@ impl ClientBuilder {
         F: FnOnce(&mut mainline::Config) -> &mut mainline::Config,
     {
         if self.0.dht.is_none() {
-            self.0.dht = Some(default_dht_config(self.0.request_timeout));
+            self.0.dht = Some(make_dht_config(self.0.request_timeout));
         }
 
         if let Some(ref mut builder) = self.0.dht {
@@ -295,7 +295,7 @@ impl ClientBuilder {
 }
 
 #[cfg(dht)]
-fn default_dht_config(request_timeout: Duration) -> mainline::Config {
+fn make_dht_config(request_timeout: Duration) -> mainline::Config {
     mainline::Config {
         request_timeout,
         ..Default::default()

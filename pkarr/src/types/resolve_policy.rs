@@ -39,8 +39,7 @@ pub enum ResolvePolicy {
     ///
     /// This policy ignores cached packets while querying and interpreting the
     /// DHT result. If the DHT currently contains an older valid packet than the
-    /// cache, that older packet is returned. If it contains an older invalid
-    /// mutable item, that invalid sequence is reported.
+    /// cache, that older packet is returned.
     ///
     /// This is guaranteed to return the newest valid signed packet, or the sequence
     /// number of a newer mutable item that is not a valid signed packet.
