@@ -3,7 +3,7 @@ use axum::response::Html;
 use axum::{extract::State, response::IntoResponse};
 use bytes::Bytes;
 use http::StatusCode;
-use pkarr::dht::{ReportPolicy, ResolveError as DhtResolveError, ResolveReport};
+use pkarr::dht::{ReportPolicy, ResolveError as DhtResolveError, ResolveReport, ResolveResponse};
 use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, ResolvePolicy, SignedPacket, Timestamp};
 use serde::Deserialize;
@@ -22,6 +22,7 @@ pub async fn put(
     real_ip: Option<Extension<RealIp>>,
     body: Bytes,
 ) -> Result<impl IntoResponse, Error> {
+    let real_ip = real_ip.as_ref().map(|extension| &extension.0);
     let signed_packet = pkarr::SignedPacket::from_relay_payload(&public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, error))?;
 
@@ -35,7 +36,7 @@ pub async fn put(
         }
     }
 
-    enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
+    enforce_user_dht_rate_limit(&state, real_ip)?;
 
     let stored_at = state.dht.publish(&signed_packet, cas).await?;
     let warnings = state.report_policy.classify_publish_result(stored_at);
@@ -58,63 +59,11 @@ pub async fn get(
     real_ip: Option<Extension<RealIp>>,
     IfModifiedSince(if_modified_since): IfModifiedSince,
 ) -> Result<SignedPacketResponse, Error> {
+    let real_ip = real_ip.as_ref().map(|extension| &extension.0);
     let key = CacheKey::from(&public_key);
 
     let policy = query.policy.unwrap_or(ResolvePolicy::CacheFirst);
-    let cached = state.cache.get(&key);
-    let more_recent_than = cached
-        .as_ref()
-        .map(SignedPacket::timestamp)
-        .and_then(decrement);
-
-    let packet = match (policy, cached.as_ref()) {
-        (ResolvePolicy::LocalOrRelayCacheOnly, Some(packet)) => packet.clone(),
-        (ResolvePolicy::LocalOrRelayCacheOnly, None) => {
-            return Err(Error::with_status(StatusCode::NOT_FOUND));
-        }
-        (ResolvePolicy::CacheFirst, Some(packet))
-            if !packet.is_expired(state.minimum_ttl, state.maximum_ttl) =>
-        {
-            packet.clone()
-        }
-        (ResolvePolicy::CacheFirst, _) => {
-            enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-            let response = state.dht.resolve(&public_key, more_recent_than).await;
-            let first_packet = response
-                .first()
-                .cloned()
-                .map(|packet| apply_cached_floor(Ok(packet), cached.as_ref()));
-
-            match first_packet {
-                Some(Ok(packet)) => {
-                    let state = state.clone();
-                    // Do not waste late responses with potentially newer packets.
-                    tokio::spawn(async move {
-                        let resolved = response.complete().await;
-                        log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
-                        if let Ok(packet) = resolved.most_recent {
-                            update_cache_if_needed(&state, &key, &packet);
-                        }
-                    });
-                    packet
-                }
-                Some(Err(DhtResolveError::NotFound)) | None => {
-                    let resolved = response.complete().await;
-                    log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
-                    apply_cached_floor(resolved.most_recent, cached.as_ref())?
-                }
-                Some(Err(error)) => return Err(error.into()),
-            }
-        }
-        (ResolvePolicy::DhtNetworkOnly, _) => {
-            enforce_user_dht_rate_limit(&state, real_ip.as_ref())?;
-            // DhtNetworkOnly reports the DHT's current state without using the
-            // relay cache as a lower bound or as invalid-sequence suppression.
-            let resolved = state.dht.resolve(&public_key, None).await.complete().await;
-            log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
-            resolved.most_recent?
-        }
-    };
+    let packet = resolve_packet(&state, &public_key, key, policy, real_ip).await?;
 
     update_cache_if_needed(&state, &key, &packet);
     let ttl = packet.ttl(state.minimum_ttl, state.maximum_ttl);
@@ -127,7 +76,7 @@ pub(crate) struct GetQuery {
 }
 
 pub async fn index(State(state): State<AppState>) -> Result<impl IntoResponse, Error> {
-    let cache = state.cache;
+    let cache = &state.cache;
 
     let size = cache.len();
     let capacity = cache.capacity();
@@ -244,6 +193,96 @@ fn update_cache_if_needed(state: &AppState, key: &CacheKey, signed_packet: &Sign
     }
 }
 
+async fn resolve_packet(
+    state: &AppState,
+    public_key: &pkarr::PublicKey,
+    key: CacheKey,
+    policy: ResolvePolicy,
+    real_ip: Option<&RealIp>,
+) -> Result<SignedPacket, Error> {
+    let cached = state.cache.get(&key);
+
+    match policy {
+        ResolvePolicy::LocalOrRelayCacheOnly => {
+            cached.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))
+        }
+        ResolvePolicy::CacheFirst => {
+            resolve_cache_first(state, public_key, key, cached.as_ref(), real_ip).await
+        }
+        ResolvePolicy::DhtNetworkOnly => resolve_dht_network_only(state, public_key, real_ip).await,
+    }
+}
+
+async fn resolve_cache_first(
+    state: &AppState,
+    public_key: &pkarr::PublicKey,
+    key: CacheKey,
+    cached: Option<&SignedPacket>,
+    real_ip: Option<&RealIp>,
+) -> Result<SignedPacket, Error> {
+    if let Some(packet) = cached {
+        if !packet.is_expired(state.minimum_ttl, state.maximum_ttl) {
+            return Ok(packet.clone());
+        }
+    }
+
+    let more_recent_than = cached.map(SignedPacket::timestamp).and_then(decrement);
+    enforce_user_dht_rate_limit(state, real_ip)?;
+    let response = state.dht.resolve(public_key, more_recent_than).await;
+
+    resolve_cache_first_dht_response(state, public_key, key, cached, response).await
+}
+
+async fn resolve_cache_first_dht_response(
+    state: &AppState,
+    public_key: &pkarr::PublicKey,
+    key: CacheKey,
+    cached: Option<&SignedPacket>,
+    response: ResolveResponse,
+) -> Result<SignedPacket, Error> {
+    let first_packet = response
+        .first()
+        .cloned()
+        .map(|packet| apply_cached_floor(Ok(packet), cached));
+
+    match first_packet {
+        Some(Ok(packet)) => {
+            let state = state.clone();
+            let public_key = public_key.clone();
+            // Do not waste late responses with potentially newer packets.
+            tokio::spawn(async move {
+                let resolved = response.complete().await;
+                log_resolve_warnings(&public_key, &resolved.report, state.report_policy);
+                if let Ok(packet) = resolved.most_recent {
+                    update_cache_if_needed(&state, &key, &packet);
+                }
+            });
+            Ok(packet)
+        }
+        Some(Err(DhtResolveError::NotFound)) | None => {
+            let resolved = response.complete().await;
+            log_resolve_warnings(public_key, &resolved.report, state.report_policy);
+            apply_cached_floor(resolved.most_recent, cached).map_err(Error::from)
+        }
+        Some(Err(error)) => Err(error.into()),
+    }
+}
+
+async fn resolve_dht_network_only(
+    state: &AppState,
+    public_key: &pkarr::PublicKey,
+    real_ip: Option<&RealIp>,
+) -> Result<SignedPacket, Error> {
+    enforce_user_dht_rate_limit(state, real_ip)?;
+
+    // DhtNetworkOnly reports the DHT's current state without using the relay
+    // cache as a lower bound or as invalid-sequence suppression.
+    let resolved = state.dht.resolve(public_key, None).await.complete().await;
+    log_resolve_warnings(public_key, &resolved.report, state.report_policy);
+
+    Ok(resolved.most_recent?)
+}
+
 fn apply_cached_floor(
     result: Result<SignedPacket, DhtResolveError>,
     cached: Option<&SignedPacket>,
@@ -284,12 +323,8 @@ fn log_resolve_warnings(
 }
 
 #[allow(clippy::result_large_err)]
-fn enforce_user_dht_rate_limit(
-    state: &AppState,
-    real_ip: Option<&Extension<RealIp>>,
-) -> Result<(), Error> {
-    if let (Some(rate_limiter), Some(Extension(real_ip))) = (&state.user_dht_rate_limiter, real_ip)
-    {
+fn enforce_user_dht_rate_limit(state: &AppState, real_ip: Option<&RealIp>) -> Result<(), Error> {
+    if let (Some(rate_limiter), Some(real_ip)) = (&state.user_dht_rate_limiter, real_ip) {
         if rate_limiter.is_limited(&real_ip.0) {
             return Err(Error::new(
                 StatusCode::TOO_MANY_REQUESTS,
