@@ -9,6 +9,7 @@ authors = [
 ]
 edition = "2021"
 description = "Pkarr relay (https://github.com/pubky/pkarr/blob/main/design/relays.md)"
+default-run = "pkarr-relay"
 license = "MIT"
 homepage = "https://pkdns.net"
 repository = "https://github.com/pubky/pkarr"
