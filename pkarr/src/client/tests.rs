@@ -40,7 +40,7 @@ pub(crate) fn builder(
     if std::env::var("CI").is_ok() {
         builder.request_timeout(Duration::from_millis(1000));
     } else {
-        builder.request_timeout(Duration::from_millis(200));
+        builder.request_timeout(Duration::from_millis(500));
     }
 
     match networks {

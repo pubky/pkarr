@@ -8,6 +8,9 @@ use serde::{Deserialize, Serialize};
 /// Controls whether resolution may use only cached packets,
 /// prefer cached packets before querying the DHT, or bypass cached reads and
 /// query the DHT network directly.
+///
+/// Caches store valid `SignedPacket`s. Invalid DHT mutable items are reported
+/// by sequence number, but are not stored in the packet cache.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResolvePolicy {
     /// Return only a locally cached or relay-cached packet, even if expired.
@@ -16,18 +19,27 @@ pub enum ResolvePolicy {
     /// Useful for republishing.
     LocalOrRelayCacheOnly,
 
-    /// Use the cache (local or relay) if the packet is available and is within the TTL.
-    /// Query the DHT nodes on a cache miss. Use the first DHT response to
-    /// guarantee a fast response.
-    /// May return an outdated packet in edge cases.
+    /// Resolve with the fastest fresh answer without going backward.
     ///
-    /// This is guaranteed to return only packets that are not expired.
-    /// Useful for normal application resolution while respecting TTLs.
+    /// Returns a cached packet when it is still within TTL. Otherwise queries
+    /// the DHT and returns the first acceptable result.
+    ///
+    /// If an expired cached packet exists, its sequence is used as a floor:
+    /// older DHT packets, and invalid DHT mutable items at or below that
+    /// sequence, are treated as stale rather than returned.
+    ///
+    /// This is the default policy for normal application resolution. It never
+    /// returns expired packets, but it may miss a newer DHT value because it
+    /// stops at the first acceptable response.
     CacheFirst,
 
     /// Query all relevant DHT nodes for the most recent value observed and
     /// update the cache when that value contains a valid signed packet.
     /// This is slower, but more accurate.
+    ///
+    /// This policy ignores cached packets while querying and interpreting the
+    /// DHT result. If the DHT currently contains an older valid packet than the
+    /// cache, that older packet is returned.
     ///
     /// This is guaranteed to return the newest valid signed packet, or the sequence
     /// number of a newer mutable item that is not a valid signed packet.

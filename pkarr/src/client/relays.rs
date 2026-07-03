@@ -43,15 +43,13 @@ impl Debug for RelaysClient {
 impl RelaysClient {
     pub fn new(relays: Box<[Url]>, timeout: Duration) -> Result<Self, RelayError> {
         let inflight_publish = InflightPublishRequests::new(relays.len());
-        let resolve_timeout = timeout;
-        // Publish combines HTTP latency with the relay-side DHT PUT query.
-        let publish_timeout = resolve_timeout
-            .checked_mul(3)
-            .ok_or_else(|| RelayError::Build("publish timeout overflow".to_string()))?;
+        let client = reqwest::Client::builder()
+            .build()
+            .map_err(|e| RelayError::Build(e.to_string()))?;
         let relays = relays
             .into_vec()
             .into_iter()
-            .map(|url| RelayClient::new(url, resolve_timeout, publish_timeout))
+            .map(|url| RelayClient::new(url, client.clone(), timeout))
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
 
@@ -138,7 +136,8 @@ impl RelaysClient {
                     )
                     .await
                 {
-                    Ok(signed_packet) => signed_packet,
+                    Ok(signed_packet) => Some(signed_packet),
+                    Err(RelayError::NotFound) => None,
                     Err(error) => {
                         cross_debug!("GET {} {:?}", relay.base_url(), error);
                         None
@@ -327,6 +326,7 @@ fn map_relay_error(error: RelayError) -> PublishError {
         | RelayError::InvalidSignedPacketSeq { .. }
         | RelayError::InvalidSignedPacketSeqHeader
         | RelayError::InvalidHeader(_)
+        | RelayError::NotFound
         | RelayError::UnexpectedStatus(_) => PublishError::UnexpectedResponses,
     }
 }

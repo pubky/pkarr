@@ -28,24 +28,20 @@ macro_rules! debug {
 pub struct RelayClient {
     base_url: Url,
     client: Client,
-    resolve_timeout: Duration,
-    publish_timeout: Duration,
+    timeout: Duration,
 }
 
 impl RelayClient {
-    /// Build a client for one relay endpoint.
+    /// Build a client for one relay endpoint using a [`reqwest::Client`].
+    ///
+    /// The `timeout` is applied to each relay request individually. This keeps
+    /// timeout behavior available on WASM targets, where reqwest does not
+    /// expose client-wide timeout configuration.
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying HTTP client cannot be built.
-    pub fn new(
-        base_url: Url,
-        resolve_timeout: Duration,
-        publish_timeout: Duration,
-    ) -> Result<Self, RelayError> {
-        let client = Client::builder()
-            .build()
-            .map_err(|e| RelayError::Build(e.to_string()))?;
+    /// Returns an error if `base_url` is not a valid relay base URL.
+    pub fn new(base_url: Url, client: Client, timeout: Duration) -> Result<Self, RelayError> {
         if base_url.cannot_be_a_base() {
             return Err(RelayError::Build(format!(
                 "Invalid base url of a relay: `{base_url}`"
@@ -55,8 +51,7 @@ impl RelayClient {
         Ok(Self {
             base_url,
             client,
-            resolve_timeout,
-            publish_timeout,
+            timeout,
         })
     }
 
@@ -81,7 +76,7 @@ impl RelayClient {
         let mut request = self
             .client
             .put(url.clone())
-            .timeout(self.publish_timeout)
+            .timeout(self.timeout)
             .body(packet.to_relay_payload());
 
         if let Some(cas) = cas {
@@ -107,14 +102,15 @@ impl RelayClient {
     /// # Errors
     ///
     /// Returns an error when the relay request fails, the response body is too
-    /// large, the returned relay payload does not verify, or the relay reports
-    /// a newer DHT mutable item that is not a valid signed packet.
+    /// large, the relay has no matching packet, the returned relay payload does
+    /// not verify, or the relay reports a newer DHT mutable item that is not a
+    /// valid signed packet.
     pub async fn resolve(
         &self,
         key: &PublicKey,
         policy: ResolvePolicy,
         newer_than: Option<Timestamp>,
-    ) -> Result<Option<SignedPacket>, RelayError> {
+    ) -> Result<SignedPacket, RelayError> {
         let url = self.build_url(key, Some(policy));
 
         let mut response = self
@@ -132,14 +128,18 @@ impl RelayClient {
         let status = response.status();
         if status == StatusCode::NOT_FOUND {
             if let Some(seq) = extract_invalid_signed_packet_seq(&response)? {
+                if invalid_seq_is_not_newer_than_request(seq, newer_than.as_ref()) {
+                    return Err(RelayError::NotFound);
+                }
+
                 return Err(RelayError::InvalidSignedPacketSeq { seq });
             }
 
-            return Ok(None);
+            return Err(RelayError::NotFound);
         }
 
         if status == StatusCode::NOT_MODIFIED {
-            return Ok(None);
+            return Err(RelayError::NotFound);
         }
 
         if status.is_client_error() || status.is_server_error() {
@@ -159,7 +159,11 @@ impl RelayClient {
             signed_packet.set_last_seen(&last_seen);
         }
 
-        Ok(Some(signed_packet))
+        if newer_than.is_some_and(|newer_than| signed_packet.timestamp() < newer_than) {
+            return Err(RelayError::NotFound);
+        }
+
+        Ok(signed_packet)
     }
 
     async fn send_resolve_request(
@@ -168,7 +172,7 @@ impl RelayClient {
         newer_than: Option<&Timestamp>,
         bypass_cache: bool,
     ) -> Result<Response, RelayError> {
-        let mut request = self.client.get(url.clone()).timeout(self.resolve_timeout);
+        let mut request = self.client.get(url.clone()).timeout(self.timeout);
 
         if let Some(newer_than) = newer_than {
             let newer_than = newer_than.format_http_date();
@@ -270,6 +274,10 @@ pub enum RelayError {
     /// Relay returned an unexpected status code.
     #[error("relay returned unexpected status code {0}")]
     UnexpectedStatus(StatusCode),
+
+    /// Relay found no signed packet.
+    #[error("relay found no signed packet")]
+    NotFound,
 }
 
 impl RelayError {
@@ -316,6 +324,14 @@ fn extract_invalid_signed_packet_seq(response: &Response) -> Result<Option<i64>,
                 .ok_or(RelayError::InvalidSignedPacketSeqHeader)
         })
         .transpose()
+}
+
+fn invalid_seq_is_not_newer_than_request(seq: i64, newer_than: Option<&Timestamp>) -> bool {
+    let Some(newer_than) = newer_than else {
+        return false;
+    };
+
+    seq >= 0 && seq as u64 <= newer_than.as_u64()
 }
 
 fn should_retry_with_cache_bypass(response: &Response, newer_than: Option<&Timestamp>) -> bool {
@@ -368,6 +384,7 @@ mod tests {
         atomic::{AtomicBool, Ordering},
         Arc,
     };
+    use std::time::Duration;
 
     use axum::{
         http::{HeaderMap, StatusCode as HttpStatusCode},
@@ -382,6 +399,11 @@ mod tests {
     use crate::Keypair;
 
     const TIMEOUT: Duration = Duration::from_secs(1);
+
+    fn test_client(base_url: Url) -> RelayClient {
+        let client = Client::builder().build().unwrap();
+        RelayClient::new(base_url, client, TIMEOUT).unwrap()
+    }
 
     #[test]
     fn relay_503_status_maps_to_dht_unavailable() {
@@ -400,24 +422,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_returns_none_on_not_found() {
+    async fn resolve_returns_not_found_on_not_found() {
         let keypair = Keypair::random();
         let app = Router::new().route(
             &format!("/{}", keypair.public_key()),
             get(|| async { HttpStatusCode::NOT_FOUND }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
-        let resolved = client
+        let error = client
             .resolve(
                 &keypair.public_key(),
                 ResolvePolicy::LocalOrRelayCacheOnly,
                 None,
             )
             .await
-            .unwrap();
+            .unwrap_err();
 
-        assert!(resolved.is_none());
+        assert!(matches!(error, RelayError::NotFound));
     }
 
     #[tokio::test]
@@ -432,7 +454,7 @@ mod tests {
                 )
             }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let error = client
             .resolve(
@@ -450,6 +472,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolve_maps_invalid_signed_packet_seq_at_request_bound_to_not_found() {
+        let keypair = Keypair::random();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get(|| async {
+                (
+                    HttpStatusCode::NOT_FOUND,
+                    [(PKARR_INVALID_SIGNED_PACKET_SEQ, "41")],
+                )
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let error = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::CacheFirst,
+                Some(Timestamp::from(41)),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, RelayError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn resolve_reports_invalid_signed_packet_seq_newer_than_request_bound() {
+        let keypair = Keypair::random();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get(|| async {
+                (
+                    HttpStatusCode::NOT_FOUND,
+                    [(PKARR_INVALID_SIGNED_PACKET_SEQ, "43")],
+                )
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let error = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::CacheFirst,
+                Some(Timestamp::from(41)),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            RelayError::InvalidSignedPacketSeq { seq: 43 }
+        ));
+    }
+
+    #[tokio::test]
     async fn resolve_rejects_malformed_invalid_signed_packet_seq_header() {
         let keypair = Keypair::random();
         let app = Router::new().route(
@@ -461,7 +538,7 @@ mod tests {
                 )
             }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let error = client
             .resolve(
@@ -476,24 +553,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_returns_none_on_not_modified() {
+    async fn resolve_returns_not_found_on_not_modified() {
         let keypair = Keypair::random();
         let app = Router::new().route(
             &format!("/{}", keypair.public_key()),
             get(|| async { HttpStatusCode::NOT_MODIFIED }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
-        let resolved = client
+        let error = client
             .resolve(
                 &keypair.public_key(),
                 ResolvePolicy::LocalOrRelayCacheOnly,
                 Some(Timestamp::now()),
             )
             .await
-            .unwrap();
+            .unwrap_err();
 
-        assert!(resolved.is_none());
+        assert!(matches!(error, RelayError::NotFound));
     }
 
     #[tokio::test]
@@ -520,7 +597,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let resolved = client
             .resolve(
@@ -529,7 +606,6 @@ mod tests {
                 None,
             )
             .await
-            .unwrap()
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -559,7 +635,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let resolved = client
             .resolve(
@@ -568,7 +644,6 @@ mod tests {
                 None,
             )
             .await
-            .unwrap()
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -581,7 +656,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get(|| async { vec![0; SignedPacket::MAX_BYTES as usize + 1] }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let error = client
             .resolve(
@@ -609,7 +684,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get(|| async { vec![0; 1] }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let error = client
             .resolve(
@@ -646,7 +721,7 @@ mod tests {
 
         let base_url = serve(app).await;
 
-        let client = RelayClient::new(base_url, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(base_url);
         let resolved = client
             .resolve(
                 &keypair.public_key(),
@@ -654,7 +729,6 @@ mod tests {
                 None,
             )
             .await
-            .unwrap()
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -677,7 +751,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let resolved = client
             .resolve(
@@ -686,7 +760,6 @@ mod tests {
                 None,
             )
             .await
-            .unwrap()
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -716,7 +789,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let resolved = client
             .resolve(
@@ -725,7 +798,6 @@ mod tests {
                 None,
             )
             .await
-            .unwrap()
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -748,7 +820,7 @@ mod tests {
                 }
             }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         let resolved = client
             .resolve(
@@ -757,7 +829,39 @@ mod tests {
                 None,
             )
             .await
-            .unwrap()
+            .unwrap();
+
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn resolve_accepts_packet_with_same_timestamp_as_lower_bound() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder()
+            .timestamp(Timestamp::from(42))
+            .sign(&keypair)
+            .unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get({
+                let payload = signed_packet.to_relay_payload();
+
+                move || {
+                    let payload = payload.clone();
+
+                    async move { payload }
+                }
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let resolved = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::CacheFirst,
+                Some(signed_packet.timestamp()),
+            )
+            .await
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -783,7 +887,7 @@ mod tests {
             }
         });
 
-        let client = RelayClient::new(https_url, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(https_url);
         let keypair = Keypair::random();
         let err = client
             .resolve(
@@ -805,7 +909,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get(move || async move { status }),
         );
-        let client = RelayClient::new(serve(app).await, TIMEOUT, TIMEOUT).unwrap();
+        let client = test_client(serve(app).await);
 
         client
             .resolve(
