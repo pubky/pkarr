@@ -4,7 +4,27 @@ use http::{
     StatusCode,
 };
 use httpdate::HttpDate;
-use pkarr::SignedPacket;
+use pkarr::{SignedPacket, PKARR_DHT_STORED_NODES};
+
+pub(crate) struct PutResponse {
+    stored_on: u32,
+}
+
+impl PutResponse {
+    pub(crate) fn new(stored_on: u32) -> Self {
+        Self { stored_on }
+    }
+}
+
+impl IntoResponse for PutResponse {
+    fn into_response(self) -> axum::response::Response {
+        (
+            StatusCode::NO_CONTENT,
+            [(PKARR_DHT_STORED_NODES, self.stored_on.to_string())],
+        )
+            .into_response()
+    }
+}
 
 pub(crate) struct SignedPacketResponse {
     signed_packet: SignedPacket,

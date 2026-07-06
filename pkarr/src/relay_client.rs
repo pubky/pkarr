@@ -9,7 +9,9 @@ use reqwest::{
 use std::time::Duration;
 use url::Url;
 
-use crate::{PublicKey, ResolvePolicy, SignedPacket, PKARR_INVALID_SIGNED_PACKET_SEQ};
+use crate::{
+    PublicKey, ResolvePolicy, SignedPacket, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
+};
 
 const MEMENTO_DATETIME: &str = "memento-datetime";
 const CACHE_BYPASS: &str = "no-cache, no-store, must-revalidate";
@@ -62,15 +64,22 @@ impl RelayClient {
 
     /// Publish a [`SignedPacket`] to this relay.
     ///
+    /// # Returns
+    ///
+    /// Returns the number of DHT nodes that acknowledged storing the packet.
+    /// Older relays that do not return this count are treated as if one DHT
+    /// node acknowledged storing the packet.
+    ///
     /// # Errors
     ///
     /// Returns an error when the relay request fails, the relay returns a
-    /// non-success status, or the request times out.
+    /// non-success status, the request times out, or the relay returns a
+    /// malformed stored-node count header.
     pub async fn publish(
         &self,
         packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<(), RelayError> {
+    ) -> Result<u32, RelayError> {
         let url = self.build_url(&packet.public_key(), None);
 
         let mut request = self
@@ -87,8 +96,9 @@ impl RelayClient {
         let status = response.status();
 
         if status.is_success() {
+            let stored_on = extract_dht_stored_nodes(&response)?;
             debug!("Successfully published to {url}");
-            return Ok(());
+            return Ok(stored_on);
         }
 
         let text = response.text().await.unwrap_or_default();
@@ -247,6 +257,10 @@ pub enum RelayError {
     #[error("relay returned a malformed Pkarr-Invalid-Signed-Packet-Seq header")]
     InvalidSignedPacketSeqHeader,
 
+    /// Relay returned a malformed DHT stored nodes header.
+    #[error("relay returned a malformed Pkarr-Dht-Stored-Nodes header")]
+    InvalidDhtStoredNodesHeader,
+
     /// Relay request contained an invalid header.
     #[error("relay request contained an invalid header: {0}")]
     InvalidHeader(header::InvalidHeaderValue),
@@ -326,6 +340,18 @@ fn extract_invalid_signed_packet_seq(response: &Response) -> Result<Option<i64>,
         .transpose()
 }
 
+fn extract_dht_stored_nodes(response: &Response) -> Result<u32, RelayError> {
+    let Some(value) = response.headers().get(PKARR_DHT_STORED_NODES) else {
+        return Ok(1);
+    };
+
+    value
+        .to_str()
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .ok_or(RelayError::InvalidDhtStoredNodesHeader)
+}
+
 fn invalid_seq_is_not_newer_than_request(seq: i64, newer_than: Option<&Timestamp>) -> bool {
     let Some(newer_than) = newer_than else {
         return false;
@@ -388,7 +414,7 @@ mod tests {
 
     use axum::{
         http::{HeaderMap, StatusCode as HttpStatusCode},
-        routing::get,
+        routing::{get, put},
         Router,
     };
     use ntimestamp::Timestamp;
@@ -411,6 +437,56 @@ mod tests {
             RelayError::from_status(StatusCode::SERVICE_UNAVAILABLE),
             RelayError::DhtUnavailable
         ));
+    }
+
+    #[tokio::test]
+    async fn publish_returns_dht_stored_nodes() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            put(|| async { (HttpStatusCode::NO_CONTENT, [(PKARR_DHT_STORED_NODES, "7")]) }),
+        );
+        let client = test_client(serve(app).await);
+
+        let stored_on = client.publish(&signed_packet, None).await.unwrap();
+
+        assert_eq!(stored_on, 7);
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_malformed_dht_stored_nodes_header() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            put(|| async {
+                (
+                    HttpStatusCode::NO_CONTENT,
+                    [(PKARR_DHT_STORED_NODES, "not a count")],
+                )
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let error = client.publish(&signed_packet, None).await.unwrap_err();
+
+        assert!(matches!(error, RelayError::InvalidDhtStoredNodesHeader));
+    }
+
+    #[tokio::test]
+    async fn publish_defaults_missing_dht_stored_nodes_header_to_one() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            put(|| async { HttpStatusCode::NO_CONTENT }),
+        );
+        let client = test_client(serve(app).await);
+
+        let stored_on = client.publish(&signed_packet, None).await.unwrap();
+
+        assert_eq!(stored_on, 1);
     }
 
     #[tokio::test]

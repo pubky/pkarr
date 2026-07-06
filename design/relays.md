@@ -25,15 +25,19 @@ If-Match: 1741107004412159
 HTTP/2 204 NO CONTENT
 Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, PUT, OPTIONS	
+Access-Control-Expose-Headers: Pkarr-Dht-Stored-Nodes
+Pkarr-Dht-Stored-Nodes: 8
 ```
 
 Body is described at [Payload](#Payload) encoding section.
+
+`Pkarr-Dht-Stored-Nodes` tells clients how many DHT nodes acknowledged storing the packet.
 
 On receiving a PUT request, the relay server should:
 1. Encode the `seq` and `v` to a *bencode* message as follows: `3:seqi<sequence>e1:v<v's length>:<v's bytes>`
 2. Verify that the `sig` matches the encoded message from step 1, if it is invalid, return a `400 Bad Request` response.
 3. Perform the DHT Put request as defined in [BEP0044](https://www.bittorrent.org/beps/bep_0044.html), optionally using the `If-Match` as the CAS field, where the header value is the utf8-encoded u64 timestamp.
-4. If the DHT request is successful, return a `204 No Content` response, otherwise if any error occurred return a `500 Internal Server Error` response.
+4. If the DHT request is successful, return a `204 No Content` response with `Pkarr-Dht-Stored-Nodes` set to the number of DHT nodes that acknowledged storing the packet, otherwise if any error occurred return a `500 Internal Server Error` response.
 
 #### Errors
 

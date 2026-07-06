@@ -27,6 +27,9 @@ pub const DEFAULT_RELAYS: [&str; 2] = ["https://pkarr.pubky.app", "https://pkarr
 /// Relay response header carrying the mutable item sequence number when the
 /// DHT has a newer mutable item that is not a valid signed packet for a key.
 pub const PKARR_INVALID_SIGNED_PACKET_SEQ: &str = "Pkarr-Invalid-Signed-Packet-Seq";
+/// Relay response header carrying the number of DHT nodes that acknowledged
+/// storing a published packet.
+pub const PKARR_DHT_STORED_NODES: &str = "Pkarr-Dht-Stored-Nodes";
 #[cfg(feature = "__client")]
 /// Default cache size: 1000
 pub const DEFAULT_CACHE_SIZE: usize = 1000;

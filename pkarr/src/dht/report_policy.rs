@@ -55,10 +55,10 @@ impl ReportPolicy {
     }
 
     /// Classify warning diagnostics for a DHT publish query result.
-    pub fn classify_publish_result(&self, stored_at: u32) -> Vec<PublishWarning> {
-        if stored_at < self.minimum_publish_stored_nodes {
+    pub fn classify_publish_result(&self, stored_on: u32) -> Vec<PublishWarning> {
+        if stored_on < self.minimum_publish_stored_nodes {
             vec![PublishWarning::TooFewNodesStored {
-                stored_at,
+                stored_on,
                 minimum: self.minimum_publish_stored_nodes,
             }]
         } else {
@@ -125,7 +125,7 @@ pub enum PublishWarning {
     /// Fewer DHT nodes acknowledged storing the packet than expected.
     TooFewNodesStored {
         /// Number of DHT nodes that acknowledged storing the packet.
-        stored_at: u32,
+        stored_on: u32,
         /// Minimum number of storing nodes expected by the policy.
         minimum: u32,
     },
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(
             policy.classify_publish_result(minimum - 1),
             vec![PublishWarning::TooFewNodesStored {
-                stored_at: minimum - 1,
+                stored_on: minimum - 1,
                 minimum,
             }]
         );
