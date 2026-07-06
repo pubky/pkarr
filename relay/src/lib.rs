@@ -35,7 +35,7 @@ use tracing::info;
 use pkarr::{
     dht::{DhtClient, ReportPolicy},
     extra::lmdb_cache::LmdbCache,
-    mainline, Timestamp, PKARR_INVALID_SIGNED_PACKET_SEQ,
+    mainline, Timestamp, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
 };
 use url::Url;
 
@@ -387,8 +387,11 @@ fn cors_layer() -> CorsLayer {
     let invalid_signed_packet_seq_header =
         HeaderName::from_bytes(PKARR_INVALID_SIGNED_PACKET_SEQ.as_bytes())
             .expect("Pkarr invalid signed packet seq header name is valid");
+    let dht_stored_nodes_header = HeaderName::from_bytes(PKARR_DHT_STORED_NODES.as_bytes())
+        .expect("Pkarr DHT stored nodes header name is valid");
 
-    CorsLayer::very_permissive().expose_headers([invalid_signed_packet_seq_header])
+    CorsLayer::very_permissive()
+        .expose_headers([invalid_signed_packet_seq_header, dht_stored_nodes_header])
 }
 
 fn to_socket_address_v4<T: ToSocketAddrs>(bootstrap: &[T]) -> Vec<SocketAddrV4> {
@@ -418,7 +421,9 @@ mod tests {
     use std::{net::Ipv4Addr, num::NonZeroU32, time::Duration};
 
     use http::StatusCode;
-    use pkarr::{Keypair, SignedPacket, Timestamp, PKARR_INVALID_SIGNED_PACKET_SEQ};
+    use pkarr::{
+        Keypair, SignedPacket, Timestamp, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
+    };
 
     use super::{to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
 
@@ -446,6 +451,9 @@ mod tests {
         assert!(exposed_headers.split(',').any(|header| header
             .trim()
             .eq_ignore_ascii_case(PKARR_INVALID_SIGNED_PACKET_SEQ)));
+        assert!(exposed_headers
+            .split(',')
+            .any(|header| header.trim().eq_ignore_ascii_case(PKARR_DHT_STORED_NODES)));
 
         relay.shutdown();
     }
@@ -466,6 +474,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(put_response.status(), StatusCode::NO_CONTENT);
+        put_response
+            .headers()
+            .get(PKARR_DHT_STORED_NODES)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
 
         let local_cache_response = http
             .get(

@@ -81,6 +81,7 @@ impl RelaysClient {
                 let result = relay
                     .publish(&signed_packet, cas)
                     .await
+                    .map(drop)
                     .map_err(map_relay_error);
 
                 inflight.add_result(&public_key, result)
@@ -325,6 +326,7 @@ fn map_relay_error(error: RelayError) -> PublishError {
         | RelayError::InvalidSignedPacket(_)
         | RelayError::InvalidSignedPacketSeq { .. }
         | RelayError::InvalidSignedPacketSeqHeader
+        | RelayError::InvalidDhtStoredNodesHeader
         | RelayError::InvalidHeader(_)
         | RelayError::NotFound
         | RelayError::UnexpectedStatus(_) => PublishError::UnexpectedResponses,

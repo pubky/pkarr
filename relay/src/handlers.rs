@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::error::Error;
 use crate::extractors::{IfMatch, IfModifiedSince, PublicKeyParam};
 use crate::real_ip::RealIp;
-use crate::response::SignedPacketResponse;
+use crate::response::{PutResponse, SignedPacketResponse};
 use crate::AppState;
 
 pub async fn put(
@@ -17,16 +17,13 @@ pub async fn put(
     IfMatch(cas): IfMatch,
     real_ip: Option<Extension<RealIp>>,
     body: Bytes,
-) -> Result<StatusCode, Error> {
+) -> Result<PutResponse, Error> {
     let real_ip = real_ip.as_ref().map(|extension| &extension.0);
     let signed_packet = SignedPacket::from_relay_payload(&public_key, &body)
         .map_err(|error| Error::new(StatusCode::BAD_REQUEST, error))?;
-    state
-        .dht
-        .publish(&public_key, &signed_packet, cas, real_ip)
-        .await?;
+    let stored_on = state.dht.publish(&signed_packet, cas, real_ip).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    Ok(PutResponse::new(stored_on))
 }
 
 pub async fn get(

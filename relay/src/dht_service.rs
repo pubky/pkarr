@@ -50,12 +50,12 @@ impl DhtService {
     /// Publish a signed packet through the DHT and update the relay cache.
     pub(crate) async fn publish(
         &self,
-        public_key: &PublicKey,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
         real_ip: Option<&RealIp>,
-    ) -> Result<(), Error> {
-        let key = CacheKey::from(public_key);
+    ) -> Result<u32, Error> {
+        let public_key = signed_packet.public_key();
+        let key = CacheKey::from(&public_key);
         if let Some(cached) = self.cache.get_read_only(&key) {
             if cached.more_recent_than(signed_packet) {
                 return Err(Error::new(
@@ -67,8 +67,8 @@ impl DhtService {
 
         self.enforce_user_dht_rate_limit(real_ip)?;
 
-        let stored_at = self.dht.publish(signed_packet, cas).await?;
-        let warnings = self.report_policy.classify_publish_result(stored_at);
+        let stored_on = self.dht.publish(signed_packet, cas).await?;
+        let warnings = self.report_policy.classify_publish_result(stored_on);
         if !warnings.is_empty() {
             warn!(
                 ?public_key,
@@ -79,7 +79,7 @@ impl DhtService {
 
         self.update_cache_if_needed(&key, signed_packet);
 
-        Ok(())
+        Ok(stored_on)
     }
 
     /// Resolve a packet using relay cache and DHT policy semantics.
