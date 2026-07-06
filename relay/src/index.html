@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pkarr Relay</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            font-family: monospace;
+            margin: 20px;
+        }
+        pre {
+            margin: 0;
+        }
+        a {
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>Pkarr Relay</h1>
+    <p>This server is a <a href="https://github.com/pubky/pkarr/">Pkarr</a> <a href="https://github.com/pubky/pkarr/blob/main/design/relays.md">relay</a>.</p>
+
+    <h2>Versioning</h2>
+    <pre>
+    version : __VERSION__
+    </pre>
+
+    <h2>Cache stats</h2>
+    <pre>
+    size:       : __CACHE_SIZE__
+    capacity:   : __CACHE_CAPACITY__
+    utilization : __CACHE_UTILIZATION__%
+    </pre>
+
+    <h2>Dht Info</h2>
+    <pre>
+    node port         : __NODE_PORT__
+    node firewalled   : __NODE_FIREWALLED__
+    dht size estimate : __DHT_SIZE__ Nodes +/-__DHT_CONFIDENCE__%
+    </pre>
+</body>
+</html>

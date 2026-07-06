@@ -8,9 +8,11 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 
 mod config;
+mod dht_service;
 mod error;
 mod extractors;
 mod handlers;
+mod index;
 mod quota_config;
 mod rate_limiting;
 mod real_ip;
@@ -19,7 +21,7 @@ mod response;
 use std::{
     net::{SocketAddr, SocketAddrV4, TcpListener, ToSocketAddrs},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
@@ -38,6 +40,7 @@ use pkarr::{
 use url::Url;
 
 use config::{RelayConfig, CACHE_DIR};
+use dht_service::DhtService;
 
 pub use quota_config::{RequestCountQuota, TimeUnit};
 pub use rate_limiting::RateLimiterConfig;
@@ -177,57 +180,33 @@ impl Relay {
 
         let cache = Arc::new(LmdbCache::open(&cache_path, config.cache.size)?);
 
-        let behind_proxy = config
-            .rate_limiter
-            .as_ref()
-            .map(|rate_limiter| rate_limiter.behind_proxy)
-            .unwrap_or(false);
+        let rate_limiters =
+            build_rate_limiters(config.rate_limiter.as_ref(), &mut dht_config).await?;
 
-        let (rate_limiter, user_dht_rate_limiter) = match config.rate_limiter.as_ref() {
-            Some(rate_limiter_config) => {
-                let rate_limiter = rate_limiting::IpRateLimiter::new(rate_limiter_config)
-                    .await
-                    .map_err(|e| anyhow!("Failed to build IpRateLimiter: {e}"))?;
-                let user_dht_rate_limiter =
-                    rate_limiting::UserDhtRateLimiter::new(rate_limiter_config)
-                        .await
-                        .map_err(|e| anyhow!("Failed to build UserDhtRateLimiter: {e}"))?;
-                let dht_rate_limiter = rate_limiting::DhtRateLimiter::new(rate_limiter_config)
-                    .await
-                    .map_err(|e| anyhow!("Failed to build DhtRateLimiter: {e}"))?;
-                dht_config.server_settings = pkarr::mainline::ServerSettings {
-                    filter: Box::new(dht_rate_limiter),
-                    ..Default::default()
-                };
-                (Some(rate_limiter), Some(user_dht_rate_limiter))
-            }
-            None => (None, None),
-        };
-
-        let dht = DhtClient::build(dht_config)?;
+        let dht_client = DhtClient::build(dht_config)?;
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http.port)))?;
         // On axum-server 0.8.0 the `.set_nonblocking(true)` call does not take place internally anymore
         // See open issue https://github.com/programatik29/axum-server/issues/181
         listener.set_nonblocking(true)?;
 
-        let node_address = dht.info().await.local_addr();
+        let node_address = dht_client.info().await.local_addr();
         let relay_address = listener.local_addr()?;
 
         info!("Cache path: {cache_path:?}");
         info!("Running as a DHT node on {node_address}");
         info!("Running as a relay on TCP socket {relay_address}");
 
-        let state = AppState {
-            minimum_ttl: config.cache.minimum_ttl,
-            maximum_ttl: config.cache.maximum_ttl,
+        let dht = DhtService::new(
+            config.cache.minimum_ttl,
+            config.cache.maximum_ttl,
             cache,
-            cache_write_lock: Arc::new(Mutex::new(())),
-            user_dht_rate_limiter,
+            dht_client,
             report_policy,
-            dht,
-        };
-        let app = create_app(state, rate_limiter, behind_proxy);
+            rate_limiters.user_dht,
+        );
+        let state = AppState { dht };
+        let app = create_app(state, rate_limiters.http, rate_limiters.behind_proxy);
 
         let handle = Handle::new();
 
@@ -339,6 +318,46 @@ fn mainline_config(config: &RelayConfig) -> mainline::Config {
     }
 }
 
+struct RateLimiters {
+    http: Option<rate_limiting::IpRateLimiter>,
+    user_dht: Option<rate_limiting::UserDhtRateLimiter>,
+    behind_proxy: bool,
+}
+
+async fn build_rate_limiters(
+    rate_limiter_config: Option<&RateLimiterConfig>,
+    dht_config: &mut mainline::Config,
+) -> anyhow::Result<RateLimiters> {
+    let Some(rate_limiter_config) = rate_limiter_config else {
+        return Ok(RateLimiters {
+            http: None,
+            user_dht: None,
+            behind_proxy: false,
+        });
+    };
+
+    let http = rate_limiting::IpRateLimiter::new(rate_limiter_config)
+        .await
+        .map_err(|e| anyhow!("Failed to build IpRateLimiter: {e}"))?;
+    let user_dht = rate_limiting::UserDhtRateLimiter::new(rate_limiter_config)
+        .await
+        .map_err(|e| anyhow!("Failed to build UserDhtRateLimiter: {e}"))?;
+    let dht = rate_limiting::DhtRateLimiter::new(rate_limiter_config)
+        .await
+        .map_err(|e| anyhow!("Failed to build DhtRateLimiter: {e}"))?;
+
+    dht_config.server_settings = pkarr::mainline::ServerSettings {
+        filter: Box::new(dht),
+        ..Default::default()
+    };
+
+    Ok(RateLimiters {
+        http: Some(http),
+        user_dht: Some(user_dht),
+        behind_proxy: rate_limiter_config.behind_proxy,
+    })
+}
+
 fn create_app(
     state: AppState,
     rate_limiter: Option<rate_limiting::IpRateLimiter>,
@@ -390,16 +409,8 @@ fn to_socket_address_v4<T: ToSocketAddrs>(bootstrap: &[T]) -> Vec<SocketAddrV4> 
 }
 
 #[derive(Debug, Clone)]
-struct AppState {
-    minimum_ttl: u32,
-    maximum_ttl: u32,
-    cache: Arc<LmdbCache>,
-    // Synchronous mutex is fine here; handlers only hold it across cache reads/writes, never await points.
-    cache_write_lock: Arc<Mutex<()>>,
-    // Rate limiter for DHT operations initiated by HTTP user requests.
-    user_dht_rate_limiter: Option<rate_limiting::UserDhtRateLimiter>,
-    report_policy: ReportPolicy,
-    dht: DhtClient,
+pub(crate) struct AppState {
+    pub(crate) dht: DhtService,
 }
 
 #[cfg(test)]
