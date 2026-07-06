@@ -1,3 +1,5 @@
+use pkarr::{errors::ResolveError, ResolvePolicy};
+
 use super::constants::*;
 use super::error::ClientError;
 use super::*;
@@ -15,7 +17,7 @@ static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
 /// Pkarr Client for publishing and resolving signed DNS packets
 #[wasm_bindgen]
 pub struct Client {
-    relays: Option<std::sync::Arc<pkarr::Client>>,
+    client: std::sync::Arc<pkarr::Client>,
     timeout: std::time::Duration,
 }
 
@@ -43,7 +45,7 @@ impl Client {
             .map_err(|e| ClientError::ConfigurationError(format!("Failed to build client: {e}")))?;
 
         Ok(Client {
-            relays: Some(std::sync::Arc::new(client)),
+            client: std::sync::Arc::new(client),
             timeout,
         })
     }
@@ -59,10 +61,9 @@ impl Client {
         signed_packet: &super::SignedPacket,
         cas_timestamp: Option<f64>,
     ) -> Result<(), JsValue> {
-        let relays = self.get_relays()?;
         let cas = Self::convert_cas_timestamp(cas_timestamp)?;
 
-        relays
+        self.client
             .publish(&signed_packet.inner, cas)
             .await
             .map_err(|e| ClientError::NetworkError(format!("publish failed: {e}")))?;
@@ -82,7 +83,8 @@ impl Client {
         &self,
         public_key_str: &str,
     ) -> Result<Option<super::SignedPacket>, JsValue> {
-        self.inner_resolve(public_key_str).await
+        self.resolve_with_policy(public_key_str, ResolvePolicy::CacheFirst)
+            .await
     }
 
     /// Resolve the most recent signed packet for a public key
@@ -99,7 +101,8 @@ impl Client {
     ) -> Result<Option<super::SignedPacket>, JsValue> {
         // TODO: This could implement more sophisticated logic to
         // query multiple relays and find the most recent packet
-        self.inner_resolve(public_key_str).await
+        self.resolve_with_policy(public_key_str, ResolvePolicy::DhtNetworkOnly)
+            .await
     }
 
     /// Get default relay URLs as JavaScript array
@@ -122,17 +125,26 @@ impl Client {
 // Private helper methods
 impl Client {
     /// Common implementation for resolve methods to avoid duplication
-    async fn inner_resolve(
+    async fn resolve_with_policy(
         &self,
         public_key_str: &str,
+        policy: ResolvePolicy,
     ) -> Result<Option<super::SignedPacket>, JsValue> {
-        let relays = self.get_relays()?;
         let public_key = Self::parse_public_key(public_key_str)?;
 
-        Ok(relays
-            .resolve(&public_key)
+        let packet = self
+            .client
+            .resolve(&public_key, policy)
             .await
-            .map(super::SignedPacket::from))
+            .map(Some)
+            .or_else(|error| match error {
+                ResolveError::NotFound => Ok(None),
+                error => Err(ClientError::NetworkError(format!(
+                    "resolve failed: {error}"
+                ))),
+            })?;
+
+        Ok(packet.map(super::SignedPacket::from))
     }
 
     /// Validate and create timeout duration from milliseconds
@@ -248,12 +260,5 @@ impl Client {
             }
             None => Ok(None),
         }
-    }
-
-    /// Get the relays client or return an error
-    fn get_relays(&self) -> Result<&pkarr::Client, JsValue> {
-        self.relays.as_ref().map(|arc| arc.as_ref()).ok_or_else(|| {
-            ClientError::ConfigurationError("No relays configured".to_string()).into()
-        })
     }
 }

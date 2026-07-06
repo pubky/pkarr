@@ -2,10 +2,7 @@
 
 use bytes::Bytes;
 use ntimestamp::Timestamp;
-use reqwest::{
-    header::{self, HeaderValue},
-    Client, Response, StatusCode,
-};
+use reqwest::{header, Client, Response, StatusCode};
 use std::time::Duration;
 use url::Url;
 
@@ -36,8 +33,8 @@ pub struct RelayClient {
 impl RelayClient {
     /// Build a client for one relay endpoint using a [`reqwest::Client`].
     ///
-    /// The `timeout` is applied to each relay request individually. This keeps
-    /// timeout behavior available on WASM targets, where reqwest does not
+    /// The timeout is applied to each relay request individually. This
+    /// keeps timeout behavior available on WASM targets, where reqwest does not
     /// expose client-wide timeout configuration.
     ///
     /// # Errors
@@ -123,16 +120,12 @@ impl RelayClient {
     ) -> Result<SignedPacket, RelayError> {
         let url = self.build_url(key, Some(policy));
 
-        let mut response = self
-            .send_resolve_request(&url, newer_than.as_ref(), false)
-            .await?;
+        let mut response = self.send_resolve_request(&url, false, newer_than).await?;
 
         // A stale HTTP cache can produce impossible 304 responses or empty
         // successful responses. Retry once with cache bypass headers.
         if should_retry_with_cache_bypass(&response, newer_than.as_ref()) {
-            response = self
-                .send_resolve_request(&url, newer_than.as_ref(), true)
-                .await?;
+            response = self.send_resolve_request(&url, true, newer_than).await?;
         }
 
         let status = response.status();
@@ -169,7 +162,7 @@ impl RelayClient {
             signed_packet.set_last_seen(&last_seen);
         }
 
-        if newer_than.is_some_and(|newer_than| signed_packet.timestamp() < newer_than) {
+        if newer_than.is_some_and(|newer_than| signed_packet.timestamp() <= newer_than) {
             return Err(RelayError::NotFound);
         }
 
@@ -179,21 +172,17 @@ impl RelayClient {
     async fn send_resolve_request(
         &self,
         url: &Url,
-        newer_than: Option<&Timestamp>,
         bypass_cache: bool,
+        newer_than: Option<Timestamp>,
     ) -> Result<Response, RelayError> {
         let mut request = self.client.get(url.clone()).timeout(self.timeout);
 
-        if let Some(newer_than) = newer_than {
-            let newer_than = newer_than.format_http_date();
-            request = request.header(
-                header::IF_MODIFIED_SINCE,
-                HeaderValue::from_str(&newer_than).map_err(RelayError::InvalidHeader)?,
-            );
-        }
-
         if bypass_cache {
             request = request.header(header::CACHE_CONTROL, CACHE_BYPASS);
+        }
+
+        if let Some(newer_than) = newer_than {
+            request = request.header(header::IF_MODIFIED_SINCE, newer_than.format_http_date());
         }
 
         request.send().await.map_err(RelayError::from_reqwest)
@@ -244,15 +233,6 @@ pub enum RelayError {
     #[error("relay returned an invalid signed packet: {0}")]
     InvalidSignedPacket(crate::errors::SignedPacketVerifyError),
 
-    /// Relay reported a newer DHT mutable item that is not a valid signed packet.
-    #[error(
-        "relay reported a newer DHT mutable item at seq {seq} that is not a valid signed packet"
-    )]
-    InvalidSignedPacketSeq {
-        /// Mutable item sequence number.
-        seq: i64,
-    },
-
     /// Relay returned a malformed invalid-signed-packet sequence header.
     #[error("relay returned a malformed Pkarr-Invalid-Signed-Packet-Seq header")]
     InvalidSignedPacketSeqHeader,
@@ -288,6 +268,15 @@ pub enum RelayError {
     /// Relay returned an unexpected status code.
     #[error("relay returned unexpected status code {0}")]
     UnexpectedStatus(StatusCode),
+
+    /// Relay reported a newer DHT mutable item that is not a valid signed packet.
+    #[error(
+        "relay reported a newer DHT mutable item at seq {seq} that is not a valid signed packet"
+    )]
+    InvalidSignedPacketSeq {
+        /// Mutable item sequence number.
+        seq: i64,
+    },
 
     /// Relay found no signed packet.
     #[error("relay found no signed packet")]
@@ -360,9 +349,12 @@ fn invalid_seq_is_not_newer_than_request(seq: i64, newer_than: Option<&Timestamp
     seq >= 0 && seq as u64 <= newer_than.as_u64()
 }
 
-fn should_retry_with_cache_bypass(response: &Response, newer_than: Option<&Timestamp>) -> bool {
+fn should_retry_with_cache_bypass(
+    response: &Response,
+    if_modified_since: Option<&Timestamp>,
+) -> bool {
     let status = response.status();
-    let unexpected_not_modified = status == StatusCode::NOT_MODIFIED && newer_than.is_none();
+    let unexpected_not_modified = status == StatusCode::NOT_MODIFIED && if_modified_since.is_none();
     let empty_success = status.is_success() && response.content_length().unwrap_or_default() == 0;
 
     unexpected_not_modified || empty_success
@@ -408,7 +400,7 @@ fn reject_known_too_large(content_length: Option<u64>, limit: usize) -> Result<(
 mod tests {
     use std::sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     };
     use std::time::Duration;
 
@@ -688,6 +680,100 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolve_sends_if_modified_since_for_newer_than() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let newer_than = Timestamp::from(42);
+        let expected_header = newer_than.format_http_date();
+        let seen_header = Arc::new(Mutex::new(None));
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get({
+                let payload = signed_packet.to_relay_payload();
+                let seen_header = seen_header.clone();
+
+                move |headers: HeaderMap| {
+                    let payload = payload.clone();
+                    let seen_header = seen_header.clone();
+
+                    async move {
+                        let if_modified_since = headers
+                            .get(header::IF_MODIFIED_SINCE)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToOwned::to_owned);
+                        *seen_header.lock().unwrap() = if_modified_since;
+
+                        payload
+                    }
+                }
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let resolved = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::CacheFirst,
+                Some(newer_than),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(
+            seen_header.lock().unwrap().as_deref(),
+            Some(expected_header.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_sends_if_modified_since_for_zero_newer_than() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let newer_than = Timestamp::from(0);
+        let expected_header = newer_than.format_http_date();
+        let seen_header = Arc::new(Mutex::new(None));
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get({
+                let payload = signed_packet.to_relay_payload();
+                let seen_header = seen_header.clone();
+
+                move |headers: HeaderMap| {
+                    let payload = payload.clone();
+                    let seen_header = seen_header.clone();
+
+                    async move {
+                        let if_modified_since = headers
+                            .get(header::IF_MODIFIED_SINCE)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToOwned::to_owned);
+                        *seen_header.lock().unwrap() = if_modified_since;
+
+                        payload
+                    }
+                }
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let resolved = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::CacheFirst,
+                Some(newer_than),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(
+            seen_header.lock().unwrap().as_deref(),
+            Some(expected_header.as_str())
+        );
+    }
+
+    #[tokio::test]
     async fn resolve_retries_empty_success_with_cache_bypass() {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
@@ -911,7 +997,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_accepts_packet_with_same_timestamp_as_lower_bound() {
+    async fn resolve_rejects_packet_with_same_timestamp_as_newer_than() {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder()
             .timestamp(Timestamp::from(42))
@@ -931,16 +1017,16 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let resolved = client
+        let error = client
             .resolve(
                 &keypair.public_key(),
                 ResolvePolicy::CacheFirst,
                 Some(signed_packet.timestamp()),
             )
             .await
-            .unwrap();
+            .unwrap_err();
 
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert!(matches!(error, RelayError::NotFound));
     }
 
     // We test that the client can work with HTTPS endpoints; however, this does

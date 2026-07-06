@@ -78,19 +78,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Publishing {} ...", keypair.public_key());
 
-    client.publish(&signed_packet, None).await?;
+    let stored_on = client.publish(&signed_packet, None).await?;
 
-    println!("Published successfully!");
+    println!("Published successfully; stored on at least {stored_on} DHT nodes");
     Ok(())
 }
 ```
 
-Publishing sends your signed packet to the Mainline DHT and configured relays. The second argument to `publish()` is an optional CAS (compare-and-swap) timestamp for conflict detection.
+Publishing sends your signed packet to the Mainline DHT and configured relays. The returned `stored_on` value is the maximum count reported by any successful backend, not a sum, because backends may store the packet on the same DHT nodes. It means the packet was stored on at least that many DHT nodes. The second argument to `publish()` is an optional CAS (compare-and-swap) timestamp for conflict detection.
 
 ## Resolve
 
 ```rust
-use pkarr::{Client, PublicKey};
+use pkarr::{Client, PublicKey, ResolvePolicy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -101,8 +101,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .try_into()
         .expect("Invalid public key");
 
-    match client.resolve(&public_key).await {
-        Some(signed_packet) => {
+    match client.resolve(&public_key, ResolvePolicy::CacheFirst).await {
+        Ok(signed_packet) => {
             println!("Resolved packet:");
             println!("{}", signed_packet);
 
@@ -111,8 +111,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Record: {:?}", record.rdata);
             }
         }
-        None => {
+        Err(pkarr::errors::ResolveError::NotFound) => {
             println!("No packet found for {}", public_key);
+        }
+        Err(error) => {
+            eprintln!("Resolve failed: {error}");
         }
     }
 
@@ -120,14 +123,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Use `resolve_most_recent()` instead of `resolve()` when you need the latest version (e.g., before publishing updates).
+Use `resolve(&public_key, ResolvePolicy::DhtNetworkOnly)` when you need the latest version, for example before publishing updates. `ResolvePolicy::CacheFirst` only returns non-expired cached packets; use `ResolvePolicy::LocalOrRelayCacheOnly` when expired cached packets are acceptable.
 
 ## Complete Example
 
 A copy-paste example that generates a keypair, publishes a record, resolves it, and prints the result.
 
 ```rust
-use pkarr::{Client, Keypair, SignedPacket};
+use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -153,18 +156,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Publish to DHT and relays
     println!("Publishing...");
-    client.publish(&signed_packet, None).await?;
-    println!("Published successfully!");
+    let stored_on = client.publish(&signed_packet, None).await?;
+    println!("Published successfully; stored on at least {stored_on} DHT nodes");
 
     // 4. Resolve it back
     println!("Resolving...");
-    match client.resolve(&keypair.public_key()).await {
-        Some(resolved) => {
+    match client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+    {
+        Ok(resolved) => {
             // 5. Print results
             println!("\nResolved packet:\n{}", resolved);
         }
-        None => {
+        Err(pkarr::errors::ResolveError::NotFound) => {
             println!("Failed to resolve (this can happen on first publish)");
+        }
+        Err(error) => {
+            eprintln!("Resolve failed: {error}");
         }
     }
 

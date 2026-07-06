@@ -33,13 +33,17 @@ pub enum ResolvePolicy {
     /// stops at the first acceptable response.
     CacheFirst,
 
-    /// Query all relevant DHT nodes for the most recent value observed and
-    /// update the cache when that value contains a valid signed packet.
+    /// Query all relevant DHT nodes for the most recent value observed.
     /// This is slower, but more accurate.
     ///
     /// This policy ignores cached packets while querying and interpreting the
     /// DHT result. If the DHT currently contains an older valid packet than the
     /// cache, that older packet is returned.
+    ///
+    /// If the result contains a valid signed packet, the cache is updated only
+    /// when that packet is newer than the cached packet, or is the same packet
+    /// with a fresher last-seen timestamp. This policy never downgrades the
+    /// cache to an older packet.
     ///
     /// This is guaranteed to return the newest valid signed packet, or the sequence
     /// number of a newer mutable item that is not a valid signed packet.

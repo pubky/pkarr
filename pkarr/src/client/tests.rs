@@ -8,8 +8,8 @@ use pkarr_relay::Relay;
 use rstest::rstest;
 use simple_dns::rdata::SVCB;
 
-use crate::errors::{BuildError, ConcurrencyError, PublishError};
-use crate::{Client, ClientBuilder, Keypair, SignedPacket};
+use crate::errors::{BuildError, ConcurrencyError, PublishError, ResolveError};
+use crate::{Client, ClientBuilder, Keypair, ResolvePolicy, SignedPacket};
 
 #[derive(Copy, Clone)]
 pub(crate) enum Networks {
@@ -85,10 +85,16 @@ async fn publish_resolve(#[case] networks: Networks) {
 
     let b = builder(&relay, &testnet, networks).build().unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-    let from_cache = b.resolve(&keypair.public_key()).await.unwrap();
+    let from_cache = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
     assert_eq!(from_cache.last_seen(), resolved.last_seen());
 }
@@ -116,10 +122,16 @@ async fn client_send(#[case] networks: Networks) {
     let b = builder(&relay, &testnet, networks).build().unwrap();
 
     tokio::spawn(async move {
-        let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+        let resolved = b
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+            .await
+            .unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-        let from_cache = b.resolve(&keypair.public_key()).await.unwrap();
+        let from_cache = b
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+            .await
+            .unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     })
@@ -153,9 +165,103 @@ async fn return_expired_packet_fallback(#[case] networks: Networks) {
         .unwrap()
         .put(&keypair.public_key().into(), &signed_packet);
 
-    let resolved = client.resolve(&keypair.public_key()).await;
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap_err();
+    assert_eq!(resolved, ResolveError::NotFound);
 
-    assert_eq!(resolved, Some(signed_packet));
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::LocalOrRelayCacheOnly)
+        .await
+        .unwrap();
+    assert_eq!(resolved, signed_packet);
+}
+
+#[rstest]
+#[case::dht(Networks::Dht)]
+#[case::both_networks(Networks::Both)]
+#[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+#[tokio::test]
+async fn cache_first_rejects_network_packet_older_than_expired_cache(#[case] networks: Networks) {
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
+    let relay = Relay::run_test(&testnet).await.unwrap();
+
+    let publisher = builder(&relay, &testnet, networks).build().unwrap();
+    let resolver = builder(&relay, &testnet, networks)
+        .maximum_ttl(0)
+        .build()
+        .unwrap();
+
+    let keypair = Keypair::random();
+    let signed_packet_builder =
+        SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
+    let older = signed_packet_builder
+        .clone()
+        .timestamp(Timestamp::from(1))
+        .sign(&keypair)
+        .unwrap();
+    let newer = signed_packet_builder
+        .timestamp(Timestamp::from(2))
+        .sign(&keypair)
+        .unwrap();
+
+    publisher.publish(&older, None).await.unwrap();
+    resolver
+        .cache()
+        .unwrap()
+        .put(&keypair.public_key().into(), &newer);
+
+    let resolved = resolver
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap_err();
+    assert_eq!(resolved, ResolveError::NotFound);
+
+    let local = resolver
+        .resolve(&keypair.public_key(), ResolvePolicy::LocalOrRelayCacheOnly)
+        .await
+        .unwrap();
+    assert_eq!(local, newer);
+}
+
+#[rstest]
+#[case::dht(Networks::Dht)]
+#[case::both_networks(Networks::Both)]
+#[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
+#[tokio::test]
+async fn dht_network_only_ignores_newer_local_cache(#[case] networks: Networks) {
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
+    let relay = Relay::run_test(&testnet).await.unwrap();
+
+    let publisher = builder(&relay, &testnet, networks).build().unwrap();
+    let resolver = builder(&relay, &testnet, networks).build().unwrap();
+
+    let keypair = Keypair::random();
+    let signed_packet_builder =
+        SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
+    let older = signed_packet_builder
+        .clone()
+        .timestamp(Timestamp::from(1))
+        .sign(&keypair)
+        .unwrap();
+    let newer = signed_packet_builder
+        .timestamp(Timestamp::from(2))
+        .sign(&keypair)
+        .unwrap();
+
+    publisher.publish(&older, None).await.unwrap();
+    resolver
+        .cache()
+        .unwrap()
+        .put(&keypair.public_key().into(), &newer);
+
+    let resolved = resolver
+        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .await
+        .unwrap();
+
+    assert_eq!(resolved.as_bytes(), older.as_bytes());
 }
 
 #[rstest]
@@ -174,6 +280,9 @@ async fn ttl_0_test(#[case] networks: Networks) {
 
     let keypair = Keypair::random();
     let signed_packet = SignedPacket::builder()
+        // Use an exact HTTP-date boundary so the cache-first lower bound
+        // formats to the previous second when relays use If-Modified-Since.
+        .timestamp(Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap())
         .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
         .sign(&keypair)
         .unwrap();
@@ -181,13 +290,19 @@ async fn ttl_0_test(#[case] networks: Networks) {
     client.publish(&signed_packet, None).await.unwrap();
 
     // First Call
-    let resolved = client.resolve(&signed_packet.public_key()).await.unwrap();
+    let resolved = client
+        .resolve(&signed_packet.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
 
     assert_eq!(resolved.encoded_packet(), signed_packet.encoded_packet());
 
     thread::sleep(Duration::from_millis(10));
 
-    let second = client.resolve(&signed_packet.public_key()).await.unwrap();
+    let second = client
+        .resolve(&signed_packet.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(second.encoded_packet(), signed_packet.encoded_packet());
 }
 
@@ -204,9 +319,12 @@ async fn not_found(#[case] networks: Networks) {
 
     let keypair = Keypair::random();
 
-    let resolved = client.resolve(&keypair.public_key()).await;
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap_err();
 
-    assert_eq!(resolved, None);
+    assert_eq!(resolved, ResolveError::NotFound);
 }
 
 #[test]
@@ -236,7 +354,138 @@ async fn repeated_publish_query(#[case] networks: Networks) {
 
     client.publish(&signed_packet, None).await.unwrap();
 
-    client.publish(&signed_packet, None).await.unwrap()
+    client.publish(&signed_packet, None).await.unwrap();
+}
+
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn relay_publish_waits_past_first_error() {
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
+    let relay = Relay::run_test(&testnet).await.unwrap();
+
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let unused_addr = listener.local_addr().unwrap();
+    drop(listener);
+
+    let dead_relay: url::Url = format!("http://{unused_addr}").parse().unwrap();
+    let live_relay = relay.local_url();
+
+    let client = Client::builder()
+        .no_default_network()
+        .request_timeout(Duration::from_millis(200))
+        .relays(&[dead_relay, live_relay])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let signed_packet = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&Keypair::random())
+        .unwrap();
+
+    client.publish(&signed_packet, None).await.unwrap();
+}
+
+#[cfg(feature = "relays")]
+#[derive(Clone)]
+struct PacketRelayState {
+    packet: std::sync::Arc<SignedPacket>,
+    delay: Duration,
+}
+
+#[cfg(feature = "relays")]
+async fn packet_relay_handler(
+    axum::extract::State(state): axum::extract::State<PacketRelayState>,
+) -> axum::response::Response {
+    if !state.delay.is_zero() {
+        tokio::time::sleep(state.delay).await;
+    }
+
+    axum::response::Response::builder()
+        .header("content-type", "application/octet-stream")
+        .body(axum::body::Body::from(state.packet.to_relay_payload()))
+        .unwrap()
+}
+
+#[cfg(feature = "relays")]
+fn spawn_packet_relay(packet: SignedPacket, delay: Duration) -> url::Url {
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+
+    let app = axum::Router::new()
+        .route("/{key}", axum::routing::get(packet_relay_handler))
+        .with_state(PacketRelayState {
+            packet: std::sync::Arc::new(packet),
+            delay,
+        });
+
+    tokio::spawn(
+        axum_server::from_tcp(listener)
+            .unwrap()
+            .serve(app.into_make_service()),
+    );
+
+    format!("http://{address}").parse().unwrap()
+}
+
+#[cfg(feature = "relays")]
+fn spawn_accepting_publish_relay() -> url::Url {
+    spawn_publish_relay(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[cfg(feature = "relays")]
+fn spawn_publish_relay(status: axum::http::StatusCode) -> url::Url {
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+
+    let app =
+        axum::Router::new().route("/{key}", axum::routing::put(move || async move { status }));
+
+    tokio::spawn(
+        axum_server::from_tcp(listener)
+            .unwrap()
+            .serve(app.into_make_service()),
+    );
+
+    format!("http://{address}").parse().unwrap()
+}
+
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn relay_most_recent_resolve_aggregates_all_relays() {
+    let keypair = Keypair::random();
+
+    let older = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "old".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(1))
+        .sign(&keypair)
+        .unwrap();
+    let newer = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "new".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(2))
+        .sign(&keypair)
+        .unwrap();
+
+    let older_relay = spawn_packet_relay(older, Duration::ZERO);
+    let newer_relay = spawn_packet_relay(newer.clone(), Duration::from_millis(50));
+
+    let client = Client::builder()
+        .no_default_network()
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[older_relay, newer_relay])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .await
+        .unwrap();
+
+    assert_eq!(resolved.timestamp(), newer.timestamp());
+    assert_eq!(resolved.as_bytes(), newer.as_bytes());
 }
 
 #[rstest]
@@ -261,9 +510,17 @@ async fn concurrent_resolve(#[case] networks: Networks) {
 
     let public_key = signed_packet.public_key();
     let bclone = b.clone();
-    let _stream = tokio::spawn(async move { bclone.resolve(&public_key).await.unwrap() });
+    let _stream = tokio::spawn(async move {
+        bclone
+            .resolve(&public_key, ResolvePolicy::CacheFirst)
+            .await
+            .unwrap()
+    });
 
-    let response_second = b.resolve(&signed_packet.public_key()).await.unwrap();
+    let response_second = b
+        .resolve(&signed_packet.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
 
     assert_eq!(&response_second.as_bytes(), &signed_packet.as_bytes());
 
@@ -294,7 +551,7 @@ async fn concurrent_publish_same_packet(#[case] networks: Networks) {
         let signed_packet = signed_packet.clone();
 
         handles.push(tokio::spawn(async move {
-            client.publish(&signed_packet, None).await.unwrap()
+            client.publish(&signed_packet, None).await.unwrap();
         }));
     }
 
@@ -352,49 +609,6 @@ async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
     for handle in handles {
         handle.await.unwrap();
     }
-}
-
-#[rstest]
-#[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
-#[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-#[tokio::test]
-async fn concurrent_publish_different_with_cas(#[case] networks: Networks) {
-    let testnet = mainline::Testnet::builder(5).build().unwrap();
-
-    let relay = Relay::run_test(&testnet).await.unwrap();
-
-    let client = builder(&relay, &testnet, networks).build().unwrap();
-
-    let keypair = Keypair::random();
-
-    let cloned_client = client.clone();
-    let cloned_keypair = keypair.clone();
-    let signed_packet = SignedPacket::builder()
-        .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-        .sign(&cloned_keypair)
-        .unwrap();
-
-    let cas = Some(signed_packet.timestamp());
-
-    let handle = tokio::spawn(async move {
-        assert!(matches!(
-            cloned_client.publish(&signed_packet, None).await,
-            Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
-        ));
-    });
-
-    // Second
-    {
-        let signed_packet = SignedPacket::builder()
-            .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
-            .sign(&keypair)
-            .unwrap();
-
-        client.publish(&signed_packet, cas).await.unwrap();
-    }
-
-    handle.await.unwrap();
 }
 
 #[rstest]
@@ -478,44 +692,142 @@ async fn conflict_301_cas(#[case] networks: Networks) {
     ));
 }
 
-#[rstest]
-#[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
-#[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
-#[test]
-fn blocking(#[case] networks: Networks) {
-    let (relay, testnet) = futures_lite::future::block_on(async_compat::Compat::new(async {
-        let testnet = mainline::Testnet::builder(5).build().unwrap();
-        let relay = Relay::run_test(&testnet).await.unwrap();
-
-        (relay, testnet)
-    }));
-
-    let a = builder(&relay, &testnet, networks)
-        .build()
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn stale_cas_older_than_cached_packet_is_rejected_before_publish() {
+    let relay = spawn_accepting_publish_relay();
+    let client = Client::builder()
+        .no_default_network()
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[relay])
         .unwrap()
-        .as_blocking();
+        .build()
+        .unwrap();
 
     let keypair = Keypair::random();
+    let signed_packet_builder =
+        SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
 
-    let signed_packet = SignedPacket::builder()
-        .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+    let cached = signed_packet_builder
+        .clone()
+        .timestamp(Timestamp::from(2))
+        .sign(&keypair)
+        .unwrap();
+    client
+        .cache()
+        .unwrap()
+        .put(&keypair.public_key().into(), &cached);
+
+    let newer = signed_packet_builder
+        .timestamp(Timestamp::from(3))
         .sign(&keypair)
         .unwrap();
 
-    a.publish(&signed_packet, None).unwrap();
+    assert!(matches!(
+        client.publish(&newer, Some(Timestamp::from(1))).await,
+        Err(PublishError::Concurrency(ConcurrencyError::CasFailed))
+    ));
+}
 
-    let b = builder(&relay, &testnet, networks)
-        .build()
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn relay_publish_rejects_conflicting_relay_quorum() {
+    let success = spawn_publish_relay(axum::http::StatusCode::NO_CONTENT);
+    let conflict1 = spawn_publish_relay(axum::http::StatusCode::CONFLICT);
+    let conflict2 = spawn_publish_relay(axum::http::StatusCode::CONFLICT);
+
+    let client = Client::builder()
+        .no_default_network()
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[success, conflict1, conflict2])
         .unwrap()
-        .as_blocking();
+        .build()
+        .unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).unwrap();
-    assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+    let signed_packet = SignedPacket::builder().sign(&Keypair::random()).unwrap();
 
-    let from_cache = b.resolve(&keypair.public_key()).unwrap();
-    assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
-    assert_eq!(from_cache.last_seen(), resolved.last_seen());
+    assert!(matches!(
+        client.publish(&signed_packet, None).await,
+        Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
+    ));
+}
+
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn both_publish_does_not_mask_relay_concurrency_error() {
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
+    let relay = spawn_publish_relay(axum::http::StatusCode::CONFLICT);
+
+    let client = Client::builder()
+        .no_default_network()
+        .bootstrap(&testnet.bootstrap)
+        .dht(|config| {
+            config.bind_address = Some(Ipv4Addr::LOCALHOST);
+            config
+        })
+        .request_timeout(Duration::from_millis(200))
+        .relays(&[relay])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let signed_packet = SignedPacket::builder().sign(&Keypair::random()).unwrap();
+
+    assert!(matches!(
+        client.publish(&signed_packet, None).await,
+        Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
+    ));
+}
+
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn both_publish_does_not_mask_dht_not_most_recent_after_relay_success() {
+    let testnet = mainline::Testnet::builder(5).build().unwrap();
+    let relay = spawn_publish_relay(axum::http::StatusCode::NO_CONTENT);
+
+    let dht_client = Client::builder()
+        .no_default_network()
+        .bootstrap(&testnet.bootstrap)
+        .dht(|config| {
+            config.bind_address = Some(Ipv4Addr::LOCALHOST);
+            config
+        })
+        .request_timeout(Duration::from_millis(200))
+        .build()
+        .unwrap();
+
+    let client = Client::builder()
+        .no_default_network()
+        .bootstrap(&testnet.bootstrap)
+        .dht(|config| {
+            config.bind_address = Some(Ipv4Addr::LOCALHOST);
+            config
+        })
+        .request_timeout(Duration::from_millis(200))
+        .relays(&[relay])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let keypair = Keypair::random();
+    let signed_packet_builder =
+        SignedPacket::builder().txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30);
+    let older = signed_packet_builder
+        .clone()
+        .timestamp(Timestamp::from(1))
+        .sign(&keypair)
+        .unwrap();
+    let newer = signed_packet_builder
+        .timestamp(Timestamp::from(2))
+        .sign(&keypair)
+        .unwrap();
+
+    dht_client.publish(&newer, None).await.unwrap();
+
+    assert!(matches!(
+        client.publish(&older, None).await,
+        Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
+    ));
 }
 
 #[rstest]
@@ -546,10 +858,16 @@ fn no_tokio(#[case] networks: Networks) {
 
         let b = builder(&relay, &testnet, networks).build().unwrap();
 
-        let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+        let resolved = b
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+            .await
+            .unwrap();
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-        let from_cache = b.resolve(&keypair.public_key()).await.unwrap();
+        let from_cache = b
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+            .await
+            .unwrap();
         assert_eq!(from_cache.as_bytes(), signed_packet.as_bytes());
         assert_eq!(from_cache.last_seen(), resolved.last_seen());
     });
@@ -577,7 +895,10 @@ async fn zero_cache_size(#[case] networks: Networks) {
         .build()
         .unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
 
@@ -635,7 +956,10 @@ async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
         .build()
         .unwrap();
 
-    let resolved = b.resolve_most_recent(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .await
+        .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
 
@@ -659,7 +983,7 @@ async fn regression_relay_cas(#[case] networks: Networks) {
     client.publish(&signed_packet, None).await.unwrap();
 
     let most_recent = client
-        .resolve_most_recent(&keypair.public_key())
+        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
         .await
         .expect("valid signed packet");
 
@@ -735,11 +1059,11 @@ async fn discard_cache_with_zero_capacity() {
         .unwrap()
         .build()
         .unwrap();
-    let packet = client.resolve(&keypair.public_key()).await;
-    assert!(
-        packet.is_some(),
-        "Published packet is not available over the relay only."
-    );
+    let packet = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
+    assert_eq!(packet.public_key(), keypair.public_key());
 }
 
 #[tokio::test]
@@ -755,10 +1079,14 @@ async fn regression_relay_timeout_stack_overflow() {
         .build()
         .unwrap();
 
-    // 1) do the resolve_most_recent
+    // 1) resolve most recent
     let existing = client
-        .resolve_most_recent(&Keypair::random().public_key())
-        .await;
+        .resolve(
+            &Keypair::random().public_key(),
+            ResolvePolicy::DhtNetworkOnly,
+        )
+        .await
+        .ok();
 
     // 2) build a new `_pubky` packet
     let kp = Keypair::random();

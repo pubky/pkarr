@@ -35,15 +35,10 @@ pub const PKARR_DHT_STORED_NODES: &str = "Pkarr-Dht-Stored-Nodes";
 pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
 // Exports
-#[cfg(all(client, not(wasm_browser)))]
-pub use client::blocking::ClientBlocking;
 #[cfg(client)]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
-pub use client::{
-    builder::{ClientBuilder, DEFAULT_REQUEST_TIMEOUT},
-    Client,
-};
+pub use client::{builder::DEFAULT_REQUEST_TIMEOUT, Client, ClientBuilder};
 pub use types::*;
 
 // Rexports
@@ -60,5 +55,5 @@ pub mod errors {
     pub use super::types::errors::*;
 
     #[cfg(client)]
-    pub use super::client::{BuildError, ConcurrencyError, PublishError, QueryError};
+    pub use super::client::{BuildError, ConcurrencyError, PublishError, QueryError, ResolveError};
 }

@@ -73,7 +73,8 @@ async fn publish_server_pkarr(
         .address(".".try_into().unwrap(), socket_addr.ip(), 60 * 60)
         .sign(keypair)?;
 
-    client.publish(&signed_packet, None).await?;
+    let stored_on = client.publish(&signed_packet, None).await?;
+    tracing::info!(stored_on, "published server Pkarr packet");
 
     Ok(())
 }

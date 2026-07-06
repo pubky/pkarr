@@ -142,42 +142,22 @@ let client = Client::builder()
     .build()?;
 ```
 
-## Async vs Blocking API
+## Async Runtime Support
 
-Pkarr provides both async and blocking APIs.
-
-### Async (Default)
+Pkarr provides an async API.
 
 ```rust
-use pkarr::{Client, PublicKey};
+use pkarr::{Client, PublicKey, ResolvePolicy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::builder().build()?;
     let public_key: PublicKey = "pk:...".try_into()?;
 
-    let packet = client.resolve(&public_key).await;
+    let packet = client.resolve(&public_key, ResolvePolicy::CacheFirst).await;
     Ok(())
 }
 ```
-
-### Blocking
-
-For synchronous contexts, use `as_blocking()`:
-
-```rust
-use pkarr::{Client, PublicKey};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::builder().build()?.as_blocking();
-    let public_key: PublicKey = "pk:...".try_into()?;
-
-    let packet = client.resolve(&public_key);
-    Ok(())
-}
-```
-
-### Runtime Agnostic
 
 Pkarr uses `async_compat` internally. If no Tokio runtime is detected, it automatically wraps futures for compatibility. This means pkarr works with async-std, smol, or any other executor.
 
@@ -217,7 +197,9 @@ async fn republish_loop(
         let packet = build_packet();
 
         match client.publish(&packet, None).await {
-            Ok(()) => println!("Republished successfully"),
+            Ok(stored_on) => {
+                println!("Republished successfully; stored on at least {stored_on} DHT nodes")
+            }
             Err(e) => eprintln!("Republish failed: {e}"),
         }
 
@@ -228,10 +210,11 @@ async fn republish_loop(
 
 ### Safe Republishing with CAS
 
-When multiple processes might update the same key, use CAS (compare-and-swap) to prevent lost updates:
+When multiple processes might update the same key, use CAS (compare-and-swap) to prevent lost updates.
+The client does not serialize concurrent publishes for the same public key; if your application can build multiple different packets for one key at the same time, serialize those publishes in your own code before calling `publish`.
 
 ```rust
-use pkarr::{Client, SignedPacket, Keypair};
+use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
 use ntimestamp::Timestamp;
 
 async fn safe_republish(
@@ -240,8 +223,11 @@ async fn safe_republish(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Get the most recent version
     let (current_packet, cas): (SignedPacket, Option<Timestamp>) =
-        match client.resolve_most_recent(&keypair.public_key()).await {
-            Some(existing) => {
+        match client
+            .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+            .await
+        {
+            Ok(existing) => {
                 // Rebuild packet with same or updated records
                 let new_packet = SignedPacket::builder()
                     // Copy existing records you want to keep
@@ -249,54 +235,29 @@ async fn safe_republish(
                     .sign(keypair)?;
                 (new_packet, Some(existing.timestamp()))
             }
-            None => {
+            Err(pkarr::errors::ResolveError::NotFound) => {
                 let new_packet = SignedPacket::builder()
                     .txt("key".try_into()?, "value".try_into()?, 300)
                     .sign(keypair)?;
                 (new_packet, None)
             }
+            Err(error) => return Err(error.into()),
         };
 
     // Publish with CAS - fails if someone else published in between
-    client.publish(&current_packet, cas).await?;
+    let stored_on = client.publish(&current_packet, cas).await?;
+    println!("Published successfully; stored on at least {stored_on} DHT nodes");
     Ok(())
 }
 ```
 
-## Accessing Internal Components
+## Resolve Policies
 
-### DHT Node Access
+Use [`ResolvePolicy::CacheFirst`] for normal application lookups. It returns fresh cached packets, or queries the network on a cache miss or expired cache entry. It does not fall back to expired local cache entries.
 
-```rust
-use pkarr::Client;
+Use [`ResolvePolicy::LocalOrRelayCacheOnly`] when a cached packet is acceptable even if it is expired.
 
-let client = Client::builder().build()?;
-
-// Access the underlying mainline DHT node
-if let Some(dht) = client.dht() {
-    // Check if bootstrapped
-    let bootstrapped = dht.bootstrapped();
-
-    // Get routing table info
-    let info = dht.info();
-
-    // Export bootstrap nodes for other clients
-    let bootstrap_nodes = dht.to_bootstrap();
-}
-```
-
-### Cache Access
-
-```rust
-use pkarr::{Client, PublicKey};
-
-let client = Client::builder().build()?;
-
-if let Some(cache) = client.cache() {
-    let len = cache.len();
-    let capacity = cache.capacity();
-}
-```
+Use [`ResolvePolicy::DhtNetworkOnly`] when you need the most recent packet observed from the network, for example before publishing with CAS.
 
 ## Next Steps
 

@@ -35,10 +35,16 @@ pub(crate) struct Config {
 
     #[cfg(dht)]
     pub dht: Option<mainline::Config>,
+    /// Policy used to classify DHT publish and resolve diagnostics.
+    #[cfg(dht)]
+    pub dht_report_policy: crate::dht::ReportPolicy,
 
     /// Pkarr [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) Urls
-    #[cfg(feature = "relays")]
+    #[cfg(relays)]
     pub relays: Option<Vec<Url>>,
+    /// Custom HTTP client used for relay requests.
+    #[cfg(relays)]
+    pub reqwest_client: Option<reqwest::Client>,
 
     /// Timeout for both Dht and Relays requests.
     ///
@@ -61,8 +67,10 @@ impl Default for Config {
 
             #[cfg(dht)]
             dht: Some(make_dht_config(DEFAULT_REQUEST_TIMEOUT)),
+            #[cfg(dht)]
+            dht_report_policy: crate::dht::ReportPolicy::mainnet(),
 
-            #[cfg(feature = "relays")]
+            #[cfg(relays)]
             relays: Some(
                 crate::DEFAULT_RELAYS
                     .iter()
@@ -71,6 +79,8 @@ impl Default for Config {
                     })
                     .collect(),
             ),
+            #[cfg(relays)]
+            reqwest_client: None,
 
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
 
@@ -92,7 +102,9 @@ impl std::fmt::Debug for Config {
         #[cfg(dht)]
         debug_struct.field("dht", &self.dht);
         #[cfg(dht)]
-        #[cfg(feature = "relays")]
+        debug_struct.field("dht_report_policy", &self.dht_report_policy);
+        #[cfg(dht)]
+        #[cfg(relays)]
         debug_struct.field(
             "relays",
             &self
@@ -100,6 +112,8 @@ impl std::fmt::Debug for Config {
                 .as_ref()
                 .map(|urls| urls.iter().map(|url| url.as_str()).collect::<Vec<_>>()),
         );
+        #[cfg(relays)]
+        debug_struct.field("reqwest_client", &self.reqwest_client);
 
         debug_struct.field("request_timeout", &self.request_timeout);
 
@@ -148,6 +162,14 @@ impl ClientBuilder {
         if let Some(ref mut builder) = self.0.dht {
             f(builder);
         };
+
+        self
+    }
+
+    /// Set the policy used to classify DHT publish and resolve diagnostics.
+    #[cfg(dht)]
+    pub fn dht_report_policy(&mut self, policy: crate::dht::ReportPolicy) -> &mut Self {
+        self.0.dht_report_policy = policy;
 
         self
     }
@@ -210,7 +232,7 @@ impl ClientBuilder {
     #[cfg(feature = "relays")]
     /// Extend the current [Self::relays] with extra relays.
     ///
-    /// If you want to set (override) relays instead, use [Self::relays]
+    /// If you want to set (override) relays instead, use [Self::relays].
     pub fn extra_relays<T: reqwest::IntoUrl + Clone>(
         &mut self,
         relays: &[T],
@@ -258,6 +280,18 @@ impl ClientBuilder {
     /// Set a custom implementation of [Cache].
     pub fn cache(&mut self, cache: Arc<dyn Cache>) -> &mut Self {
         self.0.cache = Some(cache);
+
+        self
+    }
+
+    /// Set a custom [`reqwest::Client`] for relay HTTP requests.
+    ///
+    /// The client's request timeout still comes from [`Self::request_timeout`],
+    /// because relay request timeouts are applied per request for native and
+    /// WASM targets.
+    #[cfg(relays)]
+    pub fn reqwest_client(&mut self, client: reqwest::Client) -> &mut Self {
+        self.0.reqwest_client = Some(client);
 
         self
     }
@@ -383,5 +417,39 @@ mod tests {
             .expect("dht config should be recreated");
 
         assert_eq!(dht_config.request_timeout, timeout);
+    }
+
+    #[test]
+    fn default_dht_report_policy_is_mainnet() {
+        let config = Config::default();
+
+        assert_eq!(
+            config.dht_report_policy,
+            crate::dht::ReportPolicy::mainnet()
+        );
+    }
+
+    #[test]
+    fn custom_dht_report_policy_is_stored() {
+        let mut builder = Client::builder();
+        builder.dht_report_policy(crate::dht::ReportPolicy::testnet());
+
+        assert_eq!(
+            builder.0.dht_report_policy,
+            crate::dht::ReportPolicy::testnet()
+        );
+    }
+}
+
+#[cfg(all(test, relays))]
+mod relay_tests {
+    use super::*;
+
+    #[test]
+    fn custom_reqwest_client_is_stored() {
+        let mut builder = Client::builder();
+        builder.reqwest_client(reqwest::Client::new());
+
+        assert!(builder.0.reqwest_client.is_some());
     }
 }

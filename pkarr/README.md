@@ -12,7 +12,6 @@ Rust implementation of [Pkarr](https://github.com/pubky/pkarr) for publishing an
 ### Runtime Support
 
 - **Asynchronous by Default**: Built on async/await for optimal performance
-- **Blocking API Available**: Use `Client::as_blocking()` for synchronous operations
 - **Runtime Agnostic**: Compatible with non-Tokio runtimes via `async_compat`
 
 ### WebAssembly
