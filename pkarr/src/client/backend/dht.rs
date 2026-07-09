@@ -1,9 +1,9 @@
 use ntimestamp::Timestamp;
 
 use crate::dht::{DhtClient, ReportPolicy, ResolveReport};
-use crate::{PublicKey, ResolvePolicy, SignedPacket};
+use crate::{PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount};
 
-use super::{PublishError, ResolveError};
+use crate::client::{PublishError, ResolveError};
 
 #[derive(Debug)]
 pub(in crate::client) struct DhtBackend {
@@ -23,7 +23,7 @@ impl DhtBackend {
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<u32, PublishError> {
+    ) -> Result<StoredNodeCount, PublishError> {
         let stored_on = self.client.publish(signed_packet, cas).await?;
         self.log_publish_warnings(&signed_packet.public_key(), stored_on);
         Ok(stored_on)
@@ -52,8 +52,8 @@ impl DhtBackend {
         outcome.most_recent.map_err(Into::into)
     }
 
-    fn log_publish_warnings(&self, public_key: &PublicKey, stored_at: u32) {
-        let warnings = self.report_policy.classify_publish_result(stored_at);
+    fn log_publish_warnings(&self, public_key: &PublicKey, stored_on: StoredNodeCount) {
+        let warnings = self.report_policy.classify_publish_result(stored_on);
         if !warnings.is_empty() {
             tracing::warn!(
                 ?public_key,

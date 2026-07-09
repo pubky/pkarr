@@ -8,7 +8,7 @@ With a basic dependency declaration, you get the `full-client` feature:
 
 ```toml
 [dependencies]
-pkarr = "5"
+pkarr = "6"
 ```
 
 This includes both DHT and relay support, suitable for most server applications.
@@ -20,7 +20,7 @@ This includes both DHT and relay support, suitable for most server applications.
 Ed25519 key utilities for identity management.
 
 ```toml
-pkarr = { version = "5", default-features = false, features = ["keys"] }
+pkarr = { version = "6", default-features = false, features = ["keys"] }
 ```
 
 Provides:
@@ -32,7 +32,7 @@ Provides:
 DNS packet signing and verification. Automatically enables `keys`.
 
 ```toml
-pkarr = { version = "5", default-features = false, features = ["signed_packet"] }
+pkarr = { version = "6", default-features = false, features = ["signed_packet"] }
 ```
 
 Provides:
@@ -45,7 +45,7 @@ Provides:
 Direct Mainline DHT access for publishing and resolving records.
 
 ```toml
-pkarr = { version = "5", default-features = false, features = ["dht"] }
+pkarr = { version = "6", default-features = false, features = ["dht"] }
 ```
 
 **Not available in WASM environments.**
@@ -55,7 +55,7 @@ pkarr = { version = "5", default-features = false, features = ["dht"] }
 HTTP relay support for environments without direct DHT access.
 
 ```toml
-pkarr = { version = "5", default-features = false, features = ["relays"] }
+pkarr = { version = "6", default-features = false, features = ["relays"] }
 ```
 
 **Required for WASM/browser applications.**
@@ -65,7 +65,7 @@ pkarr = { version = "5", default-features = false, features = ["relays"] }
 Both DHT and relay support combined.
 
 ```toml
-pkarr = "5"  # Equivalent to features = ["full-client"]
+pkarr = "6"  # Equivalent to features = ["full-client"]
 ```
 
 ## Extra Features
@@ -84,7 +84,7 @@ Returns an async `Stream` of endpoints. Downstream applications need `futures-li
 (or equivalent) to consume the stream with `.next()` and `StreamExt`.
 
 ```toml
-pkarr = { version = "5", features = ["endpoints"] }
+pkarr = { version = "6", features = ["endpoints"] }
 ```
 
 ### `lmdb-cache`
@@ -92,15 +92,19 @@ pkarr = { version = "5", features = ["endpoints"] }
 Persistent LMDB cache backend for the client.
 
 ```toml
-pkarr = { version = "5", features = ["lmdb-cache"] }
+pkarr = { version = "6", features = ["lmdb-cache"] }
 ```
+
+This feature makes `pkarr::extra::lmdb_cache::LmdbCache` available. It does not
+change the client's default in-memory cache; create an `LmdbCache` and pass it
+to `ClientBuilder::cache()` to use it.
 
 ### `tls`
 
 TLS certificate support for secure connections. Enables `endpoints`.
 
 ```toml
-pkarr = { version = "5", features = ["tls"] }
+pkarr = { version = "6", features = ["tls"] }
 ```
 
 ### `reqwest-resolve`
@@ -108,7 +112,7 @@ pkarr = { version = "5", features = ["tls"] }
 Implement `reqwest::dns::Resolve` trait for the Client. Enables `endpoints`.
 
 ```toml
-pkarr = { version = "5", features = ["reqwest-resolve"] }
+pkarr = { version = "6", features = ["reqwest-resolve"] }
 ```
 
 ### `reqwest-builder`
@@ -116,17 +120,19 @@ pkarr = { version = "5", features = ["reqwest-resolve"] }
 Create a `reqwest::ClientBuilder` from the Pkarr Client. Enables `tls` and `reqwest-resolve`.
 
 ```toml
-pkarr = { version = "5", features = ["reqwest-builder"] }
+pkarr = { version = "6", features = ["reqwest-builder"] }
 ```
 
 ## Feature Combinations
 
 ### `extra`
 
-All extra features: `endpoints`, `lmdb-cache`, `reqwest-resolve`, `tls`, `reqwest-builder`.
+All extra features for native client applications. This enables `lmdb-cache`
+and `reqwest-builder`; `reqwest-builder` enables `tls`, `reqwest-resolve`, and
+`endpoints`.
 
 ```toml
-pkarr = { version = "5", features = ["extra"] }
+pkarr = { version = "6", features = ["extra"] }
 ```
 
 ### `full`
@@ -134,7 +140,7 @@ pkarr = { version = "5", features = ["extra"] }
 Everything: `full-client` + `extra`.
 
 ```toml
-pkarr = { version = "5", features = ["full"] }
+pkarr = { version = "6", features = ["full"] }
 ```
 
 ## Decision Guide
@@ -166,15 +172,15 @@ pkarr = { version = "5", features = ["full"] }
 
 **Smallest footprint (keys only):**
 ```toml
-pkarr = { version = "5", default-features = false, features = ["keys"] }
+pkarr = { version = "6", default-features = false, features = ["keys"] }
 ```
 
 **WASM browser client:**
 ```toml
-pkarr = { version = "5", default-features = false, features = ["relays"] }
+pkarr = { version = "6", default-features = false, features = ["relays"] }
 ```
 
 **Server with persistence:**
 ```toml
-pkarr = { version = "5", features = ["lmdb-cache"] }
+pkarr = { version = "6", features = ["lmdb-cache"] }
 ```

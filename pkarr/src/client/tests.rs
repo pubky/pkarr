@@ -1,6 +1,6 @@
 //! Client native tests
 
-use std::net::{Ipv4Addr, ToSocketAddrs};
+use std::net::Ipv4Addr;
 use std::{thread, time::Duration};
 
 use ntimestamp::Timestamp;
@@ -22,7 +22,7 @@ pub(crate) enum Networks {
 /// Parametric [ClientBuilder] with no default networks,
 /// instead it uses mainline or relays depending on `networks` enum.
 pub(crate) fn builder(
-    relay: &Relay,
+    _relay: &Relay,
     testnet: &mainline::Testnet,
     networks: Networks,
 ) -> ClientBuilder {
@@ -49,13 +49,13 @@ pub(crate) fn builder(
         Networks::Relays => {
             builder
                 .no_default_network()
-                .relays(&[relay.local_url()])
+                .relays(&[_relay.local_url()])
                 .unwrap();
         }
         Networks::Both => {
             #[cfg(feature = "relays")]
             {
-                builder.relays(&[relay.local_url()]).unwrap();
+                builder.relays(&[_relay.local_url()]).unwrap();
             }
         }
     }
@@ -998,8 +998,11 @@ async fn regression_relay_cas(#[case] networks: Networks) {
         .unwrap();
 }
 
+#[cfg(feature = "relays")]
 #[tokio::test]
 async fn discard_cache_with_zero_capacity() {
+    use std::net::ToSocketAddrs;
+
     let testnet = crate::mainline::Testnet::builder(2).build().unwrap();
 
     // Create relay

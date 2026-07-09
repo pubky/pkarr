@@ -14,13 +14,14 @@ What is your target platform?
 +-- Server/Native Application
 |   |
 |   +-- Need persistent cache? --> Add `lmdb-cache`
-|   +-- Need HTTPS endpoints?  --> Add `endpoints`
-|   +-- Need HTTP client integration? --> Add `reqwest-builder`
+|   +-- Need HTTPS/SVCB endpoint discovery? --> Add `endpoints`
+|   +-- Need reqwest DNS resolver integration? --> Add `reqwest-resolve`
+|   +-- Need a preconfigured reqwest client with Pkarr DNS/TLS? --> Add `reqwest-builder`
 |   +-- Otherwise --> Use default (`full-client`)
 |
 +-- Browser/WASM
 |   |
-|   +-- `relays` only (DHT unavailable in browsers)
+|   +-- Use `relays` as the network feature (DHT is unavailable in browsers)
 |
 +-- Key management
 |   |
@@ -36,11 +37,16 @@ What is your target platform?
 
 | Use Case | Cargo.toml |
 |----------|------------|
-| Full server | `pkarr = "5"` |
-| Server + persistence | `pkarr = { version = "5", features = ["lmdb-cache"] }` |
-| Browser/WASM | `pkarr = { version = "5", default-features = false, features = ["relays"] }` |
-| Key utilities only | `pkarr = { version = "5", default-features = false, features = ["keys"] }` |
-| Everything | `pkarr = { version = "5", features = ["full"] }` |
+| Full native client | `pkarr = "6"` |
+| Native client + persistence | `pkarr = { version = "6", features = ["lmdb-cache"] }` |
+| Browser/WASM | `pkarr = { version = "6", default-features = false, features = ["relays"] }` |
+| Key utilities only | `pkarr = { version = "6", default-features = false, features = ["keys"] }` |
+| Everything for native apps | `pkarr = { version = "6", features = ["full"] }` |
+
+Endpoint-related extras require the client API. With default features this is
+already enabled on native targets. If you disable default features, combine
+`endpoints`, `tls`, `reqwest-resolve`, or `reqwest-builder` with `dht` and/or
+`relays` as appropriate for your target.
 
 ## Client Configuration
 
@@ -101,6 +107,25 @@ let client = Client::builder()
 let custom_cache: Arc<dyn pkarr::Cache> = /* ... */;
 let client = Client::builder()
     .cache(custom_cache)
+    .build()?;
+```
+
+The `lmdb-cache` feature provides a persistent cache implementation, but the
+client will not use it automatically. Enable the feature, create an
+`LmdbCache`, and provide it to the builder:
+
+```toml
+[dependencies]
+pkarr = { version = "6", features = ["lmdb-cache"] }
+```
+
+```rust
+use pkarr::{extra::lmdb_cache::LmdbCache, Client};
+use std::{path::Path, sync::Arc};
+
+let cache = unsafe { LmdbCache::open(Path::new("./pkarr-cache"), 1000)? };
+let client = Client::builder()
+    .cache(Arc::new(cache))
     .build()?;
 ```
 
@@ -167,7 +192,7 @@ Pkarr uses `async_compat` internally. If no Tokio runtime is detected, it automa
 
 ```toml
 [dependencies]
-pkarr = { version = "5", default-features = false, features = ["relays"] }
+pkarr = { version = "6", default-features = false, features = ["relays"] }
 ```
 
 ### Constraints
@@ -183,12 +208,11 @@ DHT records are ephemeral. Nodes drop records after a few hours. For persistent 
 ### Basic Republishing Loop
 
 ```rust
-use pkarr::{Client, SignedPacket, Keypair};
+use pkarr::{Client, SignedPacket};
 use std::time::Duration;
 
 async fn republish_loop(
     client: Client,
-    keypair: Keypair,
     build_packet: impl Fn() -> SignedPacket,
 ) {
     let interval = Duration::from_secs(3600); // Republish hourly
@@ -210,7 +234,7 @@ async fn republish_loop(
 
 ### Safe Republishing with CAS
 
-When multiple processes might update the same key, use CAS (compare-and-swap) to prevent lost updates.
+When multiple processes update the same key, use CAS (compare-and-swap) to prevent lost updates.
 The client does not serialize concurrent publishes for the same public key; if your application can build multiple different packets for one key at the same time, serialize those publishes in your own code before calling `publish`.
 
 ```rust

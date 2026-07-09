@@ -1,10 +1,11 @@
 use super::resolve_report::ResolveReport;
+use crate::StoredNodeCount;
 
 /// Policy used to classify DHT query diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ReportPolicy {
-    /// Minimum number of DHT nodes expected to acknowledge storing a published packet.
-    pub minimum_publish_stored_nodes: u32,
+    /// Minimum [`StoredNodeCount`] expected for a DHT publish query.
+    pub minimum_publish_stored_nodes: StoredNodeCount,
     /// Minimum number of unique DHT nodes that should be queried.
     pub minimum_queried_nodes: u32,
     /// Minimum number of queried DHT nodes that should respond.
@@ -55,7 +56,7 @@ impl ReportPolicy {
     }
 
     /// Classify warning diagnostics for a DHT publish query result.
-    pub fn classify_publish_result(&self, stored_on: u32) -> Vec<PublishWarning> {
+    pub fn classify_publish_result(&self, stored_on: StoredNodeCount) -> Vec<PublishWarning> {
         if stored_on < self.minimum_publish_stored_nodes {
             vec![PublishWarning::TooFewNodesStored {
                 stored_on,
@@ -125,9 +126,9 @@ pub enum PublishWarning {
     /// Fewer DHT nodes acknowledged storing the packet than expected.
     TooFewNodesStored {
         /// Number of DHT nodes that acknowledged storing the packet.
-        stored_on: u32,
+        stored_on: StoredNodeCount,
         /// Minimum number of storing nodes expected by the policy.
-        minimum: u32,
+        minimum: StoredNodeCount,
     },
 }
 

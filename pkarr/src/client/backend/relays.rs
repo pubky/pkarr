@@ -5,12 +5,11 @@ use futures_lite::StreamExt;
 use ntimestamp::Timestamp;
 use url::Url;
 
-use super::publish_results::PublishResults;
-use super::resolve_results::ResolveResults;
-use super::ResolveError;
-use crate::client::PublishError;
+use super::publish_result_accumulator::PublishResultAccumulator;
+use super::resolve_result_accumulator::ResolveResultAccumulator;
+use crate::client::{PublishError, ResolveError};
 use crate::relay_client::{RelayClient, RelayError};
-use crate::{PublicKey, ResolvePolicy, SignedPacket};
+use crate::{PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount};
 
 #[derive(Clone, Debug)]
 pub(in crate::client) struct RelaysClient {
@@ -41,17 +40,17 @@ impl RelaysClient {
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<u32, PublishError> {
+    ) -> Result<StoredNodeCount, PublishError> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
         for relay in &self.relays {
             futures.push(relay.publish(signed_packet, cas));
         }
 
-        let mut results = PublishResults::default();
+        let mut accumulator = PublishResultAccumulator::default();
         while let Some(result) = futures.next().await {
-            results.record(result.map_err(Into::into));
+            accumulator.record_result(result.map_err(Into::into));
         }
-        results.finish()
+        accumulator.into_result()
     }
 
     pub(super) async fn resolve(
@@ -70,12 +69,12 @@ impl RelaysClient {
             ResolvePolicy::LocalOrRelayCacheOnly | ResolvePolicy::CacheFirst
         );
 
-        let mut results = ResolveResults::default();
+        let mut accumulator = ResolveResultAccumulator::default();
         while let Some(result) = futures.next().await {
-            if results.record(result.map_err(Into::into)) && finish_on_first_packet {
-                return results.finish();
+            if accumulator.record_result(result.map_err(Into::into)) && finish_on_first_packet {
+                return accumulator.into_result();
             }
         }
-        results.finish()
+        accumulator.into_result()
     }
 }

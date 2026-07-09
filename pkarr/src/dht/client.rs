@@ -6,7 +6,7 @@ use mainline::{
 };
 use ntimestamp::Timestamp;
 
-use crate::{PublicKey, SignedPacket};
+use crate::{PublicKey, SignedPacket, StoredNodeCount};
 
 use super::{DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse};
 
@@ -29,12 +29,13 @@ impl DhtClient {
     ///
     /// # Returns
     ///
-    /// The number of DHT nodes that acknowledged storing the packet.
+    /// A [`StoredNodeCount`] with the number of DHT nodes that acknowledged
+    /// storing the packet.
     pub async fn publish(
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<u32, PublishError> {
+    ) -> Result<StoredNodeCount, PublishError> {
         let cas = cas.map(|timestamp| timestamp.as_u64() as i64);
         Ok(self
             .inner

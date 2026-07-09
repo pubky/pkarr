@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::{
     Cache, CacheKey, ClientBuilder, InMemoryCache, PublicKey, ResolvePolicy, SignedPacket,
+    StoredNodeCount,
 };
 
 use super::backend::Backend;
@@ -24,7 +25,7 @@ pub struct Client {
 }
 
 impl Client {
-    /// Returns a builder to edit config before creating Client.
+    /// Returns a builder for editing the config before creating a `Client`.
     pub fn builder() -> ClientBuilder {
         ClientBuilder::default()
     }
@@ -53,7 +54,7 @@ impl Client {
             (None, Some(relays)) => relays,
             (None, None) => return Err(BuildError::NoNetwork),
             (Some(dht), Some(relays)) => dht
-                .try_merge(relays)
+                .checked_merge(relays)
                 .expect("failed to merge dht and relays backends"),
         };
 
@@ -75,12 +76,13 @@ impl Client {
     ///
     /// # Returns
     ///
-    /// Returns `stored_on`, the number of DHT nodes that acknowledged storing
-    /// the packet. When multiple publishing backends are configured, this is
-    /// the maximum count reported by any successful backend, not a sum, because
-    /// multiple backends may store the packet on the same DHT nodes. When
-    /// publishing only through relays, older relays that do not return this
-    /// count are treated as if one DHT node acknowledged storing the packet.
+    /// Returns a [`StoredNodeCount`] with the number of DHT nodes that
+    /// acknowledged storing the packet. When multiple publishing backends are
+    /// configured, this is the maximum count reported by any successful
+    /// backend, not a sum, because multiple backends may store the packet on
+    /// the same DHT nodes. When publishing only through relays, older relays
+    /// that do not return this count are treated as if one DHT node
+    /// acknowledged storing the packet.
     ///
     /// # Errors
     ///
@@ -90,7 +92,7 @@ impl Client {
         &self,
         packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<u32, PublishError> {
+    ) -> Result<StoredNodeCount, PublishError> {
         async_compat_if_necessary(self.publish_inner(packet, cas)).await
     }
 
@@ -98,7 +100,7 @@ impl Client {
         &self,
         packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<u32, PublishError> {
+    ) -> Result<StoredNodeCount, PublishError> {
         if let Some(cached) = self.get_cached(&packet.public_key()) {
             validate_cached_publish(packet, &cached, cas)?;
         }

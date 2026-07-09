@@ -1,16 +1,24 @@
 use std::collections::HashMap;
 
 use crate::client::{ConcurrencyError, PublishError};
+use crate::StoredNodeCount;
 
+/// Accumulates backend publish responses and selects the result returned to the client.
 #[derive(Default)]
-pub(super) struct PublishResults {
+pub(super) struct PublishResultAccumulator {
     successes: usize,
-    max_stored_on: u32,
+    max_stored_on: StoredNodeCount,
     errors: HashMap<PublishError, usize>,
 }
 
-impl PublishResults {
-    pub(super) fn record(&mut self, result: Result<u32, PublishError>) {
+impl PublishResultAccumulator {
+    /// Tracks one backend response.
+    ///
+    /// Successful publishes contribute to the maximum stored-node count returned
+    /// to callers. Errors are counted by kind so the final result can prefer
+    /// blocking concurrency errors, tolerate relay CAS races when enough
+    /// backends succeeded, or otherwise return the most common error.
+    pub(super) fn record_result(&mut self, result: Result<StoredNodeCount, PublishError>) {
         match result {
             Ok(stored_on) => {
                 self.successes += 1;
@@ -20,7 +28,8 @@ impl PublishResults {
         }
     }
 
-    pub(super) fn finish(self) -> Result<u32, PublishError> {
+    /// Converts all recorded backend responses into the publish result returned to callers.
+    pub(super) fn into_result(self) -> Result<StoredNodeCount, PublishError> {
         if let Some(error) = self.blocking_concurrency_error() {
             return Err(error);
         }
@@ -69,46 +78,45 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::QueryError;
 
     #[test]
-    fn finish_checks_all_high_priority_concurrency_errors() {
-        let mut results = PublishResults::default();
+    fn into_result_checks_all_high_priority_concurrency_errors() {
+        let mut accumulator = PublishResultAccumulator::default();
         for result in [
             Ok(3),
             Ok(5),
             Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent)),
             Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent)),
             Err(PublishError::Concurrency(ConcurrencyError::ConflictRisk)),
-            Err(PublishError::Query(QueryError::Timeout)),
-            Err(PublishError::Query(QueryError::Timeout)),
-            Err(PublishError::Query(QueryError::Timeout)),
+            Err(PublishError::NoResponses),
+            Err(PublishError::NoResponses),
+            Err(PublishError::NoResponses),
         ] {
-            results.record(result);
+            accumulator.record_result(result);
         }
 
         assert_eq!(
-            results.finish(),
+            accumulator.into_result(),
             Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
         );
     }
 
     #[test]
-    fn finish_accepts_cas_failure_tie_after_success() {
-        let mut results = PublishResults::default();
-        results.record(Ok(7));
-        results.record(Err(PublishError::Concurrency(ConcurrencyError::CasFailed)));
+    fn into_result_accepts_cas_failure_tie_after_success() {
+        let mut accumulator = PublishResultAccumulator::default();
+        accumulator.record_result(Ok(7));
+        accumulator.record_result(Err(PublishError::Concurrency(ConcurrencyError::CasFailed)));
 
-        assert_eq!(results.finish(), Ok(7));
+        assert_eq!(accumulator.into_result(), Ok(7));
     }
 
     #[test]
-    fn finish_returns_maximum_stored_on_count() {
-        let mut results = PublishResults::default();
-        results.record(Ok(3));
-        results.record(Ok(11));
-        results.record(Ok(7));
+    fn into_result_returns_maximum_stored_on_count() {
+        let mut accumulator = PublishResultAccumulator::default();
+        accumulator.record_result(Ok(3));
+        accumulator.record_result(Ok(11));
+        accumulator.record_result(Ok(7));
 
-        assert_eq!(results.finish(), Ok(11));
+        assert_eq!(accumulator.into_result(), Ok(11));
     }
 }

@@ -11,4 +11,4 @@ mod tests_web;
 
 pub use builder::ClientBuilder;
 pub use client_impl::Client;
-pub use errors::{BuildError, ConcurrencyError, PublishError, QueryError, ResolveError};
+pub use errors::{BuildError, ConcurrencyError, PublishError, ResolveError};

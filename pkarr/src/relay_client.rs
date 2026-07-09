@@ -7,7 +7,8 @@ use std::time::Duration;
 use url::Url;
 
 use crate::{
-    PublicKey, ResolvePolicy, SignedPacket, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
+    PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, PKARR_DHT_STORED_NODES,
+    PKARR_INVALID_SIGNED_PACKET_SEQ,
 };
 
 const MEMENTO_DATETIME: &str = "memento-datetime";
@@ -63,9 +64,9 @@ impl RelayClient {
     ///
     /// # Returns
     ///
-    /// Returns the number of DHT nodes that acknowledged storing the packet.
-    /// Older relays that do not return this count are treated as if one DHT
-    /// node acknowledged storing the packet.
+    /// Returns a [`StoredNodeCount`] with the number of DHT nodes that
+    /// acknowledged storing the packet. Older relays that do not return this
+    /// count are treated as if one DHT node acknowledged storing the packet.
     ///
     /// # Errors
     ///
@@ -76,7 +77,7 @@ impl RelayClient {
         &self,
         packet: &SignedPacket,
         cas: Option<Timestamp>,
-    ) -> Result<u32, RelayError> {
+    ) -> Result<StoredNodeCount, RelayError> {
         let url = self.build_url(&packet.public_key(), None);
 
         let mut request = self
@@ -329,7 +330,7 @@ fn extract_invalid_signed_packet_seq(response: &Response) -> Result<Option<i64>,
         .transpose()
 }
 
-fn extract_dht_stored_nodes(response: &Response) -> Result<u32, RelayError> {
+fn extract_dht_stored_nodes(response: &Response) -> Result<StoredNodeCount, RelayError> {
     let Some(value) = response.headers().get(PKARR_DHT_STORED_NODES) else {
         return Ok(1);
     };

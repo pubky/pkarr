@@ -4,14 +4,14 @@ use http::{
     StatusCode,
 };
 use httpdate::HttpDate;
-use pkarr::{SignedPacket, Timestamp, PKARR_DHT_STORED_NODES};
+use pkarr::{SignedPacket, StoredNodeCount, Timestamp, PKARR_DHT_STORED_NODES};
 
 pub(crate) struct PutResponse {
-    stored_on: u32,
+    stored_on: StoredNodeCount,
 }
 
 impl PutResponse {
-    pub(crate) fn new(stored_on: u32) -> Self {
+    pub(crate) fn new(stored_on: StoredNodeCount) -> Self {
         Self { stored_on }
     }
 }

@@ -7,7 +7,7 @@ use pkarr::dht::{
 };
 use pkarr::extra::lmdb_cache::LmdbCache;
 use pkarr::mainline::errors::ConcurrencyError;
-use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, Timestamp};
+use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, Timestamp};
 use tracing::warn;
 
 use crate::error::Error;
@@ -48,12 +48,14 @@ impl DhtService {
     }
 
     /// Publish a signed packet through the DHT and update the relay cache.
+    ///
+    /// Returns the stored-node count reported back to relay clients.
     pub(crate) async fn publish(
         &self,
         signed_packet: &SignedPacket,
         cas: Option<Timestamp>,
         real_ip: Option<&RealIp>,
-    ) -> Result<u32, Error> {
+    ) -> Result<StoredNodeCount, Error> {
         let public_key = signed_packet.public_key();
         let key = CacheKey::from(&public_key);
         if let Some(cached) = self.cache.get_read_only(&key) {

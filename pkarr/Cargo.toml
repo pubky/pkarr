@@ -126,7 +126,7 @@ dht = ["dep:mainline", "__client"]
 relays = ["dep:url", "dep:reqwest", "dep:futures-buffered", "__client"]
 
 # Extra
-## Use [LmdbCache][extra::lmdb_cache::LmdbCache] implementation.
+## Use the `LmdbCache` implementation.
 lmdb-cache = ["dep:heed", "dep:byteorder", "dep:page_size"]
 ## Enables [endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) spec.
 ##
@@ -151,7 +151,7 @@ full-client = ["dht", "relays"]
 ## Extra features that might benefit most but not all developers building apps using Pkarr.
 ##
 ## Only available if the `client` module is enabled.
-extra = ["endpoints", "lmdb-cache", "reqwest-resolve", "tls", "reqwest-builder"]
+extra = ["lmdb-cache", "reqwest-builder"]
 ## Use all features including the `full-client` and `extra` features.
 full = ["full-client", "extra"]
 
@@ -185,3 +185,11 @@ required-features = ["reqwest-builder"]
 [[example]]
 name = "http-serve"
 required-features = ["tls"]
+
+[[example]]
+name = "publish"
+required-features = ["full-client"]
+
+[[example]]
+name = "resolve"
+required-features = ["full-client"]
