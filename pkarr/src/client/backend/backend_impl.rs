@@ -70,15 +70,14 @@ impl Backend {
     pub(in crate::client) async fn publish(
         &self,
         signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
     ) -> Result<StoredNodeCount, PublishError> {
         match self {
             #[cfg(relays)]
-            Self::Relays(relays) => relays.publish(signed_packet, cas).await,
+            Self::Relays(relays) => relays.publish(signed_packet).await,
             #[cfg(dht)]
-            Self::Dht(dht) => dht.publish(signed_packet, cas).await,
+            Self::Dht(dht) => dht.publish(signed_packet).await,
             #[cfg(all(dht, relays))]
-            Self::Both(both) => both.publish(signed_packet, cas).await,
+            Self::Both(both) => both.publish(signed_packet).await,
         }
     }
 

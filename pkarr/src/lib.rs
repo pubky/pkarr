@@ -55,5 +55,5 @@ pub mod errors {
     pub use super::types::errors::*;
 
     #[cfg(client)]
-    pub use super::client::{BuildError, ConcurrencyError, PublishError, ResolveError};
+    pub use super::client::{BuildError, PublishError, ResolveError};
 }

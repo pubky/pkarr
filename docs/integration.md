@@ -220,7 +220,7 @@ async fn republish_loop(
     loop {
         let packet = build_packet();
 
-        match client.publish(&packet, None).await {
+        match client.publish(&packet).await {
             Ok(stored_on) => {
                 println!("Republished successfully; stored on at least {stored_on} DHT nodes")
             }
@@ -232,44 +232,36 @@ async fn republish_loop(
 }
 ```
 
-### Safe Republishing with CAS
+### Coordinated Republishing
 
-When multiple processes update the same key, use CAS (compare-and-swap) to prevent lost updates.
-The client does not serialize concurrent publishes for the same public key; if your application can build multiple different packets for one key at the same time, serialize those publishes in your own code before calling `publish`.
+The client does not serialize concurrent publishes for the same public key. If your application can build multiple different packets for one key at the same time, serialize those publishes in your own code before calling `publish`.
 
 ```rust
 use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
-use ntimestamp::Timestamp;
 
-async fn safe_republish(
+async fn coordinated_republish(
     client: &Client,
     keypair: &Keypair,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Get the most recent version
-    let (current_packet, cas): (SignedPacket, Option<Timestamp>) =
-        match client
-            .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
-            .await
-        {
-            Ok(existing) => {
-                // Rebuild packet with same or updated records
-                let new_packet = SignedPacket::builder()
-                    // Copy existing records you want to keep
-                    .txt("key".try_into()?, "updated_value".try_into()?, 300)
-                    .sign(keypair)?;
-                (new_packet, Some(existing.timestamp()))
-            }
-            Err(pkarr::errors::ResolveError::NotFound) => {
-                let new_packet = SignedPacket::builder()
-                    .txt("key".try_into()?, "value".try_into()?, 300)
-                    .sign(keypair)?;
-                (new_packet, None)
-            }
-            Err(error) => return Err(error.into()),
-        };
+    let current_packet: SignedPacket = match client
+        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .await
+    {
+        Ok(_existing) => {
+            // Rebuild packet with same or updated records
+            SignedPacket::builder()
+                // Copy existing records you want to keep
+                .txt("key".try_into()?, "updated_value".try_into()?, 300)
+                .sign(keypair)?
+        }
+        Err(pkarr::errors::ResolveError::NotFound) => SignedPacket::builder()
+            .txt("key".try_into()?, "value".try_into()?, 300)
+            .sign(keypair)?,
+        Err(error) => return Err(error.into()),
+    };
 
-    // Publish with CAS - fails if someone else published in between
-    let stored_on = client.publish(&current_packet, cas).await?;
+    let stored_on = client.publish(&current_packet).await?;
     println!("Published successfully; stored on at least {stored_on} DHT nodes");
     Ok(())
 }
@@ -281,7 +273,7 @@ Use [`ResolvePolicy::CacheFirst`] for normal application lookups. It returns fre
 
 Use [`ResolvePolicy::LocalOrRelayCacheOnly`] when a cached packet is acceptable even if it is expired.
 
-Use [`ResolvePolicy::DhtNetworkOnly`] when you need the most recent packet observed from the network, for example before publishing with CAS.
+Use [`ResolvePolicy::DhtNetworkOnly`] when you need the most recent packet observed from the network, for example before rebuilding and publishing an updated packet.
 
 ## Next Steps
 

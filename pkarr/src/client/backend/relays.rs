@@ -39,11 +39,10 @@ impl RelaysClient {
     pub(super) async fn publish(
         &self,
         signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
     ) -> Result<StoredNodeCount, PublishError> {
         let mut futures = FuturesUnorderedBounded::new(self.relays.len());
         for relay in &self.relays {
-            futures.push(relay.publish(signed_packet, cas));
+            futures.push(relay.publish(signed_packet));
         }
 
         let mut accumulator = PublishResultAccumulator::default();

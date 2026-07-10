@@ -100,30 +100,6 @@ async function runExample() {
         }
         console.log();
         
-        // TODO: There is something wrong with the CAS publishing
-        // console.log('🔄 Compare-and-Swap Publishing');
-        
-        // // Create an updated packet
-        // builder.clear();
-        // builder.addTxtRecord("_service", "v=2;type=web;updated=true", 3600);
-        // builder.addARecord("www", "192.168.1.200", 3600);
-        
-        // const updatedPacket = builder.buildAndSign(keypair);
-        
-        // if (signedPacket) {
-        //     console.log(`Current timestamp: ${new Date(signedPacket.timestampMs / 1000).toISOString()}`);
-        //     console.log(`Update timestamp: ${new Date(updatedPacket.timestampMs / 1000).toISOString()}`);
-            
-        //     const casTimestamp = signedPacket.timestampMs / 1000;
-        //     try {
-        //         await client.publish(updatedPacket, casTimestamp);
-        //         console.log('Compare-and-swap publish successful');
-        //     } catch (error) {
-        //         console.log(`Compare-and-swap failed: ${error}`);
-        //     }
-        // }
-        // console.log();
-        
         console.log('🧰 Utility Functions');
         
         // Public key validation
@@ -179,4 +155,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runExample }; 
+module.exports = { runExample };

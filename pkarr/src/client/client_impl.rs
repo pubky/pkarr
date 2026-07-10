@@ -11,7 +11,7 @@ use crate::{
 use super::backend::Backend;
 use super::builder::Config;
 use super::errors::ResolveError;
-use super::{BuildError, ConcurrencyError, PublishError};
+use super::{BuildError, PublishError};
 
 /// Pkarr client for publishing and resolving [`SignedPacket`]s over the configured networks.
 #[derive(Clone, Debug)]
@@ -72,7 +72,7 @@ impl Client {
     ///
     /// The client does not serialize concurrent publishes for the same public key. If
     /// multiple tasks may publish different packets for one key, coordinate those
-    /// publishes in application code and use `cas` to detect network-side conflicts.
+    /// publishes in application code.
     ///
     /// # Returns
     ///
@@ -88,24 +88,16 @@ impl Client {
     ///
     /// Returns an error when publishing fails on the configured backend, or when the
     /// local cache already contains a more recent packet for the same public key.
-    pub async fn publish(
-        &self,
-        packet: &SignedPacket,
-        cas: Option<Timestamp>,
-    ) -> Result<StoredNodeCount, PublishError> {
-        async_compat_if_necessary(self.publish_inner(packet, cas)).await
+    pub async fn publish(&self, packet: &SignedPacket) -> Result<StoredNodeCount, PublishError> {
+        async_compat_if_necessary(self.publish_inner(packet)).await
     }
 
-    async fn publish_inner(
-        &self,
-        packet: &SignedPacket,
-        cas: Option<Timestamp>,
-    ) -> Result<StoredNodeCount, PublishError> {
+    async fn publish_inner(&self, packet: &SignedPacket) -> Result<StoredNodeCount, PublishError> {
         if let Some(cached) = self.get_cached(&packet.public_key()) {
-            validate_cached_publish(packet, &cached, cas)?;
+            validate_cached_publish(packet, &cached)?;
         }
 
-        let stored_on = self.backend.publish(packet, cas).await?;
+        let stored_on = self.backend.publish(packet).await?;
         self.update_cache_if_needed(packet);
 
         Ok(stored_on)
@@ -212,16 +204,9 @@ impl Client {
 fn validate_cached_publish(
     packet: &SignedPacket,
     cached: &SignedPacket,
-    cas: Option<Timestamp>,
 ) -> Result<(), PublishError> {
     if cached.more_recent_than(packet) {
-        return Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent));
-    }
-
-    if let Some(cas) = cas {
-        if cached.timestamp().as_u64() > cas.as_u64() {
-            return Err(PublishError::Concurrency(ConcurrencyError::CasFailed));
-        }
+        return Err(PublishError::NotMostRecent);
     }
 
     Ok(())

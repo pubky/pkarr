@@ -79,7 +79,7 @@ To publish a signed packet, it should be converted to a DHT `put message` argume
 | sig               | signature           |
 | v                 | encoded dns packet  |
 
-The `cas`, and `salt` fields are ignored.
+The `salt` field is ignored.
 
 To lookups a `public_key`, DHT `get message` on the `sha1` hash of the public_key (ignoring `salt`), and optionally using the `timestamp` of the most recent known signed packet for that public_key, as a `seq` argument:
 

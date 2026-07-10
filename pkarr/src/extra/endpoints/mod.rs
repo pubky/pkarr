@@ -185,7 +185,7 @@ mod tests {
 
             let signed_packet = builder.sign(&keypair).unwrap();
 
-            client.publish(&signed_packet, None).await.unwrap();
+            client.publish(&signed_packet).await.unwrap();
 
             keypair.public_key()
         })

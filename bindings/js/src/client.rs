@@ -54,17 +54,10 @@ impl Client {
     ///
     /// # Arguments
     /// * `signed_packet` - The signed packet to publish
-    /// * `cas_timestamp` - Optional compare-and-swap timestamp in milliseconds
     #[wasm_bindgen(js_name = "publish")]
-    pub async fn publish(
-        &self,
-        signed_packet: &super::SignedPacket,
-        cas_timestamp: Option<f64>,
-    ) -> Result<(), JsValue> {
-        let cas = Self::convert_cas_timestamp(cas_timestamp)?;
-
+    pub async fn publish(&self, signed_packet: &super::SignedPacket) -> Result<(), JsValue> {
         self.client
-            .publish(&signed_packet.inner, cas)
+            .publish(&signed_packet.inner)
             .await
             .map_err(|e| ClientError::NetworkError(format!("publish failed: {e}")))?;
 
@@ -234,31 +227,5 @@ impl Client {
             }
             .into()
         })
-    }
-
-    /// Convert and validate CAS timestamp
-    fn convert_cas_timestamp(
-        cas_timestamp: Option<f64>,
-    ) -> Result<Option<pkarr::Timestamp>, JsValue> {
-        match cas_timestamp {
-            Some(ts) => {
-                if ts < 0.0 {
-                    return Err(ClientError::ValidationError {
-                        context: "CAS timestamp".to_string(),
-                        message: "Timestamp cannot be negative".to_string(),
-                    }
-                    .into());
-                }
-                if ts > u64::MAX as f64 {
-                    return Err(ClientError::ValidationError {
-                        context: "CAS timestamp".to_string(),
-                        message: "Timestamp too large".to_string(),
-                    }
-                    .into());
-                }
-                Ok(Some(pkarr::Timestamp::from(ts as u64)))
-            }
-            None => Ok(None),
-        }
     }
 }

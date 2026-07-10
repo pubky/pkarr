@@ -73,24 +73,17 @@ impl RelayClient {
     /// Returns an error when the relay request fails, the relay returns a
     /// non-success status, the request times out, or the relay returns a
     /// malformed stored-node count header.
-    pub async fn publish(
-        &self,
-        packet: &SignedPacket,
-        cas: Option<Timestamp>,
-    ) -> Result<StoredNodeCount, RelayError> {
+    pub async fn publish(&self, packet: &SignedPacket) -> Result<StoredNodeCount, RelayError> {
         let url = self.build_url(&packet.public_key(), None);
 
-        let mut request = self
+        let response = self
             .client
             .put(url.clone())
             .timeout(self.timeout)
-            .body(packet.to_relay_payload());
-
-        if let Some(cas) = cas {
-            request = request.header(header::IF_MATCH, cas.as_u64().to_string());
-        }
-
-        let response = request.send().await.map_err(RelayError::from_reqwest)?;
+            .body(packet.to_relay_payload())
+            .send()
+            .await
+            .map_err(RelayError::from_reqwest)?;
         let status = response.status();
 
         if status.is_success() {
@@ -254,14 +247,6 @@ pub enum RelayError {
     #[error("relay has a more recent signed packet")]
     NotMostRecent,
 
-    /// Relay compare-and-swap failed.
-    #[error("relay compare-and-swap failed")]
-    CasFailed,
-
-    /// Relay requires compare-and-swap.
-    #[error("relay requires compare-and-swap")]
-    ConflictRisk,
-
     /// Relay could not complete a DHT query.
     #[error("relay DHT query is unavailable")]
     DhtUnavailable,
@@ -298,9 +283,7 @@ impl RelayError {
     fn from_status(status: StatusCode) -> Self {
         match status {
             StatusCode::BAD_REQUEST => Self::BadRequest,
-            StatusCode::CONFLICT => Self::NotMostRecent,
-            StatusCode::PRECONDITION_FAILED => Self::CasFailed,
-            StatusCode::PRECONDITION_REQUIRED => Self::ConflictRisk,
+            StatusCode::CONFLICT | StatusCode::PRECONDITION_REQUIRED => Self::NotMostRecent,
             StatusCode::SERVICE_UNAVAILABLE => Self::DhtUnavailable,
             status => Self::UnexpectedStatus(status),
         }
@@ -442,7 +425,7 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let stored_on = client.publish(&signed_packet, None).await.unwrap();
+        let stored_on = client.publish(&signed_packet).await.unwrap();
 
         assert_eq!(stored_on, 7);
     }
@@ -462,7 +445,7 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let error = client.publish(&signed_packet, None).await.unwrap_err();
+        let error = client.publish(&signed_packet).await.unwrap_err();
 
         assert!(matches!(error, RelayError::InvalidDhtStoredNodesHeader));
     }
@@ -477,7 +460,7 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let stored_on = client.publish(&signed_packet, None).await.unwrap();
+        let stored_on = client.publish(&signed_packet).await.unwrap();
 
         assert_eq!(stored_on, 1);
     }

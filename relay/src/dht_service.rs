@@ -2,11 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use http::StatusCode;
 use pkarr::dht::{
-    DhtClient, DhtInfo, ReportPolicy, ResolveError as DhtResolveError, ResolveReport,
-    ResolveResponse,
+    DhtClient, DhtInfo, PublishError as DhtPublishError, ReportPolicy,
+    ResolveError as DhtResolveError, ResolveReport, ResolveResponse,
 };
 use pkarr::extra::lmdb_cache::LmdbCache;
-use pkarr::mainline::errors::ConcurrencyError;
 use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, Timestamp};
 use tracing::warn;
 
@@ -53,7 +52,6 @@ impl DhtService {
     pub(crate) async fn publish(
         &self,
         signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
         real_ip: Option<&RealIp>,
     ) -> Result<StoredNodeCount, Error> {
         let public_key = signed_packet.public_key();
@@ -62,14 +60,14 @@ impl DhtService {
             if cached.more_recent_than(signed_packet) {
                 return Err(Error::new(
                     StatusCode::CONFLICT,
-                    ConcurrencyError::NotMostRecent,
+                    DhtPublishError::NotMostRecent,
                 ));
             }
         }
 
         self.enforce_user_dht_rate_limit(real_ip)?;
 
-        let stored_on = self.dht.publish(signed_packet, cas).await?;
+        let stored_on = self.dht.publish(signed_packet).await?;
         let warnings = self.report_policy.classify_publish_result(stored_on);
         if !warnings.is_empty() {
             warn!(

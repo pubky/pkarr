@@ -44,38 +44,13 @@ pub enum PublishError {
         description: String,
     },
 
-    /// A different [SignedPacket][crate::SignedPacket] is being concurrently
-    /// published for the same [PublicKey][crate::PublicKey].
-    #[error(transparent)]
-    Concurrency(#[from] ConcurrencyError),
+    /// Found a more recent [SignedPacket][crate::SignedPacket].
+    #[error("found a more recent SignedPacket")]
+    NotMostRecent,
 
     /// All responses were unexpected, check debug logs.
     #[error("all responses were unexpected, check debug logs")]
     UnexpectedResponses,
-}
-
-/// Errors that require resolving most recent
-/// [SignedPacket][crate::SignedPacket] before publishing.
-///
-/// These errors mean a publish could overwrite a newer packet. Resolve the
-/// latest [SignedPacket][crate::SignedPacket] before publishing again.
-#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ConcurrencyError {
-    /// A different [SignedPacket][crate::SignedPacket] is being concurrently
-    /// published for the same [PublicKey][crate::PublicKey].
-    #[error("a different SignedPacket is being concurrently published for the same PublicKey")]
-    ConflictRisk,
-
-    /// Found a more recent SignedPacket in the client's cache.
-    #[error("found a more recent SignedPacket in the client's cache")]
-    NotMostRecent,
-
-    /// Compare and swap failed; there is a more recent SignedPacket than the
-    /// one seen before publishing.
-    #[error(
-        "compare and swap failed; there is a more recent SignedPacket than the one seen before publishing"
-    )]
-    CasFailed,
 }
 
 /// Errors occurring during resolving a [SignedPacket][crate::SignedPacket].
@@ -119,15 +94,7 @@ impl From<crate::dht::PublishError> for PublishError {
             crate::dht::PublishError::ErrorResponse { code, description } => {
                 PublishError::Rejected { code, description }
             }
-            crate::dht::PublishError::ConflictRisk => {
-                PublishError::Concurrency(ConcurrencyError::ConflictRisk)
-            }
-            crate::dht::PublishError::NotMostRecent => {
-                PublishError::Concurrency(ConcurrencyError::NotMostRecent)
-            }
-            crate::dht::PublishError::CasFailed => {
-                PublishError::Concurrency(ConcurrencyError::CasFailed)
-            }
+            crate::dht::PublishError::NotMostRecent => PublishError::NotMostRecent,
         }
     }
 }
@@ -137,9 +104,7 @@ impl From<RelayError> for PublishError {
     fn from(value: RelayError) -> Self {
         match value {
             RelayError::Timeout | RelayError::DhtUnavailable => PublishError::NoResponses,
-            RelayError::NotMostRecent => PublishError::Concurrency(ConcurrencyError::NotMostRecent),
-            RelayError::CasFailed => PublishError::Concurrency(ConcurrencyError::CasFailed),
-            RelayError::ConflictRisk => PublishError::Concurrency(ConcurrencyError::ConflictRisk),
+            RelayError::NotMostRecent => PublishError::NotMostRecent,
             _ => PublishError::UnexpectedResponses,
         }
     }

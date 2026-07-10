@@ -1,7 +1,7 @@
 use axum::extract::FromRequestParts;
-use http::{header, request::Parts, StatusCode};
+use http::{header, request::Parts};
 use httpdate::HttpDate;
-use pkarr::{PublicKey, Timestamp};
+use pkarr::PublicKey;
 use serde::{de::Error, Deserialize, Deserializer};
 use std::str::FromStr;
 
@@ -22,30 +22,6 @@ impl<'de> Deserialize<'de> for PublicKeyParam {
     }
 }
 
-pub(crate) struct IfMatch(pub Option<Timestamp>);
-
-impl<S> FromRequestParts<S> for IfMatch
-where
-    S: Send + Sync,
-{
-    type Rejection = RelayError;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let cas = parts
-            .headers
-            .get(header::IF_MATCH)
-            .map(|h| h.to_str())
-            .transpose()
-            .map_err(invalid_header)?
-            .map(|s| s.parse::<u64>())
-            .transpose()
-            .map_err(invalid_header)?
-            .map(Timestamp::from);
-
-        Ok(Self(cas))
-    }
-}
-
 pub(crate) struct IfModifiedSince(pub Option<HttpDate>);
 
 impl<S> FromRequestParts<S> for IfModifiedSince
@@ -63,8 +39,4 @@ where
                 .and_then(|s| HttpDate::from_str(s).ok()),
         ))
     }
-}
-
-fn invalid_header<T>(_error: T) -> RelayError {
-    RelayError::new(StatusCode::BAD_REQUEST, "Invalid IF_MATCH header value")
 }

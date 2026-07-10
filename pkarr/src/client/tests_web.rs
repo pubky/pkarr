@@ -23,7 +23,7 @@ async fn publish_resolve() {
     let a = Client::builder().relays(&relays).unwrap().build().unwrap();
     let b = Client::builder().relays(&relays).unwrap().build().unwrap();
 
-    a.publish(&signed_packet, None).await.unwrap();
+    a.publish(&signed_packet).await.unwrap();
 
     let resolved = b
         .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
@@ -104,7 +104,7 @@ async fn from_disk_cache() {
         .build()
         .unwrap();
 
-    a.publish(&signed_packet, None).await.unwrap();
+    a.publish(&signed_packet).await.unwrap();
 
     let resolved = b
         .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
@@ -139,7 +139,7 @@ async fn not_modified() {
         .build()
         .unwrap();
 
-    a.publish(&signed_packet, None).await.unwrap();
+    a.publish(&signed_packet).await.unwrap();
 
     let resolved = b
         .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)

@@ -22,10 +22,9 @@ impl BothBackend {
     pub(super) async fn publish(
         &self,
         signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
     ) -> Result<StoredNodeCount, PublishError> {
-        let relay_publish = self.relays.publish(signed_packet, cas);
-        let dht_publish = self.dht.publish(signed_packet, cas);
+        let relay_publish = self.relays.publish(signed_packet);
+        let dht_publish = self.dht.publish(signed_packet);
         let (relay_result, dht_result) = tokio::join!(relay_publish, dht_publish);
 
         let mut accumulator = PublishResultAccumulator::default();

@@ -22,9 +22,8 @@ impl DhtBackend {
     pub(super) async fn publish(
         &self,
         signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
     ) -> Result<StoredNodeCount, PublishError> {
-        let stored_on = self.client.publish(signed_packet, cas).await?;
+        let stored_on = self.client.publish(signed_packet).await?;
         self.log_publish_warnings(&signed_packet.public_key(), stored_on);
         Ok(stored_on)
     }

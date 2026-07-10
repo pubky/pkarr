@@ -34,12 +34,10 @@ impl DhtClient {
     pub async fn publish(
         &self,
         signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
     ) -> Result<StoredNodeCount, PublishError> {
-        let cas = cas.map(|timestamp| timestamp.as_u64() as i64);
         Ok(self
             .inner
-            .put_mutable(signed_packet.into(), cas)
+            .put_mutable(signed_packet.into(), None)
             .await?
             .stored_at)
     }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::client::{ConcurrencyError, PublishError};
+use crate::client::PublishError;
 use crate::StoredNodeCount;
 
 /// Accumulates backend publish responses and selects the result returned to the client.
@@ -16,8 +16,7 @@ impl PublishResultAccumulator {
     ///
     /// Successful publishes contribute to the maximum stored-node count returned
     /// to callers. Errors are counted by kind so the final result can prefer
-    /// blocking concurrency errors, tolerate relay CAS races when enough
-    /// backends succeeded, or otherwise return the most common error.
+    /// blocking concurrency errors or otherwise return the most common error.
     pub(super) fn record_result(&mut self, result: Result<StoredNodeCount, PublishError>) {
         match result {
             Ok(stored_on) => {
@@ -38,30 +37,21 @@ impl PublishResultAccumulator {
             most_common_error(self.errors, PublishError::UnexpectedResponses);
 
         match error {
-            // A relay CAS failure can be self-induced: one relay gateway may
-            // publish to the shared DHT before another gateway handles the same
-            // CAS request. Accept that split when successes cover the failures.
-            PublishError::Concurrency(_) if self.successes > 0 && self.successes >= error_count => {
+            PublishError::NotMostRecent if self.successes > 0 && self.successes >= error_count => {
                 Ok(self.max_stored_on)
             }
-            PublishError::Concurrency(_) => Err(error),
+            PublishError::NotMostRecent => Err(error),
             _ if self.successes > 0 => Ok(self.max_stored_on),
             _ => Err(error),
         }
     }
 
     fn blocking_concurrency_error(&self) -> Option<PublishError> {
-        [
-            ConcurrencyError::ConflictRisk,
-            ConcurrencyError::NotMostRecent,
-        ]
-        .into_iter()
-        .map(PublishError::Concurrency)
-        .find(|error| {
-            self.errors
-                .get(error)
-                .is_some_and(|count| *count >= self.successes)
-        })
+        let error = PublishError::NotMostRecent;
+        self.errors
+            .get(&error)
+            .is_some_and(|count| *count >= self.successes)
+            .then_some(error)
     }
 }
 
@@ -80,14 +70,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn into_result_checks_all_high_priority_concurrency_errors() {
+    fn into_result_prefers_blocking_concurrency_errors() {
         let mut accumulator = PublishResultAccumulator::default();
         for result in [
             Ok(3),
             Ok(5),
-            Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent)),
-            Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent)),
-            Err(PublishError::Concurrency(ConcurrencyError::ConflictRisk)),
+            Err(PublishError::NotMostRecent),
+            Err(PublishError::NotMostRecent),
             Err(PublishError::NoResponses),
             Err(PublishError::NoResponses),
             Err(PublishError::NoResponses),
@@ -95,19 +84,7 @@ mod tests {
             accumulator.record_result(result);
         }
 
-        assert_eq!(
-            accumulator.into_result(),
-            Err(PublishError::Concurrency(ConcurrencyError::NotMostRecent))
-        );
-    }
-
-    #[test]
-    fn into_result_accepts_cas_failure_tie_after_success() {
-        let mut accumulator = PublishResultAccumulator::default();
-        accumulator.record_result(Ok(7));
-        accumulator.record_result(Err(PublishError::Concurrency(ConcurrencyError::CasFailed)));
-
-        assert_eq!(accumulator.into_result(), Ok(7));
+        assert_eq!(accumulator.into_result(), Err(PublishError::NotMostRecent));
     }
 
     #[test]

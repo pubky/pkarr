@@ -78,14 +78,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Publishing {} ...", keypair.public_key());
 
-    let stored_on = client.publish(&signed_packet, None).await?;
+    let stored_on = client.publish(&signed_packet).await?;
 
     println!("Published successfully; stored on at least {stored_on} DHT nodes");
     Ok(())
 }
 ```
 
-Publishing sends your signed packet to the Mainline DHT and configured relays. The returned `stored_on` value is the maximum count reported by any successful backend, not a sum, because backends may store the packet on the same DHT nodes. It means the packet was stored on at least that many DHT nodes. The second argument to `publish()` is an optional CAS (compare-and-swap) timestamp for conflict detection.
+Publishing sends your signed packet to the Mainline DHT and configured relays. The returned `stored_on` value is the maximum count reported by any successful backend, not a sum, because backends may store the packet on the same DHT nodes. It means the packet was stored on at least that many DHT nodes.
 
 ## Resolve
 
@@ -156,7 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Publish to DHT and relays
     println!("Publishing...");
-    let stored_on = client.publish(&signed_packet, None).await?;
+    let stored_on = client.publish(&signed_packet).await?;
     println!("Published successfully; stored on at least {stored_on} DHT nodes");
 
     // 4. Resolve it back
