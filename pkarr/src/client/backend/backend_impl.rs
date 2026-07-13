@@ -1,35 +1,34 @@
-use ntimestamp::Timestamp;
 #[cfg(relays)]
 use std::time::Duration;
 #[cfg(relays)]
 use url::Url;
 
-use crate::client::errors::ResolveError;
-use crate::client::{BuildError, PublishError};
+use crate::client::{BuildError, PublishError, ResolveError};
 #[cfg(dht)]
 use crate::dht::{DhtClient, ReportPolicy};
-use crate::{PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount};
+use crate::{PublicKey, SignedPacket, StoredNodeCount};
 
 #[cfg(all(dht, relays))]
-use super::both::BothBackend;
+use super::combined::CombinedBackend;
 #[cfg(dht)]
 use super::dht::DhtBackend;
 #[cfg(relays)]
-use super::relays::RelaysClient;
+use super::relay::RelayBackend;
+use super::BackendResolvePolicy;
 
 #[derive(Debug)]
 pub(in crate::client) enum Backend {
     #[cfg(relays)]
-    Relays(RelaysClient),
+    Relay(RelayBackend),
     #[cfg(dht)]
     Dht(DhtBackend),
     #[cfg(all(dht, relays))]
-    Both(BothBackend),
+    Combined(CombinedBackend),
 }
 
 impl Backend {
     #[cfg(relays)]
-    pub(in crate::client) fn relays(
+    pub(in crate::client) fn relay(
         relays: Vec<Url>,
         request_timeout: Duration,
         reqwest_client: Option<reqwest::Client>,
@@ -37,9 +36,9 @@ impl Backend {
         if relays.is_empty() {
             return Err(BuildError::EmptyListOfRelays);
         }
-        RelaysClient::new(relays, request_timeout, reqwest_client)
-            .map(Self::Relays)
-            .map_err(BuildError::RelayBuildError)
+        let backend = RelayBackend::new(relays, request_timeout, reqwest_client)
+            .map_err(BuildError::RelayBuildError)?;
+        Ok(Self::Relay(backend))
     }
 
     #[cfg(dht)]
@@ -47,21 +46,20 @@ impl Backend {
         config: mainline::Config,
         report_policy: ReportPolicy,
     ) -> Result<Self, BuildError> {
-        DhtClient::build(config)
-            .map(|client| Self::Dht(super::dht::DhtBackend::new(client, report_policy)))
-            .map_err(BuildError::DhtBuildError)
+        let client = DhtClient::build(config).map_err(BuildError::DhtBuildError)?;
+        Ok(Self::Dht(DhtBackend::new(client, report_policy)))
     }
 
-    /// Merge a DHT backend with a relays backend into a combined backend.
+    /// Combine a DHT backend with a relay backend into a combined backend.
     ///
     /// Returns [`Some`] when one backend is [`Backend::Dht`] and the other is
-    /// [`Backend::Relays`], preserving both as a [`Backend::Both`]. Returns
+    /// [`Backend::Relay`], preserving both as a [`Backend::Combined`]. Returns
     /// [`None`] for any unsupported pairing.
-    pub(in crate::client) fn checked_merge(self, other: Self) -> Option<Self> {
+    pub(in crate::client) fn checked_combine(self, other: Self) -> Option<Self> {
         match (self, other) {
             #[cfg(all(dht, relays))]
-            (Self::Dht(dht), Self::Relays(relays)) | (Self::Relays(relays), Self::Dht(dht)) => {
-                Some(Self::Both(BothBackend::new(relays, dht)))
+            (Self::Dht(dht), Self::Relay(relay)) | (Self::Relay(relay), Self::Dht(dht)) => {
+                Some(Self::Combined(CombinedBackend::new(relay, dht)))
             }
             _ => None,
         }
@@ -69,31 +67,30 @@ impl Backend {
 
     pub(in crate::client) async fn publish(
         &self,
-        signed_packet: &SignedPacket,
+        packet: &SignedPacket,
     ) -> Result<StoredNodeCount, PublishError> {
         match self {
             #[cfg(relays)]
-            Self::Relays(relays) => relays.publish(signed_packet).await,
+            Self::Relay(relay) => relay.publish(packet).await,
             #[cfg(dht)]
-            Self::Dht(dht) => dht.publish(signed_packet).await,
+            Self::Dht(dht) => dht.publish(packet).await,
             #[cfg(all(dht, relays))]
-            Self::Both(both) => both.publish(signed_packet).await,
+            Self::Combined(combined) => combined.publish(packet).await,
         }
     }
 
     pub(in crate::client) async fn resolve(
         &self,
         public_key: &PublicKey,
-        policy: ResolvePolicy,
-        more_recent_than: Option<Timestamp>,
+        policy: BackendResolvePolicy<'_>,
     ) -> Result<SignedPacket, ResolveError> {
         match self {
             #[cfg(relays)]
-            Self::Relays(relays) => relays.resolve(public_key, policy, more_recent_than).await,
+            Self::Relay(relay) => relay.resolve(public_key, policy).await,
             #[cfg(dht)]
-            Self::Dht(dht) => dht.resolve(public_key, policy, more_recent_than).await,
+            Self::Dht(dht) => dht.resolve(public_key, policy).await,
             #[cfg(all(dht, relays))]
-            Self::Both(both) => both.resolve(public_key, policy, more_recent_than).await,
+            Self::Combined(combined) => combined.resolve(public_key, policy).await,
         }
     }
 }

@@ -1,9 +1,11 @@
-use ntimestamp::Timestamp;
-
-use crate::dht::{DhtClient, ReportPolicy, ResolveReport};
-use crate::{PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount};
+use crate::dht::{DhtClient, ReportPolicy, ResolveOutcome, ResolveReport, ResolveResponse};
+use crate::{PublicKey, SignedPacket, StoredNodeCount};
 
 use crate::client::{PublishError, ResolveError};
+
+use super::{
+    resolve_result_accumulator::ResolveResultAccumulator, BackendResolvePolicy, CacheContext,
+};
 
 #[derive(Debug)]
 pub(in crate::client) struct DhtBackend {
@@ -31,24 +33,51 @@ impl DhtBackend {
     pub(super) async fn resolve(
         &self,
         public_key: &PublicKey,
-        policy: ResolvePolicy,
-        more_recent_than: Option<Timestamp>,
+        policy: BackendResolvePolicy<'_>,
     ) -> Result<SignedPacket, ResolveError> {
-        if matches!(policy, ResolvePolicy::LocalOrRelayCacheOnly) {
-            return Err(ResolveError::NotFound);
+        match policy {
+            BackendResolvePolicy::LocalOrRelayCacheOnly => Err(ResolveError::NotFound),
+            BackendResolvePolicy::CacheFirst(context) => {
+                self.resolve_cache_first(public_key, context).await
+            }
+            BackendResolvePolicy::DhtNetworkOnly => {
+                let response = self.client.resolve(public_key, None).await;
+                let outcome = self.complete_resolve(public_key, response).await;
+                outcome.most_recent.map_err(Into::into)
+            }
         }
+    }
 
-        let response = self.client.resolve(public_key, more_recent_than).await;
+    async fn resolve_cache_first(
+        &self,
+        public_key: &PublicKey,
+        cache_context: CacheContext<'_>,
+    ) -> Result<SignedPacket, ResolveError> {
+        let response = self
+            .client
+            .resolve(public_key, cache_context.dht_request_lower_bound())
+            .await;
 
-        if matches!(policy, ResolvePolicy::CacheFirst) {
-            if let Some(packet) = response.first() {
-                return Ok(packet.clone());
+        let mut accumulator = ResolveResultAccumulator::new(Some(cache_context));
+        if let Some(packet) = response.first() {
+            if accumulator.record_result(Ok(packet.clone())) {
+                return accumulator.into_result();
             }
         }
 
+        let outcome = self.complete_resolve(public_key, response).await;
+        accumulator.record_result(outcome.most_recent.map_err(Into::into));
+        accumulator.into_result()
+    }
+
+    async fn complete_resolve(
+        &self,
+        public_key: &PublicKey,
+        response: ResolveResponse,
+    ) -> ResolveOutcome {
         let outcome = response.complete().await;
         self.log_resolve_warnings(public_key, &outcome.report);
-        outcome.most_recent.map_err(Into::into)
+        outcome
     }
 
     fn log_publish_warnings(&self, public_key: &PublicKey, stored_on: StoredNodeCount) {

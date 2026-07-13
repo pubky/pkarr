@@ -1,4 +1,4 @@
-//! Client wasm/web tests
+//! Client WASM browser tests.
 
 use wasm_bindgen_test::*;
 

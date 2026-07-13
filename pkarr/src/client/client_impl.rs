@@ -1,4 +1,3 @@
-use ntimestamp::Timestamp;
 use std::future::Future;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -8,7 +7,7 @@ use crate::{
     StoredNodeCount,
 };
 
-use super::backend::Backend;
+use super::backend::{Backend, BackendResolvePolicy, CacheContext};
 use super::builder::Config;
 use super::errors::ResolveError;
 use super::{BuildError, PublishError};
@@ -34,12 +33,12 @@ impl Client {
         let cache = build_cache(config.cache_size, config.cache);
 
         #[cfg(relays)]
-        let relays = config
+        let relay = config
             .relays
-            .map(|relays| Backend::relays(relays, config.request_timeout, config.reqwest_client))
+            .map(|relays| Backend::relay(relays, config.request_timeout, config.reqwest_client))
             .transpose()?;
         #[cfg(not(relays))]
-        let relays: Option<Backend> = None;
+        let relay: Option<Backend> = None;
 
         #[cfg(dht)]
         let dht = config
@@ -49,12 +48,12 @@ impl Client {
         #[cfg(not(dht))]
         let dht: Option<Backend> = None;
 
-        let backend = match (dht, relays) {
+        let backend = match (dht, relay) {
             (Some(dht), None) => dht,
-            (None, Some(relays)) => relays,
+            (None, Some(relay)) => relay,
             (None, None) => return Err(BuildError::NoNetwork),
-            (Some(dht), Some(relays)) => dht
-                .checked_merge(relays)
+            (Some(dht), Some(relay)) => dht
+                .checked_combine(relay)
                 .expect("failed to merge dht and relays backends"),
         };
 
@@ -103,7 +102,21 @@ impl Client {
         Ok(stored_on)
     }
 
-    /// Resolves a signed packet for `key` according to `policy`.
+    /// Resolves a signed packet for `key` according to [`ResolvePolicy`].
+    ///
+    /// With [`ResolvePolicy::CacheFirst`], a fresh cached packet is returned
+    /// immediately. An expired cached packet becomes a freshness floor while
+    /// network responses are aggregated, so responses below that floor or
+    /// expired under the client's TTL bounds do not stop pending resolution
+    /// attempts. If no fresh response is found, the newest expired response may
+    /// still update the cache before resolution returns [`ResolveError::NotFound`].
+    /// Successful network results for every policy update the local cache
+    /// without replacing a newer cached packet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResolveError`] when no acceptable packet is found or the
+    /// configured backends fail to resolve one.
     pub async fn resolve(
         &self,
         key: &PublicKey,
@@ -122,7 +135,7 @@ impl Client {
             ResolvePolicy::CacheFirst => self.resolve_cache_first(key).await,
             ResolvePolicy::DhtNetworkOnly => {
                 self.backend
-                    .resolve(key, ResolvePolicy::DhtNetworkOnly, None)
+                    .resolve(key, BackendResolvePolicy::DhtNetworkOnly)
                     .await
             }
         }?;
@@ -135,33 +148,31 @@ impl Client {
         if let Some(packet) = self.get_cached(key) {
             return Ok(packet);
         }
-
         self.backend
-            .resolve(key, ResolvePolicy::LocalOrRelayCacheOnly, None)
+            .resolve(key, BackendResolvePolicy::LocalOrRelayCacheOnly)
             .await
     }
 
     async fn resolve_cache_first(&self, key: &PublicKey) -> Result<SignedPacket, ResolveError> {
         let cached = self.get_cached(key);
-
-        if let Some(ref packet) = cached {
+        if let Some(packet) = cached.as_ref() {
             if !packet.is_expired(self.minimum_ttl, self.maximum_ttl) {
                 return Ok(packet.clone());
             }
         }
 
-        let more_recent_than = cached
-            .as_ref()
-            .map(SignedPacket::timestamp)
-            .and_then(decrement);
+        let cache_context = CacheContext::new(cached.as_ref(), self.minimum_ttl, self.maximum_ttl);
         let packet = self
             .backend
-            .resolve(key, ResolvePolicy::CacheFirst, more_recent_than)
-            .await;
+            .resolve(key, BackendResolvePolicy::CacheFirst(cache_context))
+            .await?;
 
-        match cached {
-            Some(cached) => floor_cache_result(packet, cached),
-            None => packet,
+        if cache_context.accepts_network_packet(&packet) {
+            Ok(packet)
+        } else {
+            // The new packet can be expired but newer than the cached packet.
+            self.update_cache_if_needed(&packet);
+            Err(ResolveError::NotFound)
         }
     }
 
@@ -213,36 +224,17 @@ fn validate_cached_publish(
 }
 
 fn build_cache(cache_size: usize, cache: Option<Arc<dyn Cache>>) -> Option<Arc<dyn Cache>> {
-    // A zero cache size disables caching, including any provided cache.
+    // A zero configured size or custom-cache capacity disables caching.
     let cache_size = NonZeroUsize::new(cache_size)?;
-    cache.or_else(|| Some(Arc::new(InMemoryCache::new(cache_size))))
-}
 
-fn decrement(timestamp: Timestamp) -> Option<Timestamp> {
-    timestamp.as_u64().checked_sub(1).map(Timestamp::from)
-}
-
-/// Applies the cached packet as the freshness floor for a CacheFirst network result.
-fn floor_cache_result(
-    result: Result<SignedPacket, ResolveError>,
-    cached: SignedPacket,
-) -> Result<SignedPacket, ResolveError> {
-    match result {
-        Ok(packet) if cached.more_recent_than(&packet) => Err(ResolveError::NotFound),
-        Ok(packet) => Ok(packet),
-        Err(ResolveError::InvalidSignedPacket { seq })
-            if cached.timestamp().as_u64() as i64 >= seq =>
-        {
-            Err(ResolveError::NotFound)
-        }
-        Err(e) => Err(e),
+    match cache {
+        Some(cache) if cache.capacity() > 0 => Some(cache),
+        Some(_) => None,
+        None => Some(Arc::new(InMemoryCache::new(cache_size))),
     }
 }
 
-async fn async_compat_if_necessary<T, O>(fut: T) -> O
-where
-    T: Future<Output = O>,
-{
+async fn async_compat_if_necessary<O>(fut: impl Future<Output = O>) -> O {
     #[cfg(not(wasm_browser))]
     {
         if tokio::runtime::Handle::try_current().is_err() {
@@ -256,18 +248,31 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Keypair;
+
+    #[derive(Clone, Debug)]
+    struct ReadableZeroCapacityCache(SignedPacket);
+
+    impl Cache for ReadableZeroCapacityCache {
+        fn len(&self) -> usize {
+            1
+        }
+
+        fn put(&self, _key: &CacheKey, _signed_packet: &SignedPacket) {}
+
+        fn get(&self, _key: &CacheKey) -> Option<SignedPacket> {
+            Some(self.0.clone())
+        }
+    }
 
     #[test]
-    fn floor_cache_result_treats_equal_invalid_seq_as_covered_by_cache() {
-        let cached = SignedPacket::builder()
-            .timestamp(Timestamp::from(10))
-            .sign(&Keypair::random())
+    fn build_cache_disables_readable_custom_cache_with_zero_capacity() {
+        let packet = SignedPacket::builder()
+            .sign(&crate::Keypair::random())
             .unwrap();
+        let key = packet.public_key().into();
+        let cache: Arc<dyn Cache> = Arc::new(ReadableZeroCapacityCache(packet));
 
-        assert_eq!(
-            floor_cache_result(Err(ResolveError::InvalidSignedPacket { seq: 10 }), cached),
-            Err(ResolveError::NotFound)
-        );
+        assert!(cache.get(&key).is_some());
+        assert!(build_cache(crate::DEFAULT_CACHE_SIZE, Some(cache)).is_none());
     }
 }

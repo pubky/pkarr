@@ -100,6 +100,9 @@ impl RelayClient {
 
     /// Resolve a [`SignedPacket`] from this relay.
     ///
+    /// [`ResolvePolicy::DhtNetworkOnly`] bypasses HTTP caches on the initial
+    /// request so the relay queries current DHT network state.
+    ///
     /// # Errors
     ///
     /// Returns an error when the relay request fails, the response body is too
@@ -113,8 +116,11 @@ impl RelayClient {
         newer_than: Option<Timestamp>,
     ) -> Result<SignedPacket, RelayError> {
         let url = self.build_url(key, Some(policy));
+        let bypass_cache = policy == ResolvePolicy::DhtNetworkOnly;
 
-        let mut response = self.send_resolve_request(&url, false, newer_than).await?;
+        let mut response = self
+            .send_resolve_request(&url, bypass_cache, newer_than)
+            .await?;
 
         // A stale HTTP cache can produce impossible 304 responses or empty
         // successful responses. Retry once with cache bypass headers.
@@ -394,6 +400,7 @@ mod tests {
         Router,
     };
     use ntimestamp::Timestamp;
+    use rstest::rstest;
     use tokio::net::TcpListener;
     use url::Url;
 
@@ -626,6 +633,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dht_network_only_resolve_bypasses_http_cache() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get({
+                let payload = signed_packet.to_relay_payload();
+
+                move |headers: HeaderMap| {
+                    let payload = payload.clone();
+
+                    async move {
+                        match headers
+                            .get(header::CACHE_CONTROL)
+                            .and_then(|value| value.to_str().ok())
+                        {
+                            Some(CACHE_BYPASS) => (HttpStatusCode::OK, payload),
+                            _ => (HttpStatusCode::BAD_REQUEST, Bytes::new()),
+                        }
+                    }
+                }
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let resolved = client
+            .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly, None)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+    }
+
+    #[tokio::test]
     async fn resolve_retries_unexpected_not_modified_with_cache_bypass() {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
@@ -663,58 +704,13 @@ mod tests {
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
     }
 
+    #[rstest]
+    #[case::nonzero(Timestamp::from(42))]
+    #[case::zero(Timestamp::from(0))]
     #[tokio::test]
-    async fn resolve_sends_if_modified_since_for_newer_than() {
+    async fn resolve_sends_if_modified_since(#[case] newer_than: Timestamp) {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-        let newer_than = Timestamp::from(42);
-        let expected_header = newer_than.format_http_date();
-        let seen_header = Arc::new(Mutex::new(None));
-        let app = Router::new().route(
-            &format!("/{}", keypair.public_key()),
-            get({
-                let payload = signed_packet.to_relay_payload();
-                let seen_header = seen_header.clone();
-
-                move |headers: HeaderMap| {
-                    let payload = payload.clone();
-                    let seen_header = seen_header.clone();
-
-                    async move {
-                        let if_modified_since = headers
-                            .get(header::IF_MODIFIED_SINCE)
-                            .and_then(|value| value.to_str().ok())
-                            .map(ToOwned::to_owned);
-                        *seen_header.lock().unwrap() = if_modified_since;
-
-                        payload
-                    }
-                }
-            }),
-        );
-        let client = test_client(serve(app).await);
-
-        let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::CacheFirst,
-                Some(newer_than),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
-        assert_eq!(
-            seen_header.lock().unwrap().as_deref(),
-            Some(expected_header.as_str())
-        );
-    }
-
-    #[tokio::test]
-    async fn resolve_sends_if_modified_since_for_zero_newer_than() {
-        let keypair = Keypair::random();
-        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-        let newer_than = Timestamp::from(0);
         let expected_header = newer_than.format_http_date();
         let seen_header = Arc::new(Mutex::new(None));
         let app = Router::new().route(

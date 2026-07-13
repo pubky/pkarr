@@ -16,21 +16,24 @@ pub enum ResolvePolicy {
     /// Return only a locally cached or relay-cached packet, even if expired.
     ///
     /// This is guaranteed to be fast and does not touch DHT nodes.
-    /// Useful for republishing.
+    /// Relay results populate the local cache. Useful for republishing.
     LocalOrRelayCacheOnly,
 
     /// Resolve with the fastest fresh answer without going backward.
     ///
     /// Returns a cached packet when it is still within TTL. Otherwise queries
-    /// the DHT and returns the first acceptable result.
+    /// the configured networks and returns the first acceptable result.
     ///
-    /// If an expired cached packet exists, its sequence is used as a floor:
-    /// older DHT packets, and invalid DHT mutable items at or below that
-    /// sequence, are treated as stale rather than returned.
+    /// If an expired cached packet exists, the full packet is used as a
+    /// freshness floor. Older network packets, lower packet values at the same
+    /// sequence, and invalid DHT mutable items at or below that sequence are
+    /// treated as stale rather than returned.
     ///
     /// This is the default policy for normal application resolution. It never
-    /// returns expired packets, but it may miss a newer DHT value because it
-    /// stops at the first acceptable response.
+    /// returns expired packets. Expired network responses remain eligible for
+    /// cache updates, but do not stop pending attempts for a fresh response.
+    /// It may still miss a newer network value because it stops at the first
+    /// fresh response above the cache floor.
     CacheFirst,
 
     /// Query all relevant DHT nodes for the most recent value observed.

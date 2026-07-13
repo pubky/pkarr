@@ -10,5 +10,7 @@ mod tests;
 mod tests_web;
 
 pub use builder::ClientBuilder;
+#[cfg(relays)]
+pub use builder::InvalidRelayUrl;
 pub use client_impl::Client;
 pub use errors::{BuildError, PublishError, ResolveError};

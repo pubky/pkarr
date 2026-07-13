@@ -1,29 +1,28 @@
-use ntimestamp::Timestamp;
-
-use crate::{PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount};
+use crate::{PublicKey, SignedPacket, StoredNodeCount};
 
 use super::dht::DhtBackend;
 use super::publish_result_accumulator::PublishResultAccumulator;
-use super::relays::RelaysClient;
+use super::relay::RelayBackend;
 use super::resolve_result_accumulator::ResolveResultAccumulator;
+use super::{BackendResolvePolicy, CacheContext};
 use crate::client::{PublishError, ResolveError};
 
 #[derive(Debug)]
-pub(in crate::client) struct BothBackend {
-    relays: RelaysClient,
+pub(in crate::client) struct CombinedBackend {
+    relay: RelayBackend,
     dht: DhtBackend,
 }
 
-impl BothBackend {
-    pub(super) fn new(relays: RelaysClient, dht: DhtBackend) -> Self {
-        Self { relays, dht }
+impl CombinedBackend {
+    pub(super) fn new(relay: RelayBackend, dht: DhtBackend) -> Self {
+        Self { relay, dht }
     }
 
     pub(super) async fn publish(
         &self,
         signed_packet: &SignedPacket,
     ) -> Result<StoredNodeCount, PublishError> {
-        let relay_publish = self.relays.publish(signed_packet);
+        let relay_publish = self.relay.publish(signed_packet);
         let dht_publish = self.dht.publish(signed_packet);
         let (relay_result, dht_result) = tokio::join!(relay_publish, dht_publish);
 
@@ -36,52 +35,60 @@ impl BothBackend {
     pub(super) async fn resolve(
         &self,
         public_key: &PublicKey,
-        policy: ResolvePolicy,
-        more_recent_than: Option<Timestamp>,
+        policy: BackendResolvePolicy<'_>,
     ) -> Result<SignedPacket, ResolveError> {
-        let r1 = self.relays.resolve(public_key, policy, more_recent_than);
-        let r2 = self.dht.resolve(public_key, policy, more_recent_than);
+        let first_resolve = self.relay.resolve(public_key, policy);
+        let second_resolve = self.dht.resolve(public_key, policy);
 
         match policy {
-            ResolvePolicy::LocalOrRelayCacheOnly => r1.await,
-            ResolvePolicy::CacheFirst => {
-                tokio::pin!(r1);
-                tokio::pin!(r2);
+            BackendResolvePolicy::LocalOrRelayCacheOnly => first_resolve.await,
+            BackendResolvePolicy::CacheFirst(context) => {
+                tokio::pin!(first_resolve);
+                tokio::pin!(second_resolve);
                 tokio::select!(
-                    result = &mut r1 => ok_or_wait_second(result, r2).await,
-                    result = &mut r2 => ok_or_wait_second(result, r1).await,
+                    result = &mut first_resolve => {
+                        first_acceptable_or_wait_second(result, second_resolve, context).await
+                    }
+                    result = &mut second_resolve => {
+                        first_acceptable_or_wait_second(result, first_resolve, context).await
+                    }
                 )
             }
-            ResolvePolicy::DhtNetworkOnly => {
-                let (r1, r2) = tokio::join!(r1, r2);
-                merge_resolve_results(r1, r2)
+            BackendResolvePolicy::DhtNetworkOnly => {
+                let (first_result, second_result) = tokio::join!(first_resolve, second_resolve);
+                merge_resolve_results(first_result, second_result)
             }
         }
     }
 }
 
-async fn ok_or_wait_second(
+async fn first_acceptable_or_wait_second(
     first: Result<SignedPacket, ResolveError>,
     second: impl std::future::Future<Output = Result<SignedPacket, ResolveError>>,
+    context: CacheContext<'_>,
 ) -> Result<SignedPacket, ResolveError> {
-    if first.is_ok() {
-        return first;
+    let mut accumulator = ResolveResultAccumulator::new(Some(context));
+    if accumulator.record_result(first) {
+        return accumulator.into_result();
     }
-    merge_resolve_results(first, second.await)
+    accumulator.record_result(second.await);
+    accumulator.into_result()
 }
 
 fn merge_resolve_results(
-    r1: Result<SignedPacket, ResolveError>,
-    r2: Result<SignedPacket, ResolveError>,
+    first_result: Result<SignedPacket, ResolveError>,
+    second_result: Result<SignedPacket, ResolveError>,
 ) -> Result<SignedPacket, ResolveError> {
     let mut accumulator = ResolveResultAccumulator::default();
-    accumulator.record_result(r1);
-    accumulator.record_result(r2);
+    accumulator.record_result(first_result);
+    accumulator.record_result(second_result);
     accumulator.into_result()
 }
 
 #[cfg(test)]
 mod tests {
+    use ntimestamp::Timestamp;
+
     use super::*;
     use crate::Keypair;
 
@@ -125,5 +132,29 @@ mod tests {
             ),
             Err(ResolveError::InvalidSignedPacket { seq: 11 })
         );
+    }
+
+    #[tokio::test]
+    async fn cache_first_waits_for_fresh_second_backend() {
+        let keypair = Keypair::random();
+        let mut expired = SignedPacket::builder()
+            .timestamp(Timestamp::from(10))
+            .sign(&keypair)
+            .unwrap();
+        expired.set_last_seen(&(Timestamp::now() - 60 * 1_000_000_u64));
+        let fresh = SignedPacket::builder()
+            .timestamp(Timestamp::from(11))
+            .sign(&keypair)
+            .unwrap();
+
+        let resolved = first_acceptable_or_wait_second(
+            Ok(expired),
+            std::future::ready(Ok(fresh.clone())),
+            CacheContext::new(None, 30, 30),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resolved, fresh);
     }
 }

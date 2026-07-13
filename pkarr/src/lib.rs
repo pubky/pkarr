@@ -54,6 +54,8 @@ pub mod errors {
 
     pub use super::types::errors::*;
 
+    #[cfg(relays)]
+    pub use super::client::InvalidRelayUrl;
     #[cfg(client)]
     pub use super::client::{BuildError, PublishError, ResolveError};
 }

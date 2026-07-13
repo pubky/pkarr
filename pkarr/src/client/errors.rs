@@ -1,7 +1,7 @@
 #[cfg(relays)]
 use crate::relay_client::RelayError;
 
-/// Errors occurring during building a [Client][super::Client]
+/// Errors that can occur while building a [`super::Client`].
 #[derive(thiserror::Error, Debug)]
 pub enum BuildError {
     /// Client configured without DHT client or relays.
@@ -9,7 +9,7 @@ pub enum BuildError {
     NoNetwork,
 
     #[cfg(dht)]
-    /// Failed to build the Dht client.
+    /// Failed to build the DHT client.
     #[error("failed to build the DHT client: {0}")]
     DhtBuildError(std::io::Error),
 
@@ -19,12 +19,12 @@ pub enum BuildError {
     EmptyListOfRelays,
 
     #[cfg(relays)]
-    /// Failed to build the relays client.
+    /// Failed to build the relay backend.
     #[error("failed to build the relays client: {0}")]
     RelayBuildError(RelayError),
 }
 
-/// Errors occurring during publishing a [SignedPacket][crate::SignedPacket]
+/// Errors that can occur while publishing a [`crate::SignedPacket`].
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PublishError {
     /// DHT publish had no candidate nodes to query.
@@ -44,16 +44,16 @@ pub enum PublishError {
         description: String,
     },
 
-    /// Found a more recent [SignedPacket][crate::SignedPacket].
+    /// Found a more recent [`crate::SignedPacket`].
     #[error("found a more recent SignedPacket")]
     NotMostRecent,
 
-    /// All responses were unexpected, check debug logs.
+    /// All responses were unexpected; check debug logs.
     #[error("all responses were unexpected, check debug logs")]
     UnexpectedResponses,
 }
 
-/// Errors occurring during resolving a [SignedPacket][crate::SignedPacket].
+/// Errors that can occur while resolving a [`crate::SignedPacket`].
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ResolveError {
     /// DHT resolve queried no nodes.
@@ -68,8 +68,7 @@ pub enum ResolveError {
     #[error("resolve query received no usable responses")]
     NoUsableResponses,
 
-    /// No [SignedPacket][crate::SignedPacket] was found for the requested
-    /// [PublicKey][crate::PublicKey].
+    /// No [`crate::SignedPacket`] was found for the requested [`crate::PublicKey`].
     #[error("SignedPacket was not found")]
     NotFound,
 
@@ -80,7 +79,7 @@ pub enum ResolveError {
         seq: i64,
     },
 
-    /// All responses were unexpected, check debug logs.
+    /// All responses were unexpected; check debug logs.
     #[error("all responses were unexpected, check debug logs")]
     UnexpectedResponses,
 }
@@ -103,7 +102,9 @@ impl From<crate::dht::PublishError> for PublishError {
 impl From<RelayError> for PublishError {
     fn from(value: RelayError) -> Self {
         match value {
-            RelayError::Timeout | RelayError::DhtUnavailable => PublishError::NoResponses,
+            RelayError::Timeout | RelayError::Request(_) | RelayError::DhtUnavailable => {
+                PublishError::NoResponses
+            }
             RelayError::NotMostRecent => PublishError::NotMostRecent,
             _ => PublishError::UnexpectedResponses,
         }
@@ -129,7 +130,9 @@ impl From<crate::dht::ResolveError> for ResolveError {
 impl From<RelayError> for ResolveError {
     fn from(value: RelayError) -> Self {
         match value {
-            RelayError::Timeout | RelayError::DhtUnavailable => ResolveError::NoResponses,
+            RelayError::Timeout | RelayError::Request(_) | RelayError::DhtUnavailable => {
+                ResolveError::NoResponses
+            }
             RelayError::NotFound => ResolveError::NotFound,
             RelayError::InvalidSignedPacketSeq { seq } => ResolveError::InvalidSignedPacket { seq },
             _ => ResolveError::UnexpectedResponses,
@@ -141,6 +144,11 @@ impl From<RelayError> for ResolveError {
 mod relay_tests {
     use super::*;
     use crate::relay_client::RelayError;
+
+    fn relay_request_error() -> RelayError {
+        let error = reqwest::Client::new().get("://").build().unwrap_err();
+        RelayError::Request(error)
+    }
 
     #[test]
     fn dht_relay_errors_map_to_publish_errors() {
@@ -166,6 +174,18 @@ mod relay_tests {
         );
         assert_eq!(
             ResolveError::from(RelayError::Timeout),
+            ResolveError::NoResponses
+        );
+    }
+
+    #[test]
+    fn relay_request_failures_map_to_no_response_errors() {
+        assert_eq!(
+            PublishError::from(relay_request_error()),
+            PublishError::NoResponses
+        );
+        assert_eq!(
+            ResolveError::from(relay_request_error()),
             ResolveError::NoResponses
         );
     }

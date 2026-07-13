@@ -16,11 +16,12 @@ pub(crate) enum Networks {
     Dht,
     #[cfg(feature = "relays")]
     Relays,
-    Both,
+    Combined,
 }
 
-/// Parametric [ClientBuilder] with no default networks,
-/// instead it uses mainline or relays depending on `networks` enum.
+/// Parameterized [`ClientBuilder`] with no default networks.
+///
+/// Configures mainline, relays, or both according to `networks`.
 pub(crate) fn builder(
     _relay: &Relay,
     testnet: &mainline::Testnet,
@@ -52,7 +53,7 @@ pub(crate) fn builder(
                 .relays(&[_relay.local_url()])
                 .unwrap();
         }
-        Networks::Both => {
+        Networks::Combined => {
             #[cfg(feature = "relays")]
             {
                 builder.relays(&[_relay.local_url()]).unwrap();
@@ -65,7 +66,7 @@ pub(crate) fn builder(
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn publish_resolve(#[case] networks: Networks) {
@@ -101,7 +102,7 @@ async fn publish_resolve(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn client_send(#[case] networks: Networks) {
@@ -141,7 +142,7 @@ async fn client_send(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn return_expired_packet_fallback(#[case] networks: Networks) {
@@ -180,7 +181,7 @@ async fn return_expired_packet_fallback(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn cache_first_rejects_network_packet_older_than_expired_cache(#[case] networks: Networks) {
@@ -227,7 +228,7 @@ async fn cache_first_rejects_network_packet_older_than_expired_cache(#[case] net
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn dht_network_only_ignores_newer_local_cache(#[case] networks: Networks) {
@@ -266,7 +267,7 @@ async fn dht_network_only_ignores_newer_local_cache(#[case] networks: Networks) 
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn ttl_0_test(#[case] networks: Networks) {
@@ -280,9 +281,8 @@ async fn ttl_0_test(#[case] networks: Networks) {
 
     let keypair = Keypair::random();
     let signed_packet = SignedPacket::builder()
-        // Use an exact HTTP-date boundary so the cache-first lower bound
-        // formats to the previous second when relays use If-Modified-Since.
-        .timestamp(Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap())
+        // Include sub-second precision to exercise relay cache bounds.
+        .timestamp(Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap() + 500_000)
         .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
         .sign(&keypair)
         .unwrap();
@@ -308,7 +308,7 @@ async fn ttl_0_test(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn not_found(#[case] networks: Networks) {
@@ -337,7 +337,7 @@ fn no_network() {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn repeated_publish_query(#[case] networks: Networks) {
@@ -360,20 +360,15 @@ async fn repeated_publish_query(#[case] networks: Networks) {
 #[cfg(feature = "relays")]
 #[tokio::test]
 async fn relay_publish_waits_past_first_error() {
-    let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
-
-    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let unused_addr = listener.local_addr().unwrap();
-    drop(listener);
-
-    let dead_relay: url::Url = format!("http://{unused_addr}").parse().unwrap();
-    let live_relay = relay.local_url();
+    let (failed_relay, successful_relay) = spawn_ordered_publish_relays(
+        axum::http::StatusCode::SERVICE_UNAVAILABLE,
+        axum::http::StatusCode::NO_CONTENT,
+    );
 
     let client = Client::builder()
         .no_default_network()
-        .request_timeout(Duration::from_millis(200))
-        .relays(&[dead_relay, live_relay])
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[failed_relay, successful_relay])
         .unwrap()
         .build()
         .unwrap();
@@ -387,28 +382,102 @@ async fn relay_publish_waits_past_first_error() {
 }
 
 #[cfg(feature = "relays")]
+#[derive(Clone, Default)]
+struct RelayResponseGate {
+    wait_for: Option<std::sync::Arc<tokio::sync::Notify>>,
+    signal_next: Option<std::sync::Arc<tokio::sync::Notify>>,
+}
+
+#[cfg(feature = "relays")]
+impl RelayResponseGate {
+    async fn wait(&self) {
+        if let Some(wait_for) = &self.wait_for {
+            wait_for.notified().await;
+        }
+    }
+
+    fn signal_next(&self) {
+        if let Some(signal_next) = &self.signal_next {
+            signal_next.notify_one();
+        }
+    }
+}
+
+#[cfg(feature = "relays")]
+fn ordered_response_gates() -> (RelayResponseGate, RelayResponseGate) {
+    let first_response_ready = std::sync::Arc::new(tokio::sync::Notify::new());
+
+    (
+        RelayResponseGate {
+            signal_next: Some(first_response_ready.clone()),
+            ..RelayResponseGate::default()
+        },
+        RelayResponseGate {
+            wait_for: Some(first_response_ready),
+            ..RelayResponseGate::default()
+        },
+    )
+}
+
+#[cfg(feature = "relays")]
 #[derive(Clone)]
 struct PacketRelayState {
     packet: std::sync::Arc<SignedPacket>,
-    delay: Duration,
+    memento_datetime: Option<Timestamp>,
+    response_gate: RelayResponseGate,
 }
 
 #[cfg(feature = "relays")]
 async fn packet_relay_handler(
     axum::extract::State(state): axum::extract::State<PacketRelayState>,
 ) -> axum::response::Response {
-    if !state.delay.is_zero() {
-        tokio::time::sleep(state.delay).await;
+    state.response_gate.wait().await;
+
+    let mut response = axum::response::Response::builder();
+    if let Some(timestamp) = state.memento_datetime {
+        response = response.header("memento-datetime", timestamp.format_http_date());
     }
 
-    axum::response::Response::builder()
+    let response = response
         .header("content-type", "application/octet-stream")
         .body(axum::body::Body::from(state.packet.to_relay_payload()))
-        .unwrap()
+        .unwrap();
+    state.response_gate.signal_next();
+    response
 }
 
 #[cfg(feature = "relays")]
-fn spawn_packet_relay(packet: SignedPacket, delay: Duration) -> url::Url {
+fn spawn_packet_relay(packet: SignedPacket) -> url::Url {
+    spawn_controlled_packet_relay(packet, None, RelayResponseGate::default())
+}
+
+#[cfg(feature = "relays")]
+fn spawn_packet_relay_with_memento(
+    packet: SignedPacket,
+    memento_datetime: Option<Timestamp>,
+) -> url::Url {
+    spawn_controlled_packet_relay(packet, memento_datetime, RelayResponseGate::default())
+}
+
+#[cfg(feature = "relays")]
+fn spawn_ordered_packet_relays(
+    first: (SignedPacket, Option<Timestamp>),
+    second: (SignedPacket, Option<Timestamp>),
+) -> (url::Url, url::Url) {
+    let (first_gate, second_gate) = ordered_response_gates();
+
+    (
+        spawn_controlled_packet_relay(first.0, first.1, first_gate),
+        spawn_controlled_packet_relay(second.0, second.1, second_gate),
+    )
+}
+
+#[cfg(feature = "relays")]
+fn spawn_controlled_packet_relay(
+    packet: SignedPacket,
+    memento_datetime: Option<Timestamp>,
+    response_gate: RelayResponseGate,
+) -> url::Url {
     let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
@@ -417,7 +486,8 @@ fn spawn_packet_relay(packet: SignedPacket, delay: Duration) -> url::Url {
         .route("/{key}", axum::routing::get(packet_relay_handler))
         .with_state(PacketRelayState {
             packet: std::sync::Arc::new(packet),
-            delay,
+            memento_datetime,
+            response_gate,
         });
 
     tokio::spawn(
@@ -431,12 +501,47 @@ fn spawn_packet_relay(packet: SignedPacket, delay: Duration) -> url::Url {
 
 #[cfg(feature = "relays")]
 fn spawn_publish_relay(status: axum::http::StatusCode) -> url::Url {
+    spawn_controlled_publish_relay(status, RelayResponseGate::default())
+}
+
+#[cfg(feature = "relays")]
+fn spawn_ordered_publish_relays(
+    first: axum::http::StatusCode,
+    second: axum::http::StatusCode,
+) -> (url::Url, url::Url) {
+    let (first_gate, second_gate) = ordered_response_gates();
+
+    (
+        spawn_controlled_publish_relay(first, first_gate),
+        spawn_controlled_publish_relay(second, second_gate),
+    )
+}
+
+#[cfg(feature = "relays")]
+fn spawn_controlled_publish_relay(
+    status: axum::http::StatusCode,
+    response_gate: RelayResponseGate,
+) -> url::Url {
     let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
 
-    let app =
-        axum::Router::new().route("/{key}", axum::routing::put(move || async move { status }));
+    let app = axum::Router::new().route(
+        "/{key}",
+        axum::routing::put(move || {
+            let response_gate = response_gate.clone();
+
+            async move {
+                response_gate.wait().await;
+                let response = axum::response::Response::builder()
+                    .status(status)
+                    .body(axum::body::Body::empty())
+                    .unwrap();
+                response_gate.signal_next();
+                response
+            }
+        }),
+    );
 
     tokio::spawn(
         axum_server::from_tcp(listener)
@@ -445,6 +550,37 @@ fn spawn_publish_relay(status: axum::http::StatusCode) -> url::Url {
     );
 
     format!("http://{address}").parse().unwrap()
+}
+
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn cache_only_relay_result_is_cached() {
+    let keypair = Keypair::random();
+    let packet = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "bar".try_into().unwrap(), 30)
+        .sign(&keypair)
+        .unwrap();
+    let relay = spawn_packet_relay(packet.clone());
+    let client = Client::builder()
+        .no_default_network()
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[relay])
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::LocalOrRelayCacheOnly)
+        .await
+        .unwrap();
+
+    assert_eq!(resolved.as_bytes(), packet.as_bytes());
+    let cached = client
+        .cache()
+        .unwrap()
+        .get_read_only(&keypair.public_key().into())
+        .unwrap();
+    assert_eq!(cached.as_bytes(), packet.as_bytes());
 }
 
 #[cfg(feature = "relays")]
@@ -463,8 +599,8 @@ async fn relay_most_recent_resolve_aggregates_all_relays() {
         .sign(&keypair)
         .unwrap();
 
-    let older_relay = spawn_packet_relay(older, Duration::ZERO);
-    let newer_relay = spawn_packet_relay(newer.clone(), Duration::from_millis(50));
+    let (older_relay, newer_relay) =
+        spawn_ordered_packet_relays((older, None), (newer.clone(), None));
 
     let client = Client::builder()
         .no_default_network()
@@ -483,9 +619,153 @@ async fn relay_most_recent_resolve_aggregates_all_relays() {
     assert_eq!(resolved.as_bytes(), newer.as_bytes());
 }
 
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn cache_first_waits_for_relay_packet_above_cache_floor() {
+    let keypair = Keypair::random();
+    let first = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "first".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(10))
+        .sign(&keypair)
+        .unwrap();
+    let second = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "second".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(10))
+        .sign(&keypair)
+        .unwrap();
+    let (mut cached, below_floor) = if first.more_recent_than(&second) {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    cached.set_last_seen(&(Timestamp::now() - 60 * 1_000_000_u64));
+    let above_floor = SignedPacket::builder()
+        .timestamp(Timestamp::from(11))
+        .sign(&keypair)
+        .unwrap();
+
+    let (below_floor_relay, above_floor_relay) =
+        spawn_ordered_packet_relays((below_floor, None), (above_floor.clone(), None));
+    let client = Client::builder()
+        .no_default_network()
+        .maximum_ttl(30)
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[below_floor_relay, above_floor_relay])
+        .unwrap()
+        .build()
+        .unwrap();
+    client
+        .cache()
+        .unwrap()
+        .put(&keypair.public_key().into(), &cached);
+
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
+
+    assert_eq!(resolved.timestamp(), above_floor.timestamp());
+    assert_eq!(resolved.as_bytes(), above_floor.as_bytes());
+}
+
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn cache_first_caches_newer_expired_relay_packet() {
+    let keypair = Keypair::random();
+    let mut cached = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "cached".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(10))
+        .sign(&keypair)
+        .unwrap();
+    let packet = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "newer".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(11))
+        .sign(&keypair)
+        .unwrap();
+    let last_seen = Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    cached.set_last_seen(&(last_seen - 60 * 1_000_000_u64));
+    let relay = spawn_packet_relay_with_memento(packet.clone(), Some(last_seen));
+    let client = Client::builder()
+        .no_default_network()
+        .maximum_ttl(30)
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[relay])
+        .unwrap()
+        .build()
+        .unwrap();
+    client
+        .cache()
+        .unwrap()
+        .put(&keypair.public_key().into(), &cached);
+
+    let result = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await;
+
+    assert_eq!(result, Err(ResolveError::NotFound));
+    let cached = client
+        .cache()
+        .unwrap()
+        .get_read_only(&keypair.public_key().into())
+        .unwrap();
+    assert_eq!(cached.as_bytes(), packet.as_bytes());
+    assert_eq!(cached.last_seen(), &last_seen);
+}
+
+#[cfg(feature = "relays")]
+#[tokio::test]
+async fn cache_first_waits_for_fresh_relay_after_expired_response() {
+    let keypair = Keypair::random();
+    let mut cached = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "cached".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(9))
+        .sign(&keypair)
+        .unwrap();
+    let expired = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "expired".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(11))
+        .sign(&keypair)
+        .unwrap();
+    let fresh = SignedPacket::builder()
+        .txt("foo".try_into().unwrap(), "fresh".try_into().unwrap(), 30)
+        .timestamp(Timestamp::from(10))
+        .sign(&keypair)
+        .unwrap();
+    let expired_last_seen = Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    cached.set_last_seen(&(expired_last_seen - 60 * 1_000_000_u64));
+    let (expired_relay, fresh_relay) =
+        spawn_ordered_packet_relays((expired, Some(expired_last_seen)), (fresh.clone(), None));
+    let client = Client::builder()
+        .no_default_network()
+        .maximum_ttl(30)
+        .request_timeout(Duration::from_secs(1))
+        .relays(&[expired_relay, fresh_relay])
+        .unwrap()
+        .build()
+        .unwrap();
+    client
+        .cache()
+        .unwrap()
+        .put(&keypair.public_key().into(), &cached);
+
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
+
+    assert_eq!(resolved.as_bytes(), fresh.as_bytes());
+    assert!(!resolved.is_expired(0, 30));
+    let cached = client
+        .cache()
+        .unwrap()
+        .get_read_only(&keypair.public_key().into())
+        .unwrap();
+    assert_eq!(cached.as_bytes(), fresh.as_bytes());
+}
+
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_resolve(#[case] networks: Networks) {
@@ -524,7 +804,7 @@ async fn concurrent_resolve(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_publish_same_packet(#[case] networks: Networks) {
@@ -557,7 +837,7 @@ async fn concurrent_publish_same_packet(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
@@ -605,7 +885,7 @@ async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn conflict_302(#[case] networks: Networks) {
@@ -666,7 +946,7 @@ async fn relay_publish_rejects_conflicting_relay_quorum() {
 
 #[cfg(feature = "relays")]
 #[tokio::test]
-async fn both_publish_does_not_mask_relay_concurrency_error() {
+async fn combined_publish_does_not_mask_relay_concurrency_error() {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = spawn_publish_relay(axum::http::StatusCode::CONFLICT);
 
@@ -693,7 +973,7 @@ async fn both_publish_does_not_mask_relay_concurrency_error() {
 
 #[cfg(feature = "relays")]
 #[tokio::test]
-async fn both_publish_does_not_mask_dht_not_most_recent_after_relay_success() {
+async fn combined_publish_does_not_mask_dht_not_most_recent_after_relay_success() {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = spawn_publish_relay(axum::http::StatusCode::NO_CONTENT);
 
@@ -744,7 +1024,7 @@ async fn both_publish_does_not_mask_dht_not_most_recent_after_relay_success() {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[test]
 fn no_tokio(#[case] networks: Networks) {
@@ -787,7 +1067,7 @@ fn no_tokio(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn zero_cache_size(#[case] networks: Networks) {
@@ -815,7 +1095,7 @@ async fn zero_cache_size(#[case] networks: Networks) {
 }
 
 // #[rstest]
-// #[case::both_networks(Networks::Both)]
+// #[case::combined_networks(Networks::Combined)]
 // #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 // #[tokio::test]
 // async fn clear_inflight_requests(#[case] networks: Networks) {
@@ -845,7 +1125,7 @@ async fn zero_cache_size(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
@@ -877,7 +1157,7 @@ async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
 
 #[rstest]
 #[case::dht(Networks::Dht)]
-#[case::both_networks(Networks::Both)]
+#[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
 async fn republish_after_resolve(#[case] networks: Networks) {
@@ -1027,7 +1307,7 @@ mod reqwest_builder {
 
     #[rstest]
     #[case::dht(Networks::Dht)]
-    #[case::both_networks(Networks::Both)]
+    #[case::combined_networks(Networks::Combined)]
     #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
     #[tokio::test]
     async fn reqwest_pkarr_domain(#[case] networks: Networks) {
