@@ -93,16 +93,14 @@ impl DhtService {
         let cached = self.cache.get(&key);
 
         let packet = match policy {
-            ResolvePolicy::LocalOrRelayCacheOnly => {
+            ResolvePolicy::CacheOnly => {
                 cached.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))
             }
             ResolvePolicy::CacheFirst => {
                 self.resolve_cache_first(public_key, key, cached.as_ref(), real_ip)
                     .await
             }
-            ResolvePolicy::DhtNetworkOnly => {
-                self.resolve_dht_network_only(public_key, real_ip).await
-            }
+            ResolvePolicy::NetworkOnly => self.resolve_network_only(public_key, real_ip).await,
         }?;
 
         self.update_cache_if_needed(&key, &packet);
@@ -184,12 +182,12 @@ impl DhtService {
         }
     }
 
-    async fn resolve_dht_network_only(
+    async fn resolve_network_only(
         &self,
         public_key: &PublicKey,
         real_ip: Option<&RealIp>,
     ) -> Result<SignedPacket, Error> {
-        // DhtNetworkOnly reports the DHT's current state without using the relay
+        // NetworkOnly reports the DHT's current state without using the relay
         // cache as a lower bound or as invalid-sequence suppression.
         self.enforce_user_dht_rate_limit(real_ip)?;
 

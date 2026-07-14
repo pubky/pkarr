@@ -100,7 +100,7 @@ impl RelayClient {
 
     /// Resolve a [`SignedPacket`] from this relay.
     ///
-    /// [`ResolvePolicy::DhtNetworkOnly`] bypasses HTTP caches on the initial
+    /// [`ResolvePolicy::NetworkOnly`] bypasses HTTP caches on the initial
     /// request so the relay queries current DHT network state.
     ///
     /// # Errors
@@ -116,7 +116,7 @@ impl RelayClient {
         newer_than: Option<Timestamp>,
     ) -> Result<SignedPacket, RelayError> {
         let url = self.build_url(key, Some(policy));
-        let bypass_cache = policy == ResolvePolicy::DhtNetworkOnly;
+        let bypass_cache = policy == ResolvePolicy::NetworkOnly;
 
         let mut response = self
             .send_resolve_request(&url, bypass_cache, newer_than)
@@ -490,11 +490,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -516,11 +512,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -600,11 +592,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -623,7 +611,7 @@ mod tests {
         let error = client
             .resolve(
                 &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
+                ResolvePolicy::CacheOnly,
                 Some(Timestamp::now()),
             )
             .await
@@ -633,7 +621,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dht_network_only_resolve_bypasses_http_cache() {
+    async fn network_only_resolve_bypasses_http_cache() {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
         let app = Router::new().route(
@@ -659,7 +647,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly, None)
+            .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly, None)
             .await
             .unwrap();
 
@@ -693,11 +681,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -780,11 +764,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -801,11 +781,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -829,11 +805,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -865,11 +837,7 @@ mod tests {
 
         let client = test_client(base_url);
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -896,11 +864,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -934,11 +898,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -965,11 +925,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -1032,11 +988,7 @@ mod tests {
         let client = test_client(https_url);
         let keypair = Keypair::random();
         let err = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
         assert!(
@@ -1054,11 +1006,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err()
     }

@@ -486,10 +486,7 @@ mod tests {
         let local_cache_response = http
             .get(
                 relay_url
-                    .join(&format!(
-                        "{}?policy=LocalOrRelayCacheOnly",
-                        keypair.public_key()
-                    ))
+                    .join(&format!("{}?policy=CacheOnly", keypair.public_key()))
                     .unwrap(),
             )
             .send()
@@ -511,7 +508,7 @@ mod tests {
         let dht_response = http
             .get(
                 relay_url
-                    .join(&format!("{}?policy=DhtNetworkOnly", keypair.public_key()))
+                    .join(&format!("{}?policy=NetworkOnly", keypair.public_key()))
                     .unwrap(),
             )
             .send()

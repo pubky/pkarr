@@ -245,7 +245,7 @@ async fn coordinated_republish(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Get the most recent version
     let current_packet: SignedPacket = match client
-        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
     {
         Ok(_existing) => {
@@ -271,9 +271,9 @@ async fn coordinated_republish(
 
 Use [`ResolvePolicy::CacheFirst`] for normal application lookups. It returns fresh cached packets, or queries the network on a cache miss or expired cache entry. It does not fall back to expired local cache entries.
 
-Use [`ResolvePolicy::LocalOrRelayCacheOnly`] when a cached packet is acceptable even if it is expired.
+Use [`ResolvePolicy::CacheOnly`] when a cached packet is acceptable even if it is expired.
 
-Use [`ResolvePolicy::DhtNetworkOnly`] when you need the most recent packet observed from the network, for example before rebuilding and publishing an updated packet.
+Use [`ResolvePolicy::NetworkOnly`] when you need the most recent packet observed from the network, for example before rebuilding and publishing an updated packet.
 
 ## Next Steps
 

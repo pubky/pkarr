@@ -36,11 +36,11 @@ impl DhtBackend {
         policy: BackendResolvePolicy<'_>,
     ) -> Result<SignedPacket, ResolveError> {
         match policy {
-            BackendResolvePolicy::LocalOrRelayCacheOnly => Err(ResolveError::NotFound),
+            BackendResolvePolicy::CacheOnly => Err(ResolveError::NotFound),
             BackendResolvePolicy::CacheFirst(context) => {
                 self.resolve_cache_first(public_key, context).await
             }
-            BackendResolvePolicy::DhtNetworkOnly => {
+            BackendResolvePolicy::NetworkOnly => {
                 let response = self.client.resolve(public_key, None).await;
                 let outcome = self.complete_resolve(public_key, response).await;
                 outcome.most_recent.map_err(Into::into)

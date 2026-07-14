@@ -17,7 +17,7 @@ pub enum ResolvePolicy {
     ///
     /// This is guaranteed to be fast and does not touch DHT nodes.
     /// Relay results populate the local cache. Useful for republishing.
-    LocalOrRelayCacheOnly,
+    CacheOnly,
 
     /// Resolve with the fastest fresh answer without going backward.
     ///
@@ -53,16 +53,16 @@ pub enum ResolvePolicy {
     /// A newer invalid signed packet is treated as the current DHT state.
     /// Useful when you need to account for the most recent DHT state, for
     /// example when recovering after stale sequence errors.
-    DhtNetworkOnly,
+    NetworkOnly,
 }
 
 impl ResolvePolicy {
     /// Return the canonical string representation.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::LocalOrRelayCacheOnly => "LocalOrRelayCacheOnly",
+            Self::CacheOnly => "CacheOnly",
             Self::CacheFirst => "CacheFirst",
-            Self::DhtNetworkOnly => "DhtNetworkOnly",
+            Self::NetworkOnly => "NetworkOnly",
         }
     }
 }
@@ -78,9 +78,9 @@ impl FromStr for ResolvePolicy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "LocalOrRelayCacheOnly" => Ok(Self::LocalOrRelayCacheOnly),
+            "CacheOnly" => Ok(Self::CacheOnly),
             "CacheFirst" => Ok(Self::CacheFirst),
-            "DhtNetworkOnly" => Ok(Self::DhtNetworkOnly),
+            "NetworkOnly" => Ok(Self::NetworkOnly),
             _ => Err(format!("invalid resolve policy: {s}")),
         }
     }
@@ -112,9 +112,9 @@ mod tests {
     #[test]
     fn display_and_parse_roundtrip() {
         for policy in [
-            ResolvePolicy::LocalOrRelayCacheOnly,
+            ResolvePolicy::CacheOnly,
             ResolvePolicy::CacheFirst,
-            ResolvePolicy::DhtNetworkOnly,
+            ResolvePolicy::NetworkOnly,
         ] {
             let s = policy.to_string();
             assert_eq!(s, policy.as_str());

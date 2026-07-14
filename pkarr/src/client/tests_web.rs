@@ -76,7 +76,7 @@ async fn return_expired_packet_fallback() {
     assert_eq!(resolved, ResolveError::NotFound);
 
     let resolved = client
-        .resolve(&keypair.public_key(), ResolvePolicy::LocalOrRelayCacheOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly)
         .await
         .unwrap();
     assert_eq!(resolved, signed_packet);

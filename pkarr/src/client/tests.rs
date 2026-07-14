@@ -173,7 +173,7 @@ async fn return_expired_packet_fallback(#[case] networks: Networks) {
     assert_eq!(resolved, ResolveError::NotFound);
 
     let resolved = client
-        .resolve(&keypair.public_key(), ResolvePolicy::LocalOrRelayCacheOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly)
         .await
         .unwrap();
     assert_eq!(resolved, signed_packet);
@@ -220,7 +220,7 @@ async fn cache_first_rejects_network_packet_older_than_expired_cache(#[case] net
     assert_eq!(resolved, ResolveError::NotFound);
 
     let local = resolver
-        .resolve(&keypair.public_key(), ResolvePolicy::LocalOrRelayCacheOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly)
         .await
         .unwrap();
     assert_eq!(local, newer);
@@ -231,7 +231,7 @@ async fn cache_first_rejects_network_packet_older_than_expired_cache(#[case] net
 #[case::combined_networks(Networks::Combined)]
 #[cfg_attr(feature = "relays", case::relays(Networks::Relays))]
 #[tokio::test]
-async fn dht_network_only_ignores_newer_local_cache(#[case] networks: Networks) {
+async fn network_only_ignores_newer_local_cache(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
     let relay = Relay::run_test(&testnet).await.unwrap();
 
@@ -258,7 +258,7 @@ async fn dht_network_only_ignores_newer_local_cache(#[case] networks: Networks) 
         .put(&keypair.public_key().into(), &newer);
 
     let resolved = resolver
-        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
         .unwrap();
 
@@ -570,7 +570,7 @@ async fn cache_only_relay_result_is_cached() {
         .unwrap();
 
     let resolved = client
-        .resolve(&keypair.public_key(), ResolvePolicy::LocalOrRelayCacheOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly)
         .await
         .unwrap();
 
@@ -611,7 +611,7 @@ async fn relay_most_recent_resolve_aggregates_all_relays() {
         .unwrap();
 
     let resolved = client
-        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
         .unwrap();
 
@@ -1149,7 +1149,7 @@ async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
         .unwrap();
 
     let resolved = b
-        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
         .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
@@ -1175,7 +1175,7 @@ async fn republish_after_resolve(#[case] networks: Networks) {
     client.publish(&signed_packet).await.unwrap();
 
     client
-        .resolve(&keypair.public_key(), ResolvePolicy::DhtNetworkOnly)
+        .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
         .expect("valid signed packet");
 

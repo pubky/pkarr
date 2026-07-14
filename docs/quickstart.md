@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Use `resolve(&public_key, ResolvePolicy::DhtNetworkOnly)` when you need the latest version, for example before publishing updates. `ResolvePolicy::CacheFirst` only returns non-expired cached packets; use `ResolvePolicy::LocalOrRelayCacheOnly` when expired cached packets are acceptable.
+Use `resolve(&public_key, ResolvePolicy::NetworkOnly)` when you need the latest version, for example before publishing updates. `ResolvePolicy::CacheFirst` only returns non-expired cached packets; use `ResolvePolicy::CacheOnly` when expired cached packets are acceptable.
 
 ## Complete Example
 

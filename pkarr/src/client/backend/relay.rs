@@ -27,8 +27,8 @@ struct RelayResolveOptions<'a> {
 impl<'a> From<BackendResolvePolicy<'a>> for RelayResolveOptions<'a> {
     fn from(policy: BackendResolvePolicy<'a>) -> Self {
         match policy {
-            BackendResolvePolicy::LocalOrRelayCacheOnly => Self {
-                relay_policy: ResolvePolicy::LocalOrRelayCacheOnly,
+            BackendResolvePolicy::CacheOnly => Self {
+                relay_policy: ResolvePolicy::CacheOnly,
                 cache_context: None,
                 request_lower_bound: None,
                 complete_on_first_acceptable: true,
@@ -39,8 +39,8 @@ impl<'a> From<BackendResolvePolicy<'a>> for RelayResolveOptions<'a> {
                 request_lower_bound: context.relay_request_lower_bound(),
                 complete_on_first_acceptable: true,
             },
-            BackendResolvePolicy::DhtNetworkOnly => Self {
-                relay_policy: ResolvePolicy::DhtNetworkOnly,
+            BackendResolvePolicy::NetworkOnly => Self {
+                relay_policy: ResolvePolicy::NetworkOnly,
                 cache_context: None,
                 request_lower_bound: None,
                 complete_on_first_acceptable: false,

@@ -41,7 +41,7 @@ impl CombinedBackend {
         let second_resolve = self.dht.resolve(public_key, policy);
 
         match policy {
-            BackendResolvePolicy::LocalOrRelayCacheOnly => first_resolve.await,
+            BackendResolvePolicy::CacheOnly => first_resolve.await,
             BackendResolvePolicy::CacheFirst(context) => {
                 tokio::pin!(first_resolve);
                 tokio::pin!(second_resolve);
@@ -54,7 +54,7 @@ impl CombinedBackend {
                     }
                 )
             }
-            BackendResolvePolicy::DhtNetworkOnly => {
+            BackendResolvePolicy::NetworkOnly => {
                 let (first_result, second_result) = tokio::join!(first_resolve, second_resolve);
                 merge_resolve_results(first_result, second_result)
             }

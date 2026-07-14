@@ -53,8 +53,8 @@ dht_burst = 10
 # User-initiated DHT operation quota per IP address.
 # This is separate from the HTTP quota above and is consumed only when a
 # request makes the relay contact the DHT: PUT publishes, GET cache misses,
-# expired CacheFirst entries, and DhtNetworkOnly requests. Cache hits and
-# LocalOrRelayCacheOnly requests do not consume this quota.
+# expired CacheFirst entries, and NetworkOnly requests. Cache hits and
+# CacheOnly requests do not consume this quota.
 user_dht_quota = "2r/s"
 # Optional user-initiated DHT operation burst size.
 # Defaults to the DHT quota rate when omitted.

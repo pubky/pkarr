@@ -52,8 +52,8 @@ pub struct RateLimiterConfig {
     ///
     /// This is separate from [`Self::quota`] and is consumed only when a request
     /// makes the relay contact the DHT: PUT publishes, GET cache misses, expired
-    /// `CacheFirst` entries, and `DhtNetworkOnly` requests. Cache hits and
-    /// `LocalOrRelayCacheOnly` requests do not consume this quota.
+    /// `CacheFirst` entries, and `NetworkOnly` requests. Cache hits and
+    /// `CacheOnly` requests do not consume this quota.
     pub user_dht_quota: RequestCountQuota,
     /// Optional user-initiated DHT operation burst size.
     ///

@@ -94,7 +94,7 @@ impl Client {
     ) -> Result<Option<super::SignedPacket>, JsValue> {
         // TODO: This could implement more sophisticated logic to
         // query multiple relays and find the most recent packet
-        self.resolve_with_policy(public_key_str, ResolvePolicy::DhtNetworkOnly)
+        self.resolve_with_policy(public_key_str, ResolvePolicy::NetworkOnly)
             .await
     }
 

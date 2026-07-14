@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     resolve(&client, &public_key, ResolvePolicy::CacheFirst).await;
 
     println!("Resolving most recent..");
-    resolve(&client, &public_key, ResolvePolicy::DhtNetworkOnly).await;
+    resolve(&client, &public_key, ResolvePolicy::NetworkOnly).await;
 
     Ok(())
 }

@@ -131,11 +131,11 @@ impl Client {
         policy: ResolvePolicy,
     ) -> Result<SignedPacket, ResolveError> {
         let packet = match policy {
-            ResolvePolicy::LocalOrRelayCacheOnly => self.resolve_cache_only(key).await,
+            ResolvePolicy::CacheOnly => self.resolve_cache_only(key).await,
             ResolvePolicy::CacheFirst => self.resolve_cache_first(key).await,
-            ResolvePolicy::DhtNetworkOnly => {
+            ResolvePolicy::NetworkOnly => {
                 self.backend
-                    .resolve(key, BackendResolvePolicy::DhtNetworkOnly)
+                    .resolve(key, BackendResolvePolicy::NetworkOnly)
                     .await
             }
         }?;
@@ -149,7 +149,7 @@ impl Client {
             return Ok(packet);
         }
         self.backend
-            .resolve(key, BackendResolvePolicy::LocalOrRelayCacheOnly)
+            .resolve(key, BackendResolvePolicy::CacheOnly)
             .await
     }
 

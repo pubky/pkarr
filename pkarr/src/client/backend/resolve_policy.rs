@@ -5,9 +5,9 @@ use super::CacheContext;
 #[derive(Clone, Copy, Debug)]
 pub(in crate::client) enum BackendResolvePolicy<'a> {
     /// Resolve only from local or relay caches.
-    LocalOrRelayCacheOnly,
+    CacheOnly,
     /// Apply a cached packet floor and local TTL bounds to network responses.
     CacheFirst(CacheContext<'a>),
     /// Query configured backends for DHT network state without cached packet state.
-    DhtNetworkOnly,
+    NetworkOnly,
 }
