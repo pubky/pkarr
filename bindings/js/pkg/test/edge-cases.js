@@ -567,9 +567,10 @@ async function runEdgeCasesTests() {
         }
     });
     
-    // Test 18: Concurrent client operations
-    await asyncTest("Concurrent client operations", async () => {
-        const client = new Client(["http://127.0.0.1:15411"], 10_000);
+    // Test 18: Concurrent client resolves
+    await asyncTest("Concurrent client resolves", async () => {
+        const relays = ["http://127.0.0.1:15411"];
+        const publisher = new Client(relays, 10_000);
         const keypairs = Array.from({ length: 5 }, () => new Keypair());
         
         // Create packets
@@ -579,16 +580,16 @@ async function runEdgeCasesTests() {
             return builder.buildAndSign(kp);
         });
         
-        // Publish all concurrently
-        const publishPromises = packets.map(packet => client.publish(packet));
-        await Promise.all(publishPromises);
-        
-        // Wait for propagation
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // Resolve all concurrently
+        // Publish sequentially because each relay PUT performs a DHT publish.
+        for (const packet of packets) {
+            await publisher.publish(packet);
+        }
+
+        // Use a fresh client so concurrent resolves go through the relay rather
+        // than returning from the publisher's local cache.
+        const resolver = new Client(relays, 10_000);
         const resolvePromises = keypairs.map(kp =>
-            client.resolve(kp.publicKeyString(), ResolvePolicy.CacheFirst)
+            resolver.resolve(kp.publicKeyString(), ResolvePolicy.CacheFirst)
         );
         const results = await Promise.all(resolvePromises);
         
