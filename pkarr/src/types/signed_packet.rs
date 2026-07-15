@@ -618,19 +618,19 @@ impl Display for SignedPacket {
         write!(
             f,
             "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {} {},\n    signature: {}\n    records:\n",
-            &self.public_key(),
-            &self.elapsed(),
-            &self.timestamp(),
-            &self.timestamp().format_http_date(),
-            &self.signature(),
+            self.public_key(),
+            self.elapsed(),
+            self.timestamp(),
+            self.timestamp().format_http_date(),
+            self.signature(),
         )?;
 
         for answer in &self.packet().answers {
             writeln!(
                 f,
                 "        {}  IN  {}  {}",
-                &answer.name,
-                &answer.ttl,
+                answer.name,
+                answer.ttl,
                 match &answer.rdata {
                     RData::A(A { address }) => format!("A  {}", Ipv4Addr::from(*address)),
                     RData::AAAA(AAAA { address }) => format!("AAAA  {}", Ipv6Addr::from(*address)),

@@ -62,12 +62,13 @@ async fn main() -> anyhow::Result<()> {
 
     println!("\nPublishing {} ...", keypair.public_key());
 
-    match client.publish(&signed_packet, None).await {
-        Ok(()) => {
+    match client.publish(&signed_packet).await {
+        Ok(stored_on) => {
             println!(
-                "\nSuccessfully published {} in {:?}",
+                "\nSuccessfully published {} in {:?} (stored on at least {} DHT nodes)",
                 keypair.public_key(),
                 instant.elapsed(),
+                stored_on,
             );
         }
         Err(err) => {

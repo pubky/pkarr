@@ -2,12 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use http::StatusCode;
 use pkarr::dht::{
-    DhtClient, DhtInfo, ReportPolicy, ResolveError as DhtResolveError, ResolveReport,
-    ResolveResponse,
+    DhtClient, DhtInfo, PublishError as DhtPublishError, ReportPolicy,
+    ResolveError as DhtResolveError, ResolveReport, ResolveResponse,
 };
 use pkarr::extra::lmdb_cache::LmdbCache;
-use pkarr::mainline::errors::ConcurrencyError;
-use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, Timestamp};
+use pkarr::{Cache, CacheKey, PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, Timestamp};
 use tracing::warn;
 
 use crate::error::Error;
@@ -48,26 +47,27 @@ impl DhtService {
     }
 
     /// Publish a signed packet through the DHT and update the relay cache.
+    ///
+    /// Returns the stored-node count reported back to relay clients.
     pub(crate) async fn publish(
         &self,
         signed_packet: &SignedPacket,
-        cas: Option<Timestamp>,
         real_ip: Option<&RealIp>,
-    ) -> Result<u32, Error> {
+    ) -> Result<StoredNodeCount, Error> {
         let public_key = signed_packet.public_key();
         let key = CacheKey::from(&public_key);
         if let Some(cached) = self.cache.get_read_only(&key) {
             if cached.more_recent_than(signed_packet) {
                 return Err(Error::new(
                     StatusCode::CONFLICT,
-                    ConcurrencyError::NotMostRecent,
+                    DhtPublishError::NotMostRecent,
                 ));
             }
         }
 
         self.enforce_user_dht_rate_limit(real_ip)?;
 
-        let stored_on = self.dht.publish(signed_packet, cas).await?;
+        let stored_on = self.dht.publish(signed_packet).await?;
         let warnings = self.report_policy.classify_publish_result(stored_on);
         if !warnings.is_empty() {
             warn!(
@@ -93,16 +93,14 @@ impl DhtService {
         let cached = self.cache.get(&key);
 
         let packet = match policy {
-            ResolvePolicy::LocalOrRelayCacheOnly => {
+            ResolvePolicy::CacheOnly => {
                 cached.ok_or_else(|| Error::with_status(StatusCode::NOT_FOUND))
             }
             ResolvePolicy::CacheFirst => {
                 self.resolve_cache_first(public_key, key, cached.as_ref(), real_ip)
                     .await
             }
-            ResolvePolicy::DhtNetworkOnly => {
-                self.resolve_dht_network_only(public_key, real_ip).await
-            }
+            ResolvePolicy::NetworkOnly => self.resolve_network_only(public_key, real_ip).await,
         }?;
 
         self.update_cache_if_needed(&key, &packet);
@@ -184,12 +182,12 @@ impl DhtService {
         }
     }
 
-    async fn resolve_dht_network_only(
+    async fn resolve_network_only(
         &self,
         public_key: &PublicKey,
         real_ip: Option<&RealIp>,
     ) -> Result<SignedPacket, Error> {
-        // DhtNetworkOnly reports the DHT's current state without using the relay
+        // NetworkOnly reports the DHT's current state without using the relay
         // cache as a lower bound or as invalid-sequence suppression.
         self.enforce_user_dht_rate_limit(real_ip)?;
 

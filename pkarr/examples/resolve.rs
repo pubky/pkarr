@@ -1,10 +1,10 @@
-//! This example shows how to resolve [ResourceRecord]s directly from the DHT.
+//! This example shows how to resolve [ResourceRecord]s through DHT, relays, or both.
 //!
 //! run this example from the project root:
 //!     $ cargo run --example resolve <zbase32 encoded key>
 
 use clap::{Parser, ValueEnum};
-use pkarr::{Client, PublicKey};
+use pkarr::{Client, PublicKey, ResolvePolicy};
 use std::time::Instant;
 
 #[derive(Parser)]
@@ -61,34 +61,30 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Resolving Pkarr: {} ...", cli.public_key);
     println!("\n=== COLD LOOKUP ===");
-    resolve(&client, &public_key, false).await;
+    resolve(&client, &public_key, ResolvePolicy::CacheFirst).await;
 
     println!("=== SUBSEQUENT LOOKUP ===");
-    resolve(&client, &public_key, false).await;
+    resolve(&client, &public_key, ResolvePolicy::CacheFirst).await;
 
     println!("Resolving most recent..");
-    resolve(&client, &public_key, true).await;
+    resolve(&client, &public_key, ResolvePolicy::NetworkOnly).await;
 
     Ok(())
 }
 
-async fn resolve(client: &Client, public_key: &PublicKey, most_recent: bool) {
+async fn resolve(client: &Client, public_key: &PublicKey, policy: ResolvePolicy) {
     let start = Instant::now();
 
-    match if most_recent {
-        client.resolve_most_recent(public_key).await
-    } else {
-        client.resolve(public_key).await
-    } {
-        Some(signed_packet) => {
+    match client.resolve(public_key, policy).await {
+        Ok(signed_packet) => {
             println!(
                 "\nResolved in {:?} milliseconds {}",
                 start.elapsed().as_millis(),
                 signed_packet
             );
         }
-        None => {
-            println!("\nFailed to resolve {}", public_key);
+        Err(error) => {
+            println!("\nFailed to resolve {}: {}", public_key, error);
         }
     }
 }

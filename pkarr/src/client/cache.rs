@@ -1,4 +1,4 @@
-//! Trait and inmemory implementation of [Cache]
+//! Cache trait and in-memory implementation.
 
 use dyn_clone::DynClone;
 use lru::LruCache;
@@ -8,7 +8,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::SignedPacket;
 
-/// The sha1 hash of the [crate::PublicKey] used as the key in [Cache].
+/// The SHA-1 hash of the [`crate::PublicKey`] used as the key in [`Cache`].
 pub type CacheKey = [u8; 20];
 
 impl From<&crate::PublicKey> for CacheKey {
@@ -29,32 +29,31 @@ impl From<crate::PublicKey> for CacheKey {
     }
 }
 
-/// A trait for a [SignedPacket]s cache for Pkarr [Client][crate::Client].
+/// A cache for [`SignedPacket`]s used by a Pkarr [`crate::Client`].
 pub trait Cache: Debug + Send + Sync + DynClone {
-    /// Returns the maximum capacity of [SignedPacket]s allowed in this cache.
+    /// Returns the maximum number of [`SignedPacket`]s allowed in this cache.
     fn capacity(&self) -> usize {
         // backward compatibility
         0
     }
-    /// Returns the number of [SignedPacket]s in this cache.
+    /// Returns the number of [`SignedPacket`]s in this cache.
     fn len(&self) -> usize;
-    /// Returns true if this cache is empty.
+    /// Returns `true` if this cache is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    /// Puts [SignedPacket] into cache.
+    /// Stores a [`SignedPacket`] in the cache.
     fn put(&self, key: &CacheKey, signed_packet: &SignedPacket);
-    /// Reads [SignedPacket] from cache, while moving it to the head of the LRU list.
+    /// Reads a [`SignedPacket`] from the cache while moving it to the head of the LRU list.
     fn get(&self, key: &CacheKey) -> Option<SignedPacket>;
-    /// Reads [SignedPacket] from cache, without changing the LRU list.
+    /// Reads a [`SignedPacket`] from the cache without changing the LRU list.
     ///
     /// Used for internal reads that are not initiated by the user directly,
-    /// like comparing an received signed packet with existing one.
+    /// such as comparing a received signed packet with an existing one.
     ///
-    /// Useful to implement differently from [Cache::get], if you are implementing
-    /// persistent cache where writes are slower than reads.
+    /// Persistent caches may override this method when writes are slower than reads.
     ///
-    /// Otherwise it will just use [Cache::get].
+    /// The default implementation delegates to [`Cache::get`].
     fn get_read_only(&self, key: &CacheKey) -> Option<SignedPacket> {
         self.get(key)
     }
@@ -62,14 +61,14 @@ pub trait Cache: Debug + Send + Sync + DynClone {
 
 dyn_clone::clone_trait_object!(Cache);
 
-/// A thread safe wrapper around [lru::LruCache]
+/// A thread-safe wrapper around [`lru::LruCache`].
 #[derive(Debug, Clone)]
 pub struct InMemoryCache {
     inner: Arc<RwLock<LruCache<CacheKey, SignedPacket>>>,
 }
 
 impl InMemoryCache {
-    /// Creates a new `LRU` cache that holds at most `cap` items.
+    /// Creates a new LRU cache that holds at most `capacity` items.
     pub fn new(capacity: NonZeroUsize) -> Self {
         Self {
             inner: Arc::new(RwLock::new(LruCache::new(capacity))),
@@ -90,9 +89,10 @@ impl Cache for InMemoryCache {
         self.inner.read().expect("InMemoryCache RwLock").len()
     }
 
-    /// Puts [SignedPacket], if a version of the  packet already exists,
-    /// and it has the same [SignedPacket::as_bytes], then only [SignedPacket::last_seen] will be
-    /// updated, otherwise the input will be cloned.
+    /// Stores a [`SignedPacket`] in the cache.
+    ///
+    /// If an existing packet has the same [`SignedPacket::as_bytes`] value, only
+    /// its [`SignedPacket::last_seen`] value is updated. Otherwise, the input is cloned.
     fn put(&self, key: &CacheKey, signed_packet: &SignedPacket) {
         let mut lock = self.inner.write().expect("InMemoryCache RwLock");
 

@@ -1,10 +1,10 @@
-//! Client wasm/web tests
+//! Client WASM browser tests.
 
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
-use crate::{Client, Keypair, SignedPacket};
+use crate::{errors::ResolveError, Client, Keypair, ResolvePolicy, SignedPacket};
 use url::Url;
 
 #[wasm_bindgen_test]
@@ -23,9 +23,12 @@ async fn publish_resolve() {
     let a = Client::builder().relays(&relays).unwrap().build().unwrap();
     let b = Client::builder().relays(&relays).unwrap().build().unwrap();
 
-    a.publish(&signed_packet, None).await.unwrap();
+    a.publish(&signed_packet).await.unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
 
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
@@ -38,9 +41,12 @@ async fn not_found() {
 
     let client = Client::builder().relays(&relays).unwrap().build().unwrap();
 
-    let resolved = client.resolve(&keypair.public_key()).await;
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap_err();
 
-    assert!(resolved.is_none());
+    assert_eq!(resolved, ResolveError::NotFound);
 }
 
 #[wasm_bindgen_test]
@@ -63,9 +69,17 @@ async fn return_expired_packet_fallback() {
         .unwrap()
         .put(&keypair.public_key().into(), &signed_packet);
 
-    let resolved = client.resolve(&keypair.public_key()).await;
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap_err();
+    assert_eq!(resolved, ResolveError::NotFound);
 
-    assert_eq!(resolved, Some(signed_packet));
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly)
+        .await
+        .unwrap();
+    assert_eq!(resolved, signed_packet);
 }
 
 #[wasm_bindgen_test]
@@ -90,12 +104,18 @@ async fn from_disk_cache() {
         .build()
         .unwrap();
 
-    a.publish(&signed_packet, None).await.unwrap();
+    a.publish(&signed_packet).await.unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }
 
@@ -119,11 +139,17 @@ async fn not_modified() {
         .build()
         .unwrap();
 
-    a.publish(&signed_packet, None).await.unwrap();
+    a.publish(&signed_packet).await.unwrap();
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 
-    let resolved = b.resolve(&keypair.public_key()).await.unwrap();
+    let resolved = b
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await
+        .unwrap();
     assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
 }

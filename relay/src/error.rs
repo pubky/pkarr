@@ -94,8 +94,6 @@ impl From<dht::PublishError> for Error {
             | dht::PublishError::ErrorResponse { .. } => {
                 Self::new(StatusCode::INTERNAL_SERVER_ERROR, error)
             }
-            dht::PublishError::CasFailed => Self::new(StatusCode::PRECONDITION_FAILED, error),
-            dht::PublishError::ConflictRisk => Self::new(StatusCode::PRECONDITION_REQUIRED, error),
             dht::PublishError::NotMostRecent => Self::new(StatusCode::CONFLICT, error),
         }
     }

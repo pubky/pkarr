@@ -2,15 +2,13 @@
 
 use bytes::Bytes;
 use ntimestamp::Timestamp;
-use reqwest::{
-    header::{self, HeaderValue},
-    Client, Response, StatusCode,
-};
+use reqwest::{header, Client, Response, StatusCode};
 use std::time::Duration;
 use url::Url;
 
 use crate::{
-    PublicKey, ResolvePolicy, SignedPacket, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
+    PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, PKARR_DHT_STORED_NODES,
+    PKARR_INVALID_SIGNED_PACKET_SEQ,
 };
 
 const MEMENTO_DATETIME: &str = "memento-datetime";
@@ -36,8 +34,8 @@ pub struct RelayClient {
 impl RelayClient {
     /// Build a client for one relay endpoint using a [`reqwest::Client`].
     ///
-    /// The `timeout` is applied to each relay request individually. This keeps
-    /// timeout behavior available on WASM targets, where reqwest does not
+    /// The timeout is applied to each relay request individually. This
+    /// keeps timeout behavior available on WASM targets, where reqwest does not
     /// expose client-wide timeout configuration.
     ///
     /// # Errors
@@ -66,33 +64,26 @@ impl RelayClient {
     ///
     /// # Returns
     ///
-    /// Returns the number of DHT nodes that acknowledged storing the packet.
-    /// Older relays that do not return this count are treated as if one DHT
-    /// node acknowledged storing the packet.
+    /// Returns a [`StoredNodeCount`] with the number of DHT nodes that
+    /// acknowledged storing the packet. Older relays that do not return this
+    /// count are treated as if one DHT node acknowledged storing the packet.
     ///
     /// # Errors
     ///
     /// Returns an error when the relay request fails, the relay returns a
     /// non-success status, the request times out, or the relay returns a
     /// malformed stored-node count header.
-    pub async fn publish(
-        &self,
-        packet: &SignedPacket,
-        cas: Option<Timestamp>,
-    ) -> Result<u32, RelayError> {
+    pub async fn publish(&self, packet: &SignedPacket) -> Result<StoredNodeCount, RelayError> {
         let url = self.build_url(&packet.public_key(), None);
 
-        let mut request = self
+        let response = self
             .client
             .put(url.clone())
             .timeout(self.timeout)
-            .body(packet.to_relay_payload());
-
-        if let Some(cas) = cas {
-            request = request.header(header::IF_MATCH, cas.as_u64().to_string());
-        }
-
-        let response = request.send().await.map_err(RelayError::from_reqwest)?;
+            .body(packet.to_relay_payload())
+            .send()
+            .await
+            .map_err(RelayError::from_reqwest)?;
         let status = response.status();
 
         if status.is_success() {
@@ -109,6 +100,9 @@ impl RelayClient {
 
     /// Resolve a [`SignedPacket`] from this relay.
     ///
+    /// [`ResolvePolicy::NetworkOnly`] bypasses HTTP caches on the initial
+    /// request so the relay queries current DHT network state.
+    ///
     /// # Errors
     ///
     /// Returns an error when the relay request fails, the response body is too
@@ -122,17 +116,16 @@ impl RelayClient {
         newer_than: Option<Timestamp>,
     ) -> Result<SignedPacket, RelayError> {
         let url = self.build_url(key, Some(policy));
+        let bypass_cache = policy == ResolvePolicy::NetworkOnly;
 
         let mut response = self
-            .send_resolve_request(&url, newer_than.as_ref(), false)
+            .send_resolve_request(&url, bypass_cache, newer_than)
             .await?;
 
         // A stale HTTP cache can produce impossible 304 responses or empty
         // successful responses. Retry once with cache bypass headers.
         if should_retry_with_cache_bypass(&response, newer_than.as_ref()) {
-            response = self
-                .send_resolve_request(&url, newer_than.as_ref(), true)
-                .await?;
+            response = self.send_resolve_request(&url, true, newer_than).await?;
         }
 
         let status = response.status();
@@ -169,7 +162,7 @@ impl RelayClient {
             signed_packet.set_last_seen(&last_seen);
         }
 
-        if newer_than.is_some_and(|newer_than| signed_packet.timestamp() < newer_than) {
+        if newer_than.is_some_and(|newer_than| signed_packet.timestamp() <= newer_than) {
             return Err(RelayError::NotFound);
         }
 
@@ -179,21 +172,17 @@ impl RelayClient {
     async fn send_resolve_request(
         &self,
         url: &Url,
-        newer_than: Option<&Timestamp>,
         bypass_cache: bool,
+        newer_than: Option<Timestamp>,
     ) -> Result<Response, RelayError> {
         let mut request = self.client.get(url.clone()).timeout(self.timeout);
 
-        if let Some(newer_than) = newer_than {
-            let newer_than = newer_than.format_http_date();
-            request = request.header(
-                header::IF_MODIFIED_SINCE,
-                HeaderValue::from_str(&newer_than).map_err(RelayError::InvalidHeader)?,
-            );
-        }
-
         if bypass_cache {
             request = request.header(header::CACHE_CONTROL, CACHE_BYPASS);
+        }
+
+        if let Some(newer_than) = newer_than {
+            request = request.header(header::IF_MODIFIED_SINCE, newer_than.format_http_date());
         }
 
         request.send().await.map_err(RelayError::from_reqwest)
@@ -244,15 +233,6 @@ pub enum RelayError {
     #[error("relay returned an invalid signed packet: {0}")]
     InvalidSignedPacket(crate::errors::SignedPacketVerifyError),
 
-    /// Relay reported a newer DHT mutable item that is not a valid signed packet.
-    #[error(
-        "relay reported a newer DHT mutable item at seq {seq} that is not a valid signed packet"
-    )]
-    InvalidSignedPacketSeq {
-        /// Mutable item sequence number.
-        seq: i64,
-    },
-
     /// Relay returned a malformed invalid-signed-packet sequence header.
     #[error("relay returned a malformed Pkarr-Invalid-Signed-Packet-Seq header")]
     InvalidSignedPacketSeqHeader,
@@ -273,14 +253,6 @@ pub enum RelayError {
     #[error("relay has a more recent signed packet")]
     NotMostRecent,
 
-    /// Relay compare-and-swap failed.
-    #[error("relay compare-and-swap failed")]
-    CasFailed,
-
-    /// Relay requires compare-and-swap.
-    #[error("relay requires compare-and-swap")]
-    ConflictRisk,
-
     /// Relay could not complete a DHT query.
     #[error("relay DHT query is unavailable")]
     DhtUnavailable,
@@ -288,6 +260,15 @@ pub enum RelayError {
     /// Relay returned an unexpected status code.
     #[error("relay returned unexpected status code {0}")]
     UnexpectedStatus(StatusCode),
+
+    /// Relay reported a newer DHT mutable item that is not a valid signed packet.
+    #[error(
+        "relay reported a newer DHT mutable item at seq {seq} that is not a valid signed packet"
+    )]
+    InvalidSignedPacketSeq {
+        /// Mutable item sequence number.
+        seq: i64,
+    },
 
     /// Relay found no signed packet.
     #[error("relay found no signed packet")]
@@ -308,9 +289,7 @@ impl RelayError {
     fn from_status(status: StatusCode) -> Self {
         match status {
             StatusCode::BAD_REQUEST => Self::BadRequest,
-            StatusCode::CONFLICT => Self::NotMostRecent,
-            StatusCode::PRECONDITION_FAILED => Self::CasFailed,
-            StatusCode::PRECONDITION_REQUIRED => Self::ConflictRisk,
+            StatusCode::CONFLICT | StatusCode::PRECONDITION_REQUIRED => Self::NotMostRecent,
             StatusCode::SERVICE_UNAVAILABLE => Self::DhtUnavailable,
             status => Self::UnexpectedStatus(status),
         }
@@ -340,7 +319,7 @@ fn extract_invalid_signed_packet_seq(response: &Response) -> Result<Option<i64>,
         .transpose()
 }
 
-fn extract_dht_stored_nodes(response: &Response) -> Result<u32, RelayError> {
+fn extract_dht_stored_nodes(response: &Response) -> Result<StoredNodeCount, RelayError> {
     let Some(value) = response.headers().get(PKARR_DHT_STORED_NODES) else {
         return Ok(1);
     };
@@ -360,9 +339,12 @@ fn invalid_seq_is_not_newer_than_request(seq: i64, newer_than: Option<&Timestamp
     seq >= 0 && seq as u64 <= newer_than.as_u64()
 }
 
-fn should_retry_with_cache_bypass(response: &Response, newer_than: Option<&Timestamp>) -> bool {
+fn should_retry_with_cache_bypass(
+    response: &Response,
+    if_modified_since: Option<&Timestamp>,
+) -> bool {
     let status = response.status();
-    let unexpected_not_modified = status == StatusCode::NOT_MODIFIED && newer_than.is_none();
+    let unexpected_not_modified = status == StatusCode::NOT_MODIFIED && if_modified_since.is_none();
     let empty_success = status.is_success() && response.content_length().unwrap_or_default() == 0;
 
     unexpected_not_modified || empty_success
@@ -408,7 +390,7 @@ fn reject_known_too_large(content_length: Option<u64>, limit: usize) -> Result<(
 mod tests {
     use std::sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     };
     use std::time::Duration;
 
@@ -418,6 +400,7 @@ mod tests {
         Router,
     };
     use ntimestamp::Timestamp;
+    use rstest::rstest;
     use tokio::net::TcpListener;
     use url::Url;
 
@@ -449,7 +432,7 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let stored_on = client.publish(&signed_packet, None).await.unwrap();
+        let stored_on = client.publish(&signed_packet).await.unwrap();
 
         assert_eq!(stored_on, 7);
     }
@@ -469,7 +452,7 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let error = client.publish(&signed_packet, None).await.unwrap_err();
+        let error = client.publish(&signed_packet).await.unwrap_err();
 
         assert!(matches!(error, RelayError::InvalidDhtStoredNodesHeader));
     }
@@ -484,7 +467,7 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let stored_on = client.publish(&signed_packet, None).await.unwrap();
+        let stored_on = client.publish(&signed_packet).await.unwrap();
 
         assert_eq!(stored_on, 1);
     }
@@ -507,11 +490,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -533,11 +512,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -617,11 +592,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -640,13 +611,47 @@ mod tests {
         let error = client
             .resolve(
                 &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
+                ResolvePolicy::CacheOnly,
                 Some(Timestamp::now()),
             )
             .await
             .unwrap_err();
 
         assert!(matches!(error, RelayError::NotFound));
+    }
+
+    #[tokio::test]
+    async fn network_only_resolve_bypasses_http_cache() {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get({
+                let payload = signed_packet.to_relay_payload();
+
+                move |headers: HeaderMap| {
+                    let payload = payload.clone();
+
+                    async move {
+                        match headers
+                            .get(header::CACHE_CONTROL)
+                            .and_then(|value| value.to_str().ok())
+                        {
+                            Some(CACHE_BYPASS) => (HttpStatusCode::OK, payload),
+                            _ => (HttpStatusCode::BAD_REQUEST, Bytes::new()),
+                        }
+                    }
+                }
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let resolved = client
+            .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly, None)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
     }
 
     #[tokio::test]
@@ -676,15 +681,60 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+    }
+
+    #[rstest]
+    #[case::nonzero(Timestamp::from(42))]
+    #[case::zero(Timestamp::from(0))]
+    #[tokio::test]
+    async fn resolve_sends_if_modified_since(#[case] newer_than: Timestamp) {
+        let keypair = Keypair::random();
+        let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let expected_header = newer_than.format_http_date();
+        let seen_header = Arc::new(Mutex::new(None));
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get({
+                let payload = signed_packet.to_relay_payload();
+                let seen_header = seen_header.clone();
+
+                move |headers: HeaderMap| {
+                    let payload = payload.clone();
+                    let seen_header = seen_header.clone();
+
+                    async move {
+                        let if_modified_since = headers
+                            .get(header::IF_MODIFIED_SINCE)
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToOwned::to_owned);
+                        *seen_header.lock().unwrap() = if_modified_since;
+
+                        payload
+                    }
+                }
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let resolved = client
             .resolve(
                 &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
+                ResolvePolicy::CacheFirst,
+                Some(newer_than),
             )
             .await
             .unwrap();
 
         assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert_eq!(
+            seen_header.lock().unwrap().as_deref(),
+            Some(expected_header.as_str())
+        );
     }
 
     #[tokio::test]
@@ -714,11 +764,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -735,11 +781,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -763,11 +805,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let error = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
 
@@ -799,11 +837,7 @@ mod tests {
 
         let client = test_client(base_url);
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -830,11 +864,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -868,11 +898,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -899,11 +925,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         let resolved = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap();
 
@@ -911,7 +933,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_accepts_packet_with_same_timestamp_as_lower_bound() {
+    async fn resolve_rejects_packet_with_same_timestamp_as_newer_than() {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder()
             .timestamp(Timestamp::from(42))
@@ -931,16 +953,16 @@ mod tests {
         );
         let client = test_client(serve(app).await);
 
-        let resolved = client
+        let error = client
             .resolve(
                 &keypair.public_key(),
                 ResolvePolicy::CacheFirst,
                 Some(signed_packet.timestamp()),
             )
             .await
-            .unwrap();
+            .unwrap_err();
 
-        assert_eq!(resolved.as_bytes(), signed_packet.as_bytes());
+        assert!(matches!(error, RelayError::NotFound));
     }
 
     // We test that the client can work with HTTPS endpoints; however, this does
@@ -966,11 +988,7 @@ mod tests {
         let client = test_client(https_url);
         let keypair = Keypair::random();
         let err = client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err();
         assert!(
@@ -988,11 +1006,7 @@ mod tests {
         let client = test_client(serve(app).await);
 
         client
-            .resolve(
-                &keypair.public_key(),
-                ResolvePolicy::LocalOrRelayCacheOnly,
-                None,
-            )
+            .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
             .await
             .unwrap_err()
     }

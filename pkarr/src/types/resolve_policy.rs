@@ -16,46 +16,53 @@ pub enum ResolvePolicy {
     /// Return only a locally cached or relay-cached packet, even if expired.
     ///
     /// This is guaranteed to be fast and does not touch DHT nodes.
-    /// Useful for republishing.
-    LocalOrRelayCacheOnly,
+    /// Relay results populate the local cache. Useful for republishing.
+    CacheOnly,
 
     /// Resolve with the fastest fresh answer without going backward.
     ///
     /// Returns a cached packet when it is still within TTL. Otherwise queries
-    /// the DHT and returns the first acceptable result.
+    /// the configured networks and returns the first acceptable result.
     ///
-    /// If an expired cached packet exists, its sequence is used as a floor:
-    /// older DHT packets, and invalid DHT mutable items at or below that
-    /// sequence, are treated as stale rather than returned.
+    /// If an expired cached packet exists, the full packet is used as a
+    /// freshness floor. Older network packets, lower packet values at the same
+    /// sequence, and invalid DHT mutable items at or below that sequence are
+    /// treated as stale rather than returned.
     ///
     /// This is the default policy for normal application resolution. It never
-    /// returns expired packets, but it may miss a newer DHT value because it
-    /// stops at the first acceptable response.
+    /// returns expired packets. Expired network responses remain eligible for
+    /// cache updates, but do not stop pending attempts for a fresh response.
+    /// It may still miss a newer network value because it stops at the first
+    /// fresh response above the cache floor.
     CacheFirst,
 
-    /// Query all relevant DHT nodes for the most recent value observed and
-    /// update the cache when that value contains a valid signed packet.
+    /// Query all relevant DHT nodes for the most recent value observed.
     /// This is slower, but more accurate.
     ///
     /// This policy ignores cached packets while querying and interpreting the
     /// DHT result. If the DHT currently contains an older valid packet than the
     /// cache, that older packet is returned.
     ///
+    /// If the result contains a valid signed packet, the cache is updated only
+    /// when that packet is newer than the cached packet, or is the same packet
+    /// with a fresher last-seen timestamp. This policy never downgrades the
+    /// cache to an older packet.
+    ///
     /// This is guaranteed to return the newest valid signed packet, or the sequence
     /// number of a newer mutable item that is not a valid signed packet.
     /// A newer invalid signed packet is treated as the current DHT state.
     /// Useful when you need to account for the most recent DHT state, for
     /// example when recovering after stale sequence errors.
-    DhtNetworkOnly,
+    NetworkOnly,
 }
 
 impl ResolvePolicy {
     /// Return the canonical string representation.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::LocalOrRelayCacheOnly => "LocalOrRelayCacheOnly",
+            Self::CacheOnly => "CacheOnly",
             Self::CacheFirst => "CacheFirst",
-            Self::DhtNetworkOnly => "DhtNetworkOnly",
+            Self::NetworkOnly => "NetworkOnly",
         }
     }
 }
@@ -71,9 +78,9 @@ impl FromStr for ResolvePolicy {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "LocalOrRelayCacheOnly" => Ok(Self::LocalOrRelayCacheOnly),
+            "CacheOnly" => Ok(Self::CacheOnly),
             "CacheFirst" => Ok(Self::CacheFirst),
-            "DhtNetworkOnly" => Ok(Self::DhtNetworkOnly),
+            "NetworkOnly" => Ok(Self::NetworkOnly),
             _ => Err(format!("invalid resolve policy: {s}")),
         }
     }
@@ -105,9 +112,9 @@ mod tests {
     #[test]
     fn display_and_parse_roundtrip() {
         for policy in [
-            ResolvePolicy::LocalOrRelayCacheOnly,
+            ResolvePolicy::CacheOnly,
             ResolvePolicy::CacheFirst,
-            ResolvePolicy::DhtNetworkOnly,
+            ResolvePolicy::NetworkOnly,
         ] {
             let s = policy.to_string();
             assert_eq!(s, policy.as_str());

@@ -4,14 +4,14 @@ use http::{
     StatusCode,
 };
 use httpdate::HttpDate;
-use pkarr::{SignedPacket, PKARR_DHT_STORED_NODES};
+use pkarr::{SignedPacket, StoredNodeCount, Timestamp, PKARR_DHT_STORED_NODES};
 
 pub(crate) struct PutResponse {
-    stored_on: u32,
+    stored_on: StoredNodeCount,
 }
 
 impl PutResponse {
-    pub(crate) fn new(stored_on: u32) -> Self {
+    pub(crate) fn new(stored_on: StoredNodeCount) -> Self {
         Self { stored_on }
     }
 }
@@ -97,8 +97,47 @@ impl IntoResponse for SignedPacketResponse {
 
 fn is_not_modified(if_modified_since: Option<HttpDate>, signed_packet: &SignedPacket) -> bool {
     if_modified_since.is_some_and(|condition_http_date| {
-        let entry_http_date: HttpDate = signed_packet.timestamp().into();
+        let condition = Timestamp::from(condition_http_date);
 
-        condition_http_date >= entry_http_date
+        signed_packet.timestamp() <= condition
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pkarr::Keypair;
+
+    fn signed_packet(timestamp: Timestamp) -> SignedPacket {
+        SignedPacket::builder()
+            .timestamp(timestamp)
+            .sign(&Keypair::random())
+            .unwrap()
+    }
+
+    #[test]
+    fn not_modified_uses_full_packet_timestamp_precision() {
+        let http_second = Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let packet_timestamp = http_second + 500_000;
+        let condition = packet_timestamp - 1;
+        assert_eq!(
+            condition.format_http_date(),
+            packet_timestamp.format_http_date()
+        );
+
+        assert!(!is_not_modified(
+            Some(HttpDate::from(condition)),
+            &signed_packet(packet_timestamp)
+        ));
+    }
+
+    #[test]
+    fn not_modified_still_matches_exact_http_second_timestamp() {
+        let packet_timestamp = Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+
+        assert!(is_not_modified(
+            Some(HttpDate::from(packet_timestamp)),
+            &signed_packet(packet_timestamp)
+        ));
+    }
 }

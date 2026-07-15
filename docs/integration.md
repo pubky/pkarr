@@ -14,13 +14,14 @@ What is your target platform?
 +-- Server/Native Application
 |   |
 |   +-- Need persistent cache? --> Add `lmdb-cache`
-|   +-- Need HTTPS endpoints?  --> Add `endpoints`
-|   +-- Need HTTP client integration? --> Add `reqwest-builder`
+|   +-- Need HTTPS/SVCB endpoint discovery? --> Add `endpoints`
+|   +-- Need reqwest DNS resolver integration? --> Add `reqwest-resolve`
+|   +-- Need a preconfigured reqwest client with Pkarr DNS/TLS? --> Add `reqwest-builder`
 |   +-- Otherwise --> Use default (`full-client`)
 |
 +-- Browser/WASM
 |   |
-|   +-- `relays` only (DHT unavailable in browsers)
+|   +-- Use `relays` as the network feature (DHT is unavailable in browsers)
 |
 +-- Key management
 |   |
@@ -36,11 +37,16 @@ What is your target platform?
 
 | Use Case | Cargo.toml |
 |----------|------------|
-| Full server | `pkarr = "5"` |
-| Server + persistence | `pkarr = { version = "5", features = ["lmdb-cache"] }` |
-| Browser/WASM | `pkarr = { version = "5", default-features = false, features = ["relays"] }` |
-| Key utilities only | `pkarr = { version = "5", default-features = false, features = ["keys"] }` |
-| Everything | `pkarr = { version = "5", features = ["full"] }` |
+| Full native client | `pkarr = "6"` |
+| Native client + persistence | `pkarr = { version = "6", features = ["lmdb-cache"] }` |
+| Browser/WASM | `pkarr = { version = "6", default-features = false, features = ["relays"] }` |
+| Key utilities only | `pkarr = { version = "6", default-features = false, features = ["keys"] }` |
+| Everything for native apps | `pkarr = { version = "6", features = ["full"] }` |
+
+Endpoint-related extras require the client API. With default features this is
+already enabled on native targets. If you disable default features, combine
+`endpoints`, `tls`, `reqwest-resolve`, or `reqwest-builder` with `dht` and/or
+`relays` as appropriate for your target.
 
 ## Client Configuration
 
@@ -104,6 +110,25 @@ let client = Client::builder()
     .build()?;
 ```
 
+The `lmdb-cache` feature provides a persistent cache implementation, but the
+client will not use it automatically. Enable the feature, create an
+`LmdbCache`, and provide it to the builder:
+
+```toml
+[dependencies]
+pkarr = { version = "6", features = ["lmdb-cache"] }
+```
+
+```rust
+use pkarr::{extra::lmdb_cache::LmdbCache, Client};
+use std::{path::Path, sync::Arc};
+
+let cache = unsafe { LmdbCache::open(Path::new("./pkarr-cache"), 1000)? };
+let client = Client::builder()
+    .cache(Arc::new(cache))
+    .build()?;
+```
+
 ### TTL Configuration
 
 TTL bounds control when cached packets are considered expired.
@@ -142,42 +167,22 @@ let client = Client::builder()
     .build()?;
 ```
 
-## Async vs Blocking API
+## Async Runtime Support
 
-Pkarr provides both async and blocking APIs.
-
-### Async (Default)
+Pkarr provides an async API.
 
 ```rust
-use pkarr::{Client, PublicKey};
+use pkarr::{Client, PublicKey, ResolvePolicy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::builder().build()?;
     let public_key: PublicKey = "pk:...".try_into()?;
 
-    let packet = client.resolve(&public_key).await;
+    let packet = client.resolve(&public_key, ResolvePolicy::CacheFirst).await;
     Ok(())
 }
 ```
-
-### Blocking
-
-For synchronous contexts, use `as_blocking()`:
-
-```rust
-use pkarr::{Client, PublicKey};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::builder().build()?.as_blocking();
-    let public_key: PublicKey = "pk:...".try_into()?;
-
-    let packet = client.resolve(&public_key);
-    Ok(())
-}
-```
-
-### Runtime Agnostic
 
 Pkarr uses `async_compat` internally. If no Tokio runtime is detected, it automatically wraps futures for compatibility. This means pkarr works with async-std, smol, or any other executor.
 
@@ -187,7 +192,7 @@ Pkarr uses `async_compat` internally. If no Tokio runtime is detected, it automa
 
 ```toml
 [dependencies]
-pkarr = { version = "5", default-features = false, features = ["relays"] }
+pkarr = { version = "6", default-features = false, features = ["relays"] }
 ```
 
 ### Constraints
@@ -203,12 +208,11 @@ DHT records are ephemeral. Nodes drop records after a few hours. For persistent 
 ### Basic Republishing Loop
 
 ```rust
-use pkarr::{Client, SignedPacket, Keypair};
+use pkarr::{Client, SignedPacket};
 use std::time::Duration;
 
 async fn republish_loop(
     client: Client,
-    keypair: Keypair,
     build_packet: impl Fn() -> SignedPacket,
 ) {
     let interval = Duration::from_secs(3600); // Republish hourly
@@ -216,8 +220,10 @@ async fn republish_loop(
     loop {
         let packet = build_packet();
 
-        match client.publish(&packet, None).await {
-            Ok(()) => println!("Republished successfully"),
+        match client.publish(&packet).await {
+            Ok(stored_on) => {
+                println!("Republished successfully; stored on at least {stored_on} DHT nodes")
+            }
             Err(e) => eprintln!("Republish failed: {e}"),
         }
 
@@ -226,77 +232,48 @@ async fn republish_loop(
 }
 ```
 
-### Safe Republishing with CAS
+### Coordinated Republishing
 
-When multiple processes might update the same key, use CAS (compare-and-swap) to prevent lost updates:
+The client does not serialize concurrent publishes for the same public key. If your application can build multiple different packets for one key at the same time, serialize those publishes in your own code before calling `publish`.
 
 ```rust
-use pkarr::{Client, SignedPacket, Keypair};
-use ntimestamp::Timestamp;
+use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
 
-async fn safe_republish(
+async fn coordinated_republish(
     client: &Client,
     keypair: &Keypair,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Get the most recent version
-    let (current_packet, cas): (SignedPacket, Option<Timestamp>) =
-        match client.resolve_most_recent(&keypair.public_key()).await {
-            Some(existing) => {
-                // Rebuild packet with same or updated records
-                let new_packet = SignedPacket::builder()
-                    // Copy existing records you want to keep
-                    .txt("key".try_into()?, "updated_value".try_into()?, 300)
-                    .sign(keypair)?;
-                (new_packet, Some(existing.timestamp()))
-            }
-            None => {
-                let new_packet = SignedPacket::builder()
-                    .txt("key".try_into()?, "value".try_into()?, 300)
-                    .sign(keypair)?;
-                (new_packet, None)
-            }
-        };
+    let current_packet: SignedPacket = match client
+        .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
+        .await
+    {
+        Ok(_existing) => {
+            // Rebuild packet with same or updated records
+            SignedPacket::builder()
+                // Copy existing records you want to keep
+                .txt("key".try_into()?, "updated_value".try_into()?, 300)
+                .sign(keypair)?
+        }
+        Err(pkarr::errors::ResolveError::NotFound) => SignedPacket::builder()
+            .txt("key".try_into()?, "value".try_into()?, 300)
+            .sign(keypair)?,
+        Err(error) => return Err(error.into()),
+    };
 
-    // Publish with CAS - fails if someone else published in between
-    client.publish(&current_packet, cas).await?;
+    let stored_on = client.publish(&current_packet).await?;
+    println!("Published successfully; stored on at least {stored_on} DHT nodes");
     Ok(())
 }
 ```
 
-## Accessing Internal Components
+## Resolve Policies
 
-### DHT Node Access
+Use [`ResolvePolicy::CacheFirst`] for normal application lookups. It returns fresh cached packets, or queries the network on a cache miss or expired cache entry. It does not fall back to expired local cache entries.
 
-```rust
-use pkarr::Client;
+Use [`ResolvePolicy::CacheOnly`] when a cached packet is acceptable even if it is expired.
 
-let client = Client::builder().build()?;
-
-// Access the underlying mainline DHT node
-if let Some(dht) = client.dht() {
-    // Check if bootstrapped
-    let bootstrapped = dht.bootstrapped();
-
-    // Get routing table info
-    let info = dht.info();
-
-    // Export bootstrap nodes for other clients
-    let bootstrap_nodes = dht.to_bootstrap();
-}
-```
-
-### Cache Access
-
-```rust
-use pkarr::{Client, PublicKey};
-
-let client = Client::builder().build()?;
-
-if let Some(cache) = client.cache() {
-    let len = cache.len();
-    let capacity = cache.capacity();
-}
-```
+Use [`ResolvePolicy::NetworkOnly`] when you need the most recent packet observed from the network, for example before rebuilding and publishing an updated packet.
 
 ## Next Steps
 

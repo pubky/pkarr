@@ -22,17 +22,9 @@ pub enum PublishError {
         description: String,
     },
 
-    /// Publishing risks a write conflict.
-    #[error("publishing risks a write conflict")]
-    ConflictRisk,
-
     /// Packet is not the most recent.
     #[error("packet is not the most recent")]
     NotMostRecent,
-
-    /// Compare-and-swap failed.
-    #[error("compare-and-swap failed")]
-    CasFailed,
 }
 
 impl From<PutMutableError> for PublishError {
@@ -48,11 +40,7 @@ impl From<PutMutableError> for PublishError {
                     }
                 }
             },
-            PutMutableError::Concurrency(error) => match error {
-                mainline::errors::ConcurrencyError::ConflictRisk => PublishError::ConflictRisk,
-                mainline::errors::ConcurrencyError::NotMostRecent => PublishError::NotMostRecent,
-                mainline::errors::ConcurrencyError::CasFailed => PublishError::CasFailed,
-            },
+            PutMutableError::Concurrency(_) => PublishError::NotMostRecent,
         }
     }
 }

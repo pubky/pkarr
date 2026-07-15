@@ -1,3 +1,5 @@
+use pkarr::{errors::ResolveError, ResolvePolicy};
+
 use super::constants::*;
 use super::error::ClientError;
 use super::*;
@@ -15,7 +17,7 @@ static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
 /// Pkarr Client for publishing and resolving signed DNS packets
 #[wasm_bindgen]
 pub struct Client {
-    relays: Option<std::sync::Arc<pkarr::Client>>,
+    client: std::sync::Arc<pkarr::Client>,
     timeout: std::time::Duration,
 }
 
@@ -43,7 +45,7 @@ impl Client {
             .map_err(|e| ClientError::ConfigurationError(format!("Failed to build client: {e}")))?;
 
         Ok(Client {
-            relays: Some(std::sync::Arc::new(client)),
+            client: std::sync::Arc::new(client),
             timeout,
         })
     }
@@ -52,18 +54,10 @@ impl Client {
     ///
     /// # Arguments
     /// * `signed_packet` - The signed packet to publish
-    /// * `cas_timestamp` - Optional compare-and-swap timestamp in milliseconds
     #[wasm_bindgen(js_name = "publish")]
-    pub async fn publish(
-        &self,
-        signed_packet: &super::SignedPacket,
-        cas_timestamp: Option<f64>,
-    ) -> Result<(), JsValue> {
-        let relays = self.get_relays()?;
-        let cas = Self::convert_cas_timestamp(cas_timestamp)?;
-
-        relays
-            .publish(&signed_packet.inner, cas)
+    pub async fn publish(&self, signed_packet: &super::SignedPacket) -> Result<(), JsValue> {
+        self.client
+            .publish(&signed_packet.inner)
             .await
             .map_err(|e| ClientError::NetworkError(format!("publish failed: {e}")))?;
 
@@ -82,7 +76,8 @@ impl Client {
         &self,
         public_key_str: &str,
     ) -> Result<Option<super::SignedPacket>, JsValue> {
-        self.inner_resolve(public_key_str).await
+        self.resolve_with_policy(public_key_str, ResolvePolicy::CacheFirst)
+            .await
     }
 
     /// Resolve the most recent signed packet for a public key
@@ -99,7 +94,8 @@ impl Client {
     ) -> Result<Option<super::SignedPacket>, JsValue> {
         // TODO: This could implement more sophisticated logic to
         // query multiple relays and find the most recent packet
-        self.inner_resolve(public_key_str).await
+        self.resolve_with_policy(public_key_str, ResolvePolicy::NetworkOnly)
+            .await
     }
 
     /// Get default relay URLs as JavaScript array
@@ -122,17 +118,26 @@ impl Client {
 // Private helper methods
 impl Client {
     /// Common implementation for resolve methods to avoid duplication
-    async fn inner_resolve(
+    async fn resolve_with_policy(
         &self,
         public_key_str: &str,
+        policy: ResolvePolicy,
     ) -> Result<Option<super::SignedPacket>, JsValue> {
-        let relays = self.get_relays()?;
         let public_key = Self::parse_public_key(public_key_str)?;
 
-        Ok(relays
-            .resolve(&public_key)
+        let packet = self
+            .client
+            .resolve(&public_key, policy)
             .await
-            .map(super::SignedPacket::from))
+            .map(Some)
+            .or_else(|error| match error {
+                ResolveError::NotFound => Ok(None),
+                error => Err(ClientError::NetworkError(format!(
+                    "resolve failed: {error}"
+                ))),
+            })?;
+
+        Ok(packet.map(super::SignedPacket::from))
     }
 
     /// Validate and create timeout duration from milliseconds
@@ -221,39 +226,6 @@ impl Client {
                 message: e.to_string(),
             }
             .into()
-        })
-    }
-
-    /// Convert and validate CAS timestamp
-    fn convert_cas_timestamp(
-        cas_timestamp: Option<f64>,
-    ) -> Result<Option<pkarr::Timestamp>, JsValue> {
-        match cas_timestamp {
-            Some(ts) => {
-                if ts < 0.0 {
-                    return Err(ClientError::ValidationError {
-                        context: "CAS timestamp".to_string(),
-                        message: "Timestamp cannot be negative".to_string(),
-                    }
-                    .into());
-                }
-                if ts > u64::MAX as f64 {
-                    return Err(ClientError::ValidationError {
-                        context: "CAS timestamp".to_string(),
-                        message: "Timestamp too large".to_string(),
-                    }
-                    .into());
-                }
-                Ok(Some(pkarr::Timestamp::from(ts as u64)))
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Get the relays client or return an error
-    fn get_relays(&self) -> Result<&pkarr::Client, JsValue> {
-        self.relays.as_ref().map(|arc| arc.as_ref()).ok_or_else(|| {
-            ClientError::ConfigurationError("No relays configured".to_string()).into()
         })
     }
 }

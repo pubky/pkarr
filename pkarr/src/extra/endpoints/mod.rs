@@ -1,5 +1,4 @@
 //! implementation of [Endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) spec.
-//!
 
 mod endpoint;
 
@@ -8,7 +7,7 @@ pub use endpoint::Endpoint;
 use futures_lite::{pin, Stream, StreamExt};
 use genawaiter::sync::Gen;
 
-use crate::PublicKey;
+use crate::{PublicKey, ResolvePolicy};
 
 impl crate::Client {
     /// Returns an async stream of [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint]s
@@ -76,7 +75,7 @@ impl crate::Client {
 
             // Initialize the stack with endpoints from the starting domain.
             if let Ok(tld) = PublicKey::try_from(qname) {
-                if let Some(signed_packet) = self.resolve(&tld).await {
+                if let Ok(signed_packet) = self.resolve(&tld, ResolvePolicy::CacheFirst).await {
                     depth += 1;
                     stack.extend(Endpoint::parse(&signed_packet, qname, https));
                 }
@@ -87,8 +86,8 @@ impl crate::Client {
 
                 // Attempt to resolve the domain as a public key.
                 match PublicKey::try_from(current) {
-                    Ok(tld) => match self.resolve(&tld).await {
-                        Some(signed_packet) if depth < self.0.max_recursion_depth => {
+                    Ok(tld) => match self.resolve(&tld, ResolvePolicy::CacheFirst).await {
+                        Ok(signed_packet) if depth < self.max_recursion_depth => {
                             depth += 1;
                             let endpoints = Endpoint::parse(&signed_packet, current, https);
 
@@ -186,7 +185,7 @@ mod tests {
 
             let signed_packet = builder.sign(&keypair).unwrap();
 
-            client.publish(&signed_packet, None).await.unwrap();
+            client.publish(&signed_packet).await.unwrap();
 
             keypair.public_key()
         })

@@ -15,36 +15,42 @@ pub const DEFAULT_MAX_RECURSION_DEPTH: u8 = 7;
 /// Default request timeout for DHT and relay requests.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// [Client]'s Config
+/// Configuration used to build a [`Client`].
 #[derive(Clone)]
 pub(crate) struct Config {
-    /// Configures the [crate::InMemoryCache] size, if no [Self::cache] is set.
+    /// Configures the [`crate::InMemoryCache`] size if no [`Self::cache`] is set.
     ///
-    /// Defaults to [DEFAULT_CACHE_SIZE]
+    /// Defaults to [`DEFAULT_CACHE_SIZE`].
     pub cache_size: usize,
-    /// Used in the `min` parameter in [crate::SignedPacket::expires_in].
+    /// Used as the `min` parameter in [`crate::SignedPacket::expires_in`].
     ///
-    /// Defaults to [DEFAULT_MINIMUM_TTL]
+    /// Defaults to [`DEFAULT_MINIMUM_TTL`].
     pub minimum_ttl: u32,
-    /// Used in the `max` parameter in [crate::SignedPacket::expires_in].
+    /// Used as the `max` parameter in [`crate::SignedPacket::expires_in`].
     ///
-    /// Defaults to [DEFAULT_MAXIMUM_TTL]
+    /// Defaults to [`DEFAULT_MAXIMUM_TTL`].
     pub maximum_ttl: u32,
-    /// Custom [Cache] implementation, defaults to [crate::InMemoryCache]
+    /// Custom [`Cache`] implementation. Defaults to [`crate::InMemoryCache`].
     pub cache: Option<Arc<dyn Cache>>,
 
     #[cfg(dht)]
     pub dht: Option<mainline::Config>,
+    /// Policy used to classify DHT publish and resolve diagnostics.
+    #[cfg(dht)]
+    pub dht_report_policy: crate::dht::ReportPolicy,
 
-    /// Pkarr [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md) Urls
-    #[cfg(feature = "relays")]
+    /// Pkarr [relay](https://github.com/pubky/pkarr/blob/main/design/relays.md) URLs.
+    #[cfg(relays)]
     pub relays: Option<Vec<Url>>,
+    /// Custom HTTP client used for relay requests.
+    #[cfg(relays)]
+    pub reqwest_client: Option<reqwest::Client>,
 
-    /// Timeout for both Dht and Relays requests.
+    /// Timeout for DHT and relay requests.
     ///
-    /// The longer this timeout the longer resolve queries will take before consider failed.
+    /// A longer timeout allows requests more time to complete before they are considered failed.
     ///
-    /// Defaults to [DEFAULT_REQUEST_TIMEOUT].
+    /// Defaults to [`DEFAULT_REQUEST_TIMEOUT`].
     pub request_timeout: Duration,
 
     #[cfg(feature = "endpoints")]
@@ -61,8 +67,10 @@ impl Default for Config {
 
             #[cfg(dht)]
             dht: Some(make_dht_config(DEFAULT_REQUEST_TIMEOUT)),
+            #[cfg(dht)]
+            dht_report_policy: crate::dht::ReportPolicy::mainnet(),
 
-            #[cfg(feature = "relays")]
+            #[cfg(relays)]
             relays: Some(
                 crate::DEFAULT_RELAYS
                     .iter()
@@ -71,6 +79,8 @@ impl Default for Config {
                     })
                     .collect(),
             ),
+            #[cfg(relays)]
+            reqwest_client: None,
 
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
 
@@ -92,7 +102,9 @@ impl std::fmt::Debug for Config {
         #[cfg(dht)]
         debug_struct.field("dht", &self.dht);
         #[cfg(dht)]
-        #[cfg(feature = "relays")]
+        debug_struct.field("dht_report_policy", &self.dht_report_policy);
+        #[cfg(dht)]
+        #[cfg(relays)]
         debug_struct.field(
             "relays",
             &self
@@ -100,6 +112,8 @@ impl std::fmt::Debug for Config {
                 .as_ref()
                 .map(|urls| urls.iter().map(|url| url.as_str()).collect::<Vec<_>>()),
         );
+        #[cfg(relays)]
+        debug_struct.field("reqwest_client", &self.reqwest_client);
 
         debug_struct.field("request_timeout", &self.request_timeout);
 
@@ -112,12 +126,13 @@ impl std::fmt::Debug for Config {
 pub struct ClientBuilder(Config);
 
 impl ClientBuilder {
-    /// Similar to crates `no-default-features`, this method will remove the default [Self::bootstrap], and [Self::relays]
-    /// effectively disabling the use of both [mainline] and [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
+    /// Similar to a crate's `--no-default-features` option, this method removes the
+    /// default [`Self::bootstrap`] and [`Self::relays`], effectively disabling both
+    /// [`mainline`] and [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
-    /// Or you can use [Self::relays] to use custom [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
+    /// Use [`Self::relays`] to configure custom relays.
     ///
-    /// Similarly you can use [Self::bootstrap] or [Self::dht] to use [mainline] with custom configurations.
+    /// Similarly, use [`Self::bootstrap`] or [`Self::dht`] to configure [`mainline`].
     pub fn no_default_network(&mut self) -> &mut Self {
         self.no_dht();
         self.no_relays();
@@ -125,7 +140,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Disable relays, and use the Dht only.
+    /// Disable the DHT and use relays only.
     pub fn no_dht(&mut self) -> &mut Self {
         #[cfg(dht)]
         {
@@ -136,7 +151,7 @@ impl ClientBuilder {
     }
 
     #[cfg(dht)]
-    /// Create a [mainline::Config] if `None`, and allows mutating it with a callback function.
+    /// Creates a [`mainline::Config`] when absent and allows it to be mutated with a callback.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut mainline::Config) -> &mut mainline::Config,
@@ -152,12 +167,20 @@ impl ClientBuilder {
         self
     }
 
-    /// Convenient method to set the `bootstrap` nodes in [Self::dht].
+    /// Set the policy used to classify DHT publish and resolve diagnostics.
+    #[cfg(dht)]
+    pub fn dht_report_policy(&mut self, policy: crate::dht::ReportPolicy) -> &mut Self {
+        self.0.dht_report_policy = policy;
+
+        self
+    }
+
+    /// Convenience method for setting the `bootstrap` nodes in [`Self::dht`].
     ///
-    /// You can start a separate Dht network by setting this to an empty array.
+    /// You can start a separate DHT network by setting this to an empty array.
     ///
     /// If you want to extend bootstrap nodes with more nodes, you can
-    /// use [Self::extra_bootstrap].
+    /// use [`Self::extra_bootstrap`].
     #[cfg(dht)]
     pub fn bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
         self.dht(|config| {
@@ -172,7 +195,7 @@ impl ClientBuilder {
     /// Extend the DHT bootstrapping nodes.
     ///
     /// If you want to set (override) the DHT bootstrapping nodes,
-    /// use [Self::bootstrap] directly.
+    /// use [`Self::bootstrap`] directly.
     pub fn extra_bootstrap<T: ToSocketAddrs>(&mut self, bootstrap: &[T]) -> &mut Self {
         self.dht(|config| {
             let mut existing = config.bootstrap.clone().unwrap_or_default();
@@ -184,7 +207,7 @@ impl ClientBuilder {
         self
     }
 
-    /// Disable relays, and use the Dht only.
+    /// Disable relays and use only the DHT.
     pub fn no_relays(&mut self) -> &mut Self {
         #[cfg(feature = "relays")]
         {
@@ -194,9 +217,14 @@ impl ClientBuilder {
         self
     }
 
-    /// Set custom set of [Relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
+    /// Set a custom set of [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
-    /// If you want to disable relays use [Self::no_relays] instead.
+    /// If you want to disable relays, use [`Self::no_relays`] instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidRelayUrl`] if a relay URL cannot be parsed or does not use
+    /// the `http` or `https` scheme.
     #[cfg(feature = "relays")]
     pub fn relays<T: reqwest::IntoUrl + Clone>(
         &mut self,
@@ -208,9 +236,14 @@ impl ClientBuilder {
     }
 
     #[cfg(feature = "relays")]
-    /// Extend the current [Self::relays] with extra relays.
+    /// Extend the current [`Self::relays`] with extra relays.
     ///
-    /// If you want to set (override) relays instead, use [Self::relays]
+    /// If you want to replace the configured relays, use [`Self::relays`] instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidRelayUrl`] if a relay URL cannot be parsed or does not use
+    /// the `http` or `https` scheme.
     pub fn extra_relays<T: reqwest::IntoUrl + Clone>(
         &mut self,
         relays: &[T],
@@ -226,9 +259,9 @@ impl ClientBuilder {
         Ok(self)
     }
 
-    /// Set the size of the capacity of the [Self::cache] implementation.
+    /// Set the cache capacity.
     ///
-    /// If set to `0` cache will be disabled.
+    /// If set to `0`, the cache is disabled.
     pub fn cache_size(&mut self, cache_size: usize) -> &mut Self {
         self.0.cache_size = cache_size;
 
@@ -237,7 +270,7 @@ impl ClientBuilder {
 
     /// Set the minimum TTL value.
     ///
-    /// Limits how soon a [crate::SignedPacket] is considered expired.
+    /// Limits how soon a [`crate::SignedPacket`] is considered expired.
     pub fn minimum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.minimum_ttl = ttl;
         self.0.maximum_ttl = self.0.maximum_ttl.max(ttl);
@@ -247,7 +280,7 @@ impl ClientBuilder {
 
     /// Set the maximum TTL value.
     ///
-    /// Limits how long it takes before a [crate::SignedPacket] is considered expired.
+    /// Limits how long it takes before a [`crate::SignedPacket`] is considered expired.
     pub fn maximum_ttl(&mut self, ttl: u32) -> &mut Self {
         self.0.maximum_ttl = ttl;
         self.0.minimum_ttl = self.0.minimum_ttl.min(ttl);
@@ -255,17 +288,31 @@ impl ClientBuilder {
         self
     }
 
-    /// Set a custom implementation of [Cache].
+    /// Set a custom implementation of [`Cache`].
+    ///
+    /// A cache with a capacity of `0` is treated as disabled.
     pub fn cache(&mut self, cache: Arc<dyn Cache>) -> &mut Self {
         self.0.cache = Some(cache);
 
         self
     }
 
-    /// Set the maximum request timeout for both Dht and relays client.
+    /// Set a custom [`reqwest::Client`] for relay HTTP requests.
     ///
-    /// Useful for testing NOT FOUND responses, where you want to reach the timeout
-    /// sooner than the default of [DEFAULT_REQUEST_TIMEOUT].
+    /// The client's request timeout still comes from [`Self::request_timeout`],
+    /// because relay request timeouts are applied per request for native and
+    /// WASM targets.
+    #[cfg(relays)]
+    pub fn reqwest_client(&mut self, client: reqwest::Client) -> &mut Self {
+        self.0.reqwest_client = Some(client);
+
+        self
+    }
+
+    /// Set the maximum timeout for DHT and relay requests.
+    ///
+    /// Useful for testing not-found responses when you want to reach the timeout
+    /// sooner than the default of [`DEFAULT_REQUEST_TIMEOUT`].
     pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
         self.0.request_timeout = timeout;
         #[cfg(dht)]
@@ -277,18 +324,23 @@ impl ClientBuilder {
     }
 
     #[cfg(feature = "endpoints")]
-    /// Sets the maximum depth of recursion in [Endpoints](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) resolution.
+    /// Set the maximum recursion depth for [endpoint](https://github.com/pubky/pkarr/blob/main/design/endpoints.md) resolution.
     ///
-    /// Similar to `bind9`'s [option](https://bind9.readthedocs.io/en/latest/reference.html#namedconf-statement-max-recursion-depth)
+    /// Similar to BIND 9's [option](https://bind9.readthedocs.io/en/latest/reference.html#namedconf-statement-max-recursion-depth).
     ///
-    /// Defaults to `7`
+    /// Defaults to `7`.
     pub fn max_recursion_depth(&mut self, max_recursion_depth: u8) -> &mut Self {
         self.0.max_recursion_depth = max_recursion_depth;
 
         self
     }
 
-    /// Try building a [Client] with the configuration in this builder.
+    /// Build a [`Client`] with this builder's configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError`] if no network is configured or a configured backend
+    /// cannot be constructed.
     pub fn build(&self) -> Result<Client, BuildError> {
         Client::new(self.0.clone())
     }
@@ -339,14 +391,14 @@ fn into_urls<T: reqwest::IntoUrl + Clone>(relays: &[T]) -> Result<Vec<Url>, Inva
 
 #[cfg(relays)]
 #[derive(thiserror::Error, Debug)]
-/// Errors occurring during building a [Client]
+/// Errors returned when configuring relay URLs for a [`Client`].
 pub enum InvalidRelayUrl {
     #[error("Failed to parse into a Url: {0}")]
-    /// Failed to parse into a Url.
+    /// Failed to parse a URL.
     Parse(reqwest::Error),
 
     #[error("Relays Urls should have `http` or `https`: {0}")]
-    /// Relays Urls should have `http` or `https`.
+    /// Relay URL does not use the `http` or `https` scheme.
     NotHttp(String),
 }
 
@@ -383,5 +435,39 @@ mod tests {
             .expect("dht config should be recreated");
 
         assert_eq!(dht_config.request_timeout, timeout);
+    }
+
+    #[test]
+    fn default_dht_report_policy_is_mainnet() {
+        let config = Config::default();
+
+        assert_eq!(
+            config.dht_report_policy,
+            crate::dht::ReportPolicy::mainnet()
+        );
+    }
+
+    #[test]
+    fn custom_dht_report_policy_is_stored() {
+        let mut builder = Client::builder();
+        builder.dht_report_policy(crate::dht::ReportPolicy::testnet());
+
+        assert_eq!(
+            builder.0.dht_report_policy,
+            crate::dht::ReportPolicy::testnet()
+        );
+    }
+}
+
+#[cfg(all(test, relays))]
+mod relay_tests {
+    use super::*;
+
+    #[test]
+    fn custom_reqwest_client_is_stored() {
+        let mut builder = Client::builder();
+        builder.reqwest_client(reqwest::Client::new());
+
+        assert!(builder.0.reqwest_client.is_some());
     }
 }
