@@ -1,3 +1,5 @@
+#![warn(unused_crate_dependencies)]
+
 use js_sys::{Array, Uint8Array};
 use wasm_bindgen::prelude::*;
 

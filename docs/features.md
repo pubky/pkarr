@@ -13,23 +13,26 @@ pkarr = "6"
 
 This includes both DHT and relay support, suitable for most server applications.
 
-## Core Features
+## Base API
 
-### `keys`
+### Key utilities
 
-Ed25519 key utilities for identity management.
+Ed25519 key utilities for identity management are always available, including
+when default features are disabled.
 
 ```toml
-pkarr = { version = "6", default-features = false, features = ["keys"] }
+pkarr = { version = "6", default-features = false }
 ```
 
 Provides:
 - `Keypair` - Generate and manage Ed25519 keypairs
 - `PublicKey` - Handle public keys and derive z-base32 identifiers
 
+## Core Features
+
 ### `signed_packet`
 
-DNS packet signing and verification. Automatically enables `keys`.
+DNS packet signing and verification.
 
 ```toml
 pkarr = { version = "6", default-features = false, features = ["signed_packet"] }
@@ -149,7 +152,7 @@ pkarr = { version = "6", features = ["full"] }
 |----------|---------------------|
 | Server application | `full-client` (default) |
 | Browser/WASM | `relays` only |
-| Key handling only | `keys` |
+| Key handling only | `default-features = false` |
 | Packet signing only | `signed_packet` |
 | With persistent cache | `lmdb-cache` |
 | Service discovery | `endpoints` |
@@ -160,7 +163,7 @@ pkarr = { version = "6", features = ["full"] }
 
 | Feature | Native | WASM |
 |---------|--------|------|
-| `keys` | Yes | Yes |
+| Base key API | Yes | Yes |
 | `signed_packet` | Yes | Yes |
 | `dht` | Yes | No |
 | `relays` | Yes | Yes |
@@ -170,9 +173,9 @@ pkarr = { version = "6", features = ["full"] }
 
 ## Minimal Configurations
 
-**Smallest footprint (keys only):**
+**Smallest footprint (key utilities only):**
 ```toml
-pkarr = { version = "6", default-features = false, features = ["keys"] }
+pkarr = { version = "6", default-features = false }
 ```
 
 **WASM browser client:**
