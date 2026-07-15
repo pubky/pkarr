@@ -85,7 +85,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Publishing sends your signed packet to the Mainline DHT and configured relays. The returned `stored_on` value is the maximum count reported by any successful backend, not a sum, because backends may store the packet on the same DHT nodes. It means the packet was stored on at least that many DHT nodes.
+Publishing sends your signed packet to the Mainline DHT and configured
+relays. The returned `stored_on` value means the packet was stored on **at
+least** that many DHT nodes. When several publishing backends are configured,
+the client uses the maximum count reported by any successful backend, not the
+sum, because different backends may store the packet on the same DHT nodes.
 
 ## Resolve
 
