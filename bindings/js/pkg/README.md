@@ -7,13 +7,13 @@ Public-Key Addressable Resource Records for publishing and resolving DNS packets
 This package is generated via `wasm-pack` and includes TypeScript definitions.
 
 ```bash
-npm install pkarr
+npm install @synonymdev/pkarr
 ```
 
 ### 🚀 Quick Start
 
 ```javascript
-const { Client, Keypair, SignedPacket } = require('pkarr');
+const { Client, Keypair, ResolvePolicy, SignedPacket } = require('@synonymdev/pkarr');
 
 // Create a new keypair and client
 const keypair = new Keypair();
@@ -26,10 +26,14 @@ builder.addARecord("www", "192.168.1.1", 3600);
 
 // Sign and publish
 const packet = builder.buildAndSign(keypair);
-await client.publish(packet);
+const storedNodeCount = await client.publish(packet);
+console.log(`Stored on at least ${storedNodeCount} DHT nodes`);
 
 // Resolve later
-const resolved = await client.resolve(keypair.public_key_string());
+const resolved = await client.resolve(
+    keypair.publicKeyString(),
+    ResolvePolicy.CacheFirst,
+);
 console.log('Records:', resolved.records);
 ```
 
@@ -38,6 +42,7 @@ console.log('Records:', resolved.records);
 #### Core Classes
 
 - **`Client`** - Publish and resolve packets via Pubky relays
+- **`ResolvePolicy`** - Select cache-only, cache-first, or network-only resolution
 - **`Keypair`** - Generate and manage Ed25519 keypairs
 - **`SignedPacket`** - Build and sign DNS packets
 - **`Utils`** - Utility functions for validation
@@ -45,15 +50,15 @@ console.log('Records:', resolved.records);
 #### Client Methods
 
 ```javascript
-const { Client } = require('pkarr');
+const { Client, ResolvePolicy } = require('@synonymdev/pkarr');
 
-const client = new Client();                    // Default relays
-const client = new Client(relays, timeout);     // Custom configuration
+const client = new Client();                          // Default relays and 2s timeout
+const customClient = new Client(relays, timeout);     // Custom configuration
 
-await client.publish(packet);                   // Publish a signed packet
-await client.publish(packet, casTimestamp);     // Compare-and-swap publish
-const packet = await client.resolve(publicKey); // Resolve most recent packet
-const packet = await client.resolveMostRecent(publicKey); // Alternative resolve method
+const storedNodeCount = await client.publish(packet); // Minimum known DHT node count
+const cached = await client.resolve(publicKey, ResolvePolicy.CacheOnly);
+const fresh = await client.resolve(publicKey, ResolvePolicy.CacheFirst);
+const latest = await client.resolve(publicKey, ResolvePolicy.NetworkOnly);
 
 const relays = Client.defaultRelays();          // Get default relay list
 ```
@@ -61,20 +66,20 @@ const relays = Client.defaultRelays();          // Get default relay list
 #### Keypair Operations
 
 ```javascript
-const { Keypair } = require('pkarr');
+const { Keypair } = require('@synonymdev/pkarr');
 
 const keypair = new Keypair();                    // Generate new keypair
-const keypair = Keypair.from_secret_key(bytes);   // From existing secret
+const restored = Keypair.fromSecretKey(bytes);    // Restore from an existing secret
 
-const publicKey = keypair.public_key_string();    // Base32 public key
-const publicBytes = keypair.public_key_bytes();   // Raw public key bytes
-const secretBytes = keypair.secret_key_bytes();   // Raw secret key bytes
+const publicKey = keypair.publicKeyString();      // Base32 public key
+const publicBytes = keypair.publicKeyBytes();     // Raw public key bytes
+const secretBytes = keypair.secretKeyBytes();     // Raw secret key bytes
 ```
 
 #### Packet Building
 
 ```javascript
-const { SignedPacket } = require('pkarr');
+const { SignedPacket } = require('@synonymdev/pkarr');
 
 const builder = SignedPacket.builder();
 
@@ -108,7 +113,9 @@ console.log(packet.timestampMs);
 console.log(packet.records);
 ```
 
-CAS ensures your update only succeeds if the server state hasn't changed since you last read it.
+`resolve` rejects when no packet is found or the configured relays fail. Pkarr errors are
+JavaScript `Error` objects with a stable `code`, such as `NotFound`, `NoResponses`, or
+`NotMostRecent`.
 
 ### 🧪 Examples
 
@@ -136,7 +143,7 @@ cargo build
 After configuring your custom relay, you can initialize a client with custom relay URLs:
 
 ```javascript
-const { Client } = require('pkarr');
+const { Client } = require('@synonymdev/pkarr');
 
 const customRelays = ['http://localhost:15411'];
 const client = new Client(customRelays, 10000); // 10s timeout

@@ -21,7 +21,7 @@ mod utils;
 
 // Re-exports
 pub use builder::SignedPacketBuilder;
-pub use client::Client;
+pub use client::{Client, ResolvePolicy};
 pub use keypair::Keypair;
 pub use signed_packet::SignedPacket;
 pub use utils::Utils;

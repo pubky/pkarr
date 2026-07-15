@@ -4,7 +4,7 @@
  * Tests complete workflows with live network operations
  */
 
-const { Client, Keypair, SignedPacket } = require('../index.cjs');
+const { Client, Keypair, ResolvePolicy, SignedPacket } = require('../index.cjs');
 const { newFixture } = require('./helpers.js');
 
 async function runIntegrationTests() {
@@ -19,24 +19,23 @@ async function runIntegrationTests() {
         const client = new Client(localRelay, timeoutMs);
 
         const {builder, keypair} = newFixture();
-        const publicKey = keypair.public_key_string();
+        const publicKey = keypair.publicKeyString();
         
         // Create a packet
         builder.addTxtRecord("_test", "integration-test=true", 3600);
         builder.addARecord("www", "192.168.1.100", 3600);
         const packet = builder.buildAndSign(keypair);
 
-        await client.publish(packet);
+        const storedNodeCount = await client.publish(packet);
+        if (!Number.isInteger(storedNodeCount) || storedNodeCount < 1) {
+            throw new Error(`Expected a positive stored node count, got ${storedNodeCount}`);
+        }
         
         // Wait for propagation
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Resolve the packet
-        const resolvedPacket = await client.resolve(publicKey);
-        
-        if (!resolvedPacket) {
-            throw new Error('Failed to resolve published packet');
-        }
+        const resolvedPacket = await client.resolve(publicKey, ResolvePolicy.CacheFirst);
         
         if (resolvedPacket.publicKeyString !== publicKey) {
             throw new Error('Resolved packet has wrong public key');
@@ -50,7 +49,7 @@ async function runIntegrationTests() {
         //console.log('\t- Multiple DNS record types');
 
         const {builder: builder2, keypair: keypair2} = newFixture();
-        const publicKey2 = keypair2.public_key_string();
+        const publicKey2 = keypair2.publicKeyString();
         
         builder2.addTxtRecord("_service", "type=web;version=1", 3600);
         builder2.addTxtRecord("description", "Integration test service", 7200);
@@ -68,10 +67,7 @@ async function runIntegrationTests() {
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const resolvedPacket2 = await client.resolve(publicKey2);
-        if (!resolvedPacket2) {
-            throw new Error('Complex packet resolution failed');
-        }
+        const resolvedPacket2 = await client.resolve(publicKey2, ResolvePolicy.CacheFirst);
         if (resolvedPacket2.records.length !== 10) {
             throw new Error(`Complex packet should have 10 records, got ${resolvedPacket2.records.length}`);
         }
@@ -96,21 +92,17 @@ async function runIntegrationTests() {
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const resolvedPacket3 = await customClient.resolve(keypair3.public_key_string());
-        if (!resolvedPacket3) {
-            throw new Error('Custom relay resolution failed');
-        }
+        const resolvedPacket3 = await customClient.resolve(
+            keypair3.publicKeyString(),
+            ResolvePolicy.CacheFirst,
+        );
         
-        // Test 4: resolveMostRecent functionality
-        //console.log('\t- resolveMostRecent functionality');
-        const mostRecentPacket = await client.resolveMostRecent(publicKey);
-        
-        if (!mostRecentPacket) {
-            throw new Error('resolveMostRecent failed');
-        }
+        // Test 4: Network-only resolution
+        //console.log('\t- Network-only resolution');
+        const mostRecentPacket = await client.resolve(publicKey, ResolvePolicy.NetworkOnly);
         
         if (mostRecentPacket.publicKeyString !== publicKey) {
-            throw new Error('resolveMostRecent returned wrong packet');
+            throw new Error('Network-only resolve returned wrong packet');
         }
         
         // Test 5: Packet update workflow
@@ -126,10 +118,7 @@ async function runIntegrationTests() {
         
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const latestPacket = await client.resolveMostRecent(publicKey);
-        if (!latestPacket) {
-            throw new Error('Failed to resolve updated packet');
-        }
+        const latestPacket = await client.resolve(publicKey, ResolvePolicy.NetworkOnly);
         
         if (latestPacket.timestampMs <= packet.timestampMs) {
             throw new Error('Updated packet should have newer timestamp');
@@ -137,11 +126,20 @@ async function runIntegrationTests() {
         
         // Test 6: Error handling for non-existent keys
         //console.log('\t- Error handling for non-existent keys');
-        const nonExistentKey = new Keypair().public_key_string();
-        const nonExistentResult = await client.resolve(nonExistentKey);
-        
-        if (nonExistentResult !== undefined && nonExistentResult !== null) {
-            throw new Error(`Expected null or undefined for non-existent key, got: ${nonExistentResult}`);
+        const nonExistentKey = new Keypair().publicKeyString();
+        try {
+            await client.resolve(nonExistentKey, ResolvePolicy.CacheFirst);
+            throw new Error('Expected resolution of a non-existent key to fail');
+        } catch (error) {
+            if (error.message === 'Expected resolution of a non-existent key to fail') {
+                throw error;
+            }
+            if (!(error instanceof Error)) {
+                throw new Error('Expected resolve to reject with an Error');
+            }
+            if (error.name !== 'PkarrResolveError' || error.code !== 'NotFound') {
+                throw new Error(`Expected NotFound, got ${error.name}:${error.code}`);
+            }
         }
     } catch (error) {
         console.error('\n❌ Integration test failed:', error.message);
@@ -158,4 +156,4 @@ if (require.main === module) {
         console.error('❌ Integration tests failed:', error);
         process.exit(1);
     });
-} 
+}

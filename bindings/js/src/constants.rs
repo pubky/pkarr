@@ -13,8 +13,8 @@ pub const MS_TO_MICROSECONDS: u64 = 1000;
 
 // === Client Timeout Constants ===
 
-/// Default timeout for requests in milliseconds (30 seconds)
-pub const DEFAULT_TIMEOUT_MS: u32 = 30000;
+/// Default timeout for requests in milliseconds.
+pub const DEFAULT_TIMEOUT_MS: u32 = pkarr::DEFAULT_REQUEST_TIMEOUT.as_millis() as u32;
 
 /// Minimum allowed timeout in milliseconds (1 second)
 pub const MIN_TIMEOUT_MS: u32 = 1000;

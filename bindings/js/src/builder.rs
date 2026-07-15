@@ -35,7 +35,7 @@ impl SignedPacketBuilder {
             })?;
 
         let record = ResourceRecord::new(domain_name, CLASS::IN, ttl, RData::TXT(txt));
-        self.inner = self.inner.clone().record(record);
+        self.inner = std::mem::take(&mut self.inner).record(record);
         Ok(())
     }
 
@@ -56,7 +56,7 @@ impl SignedPacketBuilder {
                     message: e.to_string(),
                 })?;
 
-        self.inner = self.inner.clone().a(domain_name, addr, ttl);
+        self.inner = std::mem::take(&mut self.inner).a(domain_name, addr, ttl);
         Ok(())
     }
 
@@ -77,7 +77,7 @@ impl SignedPacketBuilder {
                     message: e.to_string(),
                 })?;
 
-        self.inner = self.inner.clone().aaaa(domain_name, addr, ttl);
+        self.inner = std::mem::take(&mut self.inner).aaaa(domain_name, addr, ttl);
         Ok(())
     }
 
@@ -90,7 +90,7 @@ impl SignedPacketBuilder {
     #[wasm_bindgen(js_name = "addCnameRecord")]
     pub fn add_cname_record(&mut self, name: &str, target: &str, ttl: u32) -> Result<(), JsValue> {
         let (domain_name, target_name) = self.parse_name_pair(name, target)?;
-        self.inner = self.inner.clone().cname(domain_name, target_name, ttl);
+        self.inner = std::mem::take(&mut self.inner).cname(domain_name, target_name, ttl);
         Ok(())
     }
 
@@ -119,7 +119,7 @@ impl SignedPacketBuilder {
             dns::svcb::apply_svcb_params(&mut svcb, &params_obj)?;
         }
 
-        self.inner = self.inner.clone().https(domain_name, svcb, ttl);
+        self.inner = std::mem::take(&mut self.inner).https(domain_name, svcb, ttl);
         Ok(())
     }
 
@@ -148,7 +148,7 @@ impl SignedPacketBuilder {
             dns::svcb::apply_svcb_params(&mut svcb, &params_obj)?;
         }
 
-        self.inner = self.inner.clone().svcb(domain_name, svcb, ttl);
+        self.inner = std::mem::take(&mut self.inner).svcb(domain_name, svcb, ttl);
         Ok(())
     }
 
@@ -162,7 +162,7 @@ impl SignedPacketBuilder {
     pub fn add_ns_record(&mut self, name: &str, nameserver: &str, ttl: u32) -> Result<(), JsValue> {
         let (domain_name, nameserver_name) = self.parse_name_pair(name, nameserver)?;
         let ns = simple_dns::rdata::NS(nameserver_name);
-        self.inner = self.inner.clone().rdata(domain_name, RData::NS(ns), ttl);
+        self.inner = std::mem::take(&mut self.inner).rdata(domain_name, RData::NS(ns), ttl);
         Ok(())
     }
 
@@ -173,10 +173,8 @@ impl SignedPacketBuilder {
     #[wasm_bindgen(js_name = "setTimestamp")]
     pub fn set_timestamp(&mut self, timestamp_ms: f64) {
         let timestamp_microseconds = (timestamp_ms as u64).saturating_mul(MS_TO_MICROSECONDS);
-        self.inner = self
-            .inner
-            .clone()
-            .timestamp(Timestamp::from(timestamp_microseconds));
+        self.inner =
+            std::mem::take(&mut self.inner).timestamp(Timestamp::from(timestamp_microseconds));
     }
 
     /// Build and sign the packet with the given keypair
@@ -198,13 +196,11 @@ impl SignedPacketBuilder {
     }
 
     /// Clear all records from the builder
-    #[wasm_bindgen(js_name = "clear")]
     pub fn clear(&mut self) {
         self.inner = pkarr::SignedPacket::builder();
     }
 
     /// Create a new builder instance (static method)
-    #[wasm_bindgen(js_name = "builder")]
     pub fn builder() -> SignedPacketBuilder {
         Self::new()
     }

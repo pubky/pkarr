@@ -14,23 +14,18 @@ const cargoPackageName = /\[package\]\nname = "(.*?)"/.exec(cargoTomlContent)[1]
 const name = cargoPackageName.replace(/-/g, '_')
 
 const content = await readFile(path.join(__dirname, `../../pkg/nodejs/${name}.js`), "utf8");
+const exportedNames = Array.from(
+  content.matchAll(/^exports\.([A-Za-z_$][\w$]*) = \1;$/gm),
+  match => match[1],
+).filter(exportName => exportName !== "__wasm");
+const wasmBytesVariable = content.includes("const wasmBytes =") ? "wasmBytes" : "bytes";
 
 const patched = content
-  // use global TextDecoder TextEncoder
-  .replace("require(`util`)", "globalThis")
-  // attach to `imports` instead of module.exports
-  .replace("= module.exports", "= imports")
-  // Export classes
-  .replace(/\nclass (.*?) \{/g, "\n export class $1 {")
-  // Export functions
-  .replace(/\nmodule.exports.(.*?) = function/g, "\nimports.$1 = $1;\nexport function $1")
-  // Add exports to 'imports'
-  .replace(/\nmodule\.exports\.(.*?)\s+/g, "\nimports.$1")
-  // Export default
-  .replace(/$/, 'export default imports')
+  // Named exports are appended below in ESM syntax.
+  .replace(/^exports\.[A-Za-z_$][\w$]* = [A-Za-z_$][\w$]*;\n?/gm, "")
   // inline wasm bytes
   .replace(
-    /\nconst path.*\nconst bytes.*\n/,
+    /\nconst (?:path|wasmPath).*\nconst (?:bytes|wasmBytes).*\n/,
     `
 var __toBinary = /* @__PURE__ */ (() => {
   var table = new Uint8Array(128);
@@ -49,12 +44,23 @@ var __toBinary = /* @__PURE__ */ (() => {
   };
 })();
 
-const bytes = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `../../pkg/nodejs/${name}_bg.wasm`), "base64"))
+const ${wasmBytesVariable} = __toBinary(${JSON.stringify(await readFile(path.join(__dirname, `../../pkg/nodejs/${name}_bg.wasm`), "base64"))
     });
 `,
   );
 
-await writeFile(path.join(__dirname, `../../pkg/index.js`), patched + "\nglobalThis['pubky'] = imports");
+if (exportedNames.length === 0) {
+  throw new Error("No wasm-bindgen exports found");
+}
+
+const exports = `
+const imports = { ${exportedNames.join(", ")} };
+export { ${exportedNames.join(", ")} };
+export default imports;
+globalThis['pubky'] = imports;
+`;
+
+await writeFile(path.join(__dirname, `../../pkg/index.js`), patched + exports);
 
 // Move outside of nodejs
 await Promise.all([".js", ".d.ts", "_bg.wasm"].map(suffix =>

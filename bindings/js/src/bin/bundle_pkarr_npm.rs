@@ -1,21 +1,23 @@
 use std::env;
 use std::io;
-use std::process::{Command, ExitStatus};
+use std::process::Command;
 
 // If the process hangs, try `cargo clean` to remove all locks.
 
-fn main() {
+fn main() -> io::Result<()> {
     println!("🏗️ Building Pkarr WASM Package...");
 
-    build_wasm("nodejs").unwrap();
-    patch().unwrap();
+    build_wasm("nodejs")?;
+    patch()?;
     println!("📦 Pkarr WASM Package built successfully!");
+
+    Ok(())
 }
 
-fn build_wasm(target: &str) -> io::Result<ExitStatus> {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+fn build_wasm(target: &str) -> io::Result<()> {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(io::Error::other)?;
 
-    let output = Command::new("wasm-pack")
+    let status = Command::new("wasm-pack")
         .env(
             "CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS",
             "--cfg=getrandom_backend=\"wasm_js\"",
@@ -29,33 +31,31 @@ fn build_wasm(target: &str) -> io::Result<ExitStatus> {
             "--out-dir",
             &format!("pkg/{}", target),
         ])
-        .output()?;
+        .status()?;
 
-    if !output.status.success() {
-        eprintln!(
-            "wasm-pack failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "wasm-pack failed with status {status}"
+        )));
     }
 
-    Ok(output.status)
+    Ok(())
 }
 
-fn patch() -> io::Result<ExitStatus> {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+fn patch() -> io::Result<()> {
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(io::Error::other)?;
 
     println!("🩹 Applying patch to generate isomorphic code for web and nodejs from {manifest_dir}/src/bin/patch.mjs ...");
 
-    let output = Command::new("node")
+    let status = Command::new("node")
         .args([format!("{manifest_dir}/src/bin/patch.mjs")])
-        .output()?;
+        .status()?;
 
-    if !output.status.success() {
-        eprintln!(
-            "patch.mjs failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "patch.mjs failed with status {status}"
+        )));
     }
 
-    Ok(output.status)
+    Ok(())
 }

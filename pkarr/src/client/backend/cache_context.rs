@@ -45,6 +45,7 @@ impl<'a> CacheContext<'a> {
     ///
     /// Returns [`None`] when there is no cached packet or its timestamp cannot
     /// be lowered.
+    #[cfg(dht)]
     pub(super) fn dht_request_lower_bound(self) -> Option<Timestamp> {
         self.cached?
             .timestamp()
@@ -93,6 +94,7 @@ mod tests {
         assert!(!context.invalid_seq_is_covered(11));
     }
 
+    #[cfg(dht)]
     #[test]
     fn zero_timestamp_has_no_dht_request_lower_bound() {
         let cached = SignedPacket::builder()
@@ -116,6 +118,7 @@ mod tests {
             .unwrap();
         let context = CacheContext::new(Some(&cached), 0, 0);
 
+        #[cfg(dht)]
         assert_eq!(context.dht_request_lower_bound(), Some(timestamp - 1));
         assert_eq!(
             context

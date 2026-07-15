@@ -1,4 +1,4 @@
-const { Client, Keypair, SignedPacket, Utils } = require('./index.js');
+const { Client, Keypair, ResolvePolicy, SignedPacket, Utils } = require('./index.cjs');
 
 /**
  * Comprehensive Pkarr WASM Example
@@ -27,7 +27,7 @@ async function runExample() {
         
         console.log('🔑 Keypair Management');
         const keypair = new Keypair();
-        const publicKey = keypair.public_key_string();
+        const publicKey = keypair.publicKeyString();
         console.log(`Generated keypair: ${publicKey}`);
         console.log();
         
@@ -81,8 +81,8 @@ async function runExample() {
         
         console.log('📡 Publishing');
         console.log('Publishing packet...');
-        await client.publish(signedPacket);
-        console.log('Publish successful');
+        const storedNodeCount = await client.publish(signedPacket);
+        console.log(`Publish successful (stored on at least ${storedNodeCount} DHT nodes)`);
         console.log();
         
         console.log('🌐 Resolution');
@@ -90,14 +90,10 @@ async function runExample() {
         await sleep(2000);
         
         console.log('Resolving packet...');
-        const resolvedPacket = await client.resolve(publicKey);
-        if (resolvedPacket) {
-            console.log('Resolution successful');
-            console.log(`Timestamp: ${new Date(resolvedPacket.timestampMs / 1000).toISOString()}`);
-            console.log(`Records: ${resolvedPacket.records.length}`);
-        } else {
-            console.log('Resolution failed');
-        }
+        const resolvedPacket = await client.resolve(publicKey, ResolvePolicy.CacheFirst);
+        console.log('Resolution successful');
+        console.log(`Timestamp: ${new Date(resolvedPacket.timestampMs).toISOString()}`);
+        console.log(`Records: ${resolvedPacket.records.length}`);
         console.log();
         
         console.log('🧰 Utility Functions');
@@ -107,7 +103,7 @@ async function runExample() {
         console.log(`Public key validation: ${isValidKey ? 'valid' : 'invalid'}`);
         
         // Default relays
-        const defaultRelays = Utils.defaultRelays();
+        const defaultRelays = Client.defaultRelays();
         console.log(`Default relays available: ${defaultRelays.length}`);
         
         // Packet operations
@@ -120,7 +116,7 @@ async function runExample() {
             const parsedPacket = SignedPacket.fromBytes(packetBytes);
             console.log('Packet parsing successful');
             console.log(`Parsed public key: ${parsedPacket.publicKeyString}`);
-            console.log(`Parsed timestamp: ${new Date(parsedPacket.timestampMs / 1000).toISOString()}`);
+            console.log(`Parsed timestamp: ${new Date(parsedPacket.timestampMs).toISOString()}`);
 
             // Record value formatting
             console.log('Record Value Formatting:');
