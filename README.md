@@ -30,9 +30,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Publish to the network
     let client = Client::builder().build()?;
-    client.publish(&packet, None).await?;
+    let stored_on = client.publish(&packet).await?;
 
-    println!("Published! Resolve at: https://pkdns.net/?id={}", keypair.public_key());
+    println!(
+        "Published on at least {stored_on} DHT nodes! Resolve at: https://pkdns.net/?id={}",
+        keypair.public_key()
+    );
     Ok(())
 }
 ```

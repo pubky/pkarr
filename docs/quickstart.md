@@ -116,7 +116,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Err(pkarr::errors::ResolveError::NotFound) => {
-            println!("No packet found for {}", public_key);
+            println!("No packet found for {public_key}");
+        }
+        Err(pkarr::errors::ResolveError::InvalidSignedPacket { seq }) => {
+            eprintln!("The network contains an invalid signed packet at sequence {seq}");
         }
         Err(error) => {
             eprintln!("Resolve failed: {error}");
@@ -127,7 +130,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Use `resolve(&public_key, ResolvePolicy::NetworkOnly)` when you need the latest version, for example before publishing updates. `ResolvePolicy::CacheFirst` only returns non-expired cached packets; use `ResolvePolicy::CacheOnly` when expired cached packets are acceptable.
+Use `resolve(&public_key, ResolvePolicy::NetworkOnly)` when you need the latest
+network state, for example before publishing updates. A newer mutable item that
+is not a valid Pkarr packet is returned as `ResolveError::InvalidSignedPacket`,
+not `ResolveError::NotFound`.
+
+`ResolvePolicy::CacheFirst` only returns non-expired packets. Use
+`ResolvePolicy::CacheOnly` when expired packets are acceptable. `CacheOnly`
+checks the local cache first and may then query configured relay caches, but it
+never queries DHT nodes.
 
 ## Complete Example
 
@@ -138,8 +149,9 @@ use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Create client and keypair
-    let client = Client::builder().build()?;
+    // 1. Use independent clients so resolving cannot read the publisher's cache
+    let publisher = Client::builder().build()?;
+    let resolver = Client::builder().cache_size(0).build()?;
     let keypair = Keypair::random();
 
     println!("Generated keypair with public key: {}", keypair.public_key());
@@ -160,13 +172,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Publish to DHT and relays
     println!("Publishing...");
-    let stored_on = client.publish(&signed_packet).await?;
+    let stored_on = publisher.publish(&signed_packet).await?;
     println!("Published successfully; stored on at least {stored_on} DHT nodes");
 
-    // 4. Resolve it back
+    // 4. Resolve it from the configured networks, bypassing local caches
     println!("Resolving...");
-    match client
-        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+    match resolver
+        .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
     {
         Ok(resolved) => {
@@ -174,7 +186,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("\nResolved packet:\n{}", resolved);
         }
         Err(pkarr::errors::ResolveError::NotFound) => {
-            println!("Failed to resolve (this can happen on first publish)");
+            println!("No packet found on the configured networks");
+        }
+        Err(pkarr::errors::ResolveError::InvalidSignedPacket { seq }) => {
+            eprintln!("The network contains an invalid signed packet at sequence {seq}");
         }
         Err(error) => {
             eprintln!("Resolve failed: {error}");
@@ -190,13 +205,13 @@ Expected output:
 ```
 Generated keypair with public key: <52-character z-base32 string>
 Publishing...
-Published successfully!
+Published successfully; stored on at least <count> DHT nodes
 Resolving...
 
 Resolved packet:
 SignedPacket (<public_key>):
     last_seen: 0 seconds ago
-    timestamp: <timestamp>
+    timestamp: <timestamp> <HTTP date>,
     signature: <signature>
     records:
         www.<public_key>  IN  3600  A  93.184.216.34
