@@ -124,22 +124,15 @@ async function runIntegrationTests() {
             throw new Error('Updated packet should have newer timestamp');
         }
         
-        // Test 6: Error handling for non-existent keys
-        //console.log('\t- Error handling for non-existent keys');
+        // Test 6: Non-existent keys return null
+        //console.log('\t- Non-existent keys return null');
         const nonExistentKey = new Keypair().publicKey();
-        try {
-            await client.resolve(nonExistentKey, ResolvePolicy.CacheFirst);
-            throw new Error('Expected resolution of a non-existent key to fail');
-        } catch (error) {
-            if (error.message === 'Expected resolution of a non-existent key to fail') {
-                throw error;
-            }
-            if (!(error instanceof Error)) {
-                throw new Error('Expected resolve to reject with an Error');
-            }
-            if (error.name !== 'PkarrResolveError' || error.code !== 'NotFound') {
-                throw new Error(`Expected NotFound, got ${error.name}:${error.code}`);
-            }
+        const nonExistentPacket = await client.resolve(
+            nonExistentKey,
+            ResolvePolicy.CacheFirst,
+        );
+        if (nonExistentPacket !== null) {
+            throw new Error('Expected resolution of a non-existent key to return null');
         }
     } catch (error) {
         console.error('\n❌ Integration test failed:', error.message);

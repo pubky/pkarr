@@ -34,7 +34,7 @@ const resolved = await client.resolve(
     keypair.publicKey(),
     ResolvePolicy.CacheFirst,
 );
-console.log('Records:', resolved.records);
+console.log('Records:', resolved?.records ?? 'No packet found');
 ```
 
 ### 🏗️ API Overview
@@ -113,9 +113,9 @@ console.log(packet.timestampMs);
 console.log(packet.records);
 ```
 
-`resolve` rejects when no packet is found or the configured relays fail. Pkarr errors are
-JavaScript `Error` objects with a stable `code`, such as `NotFound`, `NoResponses`, or
-`NotMostRecent`.
+`resolve` returns `null` when no packet is found. Other resolution failures reject with
+JavaScript `Error` objects carrying a stable `code`, such as `NoResponses`,
+`NoUsableResponses`, or `InvalidSignedPacket`.
 
 ### 🧪 Examples
 

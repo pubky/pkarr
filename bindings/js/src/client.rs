@@ -93,19 +93,24 @@ impl Client {
     /// * `policy` - Controls whether cached packets may be returned
     ///
     /// # Returns
-    /// * `SignedPacket` - The resolved signed packet
+    /// The resolved [`SignedPacket`], or JavaScript `null` when no packet is found.
+    ///
+    /// # Errors
+    /// Returns a JavaScript error when the public key is invalid or resolution
+    /// fails for a reason other than the packet not being found.
+    #[wasm_bindgen(unchecked_return_type = "SignedPacket | null")]
     pub async fn resolve(
         &self,
         public_key_str: &str,
         policy: ResolvePolicy,
-    ) -> Result<super::SignedPacket, JsValue> {
+    ) -> Result<JsValue, JsValue> {
         let public_key = Self::parse_public_key(public_key_str)?;
 
-        self.client
-            .resolve(&public_key, policy.into())
-            .await
-            .map(super::SignedPacket::from)
-            .map_err(resolve_error)
+        match self.client.resolve(&public_key, policy.into()).await {
+            Ok(packet) => Ok(super::SignedPacket::from(packet).into()),
+            Err(pkarr::errors::ResolveError::NotFound) => Ok(JsValue::NULL),
+            Err(error) => Err(resolve_error(error)),
+        }
     }
 
     /// Get default relay URLs as JavaScript array
