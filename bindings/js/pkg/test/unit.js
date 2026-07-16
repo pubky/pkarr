@@ -27,7 +27,7 @@ async function runUnitTests() {
     test("Client instantiation", () => {
         const client = new Client();
         if (!client) throw new Error("Client not created");
-        if (client.getTimeout() !== 2000) throw new Error("Unexpected default timeout");
+        if (client.getTimeout() !== 30000) throw new Error("Unexpected default timeout");
     });
 
     test("Resolve policies are exported", () => {

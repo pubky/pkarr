@@ -49,7 +49,7 @@ impl Client {
     ///
     /// # Arguments
     /// * `relays` - Optional array of relay URLs as strings. If not provided, default relays will be used
-    /// * `timeout_ms` - Controls the network timeouts for relay responses (optional, defaults to 2000 ms, min: 1000, max: 300000)
+    /// * `timeout_ms` - Controls the network timeouts for relay responses (optional, defaults to 30000 ms, min: 1000, max: 300000)
     #[wasm_bindgen(constructor)]
     pub fn new(relays: Option<Array>, timeout_ms: Option<u32>) -> Result<Client, JsValue> {
         console_error_panic_hook::set_once();

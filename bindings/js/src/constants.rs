@@ -13,8 +13,12 @@ pub const MS_TO_MICROSECONDS: u64 = 1000;
 
 // === Client Timeout Constants ===
 
-/// Default timeout for requests in milliseconds.
-pub const DEFAULT_TIMEOUT_MS: u32 = pkarr::DEFAULT_REQUEST_TIMEOUT.as_millis() as u32;
+/// Default timeout for relay HTTP requests in milliseconds (30 seconds).
+///
+/// The JS client uses only the relay backend, so this configures reqwest's
+/// request timeout directly. Keep it independent from the shorter default
+/// shared with DHT requests by the core client.
+pub const DEFAULT_TIMEOUT_MS: u32 = 30_000;
 
 /// Minimum allowed timeout in milliseconds (1 second)
 pub const MIN_TIMEOUT_MS: u32 = 1000;

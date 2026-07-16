@@ -52,7 +52,7 @@ console.log('Records:', resolved.records);
 ```javascript
 const { Client, ResolvePolicy } = require('@synonymdev/pkarr');
 
-const client = new Client();                          // Default relays and 2s timeout
+const client = new Client();                          // Default relays and 30s timeout
 const customClient = new Client(relays, timeout);     // Custom configuration
 
 const storedNodeCount = await client.publish(packet); // Minimum known DHT node count
