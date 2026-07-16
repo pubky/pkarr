@@ -25,7 +25,7 @@ What is your target platform?
 |
 +-- Key management
 |   |
-|   +-- Just key generation? --> `keys` only
+|   +-- Just key generation? --> `default-features = false`
 |   +-- Signing packets offline? --> `signed_packet`
 |
 +-- Relay-only deployment
@@ -40,7 +40,7 @@ What is your target platform?
 | Full native client | `pkarr = "6"` |
 | Native client + persistence | `pkarr = { version = "6", features = ["lmdb-cache"] }` |
 | Browser/WASM | `pkarr = { version = "6", default-features = false, features = ["relays"] }` |
-| Key utilities only | `pkarr = { version = "6", default-features = false, features = ["keys"] }` |
+| Key utilities only | `pkarr = { version = "6", default-features = false }` |
 | Everything for native apps | `pkarr = { version = "6", features = ["full"] }` |
 
 Endpoint-related extras require the client API. With default features this is

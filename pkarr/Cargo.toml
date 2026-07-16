@@ -18,11 +18,10 @@ categories = ["network-programming"]
 
 [dependencies]
 base32 = "0.5.1"
-ed25519-dalek = { version = "3.0.0-rc.1", default-features = false }
-thiserror = "2.0.18"
-serde = { version = "1.0.228", features = ["derive"] }
-
 document-features = "0.2.12"
+ed25519-dalek = { version = "3.0.0-rc.1", default-features = false }
+serde = "1.0.228"
+thiserror = "2.0.18"
 
 #feat: signed_packet dependencies
 simple-dns = { workspace = true, optional = true }
@@ -58,7 +57,10 @@ mainline = { version = "7.0.0", default-features = false, features = ["async"], 
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
-tokio = { version = "1.49.0", default-features = false, optional = true }
+tokio = { version = "1.49.0", default-features = false, features = [
+  "macros",
+  "rt",
+], optional = true }
 async-compat = { version = "0.2.5", optional = true }
 
 # feat: lmdb-cache defendencies
@@ -80,7 +82,6 @@ getrandom = { version = "0.4.1", default-features = false, features = [
 
 #feat: client dependencies
 log = { version = "0.4.29", optional = true }
-wasm-bindgen-futures = { version = "0.4.58", optional = true }
 
 # feat: relay dependencies
 reqwest = { workspace = true, optional = true }
@@ -109,10 +110,7 @@ console_log = { version = "1.0.0", features = ["color"] }
 cfg_aliases = "0.2.1"
 
 [features]
-# Basic types
-keys = []
 signed_packet = [
-  "keys",
   "dep:simple-dns",
   "dep:ntimestamp",
   "dep:bytes",
@@ -169,10 +167,9 @@ __client = [
   "dep:sha1_smol",
   "dep:futures-lite",
   "dep:async-compat",
-  "tokio/macros",
+  "dep:tokio",
   "dep:log",
   "dep:tracing",
-  "dep:wasm-bindgen-futures",
 ]
 
 [package.metadata.docs.rs]

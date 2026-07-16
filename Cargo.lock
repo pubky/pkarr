@@ -1724,7 +1724,6 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "wasm-bindgen-test",
 ]
 
@@ -1735,8 +1734,6 @@ dependencies = [
  "cfg_aliases",
  "console_error_panic_hook",
  "console_log",
- "futures-lite",
- "getrandom 0.4.3",
  "js-sys",
  "ntimestamp",
  "pkarr",
@@ -1745,7 +1742,6 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -1757,7 +1753,6 @@ dependencies = [
  "axum-server",
  "bytes",
  "clap",
- "futures-lite",
  "governor",
  "http",
  "httpdate",
