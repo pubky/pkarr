@@ -19,7 +19,7 @@ async function runIntegrationTests() {
         const client = new Client(localRelay, timeoutMs);
 
         const {builder, keypair} = newFixture();
-        const publicKey = keypair.publicKeyString();
+        const publicKey = keypair.publicKey();
         
         // Create a packet
         builder.addTxtRecord("_test", "integration-test=true", 3600);
@@ -37,7 +37,7 @@ async function runIntegrationTests() {
         // Resolve the packet
         const resolvedPacket = await client.resolve(publicKey, ResolvePolicy.CacheFirst);
         
-        if (resolvedPacket.publicKeyString !== publicKey) {
+        if (resolvedPacket.publicKey !== publicKey) {
             throw new Error('Resolved packet has wrong public key');
         }
         
@@ -49,7 +49,7 @@ async function runIntegrationTests() {
         //console.log('\t- Multiple DNS record types');
 
         const {builder: builder2, keypair: keypair2} = newFixture();
-        const publicKey2 = keypair2.publicKeyString();
+        const publicKey2 = keypair2.publicKey();
         
         builder2.addTxtRecord("_service", "type=web;version=1", 3600);
         builder2.addTxtRecord("description", "Integration test service", 7200);
@@ -93,7 +93,7 @@ async function runIntegrationTests() {
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         const resolvedPacket3 = await customClient.resolve(
-            keypair3.publicKeyString(),
+            keypair3.publicKey(),
             ResolvePolicy.CacheFirst,
         );
         
@@ -101,7 +101,7 @@ async function runIntegrationTests() {
         //console.log('\t- Network-only resolution');
         const mostRecentPacket = await client.resolve(publicKey, ResolvePolicy.NetworkOnly);
         
-        if (mostRecentPacket.publicKeyString !== publicKey) {
+        if (mostRecentPacket.publicKey !== publicKey) {
             throw new Error('Network-only resolve returned wrong packet');
         }
         
@@ -126,7 +126,7 @@ async function runIntegrationTests() {
         
         // Test 6: Error handling for non-existent keys
         //console.log('\t- Error handling for non-existent keys');
-        const nonExistentKey = new Keypair().publicKeyString();
+        const nonExistentKey = new Keypair().publicKey();
         try {
             await client.resolve(nonExistentKey, ResolvePolicy.CacheFirst);
             throw new Error('Expected resolution of a non-existent key to fail');

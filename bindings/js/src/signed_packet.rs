@@ -12,8 +12,8 @@ pub struct SignedPacket {
 #[wasm_bindgen]
 impl SignedPacket {
     /// Get the public key as a z-base32 string
-    #[wasm_bindgen(getter, js_name = publicKeyString)]
-    pub fn public_key_string(&self) -> String {
+    #[wasm_bindgen(getter, js_name = publicKey)]
+    pub fn public_key(&self) -> String {
         self.inner.public_key().to_string()
     }
 

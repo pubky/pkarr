@@ -31,7 +31,7 @@ console.log(`Stored on at least ${storedNodeCount} DHT nodes`);
 
 // Resolve later
 const resolved = await client.resolve(
-    keypair.publicKeyString(),
+    keypair.publicKey(),
     ResolvePolicy.CacheFirst,
 );
 console.log('Records:', resolved.records);
@@ -71,7 +71,7 @@ const { Keypair } = require('@synonymdev/pkarr');
 const keypair = new Keypair();                    // Generate new keypair
 const restored = Keypair.fromSecretKey(bytes);    // Restore from an existing secret
 
-const publicKey = keypair.publicKeyString();      // Base32 public key
+const publicKey = keypair.publicKey();            // z-base-32 public key
 const publicBytes = keypair.publicKeyBytes();     // Raw public key bytes
 const secretBytes = keypair.secretKeyBytes();     // Raw secret key bytes
 ```
@@ -108,7 +108,7 @@ builder.setTimestamp(Date.now());
 const packet = builder.buildAndSign(keypair);
 
 // Access packet data
-console.log(packet.publicKeyString);
+console.log(packet.publicKey);
 console.log(packet.timestampMs);
 console.log(packet.records);
 ```

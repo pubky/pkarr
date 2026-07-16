@@ -59,7 +59,7 @@ async function runUnitTests() {
     // Test 5: Keypair public key string
     test("Keypair public key string", () => {
         const keypair = new Keypair();
-        const publicKey = keypair.publicKeyString();
+        const publicKey = keypair.publicKey();
         if (!publicKey || typeof publicKey !== 'string') throw new Error("Invalid public key string");
         if (publicKey.length !== 52) throw new Error("Public key string should be 52 characters");
     });
@@ -84,7 +84,7 @@ async function runUnitTests() {
         const secretKey = originalKeypair.secretKeyBytes();
         const restoredKeypair = Keypair.fromSecretKey(secretKey);
 
-        if (originalKeypair.publicKeyString() !== restoredKeypair.publicKeyString()) {
+        if (originalKeypair.publicKey() !== restoredKeypair.publicKey()) {
             throw new Error("Restored keypair public key doesn't match");
         }
     });
@@ -198,7 +198,7 @@ async function runUnitTests() {
         
         const packet = builder.buildAndSign(keypair);
         if (!packet) throw new Error("Packet not created");
-        if (packet.publicKeyString !== keypair.publicKeyString()) {
+        if (packet.publicKey !== keypair.publicKey()) {
             throw new Error("Packet public key doesn't match keypair");
         }
     });
@@ -218,7 +218,7 @@ async function runUnitTests() {
     // Test 20: Public key validation
     test("Public key validation", () => {
         const keypair = new Keypair();
-        const publicKey = keypair.publicKeyString();
+        const publicKey = keypair.publicKey();
         
         const isValid = validatePublicKey(publicKey);
         if (!isValid) throw new Error("Valid public key marked as invalid");
@@ -236,7 +236,7 @@ async function runUnitTests() {
         const uncompressedBytes = originalPacket.bytes();
         const parsedPacket = SignedPacket.fromBytes(uncompressedBytes);
         
-        if (parsedPacket.publicKeyString !== originalPacket.publicKeyString) {
+        if (parsedPacket.publicKey !== originalPacket.publicKey) {
             throw new Error("Parsed packet public key doesn't match");
         }
     });
@@ -317,7 +317,7 @@ async function runUnitTests() {
         if (packet.records.length !== 1) throw new Error("NS record not added");
         
         const record = packet.records[0];
-        if (record.name !== `zone.${keypair.publicKeyString()}`) throw new Error("NS record name not properly normalized");
+        if (record.name !== `zone.${keypair.publicKey()}`) throw new Error("NS record name not properly normalized");
         if (record.ttl !== 86400) throw new Error("Wrong TTL for NS record");
     });
     

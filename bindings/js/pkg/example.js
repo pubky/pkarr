@@ -27,7 +27,7 @@ async function runExample() {
         
         console.log('🔑 Keypair Management');
         const keypair = new Keypair();
-        const publicKey = keypair.publicKeyString();
+        const publicKey = keypair.publicKey();
         console.log(`Generated keypair: ${publicKey}`);
         console.log();
         
@@ -115,7 +115,7 @@ async function runExample() {
         try {
             const parsedPacket = SignedPacket.fromBytes(packetBytes);
             console.log('Packet parsing successful');
-            console.log(`Parsed public key: ${parsedPacket.publicKeyString}`);
+            console.log(`Parsed public key: ${parsedPacket.publicKey}`);
             console.log(`Parsed timestamp: ${new Date(parsedPacket.timestampMs).toISOString()}`);
 
             // Record value formatting
@@ -131,7 +131,7 @@ async function runExample() {
         
         try {
             const parsedPacket2 = SignedPacket.fromBytes(packetBytes);
-            let sameKey = parsedPacket2.publicKeyString === publicKey;
+            let sameKey = parsedPacket2.publicKey === publicKey;
         } catch (error) {
             console.log(`Alternative parsing failed: ${error}`);
         }

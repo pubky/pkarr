@@ -37,8 +37,8 @@ impl Keypair {
     /// Get the public key as a z-base32 encoded string
     ///
     /// This is the format used for pkarr public key identifiers
-    #[wasm_bindgen(js_name = "publicKeyString")]
-    pub fn public_key_string(&self) -> String {
+    #[wasm_bindgen(js_name = "publicKey")]
+    pub fn public_key(&self) -> String {
         self.keypair.public_key().to_string()
     }
 

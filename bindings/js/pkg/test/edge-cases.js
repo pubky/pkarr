@@ -78,7 +78,7 @@ async function runEdgeCasesTests() {
         
         // Test a valid key to ensure validation works
         const validKeypair = new Keypair();
-        const validKey = validKeypair.publicKeyString();
+        const validKey = validKeypair.publicKey();
         const isValidKeyValid = validatePublicKey(validKey);
         if (!isValidKeyValid) {
             throw new Error("Valid key marked as invalid");
@@ -589,7 +589,7 @@ async function runEdgeCasesTests() {
         // than returning from the publisher's local cache.
         const resolver = new Client(relays, 10_000);
         const resolvePromises = keypairs.map(kp =>
-            resolver.resolve(kp.publicKeyString(), ResolvePolicy.CacheFirst)
+            resolver.resolve(kp.publicKey(), ResolvePolicy.CacheFirst)
         );
         const results = await Promise.all(resolvePromises);
         
@@ -598,7 +598,7 @@ async function runEdgeCasesTests() {
             if (!result) {
                 throw new Error(`Concurrent operation ${index} failed to resolve`);
             }
-            if (result.publicKeyString !== keypairs[index].publicKeyString()) {
+            if (result.publicKey !== keypairs[index].publicKey()) {
                 throw new Error(`Concurrent operation ${index} returned wrong packet`);
             }
         });
