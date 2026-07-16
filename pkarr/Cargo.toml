@@ -19,7 +19,7 @@ categories = ["network-programming"]
 [dependencies]
 base32 = "0.5.1"
 document-features = "0.2.12"
-ed25519-dalek = { version = "3.0.0-rc.1", default-features = false }
+ed25519-dalek = { version = "3", default-features = false }
 serde = "1.0.228"
 thiserror = "2.0.18"
 
