@@ -4,7 +4,7 @@
  * Tests boundary conditions, error scenarios, and edge cases
  */
 
-const { Client, Keypair, SignedPacket } = require('../index.cjs');
+const { Client, Keypair, ResolvePolicy, SignedPacket } = require('../index.cjs');
 const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runEdgeCasesTests() {
@@ -46,7 +46,7 @@ async function runEdgeCasesTests() {
         
         testCases.forEach((invalidKey, index) => {
             try {
-                Keypair.from_secret_key(invalidKey);
+                Keypair.fromSecretKey(invalidKey);
                 throw new Error(`Should have failed for case ${index} (size: ${invalidKey.length})`);
             } catch (error) {
                 // WASM errors might not have detailed messages, just check that it throws
@@ -78,7 +78,7 @@ async function runEdgeCasesTests() {
         
         // Test a valid key to ensure validation works
         const validKeypair = new Keypair();
-        const validKey = validKeypair.public_key_string();
+        const validKey = validKeypair.publicKey();
         const isValidKeyValid = validatePublicKey(validKey);
         if (!isValidKeyValid) {
             throw new Error("Valid key marked as invalid");
@@ -512,8 +512,7 @@ async function runEdgeCasesTests() {
             testBuilder.setTimestamp(timestamp);
             
             const packet = testBuilder.buildAndSign(keypair);
-            // The timestamp is stored in microseconds (multiplied by 1000)
-            const expectedTimestamp = timestamp * 1000;
+            const expectedTimestamp = timestamp;
             if (packet.timestampMs !== expectedTimestamp) {
                 throw new Error(`Timestamp not set correctly: expected ${expectedTimestamp}, got ${packet.timestampMs}`);
             }
@@ -568,9 +567,10 @@ async function runEdgeCasesTests() {
         }
     });
     
-    // Test 18: Concurrent client operations
-    await asyncTest("Concurrent client operations", async () => {
-        const client = new Client();
+    // Test 18: Concurrent client resolves
+    await asyncTest("Concurrent client resolves", async () => {
+        const relays = ["http://127.0.0.1:15411"];
+        const publisher = new Client(relays, 10_000);
         const keypairs = Array.from({ length: 5 }, () => new Keypair());
         
         // Create packets
@@ -580,15 +580,17 @@ async function runEdgeCasesTests() {
             return builder.buildAndSign(kp);
         });
         
-        // Publish all concurrently
-        const publishPromises = packets.map(packet => client.publish(packet));
-        await Promise.all(publishPromises);
-        
-        // Wait for propagation
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // Resolve all concurrently
-        const resolvePromises = keypairs.map(kp => client.resolve(kp.public_key_string()));
+        // Publish sequentially because each relay PUT performs a DHT publish.
+        for (const packet of packets) {
+            await publisher.publish(packet);
+        }
+
+        // Use a fresh client so concurrent resolves go through the relay rather
+        // than returning from the publisher's local cache.
+        const resolver = new Client(relays, 10_000);
+        const resolvePromises = keypairs.map(kp =>
+            resolver.resolve(kp.publicKey(), ResolvePolicy.CacheFirst)
+        );
         const results = await Promise.all(resolvePromises);
         
         // Check results
@@ -596,7 +598,7 @@ async function runEdgeCasesTests() {
             if (!result) {
                 throw new Error(`Concurrent operation ${index} failed to resolve`);
             }
-            if (result.publicKeyString !== keypairs[index].public_key_string()) {
+            if (result.publicKey !== keypairs[index].publicKey()) {
                 throw new Error(`Concurrent operation ${index} returned wrong packet`);
             }
         });
@@ -709,4 +711,4 @@ if (require.main === module) {
         console.error('❌ Edge cases tests failed:', error);
         process.exit(1);
     });
-} 
+}

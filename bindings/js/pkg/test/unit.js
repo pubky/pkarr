@@ -4,7 +4,7 @@
  * Tests individual components and methods in isolation
  */
 
-const { Client, Keypair, SignedPacket } = require('../index.cjs');
+const { Client, Keypair, ResolvePolicy, SignedPacket } = require('../index.cjs');
 const { newFixture, validatePublicKey } = require('./helpers.js');
 
 async function runUnitTests() {
@@ -27,6 +27,13 @@ async function runUnitTests() {
     test("Client instantiation", () => {
         const client = new Client();
         if (!client) throw new Error("Client not created");
+        if (client.getTimeout() !== 30000) throw new Error("Unexpected default timeout");
+    });
+
+    test("Resolve policies are exported", () => {
+        if (ResolvePolicy.CacheOnly === undefined) throw new Error("CacheOnly not exported");
+        if (ResolvePolicy.CacheFirst === undefined) throw new Error("CacheFirst not exported");
+        if (ResolvePolicy.NetworkOnly === undefined) throw new Error("NetworkOnly not exported");
     });
     
     // Test 2: Client with custom relays
@@ -52,7 +59,7 @@ async function runUnitTests() {
     // Test 5: Keypair public key string
     test("Keypair public key string", () => {
         const keypair = new Keypair();
-        const publicKey = keypair.public_key_string();
+        const publicKey = keypair.publicKey();
         if (!publicKey || typeof publicKey !== 'string') throw new Error("Invalid public key string");
         if (publicKey.length !== 52) throw new Error("Public key string should be 52 characters");
     });
@@ -60,24 +67,24 @@ async function runUnitTests() {
     // Test 6: Keypair secret key bytes
     test("Keypair secret key bytes", () => {
         const keypair = new Keypair();
-        const secretKey = keypair.secret_key_bytes();
+        const secretKey = keypair.secretKeyBytes();
         if (!secretKey || secretKey.length !== 32) throw new Error("Secret key should be 32 bytes");
     });
     
     // Test 7: Keypair public key bytes
     test("Keypair public key bytes", () => {
         const keypair = new Keypair();
-        const publicKey = keypair.public_key_bytes();
+        const publicKey = keypair.publicKeyBytes();
         if (!publicKey || publicKey.length !== 32) throw new Error("Public key should be 32 bytes");
     });
     
     // Test 8: Keypair from secret key
     test("Keypair from secret key", () => {
         const originalKeypair = new Keypair();
-        const secretKey = originalKeypair.secret_key_bytes();
-        const restoredKeypair = Keypair.from_secret_key(secretKey);
-        
-        if (originalKeypair.public_key_string() !== restoredKeypair.public_key_string()) {
+        const secretKey = originalKeypair.secretKeyBytes();
+        const restoredKeypair = Keypair.fromSecretKey(secretKey);
+
+        if (originalKeypair.publicKey() !== restoredKeypair.publicKey()) {
             throw new Error("Restored keypair public key doesn't match");
         }
     });
@@ -191,7 +198,7 @@ async function runUnitTests() {
         
         const packet = builder.buildAndSign(keypair);
         if (!packet) throw new Error("Packet not created");
-        if (packet.publicKeyString !== keypair.public_key_string()) {
+        if (packet.publicKey !== keypair.publicKey()) {
             throw new Error("Packet public key doesn't match keypair");
         }
     });
@@ -211,7 +218,7 @@ async function runUnitTests() {
     // Test 20: Public key validation
     test("Public key validation", () => {
         const keypair = new Keypair();
-        const publicKey = keypair.public_key_string();
+        const publicKey = keypair.publicKey();
         
         const isValid = validatePublicKey(publicKey);
         if (!isValid) throw new Error("Valid public key marked as invalid");
@@ -229,7 +236,7 @@ async function runUnitTests() {
         const uncompressedBytes = originalPacket.bytes();
         const parsedPacket = SignedPacket.fromBytes(uncompressedBytes);
         
-        if (parsedPacket.publicKeyString !== originalPacket.publicKeyString) {
+        if (parsedPacket.publicKey !== originalPacket.publicKey) {
             throw new Error("Parsed packet public key doesn't match");
         }
     });
@@ -243,9 +250,8 @@ async function runUnitTests() {
         builder.setTimestamp(customTime);
         
         const packet = builder.buildAndSign(keypair);
-        // The timestamp is stored in microseconds (multiplied by 1000)
-        if (packet.timestampMs !== customTime * 1000) {
-            throw new Error(`Custom timestamp not set correctly: expected ${customTime * 1000}, got ${packet.timestampMs}`);
+        if (packet.timestampMs !== customTime) {
+            throw new Error(`Custom timestamp not set correctly: expected ${customTime}, got ${packet.timestampMs}`);
         }
     });
     
@@ -311,7 +317,7 @@ async function runUnitTests() {
         if (packet.records.length !== 1) throw new Error("NS record not added");
         
         const record = packet.records[0];
-        if (record.name !== `zone.${keypair.public_key_string()}`) throw new Error("NS record name not properly normalized");
+        if (record.name !== `zone.${keypair.publicKey()}`) throw new Error("NS record name not properly normalized");
         if (record.ttl !== 86400) throw new Error("Wrong TTL for NS record");
     });
     
@@ -360,4 +366,4 @@ if (require.main === module) {
         console.error('❌ Unit tests failed:', error);
         process.exit(1);
     });
-} 
+}

@@ -22,7 +22,7 @@ impl Keypair {
     ///
     /// # Arguments
     /// * `secret_key_bytes` - The 32-byte secret key
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "fromSecretKey")]
     pub fn from_secret_key(secret_key_bytes: &[u8]) -> Result<Keypair, JsValue> {
         Self::validate_secret_key_bytes(secret_key_bytes)?;
 
@@ -37,8 +37,8 @@ impl Keypair {
     /// Get the public key as a z-base32 encoded string
     ///
     /// This is the format used for pkarr public key identifiers
-    #[wasm_bindgen]
-    pub fn public_key_string(&self) -> String {
+    #[wasm_bindgen(js_name = "publicKey")]
+    pub fn public_key(&self) -> String {
         self.keypair.public_key().to_string()
     }
 
@@ -46,13 +46,13 @@ impl Keypair {
     ///
     /// # Security Warning
     /// Keep secret key data secure and never transmit it over insecure channels
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "secretKeyBytes")]
     pub fn secret_key_bytes(&self) -> Uint8Array {
         Uint8Array::from(&self.keypair.secret_key()[..])
     }
 
     /// Get the public key as raw bytes (32 bytes)
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "publicKeyBytes")]
     pub fn public_key_bytes(&self) -> Uint8Array {
         Uint8Array::from(&self.keypair.public_key().to_bytes()[..])
     }

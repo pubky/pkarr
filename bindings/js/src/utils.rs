@@ -108,14 +108,4 @@ impl Utils {
         }
         pkarr::PublicKey::try_from(public_key_str).is_ok()
     }
-
-    /// Get default relay URLs
-    #[wasm_bindgen(js_name = "defaultRelays")]
-    pub fn default_relays() -> Array {
-        let relays = Array::new();
-        for relay in pkarr::DEFAULT_RELAYS.iter() {
-            relays.push(&JsValue::from_str(relay));
-        }
-        relays
-    }
 }

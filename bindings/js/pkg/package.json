@@ -8,6 +8,7 @@
     "url": "git+https://github.com/pubky/pkarr.git"
   },
   "files": [
+    "LICENSE",
     "pkarr_js_bg.wasm",
     "pkarr_js.d.ts",
     "index.js",

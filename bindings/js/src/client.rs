@@ -1,7 +1,7 @@
-use pkarr::{errors::ResolveError, ResolvePolicy};
+use pkarr::ResolvePolicy as InnerResolvePolicy;
 
 use super::constants::*;
-use super::error::ClientError;
+use super::error::{publish_error, resolve_error, ClientError};
 use super::*;
 use std::sync::LazyLock;
 
@@ -14,10 +14,32 @@ static PARSED_DEFAULT_RELAYS: LazyLock<Vec<url::Url>> = LazyLock::new(|| {
         .collect()
 });
 
+/// Controls whether resolution uses cached packets or queries the network.
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResolvePolicy {
+    /// Return only a locally cached or relay-cached packet, even if expired.
+    CacheOnly,
+    /// Return a fresh cached packet or query the network for a fresh result.
+    CacheFirst,
+    /// Bypass cache reads and query the network for its most recent value.
+    NetworkOnly,
+}
+
+impl From<ResolvePolicy> for InnerResolvePolicy {
+    fn from(policy: ResolvePolicy) -> Self {
+        match policy {
+            ResolvePolicy::CacheOnly => Self::CacheOnly,
+            ResolvePolicy::CacheFirst => Self::CacheFirst,
+            ResolvePolicy::NetworkOnly => Self::NetworkOnly,
+        }
+    }
+}
+
 /// Pkarr Client for publishing and resolving signed DNS packets
 #[wasm_bindgen]
 pub struct Client {
-    client: std::sync::Arc<pkarr::Client>,
+    client: pkarr::Client,
     timeout: std::time::Duration,
 }
 
@@ -44,24 +66,23 @@ impl Client {
             .build()
             .map_err(|e| ClientError::ConfigurationError(format!("Failed to build client: {e}")))?;
 
-        Ok(Client {
-            client: std::sync::Arc::new(client),
-            timeout,
-        })
+        Ok(Client { client, timeout })
     }
 
     /// Publish a signed packet to relays
     ///
     /// # Arguments
     /// * `signed_packet` - The signed packet to publish
-    #[wasm_bindgen(js_name = "publish")]
-    pub async fn publish(&self, signed_packet: &super::SignedPacket) -> Result<(), JsValue> {
+    ///
+    /// # Returns
+    /// The minimum number of DHT nodes known to store the packet. When multiple
+    /// backends succeed, this is their maximum reported count rather than a sum,
+    /// because different backends may store the packet on the same DHT nodes.
+    pub async fn publish(&self, signed_packet: &super::SignedPacket) -> Result<u32, JsValue> {
         self.client
             .publish(&signed_packet.inner)
             .await
-            .map_err(|e| ClientError::NetworkError(format!("publish failed: {e}")))?;
-
-        Ok(())
+            .map_err(publish_error)
     }
 
     /// Resolve a public key to get the latest signed packet
@@ -69,33 +90,27 @@ impl Client {
     /// # Arguments
     /// * `public_key_str` - The public key as a z-base32 string
     ///
+    /// * `policy` - Controls whether cached packets may be returned
+    ///
     /// # Returns
-    /// * `Option<SignedPacket>` - The signed packet if found
-    #[wasm_bindgen(js_name = "resolve")]
+    /// The resolved [`SignedPacket`], or JavaScript `null` when no packet is found.
+    ///
+    /// # Errors
+    /// Returns a JavaScript error when the public key is invalid or resolution
+    /// fails for a reason other than the packet not being found.
+    #[wasm_bindgen(unchecked_return_type = "SignedPacket | null")]
     pub async fn resolve(
         &self,
         public_key_str: &str,
-    ) -> Result<Option<super::SignedPacket>, JsValue> {
-        self.resolve_with_policy(public_key_str, ResolvePolicy::CacheFirst)
-            .await
-    }
+        policy: ResolvePolicy,
+    ) -> Result<JsValue, JsValue> {
+        let public_key = Self::parse_public_key(public_key_str)?;
 
-    /// Resolve the most recent signed packet for a public key
-    ///
-    /// # Arguments
-    /// * `public_key_str` - The public key as a z-base32 string
-    ///
-    /// # Returns
-    /// * `Option<SignedPacket>` - The most recent signed packet if found
-    #[wasm_bindgen(js_name = "resolveMostRecent")]
-    pub async fn resolve_most_recent(
-        &self,
-        public_key_str: &str,
-    ) -> Result<Option<super::SignedPacket>, JsValue> {
-        // TODO: This could implement more sophisticated logic to
-        // query multiple relays and find the most recent packet
-        self.resolve_with_policy(public_key_str, ResolvePolicy::NetworkOnly)
-            .await
+        match self.client.resolve(&public_key, policy.into()).await {
+            Ok(packet) => Ok(super::SignedPacket::from(packet).into()),
+            Err(pkarr::errors::ResolveError::NotFound) => Ok(JsValue::NULL),
+            Err(error) => Err(resolve_error(error)),
+        }
     }
 
     /// Get default relay URLs as JavaScript array
@@ -117,29 +132,6 @@ impl Client {
 
 // Private helper methods
 impl Client {
-    /// Common implementation for resolve methods to avoid duplication
-    async fn resolve_with_policy(
-        &self,
-        public_key_str: &str,
-        policy: ResolvePolicy,
-    ) -> Result<Option<super::SignedPacket>, JsValue> {
-        let public_key = Self::parse_public_key(public_key_str)?;
-
-        let packet = self
-            .client
-            .resolve(&public_key, policy)
-            .await
-            .map(Some)
-            .or_else(|error| match error {
-                ResolveError::NotFound => Ok(None),
-                error => Err(ClientError::NetworkError(format!(
-                    "resolve failed: {error}"
-                ))),
-            })?;
-
-        Ok(packet.map(super::SignedPacket::from))
-    }
-
     /// Validate and create timeout duration from milliseconds
     fn validate_and_create_timeout(
         timeout_ms: Option<u32>,

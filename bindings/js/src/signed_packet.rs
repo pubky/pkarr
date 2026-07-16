@@ -12,15 +12,15 @@ pub struct SignedPacket {
 #[wasm_bindgen]
 impl SignedPacket {
     /// Get the public key as a z-base32 string
-    #[wasm_bindgen(getter, js_name = publicKeyString)]
-    pub fn public_key_string(&self) -> String {
+    #[wasm_bindgen(getter, js_name = publicKey)]
+    pub fn public_key(&self) -> String {
         self.inner.public_key().to_string()
     }
 
     /// Get the timestamp in milliseconds since Unix epoch
     #[wasm_bindgen(getter, js_name = timestampMs)]
     pub fn timestamp_ms(&self) -> f64 {
-        self.inner.timestamp().as_u64() as f64
+        self.inner.timestamp().as_u64() as f64 / MS_TO_MICROSECONDS as f64
     }
 
     /// Get the number of DNS records in this packet
@@ -54,7 +54,6 @@ impl SignedPacket {
     ///
     /// This returns the full DNS packet structure as bytes, suitable for:
     /// - Parsing with `SignedPacket.fromBytes()`
-    #[wasm_bindgen(js_name = bytes)]
     pub fn bytes(&self) -> Result<js_sys::Uint8Array, JsValue> {
         let bytes = self.inner.serialize();
 
@@ -90,14 +89,6 @@ impl SignedPacket {
         Ok(js_sys::Uint8Array::from(&bytes[..]))
     }
 
-    /// Verify the cryptographic signature of this packet
-    #[wasm_bindgen(js_name = isValid)]
-    pub fn is_valid(&self) -> bool {
-        // The existence of the SignedPacket implies it was successfully verified during creation
-        // Additional validation could be added here if needed
-        !self.is_empty()
-    }
-
     /// Create a SignedPacket from uncompressed bytes
     ///
     /// # Arguments
@@ -121,7 +112,6 @@ impl SignedPacket {
     }
 
     /// Create a SignedPacketBuilder (static method)
-    #[wasm_bindgen(js_name = builder)]
     pub fn builder() -> super::SignedPacketBuilder {
         super::SignedPacketBuilder::default()
     }
