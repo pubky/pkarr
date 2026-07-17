@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::builder().build()?;
 
     // Parse public key from z-base32 string
-    let public_key: PublicKey = "pk:yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy"
+    let public_key: PublicKey = "yqrx81zchh6aotjj85s96gdqbmsoprxr3ks6ks6y8eccpj8b7oiy"
         .try_into()
         .expect("Invalid public key");
 
@@ -132,7 +132,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Use `resolve(&public_key, ResolvePolicy::NetworkOnly)` when you need the latest
 network state, for example before publishing updates. A newer mutable item that
-is not a valid Pkarr packet is returned as `ResolveError::InvalidSignedPacket`,
+is not a valid PKARR packet is returned as `ResolveError::InvalidSignedPacket`,
 not `ResolveError::NotFound`.
 
 `ResolvePolicy::CacheFirst` only returns non-expired packets. Use
@@ -149,9 +149,8 @@ use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Use independent clients so resolving cannot read the publisher's cache
-    let publisher = Client::builder().build()?;
-    let resolver = Client::builder().cache_size(0).build()?;
+    // 1. Disable caching so resolving reads from the configured networks
+    let client = Client::builder().cache_size(0).build()?;
     let keypair = Keypair::random();
 
     println!("Generated keypair with public key: {}", keypair.public_key());
@@ -172,12 +171,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3. Publish to DHT and relays
     println!("Publishing...");
-    let stored_on = publisher.publish(&signed_packet).await?;
+    let stored_on = client.publish(&signed_packet).await?;
     println!("Published successfully; stored on at least {stored_on} DHT nodes");
 
     // 4. Resolve it from the configured networks, bypassing local caches
     println!("Resolving...");
-    match resolver
+    match client
         .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
     {

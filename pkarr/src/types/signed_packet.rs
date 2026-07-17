@@ -129,11 +129,7 @@ impl SignedPacketBuilder {
     ///
     /// Read more about how names will be normalized in [SignedPacket::new].
     pub fn sign(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketBuildError> {
-        SignedPacket::new(
-            keypair,
-            &self.records,
-            self.timestamp.unwrap_or(Timestamp::now()),
-        )
+        SignedPacket::new(keypair, &self.records, self.timestamp.unwrap_or_default())
     }
 }
 

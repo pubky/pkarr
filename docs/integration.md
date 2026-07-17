@@ -287,30 +287,23 @@ async fn republish_loop(
 }
 ```
 
-### Coordinated Republishing
+### Updating a Published Packet
 
 The client does not serialize concurrent publishes for the same public key. If
 your application can build multiple different packets for one key at the same
-time, serialize the complete resolve, build, and publish sequence. Keep one
-single-permit semaphore per public key; the permit below makes that sequence a
-per-key critical section.
+time, serialize the complete resolve, build, and publish sequence, for example
+with a single-permit semaphore per public key.
 
 ```rust
 use pkarr::{
     errors::ResolveError, Client, Keypair, ResolvePolicy, SignedPacket, Timestamp,
 };
 use std::io;
-use tokio::sync::Semaphore;
 
-async fn coordinated_republish(
+async fn republish_update(
     client: &Client,
     keypair: &Keypair,
-    publish_gate: &Semaphore,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Keep this permit until publishing finishes. Use a different semaphore
-    // for each public key so unrelated publishers can still run concurrently.
-    let _permit = publish_gate.acquire().await?;
-
     // Get the highest observed sequence before building the replacement.
     let observed_sequence = match client
         .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
@@ -352,7 +345,7 @@ Use [`ResolvePolicy::NetworkOnly`] when you need the most recent network state,
 for example before rebuilding and publishing an updated packet. Handle
 `ResolveError::InvalidSignedPacket` separately from `ResolveError::NotFound`:
 the former reports a newer mutable-item sequence that did not contain a valid
-Pkarr packet and must not be interpreted as an unused key.
+PKARR packet and must not be interpreted as an unused key.
 
 ## Next Steps
 
