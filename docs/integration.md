@@ -37,11 +37,11 @@ What is your target platform?
 
 | Use Case | Cargo.toml |
 |----------|------------|
-| Full native client | `pkarr = "6"` |
-| Native client + persistence | `pkarr = { version = "6", features = ["lmdb-cache"] }` |
-| Browser/WASM | `pkarr = { version = "6", default-features = false, features = ["relays"] }` |
-| Key utilities only | `pkarr = { version = "6", default-features = false }` |
-| Everything for native apps | `pkarr = { version = "6", features = ["full"] }` |
+| Full native client | `pkarr = "7"` |
+| Native client + persistence | `pkarr = { version = "7", features = ["lmdb-cache"] }` |
+| Browser/WASM | `pkarr = { version = "7", default-features = false, features = ["relays"] }` |
+| Key utilities only | `pkarr = { version = "7", default-features = false }` |
+| Everything for native apps | `pkarr = { version = "7", features = ["full"] }` |
 
 Endpoint-related extras require the client API. With default features this is
 already enabled on native targets. If you disable default features, combine
@@ -145,7 +145,7 @@ client will not use it automatically. Enable the feature, create an
 
 ```toml
 [dependencies]
-pkarr = { version = "6", features = ["lmdb-cache"] }
+pkarr = { version = "7", features = ["lmdb-cache"] }
 ```
 
 ```rust
@@ -244,7 +244,7 @@ Pkarr uses `async_compat` internally. If no Tokio runtime is detected, it automa
 
 ```toml
 [dependencies]
-pkarr = { version = "6", default-features = false, features = ["relays"] }
+pkarr = { version = "7", default-features = false, features = ["relays"] }
 ```
 
 ### Constraints

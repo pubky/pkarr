@@ -7,7 +7,7 @@ Get up and running with Pkarr in 5 minutes.
 
 ```toml
 [dependencies]
-pkarr = "6"
+pkarr = "7"
 tokio = { version = "1", features = ["full"] }
 ```
 
