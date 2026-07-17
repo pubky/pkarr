@@ -75,6 +75,12 @@ let client = Client::builder()
     .relays(&["https://pkarr.pubky.app", "https://my-relay.example.com"])?
     .build()?;
 
+// Start without either default backend, then enable only your relays
+let client = Client::builder()
+    .no_default_network()
+    .relays(&["https://my-relay.example.com"])?
+    .build()?;
+
 // Custom DHT bootstrap nodes
 let client = Client::builder()
     .bootstrap(&["router.bittorrent.com:6881"])
@@ -86,6 +92,29 @@ let client = Client::builder()
     .extra_relays(&["https://my-relay.example.com"])?
     .build()?;
 ```
+
+Calling `build()` after `no_default_network()` without configuring at least one
+backend returns `BuildError::NoNetwork`.
+
+For a private DHT, use testnet diagnostic thresholds and customize the
+underlying `mainline::Config` when needed:
+
+```rust
+use pkarr::{dht::ReportPolicy, Client};
+
+let client = Client::builder()
+    .no_default_network()
+    .bootstrap(&["127.0.0.1:6881"])
+    .dht_report_policy(ReportPolicy::testnet())
+    .dht(|config| {
+        config.port = Some(0);
+        config
+    })
+    .build()?;
+```
+
+`ReportPolicy` controls warning thresholds for DHT diagnostics; it does not
+change which packets are accepted.
 
 ### Cache Configuration
 
@@ -155,6 +184,29 @@ let client = Client::builder()
     .build()?;
 ```
 
+The timeout applies to both DHT and relay requests. A custom `reqwest::Client`
+can configure relay HTTP behavior such as proxies or default headers, while
+Pkarr continues to apply `request_timeout` to each request:
+
+```rust
+use pkarr::Client;
+use std::time::Duration;
+
+let http_client = reqwest::Client::builder()
+    .user_agent("my-pkarr-client/1.0")
+    .build()?;
+
+let client = Client::builder()
+    .no_dht()
+    .reqwest_client(http_client)
+    .request_timeout(Duration::from_secs(5))
+    .build()?;
+```
+
+Using this example requires a compatible direct dependency such as
+`reqwest = { version = "0.13", default-features = false, features = ["rustls"] }`
+in the application.
+
 ### Endpoints Configuration
 
 When using the `endpoints` feature for service discovery:
@@ -208,7 +260,7 @@ DHT records are ephemeral. Nodes drop records after a few hours. For persistent 
 ### Basic Republishing Loop
 
 ```rust
-use pkarr::{Client, SignedPacket};
+use pkarr::{errors::PublishError, Client, SignedPacket};
 use std::time::Duration;
 
 async fn republish_loop(
@@ -224,7 +276,10 @@ async fn republish_loop(
             Ok(stored_on) => {
                 println!("Republished successfully; stored on at least {stored_on} DHT nodes")
             }
-            Err(e) => eprintln!("Republish failed: {e}"),
+            Err(PublishError::NotMostRecent) => {
+                eprintln!("A newer packet exists; resolve NetworkOnly before retrying")
+            }
+            Err(error) => eprintln!("Republish failed: {error}"),
         }
 
         tokio::time::sleep(interval).await;
@@ -232,36 +287,47 @@ async fn republish_loop(
 }
 ```
 
-### Coordinated Republishing
+### Updating a Published Packet
 
-The client does not serialize concurrent publishes for the same public key. If your application can build multiple different packets for one key at the same time, serialize those publishes in your own code before calling `publish`.
+The client does not serialize concurrent publishes for the same public key. If
+your application can build multiple different packets for one key at the same
+time, serialize the complete resolve, build, and publish sequence, for example
+with a single-permit semaphore per public key.
 
 ```rust
-use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
+use pkarr::{
+    errors::ResolveError, Client, Keypair, ResolvePolicy, SignedPacket, Timestamp,
+};
+use std::io;
 
-async fn coordinated_republish(
+async fn republish_update(
     client: &Client,
     keypair: &Keypair,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Get the most recent version
-    let current_packet: SignedPacket = match client
+    // Get the highest observed sequence before building the replacement.
+    let observed_sequence = match client
         .resolve(&keypair.public_key(), ResolvePolicy::NetworkOnly)
         .await
     {
-        Ok(_existing) => {
-            // Rebuild packet with same or updated records
-            SignedPacket::builder()
-                // Copy existing records you want to keep
-                .txt("key".try_into()?, "updated_value".try_into()?, 300)
-                .sign(keypair)?
-        }
-        Err(pkarr::errors::ResolveError::NotFound) => SignedPacket::builder()
-            .txt("key".try_into()?, "value".try_into()?, 300)
-            .sign(keypair)?,
+        Ok(existing) => existing.timestamp().as_u64(),
+        Err(ResolveError::NotFound) => 0,
+        Err(ResolveError::InvalidSignedPacket { seq }) => u64::try_from(seq)?,
         Err(error) => return Err(error.into()),
     };
 
-    let stored_on = client.publish(&current_packet).await?;
+    let next_sequence = observed_sequence
+        .checked_add(1)
+        .filter(|sequence| *sequence <= i64::MAX as u64)
+        .ok_or_else(|| io::Error::other("Pkarr sequence is exhausted"))?;
+    let timestamp = Timestamp::from(Timestamp::now().as_u64().max(next_sequence));
+
+    let packet = SignedPacket::builder()
+        // Build the complete desired record set; omitted records are removed.
+        .txt("key".try_into()?, "updated_value".try_into()?, 300)
+        .timestamp(timestamp)
+        .sign(keypair)?;
+
+    let stored_on = client.publish(&packet).await?;
     println!("Published successfully; stored on at least {stored_on} DHT nodes");
     Ok(())
 }
@@ -271,9 +337,15 @@ async fn coordinated_republish(
 
 Use [`ResolvePolicy::CacheFirst`] for normal application lookups. It returns fresh cached packets, or queries the network on a cache miss or expired cache entry. It does not fall back to expired local cache entries.
 
-Use [`ResolvePolicy::CacheOnly`] when a cached packet is acceptable even if it is expired.
+Use [`ResolvePolicy::CacheOnly`] when a locally cached or relay-cached packet is
+acceptable even if it is expired. It may make an HTTP relay request after a
+local cache miss, but it never queries DHT nodes.
 
-Use [`ResolvePolicy::NetworkOnly`] when you need the most recent packet observed from the network, for example before rebuilding and publishing an updated packet.
+Use [`ResolvePolicy::NetworkOnly`] when you need the most recent network state,
+for example before rebuilding and publishing an updated packet. Handle
+`ResolveError::InvalidSignedPacket` separately from `ResolveError::NotFound`:
+the former reports a newer mutable-item sequence that did not contain a valid
+PKARR packet and must not be interpreted as an unused key.
 
 ## Next Steps
 
