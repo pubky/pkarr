@@ -1,6 +1,6 @@
 [package]
 name = "pkarr-js"
-version = "3.8.0"
+version = "7.0.0"
 rust-version = "1.85"
 authors = ["Nuh <nuh@nuh.dev>"]
 edition = "2021"
