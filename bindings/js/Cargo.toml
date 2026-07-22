@@ -28,16 +28,16 @@ wasm-bindgen-futures = "0.4.50"
 
 # Dependencies needed by the WASM bindings
 simple-dns = { workspace = true }
-ntimestamp = { version = "1.0.0", features = ["full"] }
-thiserror = "2.0.11"
-url = { version = "2.5.4" }
+ntimestamp = { version = "1", features = ["full"] }
+thiserror = "2"
+url = { version = "2" }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
 wasm-bindgen = { version = "0.2.100", features = ["serde-serialize"] }
-console_log = { version = "1.0.0", features = ["color"] }
+console_log = { version = "1", features = ["color"] }
 
 [build-dependencies]
-cfg_aliases = "0.2.1"
+cfg_aliases = "0.2"
 
 [package.metadata.docs.rs]
 all-features = true 

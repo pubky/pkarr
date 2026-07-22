@@ -19,29 +19,29 @@ categories = ["network-programming"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.101"
-axum = "0.8.8"
-tokio = { version = "1.49.0", features = [
+anyhow = "1"
+axum = "0.8"
+tokio = { version = "1", features = [
     "fs",
     "macros",
     "rt-multi-thread",
     "signal",
     "time",
 ] }
-tower-http = { version = "0.6.8", features = ["cors", "trace"] }
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum-server = "0.8"
-http = "1.4.0"
-bytes = "1.11.1"
-tower_governor = { version = "0.8.0", default-features = false, features = ["axum"] }
-governor = { version = "0.10.4", default-features = false}
-serde = { version = "1.0.228", features = ["derive"] }
-toml = "0.9.11"
-clap = { version = "4.5.57", features = ["derive"] }
-httpdate = "1.0.3"
-url = "2.5.8"
-pkarr = { path = "../pkarr", version = "7.0.0", default-features = false, features = [
+http = "1"
+bytes = "1"
+tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
+governor = { version = "0.10", default-features = false}
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+clap = { version = "4", features = ["derive"] }
+httpdate = "1"
+url = "2"
+pkarr = { path = "../pkarr", version = "7", default-features = false, features = [
     "dht",
     "lmdb-cache",
 ] }
