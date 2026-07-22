@@ -7,10 +7,15 @@ updates:
     - package-ecosystem: "cargo"
       directory: "/"
       schedule:
-          interval: "monthly"
+          interval: "weekly"
+          day: "sunday"
+          time: "08:00"
       commit-message:
           prefix: "deps"
       rebase-strategy: "auto"
+      # Cover both direct and transitive deps
+      allow:
+        - dependency-type: "all"
       groups:
           cargo-dependencies:
               patterns:
