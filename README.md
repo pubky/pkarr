@@ -52,6 +52,17 @@ async fn main() -> anyhow::Result<()> {
 | **[Examples](./pkarr/examples/README.md)** | Code samples |
 | **[Specifications](./design/README.md)** | Protocol design documents |
 
+## Repository Components
+
+- **`pkarr`** — The Rust library for keys, signed DNS packets, caching,
+  publishing, and resolution.
+- **`pkarr-relay`** — An HTTP-to-DHT relay server for browsers and other
+  UDP-restricted clients. Install it with `cargo install pkarr-relay`, or run
+  the workspace binary with `cargo run -p pkarr-relay -- --help`. See the
+  [relay guide](./relay/README.md) for configuration and testnet usage.
+- **`@synonymdev/pkarr`** — JavaScript/WASM bindings under
+  [`bindings/js`](./bindings/js/README.md).
+
 ## Demo
 
 Try the [web app](https://pkdns.net) to resolve records in your browser.
@@ -78,6 +89,12 @@ sequenceDiagram
     Relay->>Client: Verified response
 ```
 
+The default native client configures both paths. `ClientBuilder` can instead
+select DHT-only or relay-only operation, and `ResolvePolicy` controls whether a
+lookup uses cached data or queries the configured networks. See the
+[integration guide](./docs/integration.md#client-abstractions) for the client
+structure and selection behavior.
+
 ### The Network
 
 PKARR uses the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT), the same peer-to-peer network that powers BitTorrent. Records are stored using [BEP44](https://www.bittorrent.org/beps/bep_0044.html) (mutable items). With 15 years of proven reliability and 10+ million active nodes, there's no need to bootstrap a new network.
@@ -89,7 +106,8 @@ PKARR uses the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT), the s
 - **Caching everywhere** — Clients and relays cache aggressively for performance
 - **Relays for browsers** — Web apps use HTTP relays since browsers cannot open UDP sockets
 
-PKARR is the I/O library that reads and writes DNS records to the DHT.
+The `pkarr` crate is the I/O library that reads and writes signed DNS packets
+through the DHT, HTTP relays, or both.
 
 ## FAQ
 

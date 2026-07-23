@@ -48,6 +48,50 @@ already enabled on native targets. If you disable default features, combine
 `endpoints`, `tls`, `reqwest-resolve`, or `reqwest-builder` with `dht` and/or
 `relays` as appropriate for your target.
 
+## Client Abstractions
+
+The client is organized in layers so applications choose behavior without
+depending on a concrete network implementation:
+
+```text
+ClientBuilder
+├── cache: InMemoryCache | custom Cache | disabled
+└── backend: DHT | HTTP relays | combined DHT + relays
+        ↓
+      Client
+      ├── publish(&SignedPacket)
+      └── resolve(&PublicKey, ResolvePolicy)
+```
+
+`ClientBuilder` owns configuration: network selection, cache choice, TTL
+bounds, request timeout, and backend-specific settings. `build()` validates
+that at least one network is available and constructs a cloneable `Client`.
+The concrete DHT, relay, and combined backend types are internal; use builder
+methods and Cargo features to select them.
+
+`Client` is the public I/O facade. It coordinates the optional local cache with
+the configured backend and maps backend-specific outcomes into `BuildError`,
+`PublishError`, and `ResolveError`. The `Cache` trait is the extension point for
+custom storage, while `ResolvePolicy` controls how a particular lookup balances
+cache latency against network freshness.
+
+With the default native features, the combined backend has these semantics:
+
+| Operation | Combined-backend behavior |
+|-----------|---------------------------|
+| `publish` | Publishes through DHT and relays concurrently. A successful result reports the maximum known stored-node count, not a sum. |
+| `resolve(..., CacheOnly)` | Checks the local cache, then relay caches; it never queries DHT nodes. |
+| `resolve(..., CacheFirst)` | Returns a fresh local hit immediately. Otherwise it races configured networks and can finish on the first fresh result that is not older than the cached packet. |
+| `resolve(..., NetworkOnly)` | Bypasses local cache reads, waits for configured networks, and selects the most recent observed network state. |
+
+Successful publishes and network resolutions update the local cache without
+replacing a newer cached packet. If `CacheFirst` selects an expired packet as
+its best backend result, that packet may still advance the cache before the
+client returns `ResolveError::NotFound`. Other outcomes are preserved: for
+example, a newer malformed mutable item returns
+`ResolveError::InvalidSignedPacket`, while backend failures may return their
+corresponding `ResolveError`.
+
 ## Client Configuration
 
 Use `Client::builder()` to customize the client for your environment.
@@ -138,6 +182,11 @@ let client = Client::builder()
     .cache(custom_cache)
     .build()?;
 ```
+
+`cache_size(0)` disables all caching, including a custom cache supplied with
+`cache()`. A custom `Cache` implementation must also override `capacity()` and
+return a nonzero value; the trait's default capacity is zero and is treated as
+disabled.
 
 The `lmdb-cache` feature provides a persistent cache implementation, but the
 client will not use it automatically. Enable the feature, create an
@@ -335,13 +384,15 @@ async fn republish_update(
 
 ## Resolve Policies
 
-Use [`ResolvePolicy::CacheFirst`] for normal application lookups. It returns fresh cached packets, or queries the network on a cache miss or expired cache entry. It does not fall back to expired local cache entries.
+Use `ResolvePolicy::CacheFirst` for normal application lookups. It returns
+fresh cached packets, or queries the network on a cache miss or expired cache
+entry. It does not fall back to expired local cache entries.
 
-Use [`ResolvePolicy::CacheOnly`] when a locally cached or relay-cached packet is
+Use `ResolvePolicy::CacheOnly` when a locally cached or relay-cached packet is
 acceptable even if it is expired. It may make an HTTP relay request after a
 local cache miss, but it never queries DHT nodes.
 
-Use [`ResolvePolicy::NetworkOnly`] when you need the most recent network state,
+Use `ResolvePolicy::NetworkOnly` when you need the most recent network state,
 for example before rebuilding and publishing an updated packet. Handle
 `ResolveError::InvalidSignedPacket` separately from `ResolveError::NotFound`:
 the former reports a newer mutable-item sequence that did not contain a valid
