@@ -252,7 +252,8 @@ To explore Pkarr:
 - Try the [web demo](https://pkdns.net) to resolve records
 - Read the [specification](../design/base.md) for implementation details
 - Check the [examples](../pkarr/examples/README.md) for code samples
-- Run your own [relay](../design/relays.md) to support the network
+- Run the [`pkarr-relay` binary](../relay/README.md) to support UDP-restricted
+  clients
 
 Pkarr gives you a permanent, portable, sovereign identity. What you build on
 top of it is up to you.
