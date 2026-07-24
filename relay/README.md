@@ -1,8 +1,8 @@
 # Pkarr Relay
 
 The `pkarr-relay` binary is an HTTP gateway and cache for publishing and
-resolving Pkarr packets through the Mainline DHT. It implements the
-[Pkarr relay protocol](../design/relays.md).
+resolving Pkarr packets through the Mainline DHT. See
+[how Pkarr relays work](../design/relays.md).
 
 ## Installation
 
@@ -37,14 +37,12 @@ Copy and edit the bundled
 pkarr-relay --config ./config.toml
 ```
 
+Without `cache.path`, the relay creates a new cache in a temporary directory on
+each run. Configure a stable path if the cache should survive restarts. The
+example file also documents DHT, TTL, and rate-limit settings.
+
 Configure logging with a tracing filter:
 
 ```bash
 pkarr-relay --tracing-env-filter pkarr_relay=debug,tower_http=debug
-```
-
-For local development, start an isolated DHT and relay on port `15411`:
-
-```bash
-pkarr-relay --testnet
 ```

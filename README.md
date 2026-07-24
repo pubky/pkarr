@@ -4,7 +4,8 @@
 
 [![Crates.io](https://img.shields.io/crates/v/pkarr)](https://crates.io/crates/pkarr) [![Documentation](https://docs.rs/pkarr/badge.svg)](https://docs.rs/pkarr) [![License](https://img.shields.io/badge/license-MIT-purple)](./LICENSE)
 
-PKARR turns Ed25519 public keys into domain names that you truly own. Publish DNS records to the Bittorrent peer-to-peer network with 10+ million nodes. No registrar can seize your domain. No platform can deplatform your identity.
+PKARR turns Ed25519 public keys into domain names that you truly own. Publish
+DNS records to the Mainline DHT without relying on a registrar or platform.
 
 Where we are going, this https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy resolves everywhere!
 
@@ -12,13 +13,14 @@ Where we are going, this https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj
 
 ```bash
 cargo add pkarr
+cargo add tokio --features macros,rt-multi-thread
 ```
 
 ```rust
 use pkarr::{Client, Keypair, SignedPacket};
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate your identity
     let keypair = Keypair::random();
     println!("Your public key: {}", keypair.public_key());
@@ -59,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
 - **`pkarr-relay`** — An HTTP-to-DHT relay server for browsers and other
   UDP-restricted clients. Install it with `cargo install pkarr-relay`, or run
   the workspace binary with `cargo run -p pkarr-relay -- --help`. See the
-  [relay guide](./relay/README.md) for configuration and testnet usage.
+  [relay guide](./relay/README.md) for configuration options.
 - **`@synonymdev/pkarr`** — JavaScript/WASM bindings under
   [`bindings/js`](./bindings/js/README.md).
 
@@ -71,7 +73,7 @@ Try the [web app](https://pkdns.net) to resolve records in your browser.
 
 1. **Generate a keypair** — Your public key becomes your domain name
 2. **Sign DNS records** — Standard A, AAAA, TXT, CNAME records, self-signed
-3. **Publish to the DHT** — Records stored on the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT) (10M+ nodes)
+3. **Publish to the DHT** — Records are stored on the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT)
 4. **Resolve anywhere** — Anyone can query and verify your records
 
 ```mermaid
@@ -89,11 +91,11 @@ sequenceDiagram
     Relay->>Client: Verified response
 ```
 
-The default native client configures both paths. `ClientBuilder` can instead
-select DHT-only or relay-only operation, and `ResolvePolicy` controls whether a
-lookup uses cached data or queries the configured networks. See the
-[integration guide](./docs/integration.md#client-abstractions) for the client
-structure and selection behavior.
+The default native client configures both DHT and relay backends.
+`ClientBuilder` can select DHT-only or relay-only operation, and `ResolvePolicy`
+controls whether a lookup uses cached data or queries the configured
+backends. See the [integration
+guide](./docs/integration.md#client-configuration) for configuration examples.
 
 ### The Network
 
@@ -105,9 +107,6 @@ PKARR uses the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT), the s
 - **1000-byte limit** — PKARR is for discovery, not storage
 - **Caching everywhere** — Clients and relays cache aggressively for performance
 - **Relays for browsers** — Web apps use HTTP relays since browsers cannot open UDP sockets
-
-The `pkarr` crate is the I/O library that reads and writes signed DNS packets
-through the DHT, HTTP relays, or both.
 
 ## FAQ
 

@@ -1,102 +1,14 @@
 # Pkarr Integration Guide
 
-This guide covers production integration patterns for pkarr. For basic usage, see the [quickstart](./quickstart.md). For feature flag selection, see [features](./features.md).
-
-## Feature Flag Decision Tree
-
-Choose features based on your deployment environment and requirements.
-
-### Environment-Based Selection
-
-```
-What is your target platform?
-|
-+-- Server/Native Application
-|   |
-|   +-- Need persistent cache? --> Add `lmdb-cache`
-|   +-- Need HTTPS/SVCB endpoint discovery? --> Add `endpoints`
-|   +-- Need reqwest DNS resolver integration? --> Add `reqwest-resolve`
-|   +-- Need a preconfigured reqwest client with Pkarr DNS/TLS? --> Add `reqwest-builder`
-|   +-- Otherwise --> Use default (`full-client`)
-|
-+-- Browser/WASM
-|   |
-|   +-- Use `relays` as the network feature (DHT is unavailable in browsers)
-|
-+-- Key management
-|   |
-|   +-- Just key generation? --> `default-features = false`
-|   +-- Signing packets offline? --> `signed_packet`
-|
-+-- Relay-only deployment
-    |
-    +-- `relays` (no DHT, smaller binary)
-```
-
-### Minimal Configurations
-
-| Use Case | Cargo.toml |
-|----------|------------|
-| Full native client | `pkarr = "7"` |
-| Native client + persistence | `pkarr = { version = "7", features = ["lmdb-cache"] }` |
-| Browser/WASM | `pkarr = { version = "7", default-features = false, features = ["relays"] }` |
-| Key utilities only | `pkarr = { version = "7", default-features = false }` |
-| Everything for native apps | `pkarr = { version = "7", features = ["full"] }` |
-
-Endpoint-related extras require the client API. With default features this is
-already enabled on native targets. If you disable default features, combine
-`endpoints`, `tls`, `reqwest-resolve`, or `reqwest-builder` with `dht` and/or
-`relays` as appropriate for your target.
-
-## Client Abstractions
-
-The client is organized in layers so applications choose behavior without
-depending on a concrete network implementation:
-
-```text
-ClientBuilder
-├── cache: InMemoryCache | custom Cache | disabled
-└── backend: DHT | HTTP relays | combined DHT + relays
-        ↓
-      Client
-      ├── publish(&SignedPacket)
-      └── resolve(&PublicKey, ResolvePolicy)
-```
-
-`ClientBuilder` owns configuration: network selection, cache choice, TTL
-bounds, request timeout, and backend-specific settings. `build()` validates
-that at least one network is available and constructs a cloneable `Client`.
-The concrete DHT, relay, and combined backend types are internal; use builder
-methods and Cargo features to select them.
-
-`Client` is the public I/O facade. It coordinates the optional local cache with
-the configured backend and maps backend-specific outcomes into `BuildError`,
-`PublishError`, and `ResolveError`. The `Cache` trait is the extension point for
-custom storage, while `ResolvePolicy` controls how a particular lookup balances
-cache latency against network freshness.
-
-With the default native features, the combined backend has these semantics:
-
-| Operation | Combined-backend behavior |
-|-----------|---------------------------|
-| `publish` | Publishes through DHT and relays concurrently. A successful result reports the maximum known stored-node count, not a sum. |
-| `resolve(..., CacheOnly)` | Checks the local cache, then relay caches; it never queries DHT nodes. |
-| `resolve(..., CacheFirst)` | Returns a fresh local hit immediately. Otherwise it races configured networks and can finish on the first fresh result that is not older than the cached packet. |
-| `resolve(..., NetworkOnly)` | Bypasses local cache reads, waits for configured networks, and selects the most recent observed network state. |
-
-Successful publishes and network resolutions update the local cache without
-replacing a newer cached packet. If `CacheFirst` selects an expired packet as
-its best backend result, that packet may still advance the cache before the
-client returns `ResolveError::NotFound`. Other outcomes are preserved: for
-example, a newer malformed mutable item returns
-`ResolveError::InvalidSignedPacket`, while backend failures may return their
-corresponding `ResolveError`.
+This guide covers production integration patterns for pkarr. For basic usage,
+see the [quickstart](./quickstart.md). For feature flag selection, see
+[features](./features.md).
 
 ## Client Configuration
 
 Use `Client::builder()` to customize the client for your environment.
 
-### Network Configuration
+### Backend Configuration
 
 ```rust
 use pkarr::Client;
@@ -285,7 +197,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Pkarr uses `async_compat` internally. If no Tokio runtime is detected, it automatically wraps futures for compatibility. This means pkarr works with async-std, smol, or any other executor.
+Pkarr uses `async_compat` internally. If no Tokio runtime is detected, it
+automatically wraps futures for compatibility. This means pkarr works with
+async-std, smol, or any other executor.
 
 ## WASM/Browser Integration
 
@@ -304,7 +218,8 @@ pkarr = { version = "7", default-features = false, features = ["relays"] }
 
 ## Republishing Patterns
 
-DHT records are ephemeral. Nodes drop records after a few hours. For persistent availability, implement periodic republishing.
+DHT records are ephemeral. Nodes drop records after a few hours. For persistent
+availability, implement periodic republishing.
 
 ### Basic Republishing Loop
 
@@ -385,8 +300,8 @@ async fn republish_update(
 ## Resolve Policies
 
 Use `ResolvePolicy::CacheFirst` for normal application lookups. It returns
-fresh cached packets, or queries the network on a cache miss or expired cache
-entry. It does not fall back to expired local cache entries.
+fresh cached packets, or queries the configured backends on a cache miss or
+expired cache entry. It does not fall back to expired local cache entries.
 
 Use `ResolvePolicy::CacheOnly` when a locally cached or relay-cached packet is
 acceptable even if it is expired. It may make an HTTP relay request after a
@@ -401,5 +316,5 @@ PKARR packet and must not be interpreted as an unused key.
 ## Next Steps
 
 - [API Documentation](https://docs.rs/pkarr/latest/pkarr/) - Complete API reference
-- [Examples](https://github.com/Pubky/pkarr/tree/main/pkarr/examples) - Working code samples
-- [Pkarr Relay](https://github.com/Pubky/pkarr/tree/main/relay) - Run your own relay
+- [Examples](https://github.com/pubky/pkarr/tree/main/pkarr/examples) - Working code samples
+- [Pkarr Relay](https://github.com/pubky/pkarr/tree/main/relay) - Run your own relay

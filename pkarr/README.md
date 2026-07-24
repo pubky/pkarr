@@ -1,59 +1,71 @@
 # Pkarr
 
-Rust implementation of [Pkarr](https://github.com/pubky/pkarr) for signing,
-publishing, and resolving DNS packets over
-[Mainline DHT](https://github.com/Pubky/mainline) and HTTP relays.
+Pkarr turns Ed25519 public keys into sovereign domain names. This crate creates
+and verifies signed DNS packets, then publishes and resolves them through the
+[Mainline DHT](https://github.com/Pubky/mainline), HTTP relays, or both.
 
-## Client Abstractions
+## Installation
 
-The public client API separates configuration, I/O, caching, and lookup
-freshness:
-
-```text
-ClientBuilder
-├── cache: InMemoryCache | custom Cache | disabled
-└── backend: DHT | HTTP relays | combined DHT + relays
-        ↓
-      Client
-      ├── publish(&SignedPacket)
-      └── resolve(&PublicKey, ResolvePolicy)
+```bash
+cargo add pkarr
 ```
 
-- `ClientBuilder` configures the cache, TTL bounds, timeouts, and available
-  network backends. The default native client uses both the DHT and the default
-  relays.
-- `Client` is the cloneable async facade that coordinates publishing,
-  resolution, cache updates, and consistent public errors.
-- `Cache` is replaceable. Clients use an in-memory LRU by default; a configured
-  cache size or custom-cache capacity of zero disables caching, and the
-  `lmdb-cache` feature provides an opt-in persistent implementation.
-- `ResolvePolicy` makes the source and freshness trade-off explicit:
-  `CacheOnly` avoids DHT queries, `CacheFirst` returns the fastest fresh result
-  without going backward from an expired cached packet, and `NetworkOnly`
-  aggregates the configured networks for their most recent observed state.
+The example below uses Tokio as its async runtime:
 
-The DHT, relay, and combined backend implementations are internal details.
-Select them through `ClientBuilder` rather than depending on their concrete
-types. With both backends enabled, publishing uses both concurrently;
-`NetworkOnly` resolution waits for both and selects the most recent result,
-while `CacheFirst` may finish as soon as a fresh result above the cache floor is
-available.
+```bash
+cargo add tokio --features macros,rt-multi-thread
+```
 
-See the [integration guide](https://github.com/Pubky/pkarr/blob/main/docs/integration.md)
-for configuration examples and the
-[API documentation](https://docs.rs/pkarr/latest/pkarr/) for the full public
-surface.
+## Quick Start
 
-## Runtime and Platform Support
+```rust,no_run
+use pkarr::{Client, Keypair, ResolvePolicy, SignedPacket};
 
-- The client API is asynchronous.
-- On native targets, `async_compat` allows use with non-Tokio executors.
-- Browsers use the `relays` feature and Fetch-backed HTTP requests because they
-  cannot access the UDP DHT directly.
-- WASI is not supported.
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let keypair = Keypair::random();
+    println!("Public key: {}", keypair.public_key());
 
-## More Documentation
+    let packet = SignedPacket::builder()
+        .txt("_hello".try_into()?, "world".try_into()?, 300)
+        .sign(&keypair)?;
 
-- [Quickstart](https://github.com/Pubky/pkarr/blob/main/docs/quickstart.md)
-- [Feature reference](https://github.com/Pubky/pkarr/blob/main/docs/features.md)
-- [Examples](https://github.com/Pubky/pkarr/tree/main/pkarr/examples)
+    let client = Client::builder().build()?;
+    let stored_on = client.publish(&packet).await?;
+    println!("Stored on at least {stored_on} DHT nodes");
+
+    let resolved = client
+        .resolve(&keypair.public_key(), ResolvePolicy::CacheFirst)
+        .await?;
+    println!("Resolved:\n{resolved}");
+
+    Ok(())
+}
+```
+
+The client API is asynchronous. Tokio is used here to run the example; on
+native targets, Pkarr also supports other executors through `async_compat`.
+
+## Choosing Features
+
+| Use case | Dependency |
+|----------|------------|
+| Native application using DHT and relays | `pkarr = "7"` |
+| DHT only | `pkarr = { version = "7", default-features = false, features = ["dht"] }` |
+| Relay only or browser/WASM | `pkarr = { version = "7", default-features = false, features = ["relays"] }` |
+| Sign and verify packets without networking | `pkarr = { version = "7", default-features = false, features = ["signed_packet"] }` |
+| Key generation and parsing only | `pkarr = { version = "7", default-features = false }` |
+
+The default `full-client` feature enables both DHT and relay support. Browsers
+cannot access the UDP DHT directly and must use `relays`; WASI is not supported.
+Optional features also provide persistent LMDB caching, endpoint discovery,
+and reqwest integration. See the
+[feature reference](https://github.com/pubky/pkarr/blob/main/docs/features.md)
+for the complete list.
+
+## Next Steps
+
+- [Quickstart](https://github.com/pubky/pkarr/blob/main/docs/quickstart.md)
+- [Integration guide](https://github.com/pubky/pkarr/blob/main/docs/integration.md)
+- [Examples](https://github.com/pubky/pkarr/tree/main/pkarr/examples)
+- [API documentation](https://docs.rs/pkarr/latest/pkarr/)
