@@ -124,9 +124,9 @@ impl std::fmt::Display for CouldNotResolveEndpoint {
 mod tests {
 
     use crate::dns::rdata::SVCB;
-    use crate::mainline::Testnet;
     use crate::{Client, Keypair};
     use crate::{PublicKey, SignedPacket};
+    use mainline::Testnet;
 
     use std::future::Future;
     use std::net::{IpAddr, Ipv4Addr};

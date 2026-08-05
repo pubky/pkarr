@@ -153,12 +153,8 @@ impl DhtRateLimiter {
     }
 }
 
-impl pkarr::mainline::RequestFilter for DhtRateLimiter {
-    fn allow_request(
-        &self,
-        _request: &pkarr::mainline::RequestSpecific,
-        from: std::net::SocketAddrV4,
-    ) -> bool {
+impl pkarr::dht::RequestFilter for DhtRateLimiter {
+    fn allow_request(&self, from: std::net::SocketAddrV4) -> bool {
         self.limiter.is_allowed(&IpAddr::from(*from.ip()))
     }
 }
@@ -236,7 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn dht_limiter_implements_request_filter() {
-        fn assert_request_filter<T: pkarr::mainline::RequestFilter>() {}
+        fn assert_request_filter<T: pkarr::dht::RequestFilter>() {}
         assert_request_filter::<DhtRateLimiter>();
 
         let config = RateLimiterConfig {

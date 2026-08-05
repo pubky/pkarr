@@ -43,8 +43,6 @@ pub use client::{builder::DEFAULT_REQUEST_TIMEOUT, Client, ClientBuilder};
 pub use types::*;
 
 // Rexports
-#[cfg(dht)]
-pub use mainline;
 #[cfg(feature = "signed_packet")]
 pub use ntimestamp::Timestamp;
 #[cfg(feature = "signed_packet")]

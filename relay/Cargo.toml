@@ -21,6 +21,7 @@ categories = ["network-programming"]
 [dependencies]
 anyhow = "1"
 axum = "0.8"
+mainline = { workspace = true }
 tokio = { version = "1", features = [
     "fs",
     "macros",

@@ -5,6 +5,8 @@ use std::{sync::Arc, time::Duration};
 #[cfg(feature = "relays")]
 use url::Url;
 
+#[cfg(dht)]
+use crate::dht::DhtConfig;
 use crate::{Cache, DEFAULT_CACHE_SIZE, DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 
 use crate::{errors::BuildError, Client};
@@ -34,7 +36,7 @@ pub(crate) struct Config {
     pub cache: Option<Arc<dyn Cache>>,
 
     #[cfg(dht)]
-    pub dht: Option<mainline::Config>,
+    pub dht: Option<DhtConfig>,
     /// Policy used to classify DHT publish and resolve diagnostics.
     #[cfg(dht)]
     pub dht_report_policy: crate::dht::ReportPolicy,
@@ -128,11 +130,11 @@ pub struct ClientBuilder(Config);
 impl ClientBuilder {
     /// Similar to a crate's `--no-default-features` option, this method removes the
     /// default [`Self::bootstrap`] and [`Self::relays`], effectively disabling both
-    /// [`mainline`] and [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
+    /// the DHT and [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     ///
     /// Use [`Self::relays`] to configure custom relays.
     ///
-    /// Similarly, use [`Self::bootstrap`] or [`Self::dht`] to configure [`mainline`].
+    /// Similarly, use [`Self::bootstrap`] or [`Self::dht`] to configure the DHT.
     pub fn no_default_network(&mut self) -> &mut Self {
         self.no_dht();
         self.no_relays();
@@ -151,10 +153,10 @@ impl ClientBuilder {
     }
 
     #[cfg(dht)]
-    /// Creates a [`mainline::Config`] when absent and allows it to be mutated with a callback.
+    /// Creates a [`crate::dht::DhtConfig`] when absent and allows it to be mutated with a callback.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
-        F: FnOnce(&mut mainline::Config) -> &mut mainline::Config,
+        F: FnOnce(&mut DhtConfig) -> &mut DhtConfig,
     {
         if self.0.dht.is_none() {
             self.0.dht = Some(make_dht_config(self.0.request_timeout));
@@ -347,8 +349,8 @@ impl ClientBuilder {
 }
 
 #[cfg(dht)]
-fn make_dht_config(request_timeout: Duration) -> mainline::Config {
-    mainline::Config {
+fn make_dht_config(request_timeout: Duration) -> DhtConfig {
+    DhtConfig {
         request_timeout,
         ..Default::default()
     }

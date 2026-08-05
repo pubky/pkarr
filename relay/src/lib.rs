@@ -33,9 +33,9 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::info;
 
 use pkarr::{
-    dht::{DhtClient, ReportPolicy},
+    dht::{DhtClient, DhtConfig, ReportPolicy},
     extra::lmdb_cache::LmdbCache,
-    mainline, Timestamp, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
+    Timestamp, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
 };
 use url::Url;
 
@@ -48,7 +48,7 @@ pub use rate_limiting::RateLimiterConfig;
 /// A builder for Pkarr [Relay]
 pub struct RelayBuilder {
     config: RelayConfig,
-    dht: mainline::Config,
+    dht: DhtConfig,
     report_policy: ReportPolicy,
 }
 
@@ -108,10 +108,10 @@ impl RelayBuilder {
         self
     }
 
-    /// Allows mutating the internal [pkarr::mainline] DHT configuration.
+    /// Allows mutating the DHT configuration.
     pub fn dht<F>(&mut self, f: F) -> &mut Self
     where
-        F: FnOnce(&mut pkarr::mainline::Config) -> &mut pkarr::mainline::Config,
+        F: FnOnce(&mut DhtConfig) -> &mut DhtConfig,
     {
         f(&mut self.dht);
 
@@ -157,14 +157,14 @@ impl Relay {
     /// # Returns
     /// A `Result` containing the `Relay` instance or an error.
     async unsafe fn run(config: RelayConfig) -> anyhow::Result<Self> {
-        let dht_config = mainline_config(&config);
+        let dht_config = dht_config(&config);
 
         unsafe { Self::run_with_dht(config, dht_config, ReportPolicy::mainnet()) }.await
     }
 
     async unsafe fn run_with_dht(
         config: RelayConfig,
-        mut dht_config: mainline::Config,
+        mut dht_config: DhtConfig,
         report_policy: ReportPolicy,
     ) -> anyhow::Result<Self> {
         tracing::debug!(?config, "Pkarr server config");
@@ -226,7 +226,7 @@ impl Relay {
     pub fn builder() -> RelayBuilder {
         RelayBuilder {
             config: Default::default(),
-            dht: Default::default(),
+            dht: dht_config(&RelayConfig::default()),
             report_policy: ReportPolicy::mainnet(),
         }
     }
@@ -245,20 +245,20 @@ impl Relay {
     /// Run an ephemeral Pkarr relay on a random port number for testing purposes.
     /// Binds to `127.0.0.1`.
     /// # Arguments
-    /// * `testnet` - A reference to a `mainline::Testnet` for bootstrapping the DHT.
+    /// * `bootstrap` - DHT node addresses used for bootstrapping.
     ///
     /// # Safety
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
-    pub async fn run_test(testnet: &pkarr::mainline::Testnet) -> anyhow::Result<Self> {
+    pub async fn run_test<T: ToSocketAddrs>(bootstrap: &[T]) -> anyhow::Result<Self> {
         let config = RelayConfig {
             http: config::HttpConfig { port: 0 },
             rate_limiter: None,
             ..Default::default()
         };
 
-        let mut dht_config = mainline_config(&config);
-        dht_config.bootstrap = Some(to_socket_address_v4(&testnet.bootstrap));
+        let mut dht_config = dht_config(&config);
+        dht_config.bootstrap = Some(to_socket_address_v4(bootstrap));
         dht_config.request_timeout = Duration::from_millis(100);
         dht_config.server_mode = true;
         dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
@@ -272,7 +272,7 @@ impl Relay {
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async unsafe fn run_testnet() -> anyhow::Result<Self> {
-        let testnet = pkarr::mainline::Testnet::builder(10).build()?;
+        let testnet = mainline::Testnet::builder(10).build()?;
 
         // Leaking the testnet to avoid dropping and shutting them down.
         for node in testnet.nodes {
@@ -285,7 +285,7 @@ impl Relay {
             ..Default::default()
         };
 
-        let mut dht_config = mainline_config(&config);
+        let mut dht_config = dht_config(&config);
         dht_config.bootstrap = Some(to_socket_address_v4(&testnet.bootstrap));
         dht_config.request_timeout = Duration::from_millis(100);
         dht_config.server_mode = true;
@@ -311,8 +311,8 @@ impl Relay {
     }
 }
 
-fn mainline_config(config: &RelayConfig) -> mainline::Config {
-    mainline::Config {
+fn dht_config(config: &RelayConfig) -> DhtConfig {
+    DhtConfig {
         port: config.mainline.port,
         ..Default::default()
     }
@@ -326,7 +326,7 @@ struct RateLimiters {
 
 async fn build_rate_limiters(
     rate_limiter_config: Option<&RateLimiterConfig>,
-    dht_config: &mut mainline::Config,
+    dht_config: &mut DhtConfig,
 ) -> anyhow::Result<RateLimiters> {
     let Some(rate_limiter_config) = rate_limiter_config else {
         return Ok(RateLimiters {
@@ -346,10 +346,7 @@ async fn build_rate_limiters(
         .await
         .map_err(|e| anyhow!("Failed to build DhtRateLimiter: {e}"))?;
 
-    dht_config.server_settings = pkarr::mainline::ServerSettings {
-        filter: Box::new(dht),
-        ..Default::default()
-    };
+    dht_config.request_filter = Some(Arc::new(dht));
 
     Ok(RateLimiters {
         http: Some(http),
@@ -429,7 +426,7 @@ mod tests {
 
     #[tokio::test]
     async fn cors_exposes_invalid_signed_packet_seq_header() {
-        let testnet = pkarr::mainline::Testnet::builder(2).build().unwrap();
+        let testnet = mainline::Testnet::builder(2).build().unwrap();
         let relay = run_rate_limited_relay(&testnet).await;
 
         let response = reqwest::Client::new()
@@ -460,7 +457,7 @@ mod tests {
 
     #[tokio::test]
     async fn user_dht_rate_limit_only_blocks_dht_operations() {
-        let testnet = pkarr::mainline::Testnet::builder(2).build().unwrap();
+        let testnet = mainline::Testnet::builder(2).build().unwrap();
         let relay = run_rate_limited_relay(&testnet).await;
         let http = reqwest::Client::new();
         let keypair = Keypair::random();
@@ -519,7 +516,7 @@ mod tests {
         relay.shutdown();
     }
 
-    async fn run_rate_limited_relay(testnet: &pkarr::mainline::Testnet) -> Relay {
+    async fn run_rate_limited_relay(testnet: &mainline::Testnet) -> Relay {
         let storage = std::env::temp_dir().join(format!("pkarr-relay-{}", Timestamp::now()));
         let mut builder = Relay::builder();
         builder

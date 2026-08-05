@@ -2,13 +2,15 @@ use ed25519_dalek::Signature;
 use futures_lite::{Stream, StreamExt};
 use mainline::{
     async_dht::{AsyncDht, GetMutableDetailed},
-    Config, Dht, MutableItem,
+    Dht, MutableItem,
 };
 use ntimestamp::Timestamp;
 
 use crate::{PublicKey, SignedPacket, StoredNodeCount};
 
-use super::{DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse};
+use super::{
+    DhtConfig, DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse,
+};
 
 /// Pkarr DHT client.
 #[derive(Clone, Debug)]
@@ -17,9 +19,9 @@ pub struct DhtClient {
 }
 
 impl DhtClient {
-    /// Build a DHT client from a Mainline configuration.
-    pub fn build(config: Config) -> Result<Self, std::io::Error> {
-        let dht = Dht::new(config)?;
+    /// Build a DHT client from pkarr's DHT configuration.
+    pub fn build(config: DhtConfig) -> Result<Self, std::io::Error> {
+        let dht = Dht::new(config.into_mainline())?;
         Ok(Self {
             inner: dht.as_async(),
         })
@@ -37,7 +39,7 @@ impl DhtClient {
     ) -> Result<StoredNodeCount, PublishError> {
         Ok(self
             .inner
-            .put_mutable(signed_packet.into(), None)
+            .put_mutable(mutable_item_from_signed_packet(signed_packet), None)
             .await?
             .stored_at)
     }
@@ -52,7 +54,7 @@ impl DhtClient {
 
         self.inner
             .get_mutable(public_key.as_bytes(), None, more_recent_than)
-            .filter_map(|item| SignedPacket::try_from(item).ok())
+            .filter_map(|item| signed_packet_from_mutable_item(&item).ok())
     }
 
     /// Resolve signed packets newer than the given timestamp and return query diagnostics.
@@ -84,7 +86,7 @@ impl DhtClient {
             // older valid signed packets for this key.
             if seq >= highest_seq.unwrap_or(seq) {
                 highest_seq = Some(seq);
-                if let Ok(packet) = SignedPacket::try_from(&item) {
+                if let Ok(packet) = signed_packet_from_mutable_item(&item) {
                     let most_recent = packet.clone();
                     return ResolveResponse::new(
                         Some(packet),
@@ -110,45 +112,33 @@ impl DhtClient {
     }
 }
 
-impl From<&SignedPacket> for MutableItem {
-    fn from(s: &SignedPacket) -> Self {
-        Self::new_signed_unchecked(
-            s.public_key().to_bytes(),
-            s.signature().to_bytes(),
-            // Packet
-            s.inner.borrow_owner()[104..].into(),
-            s.timestamp().as_u64() as i64,
-            None,
-        )
-    }
+fn mutable_item_from_signed_packet(s: &SignedPacket) -> MutableItem {
+    MutableItem::new_signed_unchecked(
+        s.public_key().to_bytes(),
+        s.signature().to_bytes(),
+        // Packet
+        s.inner.borrow_owner()[104..].into(),
+        s.timestamp().as_u64() as i64,
+        None,
+    )
 }
 
-impl TryFrom<&MutableItem> for SignedPacket {
-    type Error = crate::errors::SignedPacketVerifyError;
+fn signed_packet_from_mutable_item(
+    i: &MutableItem,
+) -> Result<SignedPacket, crate::errors::SignedPacketVerifyError> {
+    let public_key = PublicKey::try_from(i.key())?;
+    let seq = i.seq() as u64;
+    let signature: Signature = i.signature().into();
 
-    fn try_from(i: &MutableItem) -> Result<Self, crate::errors::SignedPacketVerifyError> {
-        let public_key = PublicKey::try_from(i.key())?;
-        let seq = i.seq() as u64;
-        let signature: Signature = i.signature().into();
-
-        Ok(Self {
-            inner: crate::types::signed_packet::Inner::try_from_parts(
-                &public_key,
-                &signature,
-                seq,
-                i.value(),
-            )?,
-            last_seen: Timestamp::now(),
-        })
-    }
-}
-
-impl TryFrom<MutableItem> for SignedPacket {
-    type Error = crate::errors::SignedPacketVerifyError;
-
-    fn try_from(i: MutableItem) -> Result<Self, crate::errors::SignedPacketVerifyError> {
-        SignedPacket::try_from(&i)
-    }
+    Ok(SignedPacket {
+        inner: crate::types::signed_packet::Inner::try_from_parts(
+            &public_key,
+            &signature,
+            seq,
+            i.value(),
+        )?,
+        last_seen: Timestamp::now(),
+    })
 }
 
 async fn finish_resolve(
@@ -160,7 +150,7 @@ async fn finish_resolve(
         let seq = item.seq();
         if seq >= highest_seq.unwrap_or(seq) {
             highest_seq = Some(seq);
-            match SignedPacket::try_from(&item) {
+            match signed_packet_from_mutable_item(&item) {
                 Ok(packet)
                     if most_recent
                         .as_ref()
@@ -238,7 +228,7 @@ mod tests {
             .sign(&keypair)
             .unwrap();
 
-        let item: MutableItem = (&signed_packet).into();
+        let item = super::mutable_item_from_signed_packet(&signed_packet);
         let seq = signed_packet.timestamp().as_u64() as i64;
 
         let expected = MutableItem::new(

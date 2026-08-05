@@ -1,6 +1,7 @@
 //! Mainline DHT integration.
 
 mod client;
+mod config;
 mod error;
 mod info;
 mod report_policy;
@@ -8,6 +9,7 @@ mod resolve_report;
 mod resolve_response;
 
 pub use client::DhtClient;
+pub use config::{DhtConfig, RequestFilter};
 pub use error::{PublishError, ResolveError};
 pub use info::DhtInfo;
 pub use report_policy::{PublishWarning, ReportPolicy, ResolveWarning};

@@ -71,7 +71,7 @@ pub(crate) fn builder(
 #[tokio::test]
 async fn publish_resolve(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -107,7 +107,7 @@ async fn publish_resolve(#[case] networks: Networks) {
 #[tokio::test]
 async fn client_send(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -147,7 +147,7 @@ async fn client_send(#[case] networks: Networks) {
 #[tokio::test]
 async fn return_expired_packet_fallback(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let client = builder(&relay, &testnet, networks)
         .maximum_ttl(0)
@@ -186,7 +186,7 @@ async fn return_expired_packet_fallback(#[case] networks: Networks) {
 #[tokio::test]
 async fn cache_first_rejects_network_packet_older_than_expired_cache(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let publisher = builder(&relay, &testnet, networks).build().unwrap();
     let resolver = builder(&relay, &testnet, networks)
@@ -233,7 +233,7 @@ async fn cache_first_rejects_network_packet_older_than_expired_cache(#[case] net
 #[tokio::test]
 async fn network_only_ignores_newer_local_cache(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let publisher = builder(&relay, &testnet, networks).build().unwrap();
     let resolver = builder(&relay, &testnet, networks).build().unwrap();
@@ -272,7 +272,7 @@ async fn network_only_ignores_newer_local_cache(#[case] networks: Networks) {
 #[tokio::test]
 async fn ttl_0_test(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let client = builder(&relay, &testnet, networks)
         .maximum_ttl(0)
@@ -313,7 +313,7 @@ async fn ttl_0_test(#[case] networks: Networks) {
 #[tokio::test]
 async fn not_found(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -342,7 +342,7 @@ fn no_network() {
 #[tokio::test]
 async fn repeated_publish_query(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -770,7 +770,7 @@ async fn cache_first_waits_for_fresh_relay_after_expired_response() {
 #[tokio::test]
 async fn concurrent_resolve(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
     let b = builder(&relay, &testnet, networks).build().unwrap();
@@ -809,7 +809,7 @@ async fn concurrent_resolve(#[case] networks: Networks) {
 #[tokio::test]
 async fn concurrent_publish_same_packet(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -842,7 +842,7 @@ async fn concurrent_publish_same_packet(#[case] networks: Networks) {
 #[tokio::test]
 async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -890,7 +890,7 @@ async fn concurrent_publish_of_different_packets(#[case] networks: Networks) {
 #[tokio::test]
 async fn conflict_302(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(10).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let client = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -1031,7 +1031,7 @@ fn no_tokio(#[case] networks: Networks) {
     futures_lite::future::block_on(async {
         let (relay, testnet) = async_compat::Compat::new(async {
             let testnet = mainline::Testnet::builder(5).build().unwrap();
-            let relay = Relay::run_test(&testnet).await.unwrap();
+            let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
             (relay, testnet)
         })
@@ -1072,7 +1072,7 @@ fn no_tokio(#[case] networks: Networks) {
 #[tokio::test]
 async fn zero_cache_size(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -1130,7 +1130,7 @@ async fn zero_cache_size(#[case] networks: Networks) {
 #[tokio::test]
 async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let a = builder(&relay, &testnet, networks).build().unwrap();
 
@@ -1162,7 +1162,7 @@ async fn publish_resolve_most_recent_with_no_cache(#[case] networks: Networks) {
 #[tokio::test]
 async fn republish_after_resolve(#[case] networks: Networks) {
     let testnet = mainline::Testnet::builder(5).build().unwrap();
-    let relay = Relay::run_test(&testnet).await.unwrap();
+    let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
     let keypair = Keypair::random();
     let signed_packet = SignedPacket::builder()
@@ -1192,7 +1192,7 @@ async fn republish_after_resolve(#[case] networks: Networks) {
 async fn discard_cache_with_zero_capacity() {
     use std::net::ToSocketAddrs;
 
-    let testnet = crate::mainline::Testnet::builder(2).build().unwrap();
+    let testnet = mainline::Testnet::builder(2).build().unwrap();
 
     // Create relay
     let storage = std::env::temp_dir().join(Timestamp::now().to_string());
@@ -1312,7 +1312,7 @@ mod reqwest_builder {
     #[tokio::test]
     async fn reqwest_pkarr_domain(#[case] networks: Networks) {
         let testnet = mainline::Testnet::builder(5).build().unwrap();
-        let relay = Relay::run_test(&testnet).await.unwrap();
+        let relay = Relay::run_test(&testnet.bootstrap).await.unwrap();
 
         let keypair = Keypair::random();
 

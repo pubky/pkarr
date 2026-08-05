@@ -5,7 +5,7 @@ use url::Url;
 
 use crate::client::{BuildError, PublishError, ResolveError};
 #[cfg(dht)]
-use crate::dht::{DhtClient, ReportPolicy};
+use crate::dht::{DhtClient, DhtConfig, ReportPolicy};
 use crate::{PublicKey, SignedPacket, StoredNodeCount};
 
 #[cfg(all(dht, relays))]
@@ -43,7 +43,7 @@ impl Backend {
 
     #[cfg(dht)]
     pub(in crate::client) fn dht(
-        config: mainline::Config,
+        config: DhtConfig,
         report_policy: ReportPolicy,
     ) -> Result<Self, BuildError> {
         let client = DhtClient::build(config).map_err(BuildError::DhtBuildError)?;
