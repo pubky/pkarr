@@ -21,7 +21,7 @@ categories = ["network-programming"]
 [dependencies]
 anyhow = "1"
 axum = "0.8"
-mainline = { workspace = true }
+mainline = { workspace = true, optional = true }
 tokio = { version = "1", features = [
     "fs",
     "macros",
@@ -48,7 +48,11 @@ pkarr = { path = "../pkarr", version = "7", default-features = false, features =
 ] }
 
 [dev-dependencies]
+mainline = { workspace = true }
 reqwest = { workspace = true }
+
+[features]
+testnet = ["dep:mainline"]
 
 [package.metadata.docs.rs]
 all-features = true

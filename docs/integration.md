@@ -96,8 +96,8 @@ let client = Client::builder()
 Calling `build()` after `no_default_network()` without configuring at least one
 backend returns `BuildError::NoNetwork`.
 
-For a private DHT, use testnet diagnostic thresholds and customize the
-underlying `mainline::Config` when needed:
+For a private DHT, use testnet diagnostic thresholds and customize
+`pkarr::dht::DhtConfig` through `ClientBuilder::dht` when needed:
 
 ```rust
 use pkarr::{dht::ReportPolicy, Client};

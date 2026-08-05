@@ -16,6 +16,7 @@ struct Cli {
     tracing_env_filter: Option<String>,
 
     /// Run a Pkarr relay on a local testnet (port 15411).
+    #[cfg(feature = "testnet")]
     #[clap(long)]
     testnet: bool,
 }
@@ -32,12 +33,24 @@ async fn main() -> Result<()> {
         .init();
 
     let relay = unsafe {
-        if args.testnet {
-            Relay::run_testnet().await?
-        } else if let Some(config_path) = args.config {
-            Relay::run_with_config_file(config_path).await?
-        } else {
-            Relay::builder().run().await?
+        #[cfg(feature = "testnet")]
+        {
+            if args.testnet {
+                Relay::run_testnet().await?
+            } else if let Some(config_path) = args.config {
+                Relay::run_with_config_file(config_path).await?
+            } else {
+                Relay::builder().run().await?
+            }
+        }
+
+        #[cfg(not(feature = "testnet"))]
+        {
+            if let Some(config_path) = args.config {
+                Relay::run_with_config_file(config_path).await?
+            } else {
+                Relay::builder().run().await?
+            }
         }
     };
 

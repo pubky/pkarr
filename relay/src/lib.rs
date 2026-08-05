@@ -271,6 +271,7 @@ impl Relay {
     /// # Safety
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
+    #[cfg(feature = "testnet")]
     pub async unsafe fn run_testnet() -> anyhow::Result<Self> {
         let testnet = mainline::Testnet::builder(10).build()?;
 
@@ -312,10 +313,10 @@ impl Relay {
 }
 
 fn dht_config(config: &RelayConfig) -> DhtConfig {
-    DhtConfig {
-        port: config.mainline.port,
-        ..Default::default()
-    }
+    let mut dht_config = DhtConfig::default();
+    dht_config.port = config.mainline.port;
+    dht_config.public_ip = config.mainline.public_ip;
+    dht_config
 }
 
 struct RateLimiters {
@@ -422,7 +423,23 @@ mod tests {
         Keypair, SignedPacket, Timestamp, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
     };
 
-    use super::{to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
+    use super::{dht_config, to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
+
+    #[test]
+    fn relay_config_maps_public_ip_to_dht() {
+        let config: crate::config::RelayConfig = toml::from_str(
+            r#"
+[mainline]
+public_ip = "203.0.113.10"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            dht_config(&config).public_ip,
+            Some(Ipv4Addr::new(203, 0, 113, 10))
+        );
+    }
 
     #[tokio::test]
     async fn cors_exposes_invalid_signed_packet_seq_header() {

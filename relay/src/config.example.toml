@@ -7,6 +7,9 @@ port = 6881
 [mainline]
 # Port to run the internal Mainline DHT node on.
 port = 6881
+# Known public IPv4 address used to generate a BEP 42 secure node ID.
+# When omitted, the DHT discovers its public address from peers.
+# public_ip = "203.0.113.10"
 
 # Cache settings
 [cache]

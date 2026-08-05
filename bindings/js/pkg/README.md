@@ -136,7 +136,7 @@ The client by **default** uses the following relays:
 To publish the records to a custom relay, compile the `pkarr-relay` binary from source. Navigate to the pkarr [repository](https://github.com/pubky/pkarr) and:
 
 ```bash
-cargo build
+cargo build -p pkarr-relay --features testnet
 ./target/debug/pkarr-relay --testnet
 ```
 

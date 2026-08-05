@@ -36,7 +36,7 @@ jobs:
           node-version: 'lts/*'
 
       - name: Build server
-        run: cargo build
+        run: cargo build -p pkarr-relay --features testnet
 
       - name: Build WASM package
         env:

@@ -4,7 +4,8 @@ Wasm-pack wrap of [pkarr](https://github.com/pubky/pkarr) client.
 
 ## How To Build/Test the NPM Package
 
-1. Create a binary to run a testnet mainline DHT and Pkarr relay. Go to the root folder and `cargo build`
+1. Create a binary to run a testnet mainline DHT and Pkarr relay. Go to the root
+   folder and run `cargo build -p pkarr-relay --features testnet`
 2. Go to `bindings/js/pkg`
 3. Run `npm run build`
 5. Run tests with `npm run test`

@@ -31,7 +31,7 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build server
-        run: cargo build
+        run: cargo build -p pkarr-relay --features testnet
 
       - name: Start server and run tests
         run: |

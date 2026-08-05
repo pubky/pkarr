@@ -3,7 +3,10 @@
 use anyhow::{Context, Result};
 use pkarr::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::{
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
 use crate::rate_limiting::RateLimiterConfig;
 
@@ -50,6 +53,7 @@ impl Default for HttpConfig {
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct MainlineConfig {
     pub port: Option<u16>,
+    pub public_ip: Option<Ipv4Addr>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
