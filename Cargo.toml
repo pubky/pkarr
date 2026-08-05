@@ -9,7 +9,7 @@ resolver = "3"
 name = "pkarr"
 
 [workspace.dependencies]
-mainline = { version = "7", default-features = false, features = ["async"] }
+mainline = { version = "8", default-features = false, features = ["async"] }
 # rustls feature is needed for reqwest to work with HTTPS.
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
