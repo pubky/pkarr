@@ -1,7 +1,7 @@
 {
   "name": "@synonymdev/pkarr",
   "description": "Public-Key Addressable Resource Records (Pkarr); publish and resolve DNS records over Mainline DHT",
-  "version": "1.0.0",
+  "version": "8.0.0",
   "license": "MIT",
   "repository": {
     "type": "git",

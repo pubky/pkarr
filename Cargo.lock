@@ -1701,7 +1701,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pkarr"
-version = "7.0.0"
+version = "8.0.0"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -1748,7 +1748,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-js"
-version = "7.0.0"
+version = "8.0.0"
 dependencies = [
  "cfg_aliases",
  "console_error_panic_hook",
@@ -1765,7 +1765,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-relay"
-version = "1.0.0"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "axum",
