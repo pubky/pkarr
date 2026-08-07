@@ -29,7 +29,8 @@ tokio = { version = "1", features = [
     "signal",
     "time",
 ] }
-tower-http = { version = "0.7", features = ["cors", "trace"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower-http = { version = "0.7", features = ["cors", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum-server = "0.8"

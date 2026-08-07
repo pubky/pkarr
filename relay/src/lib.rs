@@ -28,8 +28,9 @@ use std::{
 use anyhow::anyhow;
 use axum::{extract::DefaultBodyLimit, http::HeaderName, Router};
 use axum_server::Handle;
+use hyper_util::rt::TokioTimer;
 
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::{cors::CorsLayer, timeout::RequestBodyDeadlineLayer, trace::TraceLayer};
 use tracing::info;
 
 use pkarr::{
@@ -44,6 +45,8 @@ use dht_service::DhtService;
 
 pub use quota_config::{RequestCountQuota, TimeUnit};
 pub use rate_limiting::RateLimiterConfig;
+
+const HTTP_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A builder for Pkarr [Relay]
 pub struct RelayBuilder {
@@ -210,7 +213,7 @@ impl Relay {
 
         let handle = Handle::new();
 
-        let task = axum_server::from_tcp(listener)?
+        let task = http1_server(listener, HTTP_REQUEST_READ_TIMEOUT)?
             .handle(handle.clone())
             .serve(app.into_make_service_with_connect_info::<SocketAddr>());
 
@@ -319,6 +322,20 @@ fn dht_config(config: &RelayConfig) -> DhtConfig {
     dht_config
 }
 
+fn http1_server(
+    listener: TcpListener,
+    header_read_timeout: Duration,
+) -> std::io::Result<axum_server::Server<SocketAddr>> {
+    let mut server = axum_server::from_tcp(listener)?.http1_only();
+    server
+        .http_builder()
+        .http1()
+        .timer(TokioTimer::new())
+        .header_read_timeout(header_read_timeout);
+
+    Ok(server)
+}
+
 struct RateLimiters {
     http: Option<rate_limiting::IpRateLimiter>,
     user_dht: Option<rate_limiting::UserDhtRateLimiter>,
@@ -369,6 +386,7 @@ fn create_app(
         .route("/", axum::routing::get(crate::handlers::index))
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
+        .layer(RequestBodyDeadlineLayer::new(HTTP_REQUEST_READ_TIMEOUT))
         .layer(cors_layer())
         .layer(TraceLayer::new_for_http());
 
@@ -416,14 +434,24 @@ pub(crate) struct AppState {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::Ipv4Addr, num::NonZeroU32, time::Duration};
+    use std::{
+        io,
+        net::{Ipv4Addr, SocketAddr, TcpListener},
+        num::NonZeroU32,
+        time::Duration,
+    };
 
+    use axum::Router;
     use http::StatusCode;
     use pkarr::{
         Keypair, SignedPacket, Timestamp, PKARR_DHT_STORED_NODES, PKARR_INVALID_SIGNED_PACKET_SEQ,
     };
+    use tokio::{net::TcpStream, task::JoinHandle, time::timeout};
+    use tower_http::timeout::RequestBodyDeadlineLayer;
 
-    use super::{dht_config, to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
+    use super::{
+        dht_config, http1_server, to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota,
+    };
 
     #[test]
     fn relay_config_maps_public_ip_to_dht() {
@@ -439,6 +467,61 @@ public_ip = "203.0.113.10"
             dht_config(&config).public_ip,
             Some(Ipv4Addr::new(203, 0, 113, 10))
         );
+    }
+
+    #[tokio::test]
+    async fn idle_connection_is_closed_after_header_timeout() {
+        let (address, server_task) =
+            run_http1_test_server(Duration::from_millis(50), Router::new());
+        let stream = TcpStream::connect(address).await.unwrap();
+
+        timeout(Duration::from_secs(1), wait_for_disconnect(&stream))
+            .await
+            .expect("idle connection should time out")
+            .unwrap();
+
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn incomplete_headers_are_closed_after_header_timeout() {
+        let (address, server_task) =
+            run_http1_test_server(Duration::from_millis(50), Router::new());
+        let stream = TcpStream::connect(address).await.unwrap();
+        stream.writable().await.unwrap();
+        let partial_request = b"GET / HTTP/1.1\r\nHost:";
+        assert_eq!(
+            stream.try_write(partial_request).unwrap(),
+            partial_request.len()
+        );
+
+        timeout(Duration::from_secs(1), wait_for_disconnect(&stream))
+            .await
+            .expect("incomplete headers should time out")
+            .unwrap();
+
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn incomplete_request_body_is_closed_after_body_deadline() {
+        let app = Router::new()
+            .route("/{key}", axum::routing::put(|_: bytes::Bytes| async {}))
+            .layer(RequestBodyDeadlineLayer::new(Duration::from_millis(50)));
+        let (address, server_task) = run_http1_test_server(Duration::from_secs(1), app);
+        let stream = TcpStream::connect(address).await.unwrap();
+        stream.writable().await.unwrap();
+        let public_key = Keypair::random().public_key().to_string();
+        let headers =
+            format!("PUT /{public_key} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1\r\n\r\n");
+        assert_eq!(stream.try_write(headers.as_bytes()).unwrap(), headers.len());
+
+        timeout(Duration::from_secs(1), wait_for_disconnect(&stream))
+            .await
+            .expect("incomplete request body should time out")
+            .unwrap();
+
+        server_task.abort();
     }
 
     #[tokio::test]
@@ -557,6 +640,45 @@ public_ip = "203.0.113.10"
             });
 
         unsafe { builder.run().await.unwrap() }
+    }
+
+    fn run_http1_test_server(
+        header_read_timeout: Duration,
+        app: Router,
+    ) -> (SocketAddr, JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = http1_server(listener, header_read_timeout).unwrap();
+        let task = tokio::spawn(async move {
+            server.serve(app.into_make_service()).await.unwrap();
+        });
+
+        (address, task)
+    }
+
+    async fn wait_for_disconnect(stream: &TcpStream) -> io::Result<()> {
+        let mut buffer = [0; 1024];
+
+        loop {
+            stream.readable().await?;
+            match stream.try_read(&mut buffer) {
+                Ok(0) => return Ok(()),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::ConnectionAborted
+                            | io::ErrorKind::ConnectionReset
+                            | io::ErrorKind::NotConnected
+                    ) =>
+                {
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     fn signed_packet(keypair: &Keypair) -> SignedPacket {
