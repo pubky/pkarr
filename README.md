@@ -4,41 +4,10 @@
 
 [![Crates.io](https://img.shields.io/crates/v/pkarr)](https://crates.io/crates/pkarr) [![Documentation](https://docs.rs/pkarr/badge.svg)](https://docs.rs/pkarr) [![License](https://img.shields.io/badge/license-MIT-purple)](./LICENSE)
 
-PKARR turns Ed25519 public keys into domain names that you truly own. Publish DNS records to the Bittorrent peer-to-peer network with 10+ million nodes. No registrar can seize your domain. No platform can deplatform your identity.
+PKARR turns Ed25519 public keys into domain names that you truly own. Publish
+DNS records to the Mainline DHT without relying on a registrar or platform.
 
 Where we are going, this https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy resolves everywhere!
-
-## Quick Start
-
-```bash
-cargo add pkarr
-```
-
-```rust
-use pkarr::{Client, Keypair, SignedPacket};
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Generate your identity
-    let keypair = Keypair::random();
-    println!("Your public key: {}", keypair.public_key());
-
-    // Create and sign DNS records
-    let packet = SignedPacket::builder()
-        .txt("_hello".try_into()?, "world".try_into()?, 3600)
-        .sign(&keypair)?;
-
-    // Publish to the network
-    let client = Client::builder().build()?;
-    let stored_on = client.publish(&packet).await?;
-
-    println!(
-        "Published on at least {stored_on} DHT nodes! Resolve at: https://pkdns.net/?id={}",
-        keypair.public_key()
-    );
-    Ok(())
-}
-```
 
 ## Documentation
 
@@ -52,6 +21,17 @@ async fn main() -> anyhow::Result<()> {
 | **[Examples](./pkarr/examples/README.md)** | Code samples |
 | **[Specifications](./design/README.md)** | Protocol design documents |
 
+## Crates and Packages
+
+- **[`pkarr`](./pkarr/README.md)** — The Rust library for creating and verifying
+  signed DNS packets, then publishing and resolving them over the DHT or HTTP
+  relays. Its README covers installation, features, and a runnable example.
+- **[`pkarr-relay`](./relay/README.md)** — An HTTP-to-DHT gateway that lets
+  browsers and other UDP-restricted clients publish and resolve Pkarr packets.
+  Its README covers installation and configuration.
+- **[`@synonymdev/pkarr`](./bindings/js/README.md)** — JavaScript/WASM bindings
+  for using Pkarr in browsers and Node.js.
+
 ## Demo
 
 Try the [web app](https://pkdns.net) to resolve records in your browser.
@@ -60,7 +40,7 @@ Try the [web app](https://pkdns.net) to resolve records in your browser.
 
 1. **Generate a keypair** — Your public key becomes your domain name
 2. **Sign DNS records** — Standard A, AAAA, TXT, CNAME records, self-signed
-3. **Publish to the DHT** — Records stored on the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT) (10M+ nodes)
+3. **Publish to the DHT** — Records are stored on the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT)
 4. **Resolve anywhere** — Anyone can query and verify your records
 
 ```mermaid
@@ -78,6 +58,12 @@ sequenceDiagram
     Relay->>Client: Verified response
 ```
 
+The default native client configures both DHT and relay backends.
+`ClientBuilder` can select DHT-only or relay-only operation, and `ResolvePolicy`
+controls whether a lookup uses cached data or queries the configured
+backends. See the [integration
+guide](./docs/integration.md#client-configuration) for configuration examples.
+
 ### The Network
 
 PKARR uses the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT), the same peer-to-peer network that powers BitTorrent. Records are stored using [BEP44](https://www.bittorrent.org/beps/bep_0044.html) (mutable items). With 15 years of proven reliability and 10+ million active nodes, there's no need to bootstrap a new network.
@@ -88,8 +74,6 @@ PKARR uses the [Mainline DHT](https://en.wikipedia.org/wiki/Mainline_DHT), the s
 - **1000-byte limit** — PKARR is for discovery, not storage
 - **Caching everywhere** — Clients and relays cache aggressively for performance
 - **Relays for browsers** — Web apps use HTTP relays since browsers cannot open UDP sockets
-
-PKARR is the I/O library that reads and writes DNS records to the DHT.
 
 ## FAQ
 
