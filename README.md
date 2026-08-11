@@ -9,39 +9,6 @@ DNS records to the Mainline DHT without relying on a registrar or platform.
 
 Where we are going, this https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj56uyy resolves everywhere!
 
-## Quick Start
-
-```bash
-cargo add pkarr
-cargo add tokio --features macros,rt-multi-thread
-```
-
-```rust
-use pkarr::{Client, Keypair, SignedPacket};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Generate your identity
-    let keypair = Keypair::random();
-    println!("Your public key: {}", keypair.public_key());
-
-    // Create and sign DNS records
-    let packet = SignedPacket::builder()
-        .txt("_hello".try_into()?, "world".try_into()?, 3600)
-        .sign(&keypair)?;
-
-    // Publish to the network
-    let client = Client::builder().build()?;
-    let stored_on = client.publish(&packet).await?;
-
-    println!(
-        "Published on at least {stored_on} DHT nodes! Resolve at: https://pkdns.net/?id={}",
-        keypair.public_key()
-    );
-    Ok(())
-}
-```
-
 ## Documentation
 
 | Guide | Description |
@@ -54,16 +21,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 | **[Examples](./pkarr/examples/README.md)** | Code samples |
 | **[Specifications](./design/README.md)** | Protocol design documents |
 
-## Repository Components
+## Crates and Packages
 
-- **`pkarr`** — The Rust library for keys, signed DNS packets, caching,
-  publishing, and resolution.
-- **`pkarr-relay`** — An HTTP-to-DHT relay server for browsers and other
-  UDP-restricted clients. Install it with `cargo install pkarr-relay`, or run
-  the workspace binary with `cargo run -p pkarr-relay -- --help`. See the
-  [relay guide](./relay/README.md) for configuration options.
-- **`@synonymdev/pkarr`** — JavaScript/WASM bindings under
-  [`bindings/js`](./bindings/js/README.md).
+- **[`pkarr`](./pkarr/README.md)** — The Rust library for creating and verifying
+  signed DNS packets, then publishing and resolving them over the DHT or HTTP
+  relays. Its README covers installation, features, and a runnable example.
+- **[`pkarr-relay`](./relay/README.md)** — An HTTP-to-DHT gateway that lets
+  browsers and other UDP-restricted clients publish and resolve Pkarr packets.
+  Its README covers installation and configuration.
+- **[`@synonymdev/pkarr`](./bindings/js/README.md)** — JavaScript/WASM bindings
+  for using Pkarr in browsers and Node.js.
 
 ## Demo
 

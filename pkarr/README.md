@@ -48,13 +48,13 @@ native targets, Pkarr also supports other executors through `async_compat`.
 
 ## Choosing Features
 
-| Use case | Dependency |
-|----------|------------|
-| Native application using DHT and relays | `pkarr = "7"` |
-| DHT only | `pkarr = { version = "7", default-features = false, features = ["dht"] }` |
-| Relay only or browser/WASM | `pkarr = { version = "7", default-features = false, features = ["relays"] }` |
-| Sign and verify packets without networking | `pkarr = { version = "7", default-features = false, features = ["signed_packet"] }` |
-| Key generation and parsing only | `pkarr = { version = "7", default-features = false }` |
+| Use case | Command |
+|----------|---------|
+| Native application using DHT and relays | `cargo add pkarr` |
+| DHT only | `cargo add pkarr --no-default-features --features dht` |
+| Relay only or browser/WASM | `cargo add pkarr --no-default-features --features relays` |
+| Sign and verify packets without networking | `cargo add pkarr --no-default-features --features signed_packet` |
+| Key generation and parsing only | `cargo add pkarr --no-default-features` |
 
 The default `full-client` feature enables both DHT and relay support. Browsers
 cannot access the UDP DHT directly and must use `relays`; WASI is not supported.
