@@ -25,19 +25,18 @@ mainline = { workspace = true, optional = true }
 tokio = { version = "1", features = [
     "fs",
     "macros",
+    "net",
     "rt-multi-thread",
     "signal",
+    "sync",
     "time",
 ] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+hyper-util = { version = "0.1", features = ["server-auto", "service", "tokio"] }
 tower-http = { version = "0.7", features = ["cors", "timeout", "trace"] }
-tower-service = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-axum-server = "0.8"
 http = "1"
 bytes = "1"
-pin-project-lite = "0.2"
 tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 governor = { version = "0.10", default-features = false}
 serde = { version = "1", features = ["derive"] }

@@ -12,11 +12,11 @@ mod dht_service;
 mod error;
 mod extractors;
 mod handlers;
+mod http_server;
 mod index;
 mod quota_config;
 mod rate_limiting;
 mod real_ip;
-mod request_deadline;
 mod response;
 
 use std::{
@@ -28,8 +28,6 @@ use std::{
 
 use anyhow::anyhow;
 use axum::{extract::DefaultBodyLimit, http::HeaderName, Router};
-use axum_server::Handle;
-use hyper_util::rt::TokioTimer;
 
 use tower_http::{cors::CorsLayer, timeout::RequestBodyDeadlineLayer, trace::TraceLayer};
 use tracing::info;
@@ -43,12 +41,12 @@ use url::Url;
 
 use config::{RelayConfig, CACHE_DIR};
 use dht_service::DhtService;
-use request_deadline::RequestDeadlineAcceptor;
+use http_server::HttpServer;
 
 pub use quota_config::{RequestCountQuota, TimeUnit};
 pub use rate_limiting::RateLimiterConfig;
 
-const HTTP_REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const HTTP_REQUEST_BODY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A builder for Pkarr [Relay]
 pub struct RelayBuilder {
@@ -145,7 +143,7 @@ impl RelayBuilder {
 /// This struct represents a running relay server and provides methods to interact with it,
 /// such as retrieving the server's address or shutting it down.
 pub struct Relay {
-    handle: Handle<SocketAddr>,
+    http_server: HttpServer,
     relay_address: SocketAddr,
 }
 
@@ -191,8 +189,7 @@ impl Relay {
         let dht_client = DhtClient::build(dht_config)?;
 
         let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http.port)))?;
-        // On axum-server 0.8.0 the `.set_nonblocking(true)` call does not take place internally anymore
-        // See open issue https://github.com/programatik29/axum-server/issues/181
+        // Tokio requires a non-blocking listener when converting from std.
         listener.set_nonblocking(true)?;
 
         let node_address = dht_client.info().await.local_addr();
@@ -212,17 +209,10 @@ impl Relay {
         );
         let state = AppState { dht };
         let app = create_app(state, rate_limiters.http, rate_limiters.behind_proxy);
-
-        let handle = Handle::new();
-
-        let task = http_server(listener, HTTP_REQUEST_READ_TIMEOUT)?
-            .handle(handle.clone())
-            .serve(app.into_make_service_with_connect_info::<SocketAddr>());
-
-        tokio::spawn(task);
+        let http_server = HttpServer::spawn(listener, app)?;
 
         Ok(Relay {
-            handle,
+            http_server,
             relay_address,
         })
     }
@@ -313,7 +303,7 @@ impl Relay {
 
     /// Shutdown the relay server.
     pub fn shutdown(&self) {
-        self.handle.shutdown();
+        self.http_server.shutdown();
     }
 }
 
@@ -322,21 +312,6 @@ fn dht_config(config: &RelayConfig) -> DhtConfig {
     dht_config.port = config.mainline.port;
     dht_config.public_ip = config.mainline.public_ip;
     dht_config
-}
-
-fn http_server(
-    listener: TcpListener,
-    request_read_timeout: Duration,
-) -> std::io::Result<axum_server::Server<SocketAddr, RequestDeadlineAcceptor>> {
-    let mut server = axum_server::from_tcp(listener)?
-        .acceptor(RequestDeadlineAcceptor::new(request_read_timeout));
-    server
-        .http_builder()
-        .http1()
-        .timer(TokioTimer::new())
-        .header_read_timeout(request_read_timeout);
-
-    Ok(server)
 }
 
 struct RateLimiters {
@@ -389,7 +364,7 @@ fn create_app(
         .route("/", axum::routing::get(crate::handlers::index))
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
-        .layer(RequestBodyDeadlineLayer::new(HTTP_REQUEST_READ_TIMEOUT))
+        .layer(RequestBodyDeadlineLayer::new(HTTP_REQUEST_BODY_TIMEOUT))
         .layer(cors_layer())
         .layer(TraceLayer::new_for_http());
 
