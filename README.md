@@ -1,4 +1,4 @@
-# PKARR
+# [PKARR](https://github.com/pubky/pkarr)
 
 > Own your identity. No registrars. No platforms. Just your keys.
 
