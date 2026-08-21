@@ -11,7 +11,7 @@ use pkarr::{dht, PKARR_INVALID_SIGNED_PACKET_SEQ};
 pub struct Error {
     status: StatusCode,
     detail: Option<String>,
-    headers: HeaderMap,
+    headers: Option<Box<HeaderMap>>,
 }
 
 impl Default for Error {
@@ -19,7 +19,7 @@ impl Default for Error {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             detail: None,
-            headers: HeaderMap::new(),
+            headers: None,
         }
     }
 }
@@ -29,7 +29,7 @@ impl Error {
         Self {
             status,
             detail: None,
-            headers: HeaderMap::new(),
+            headers: None,
         }
     }
 
@@ -39,7 +39,7 @@ impl Error {
             status: status_code,
             // title: Self::canonical_reason_to_string(&status_code),
             detail: Some(message.to_string()),
-            headers: HeaderMap::new(),
+            headers: None,
         }
     }
 
@@ -48,7 +48,7 @@ impl Error {
             StatusCode::NOT_FOUND,
             format!("DHT mutable item at seq {seq} is not a valid signed packet"),
         );
-        error.headers.insert(
+        error.headers.get_or_insert_default().insert(
             PKARR_INVALID_SIGNED_PACKET_SEQ,
             HeaderValue::from_str(&seq.to_string())
                 .expect("i64 string is a valid HTTP header value"),
@@ -63,7 +63,9 @@ impl IntoResponse for Error {
             Some(detail) => (self.status, detail).into_response(),
             _ => (self.status,).into_response(),
         };
-        response.headers_mut().extend(self.headers);
+        if let Some(headers) = self.headers {
+            response.headers_mut().extend(*headers);
+        }
         response
     }
 }
