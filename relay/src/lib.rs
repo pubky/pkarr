@@ -209,7 +209,7 @@ impl Relay {
         );
         let state = AppState { dht };
         let app = create_app(state, rate_limiters.http, rate_limiters.behind_proxy);
-        let http_server = HttpServer::spawn(listener, app)?;
+        let http_server = HttpServer::spawn(listener, app, &config.http)?;
 
         Ok(Relay {
             http_server,
@@ -247,7 +247,10 @@ impl Relay {
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async fn run_test<T: ToSocketAddrs>(bootstrap: &[T]) -> anyhow::Result<Self> {
         let config = RelayConfig {
-            http: config::HttpConfig { port: 0 },
+            http: config::HttpConfig {
+                port: 0,
+                ..Default::default()
+            },
             rate_limiter: None,
             ..Default::default()
         };
@@ -276,7 +279,10 @@ impl Relay {
         }
 
         let config = RelayConfig {
-            http: config::HttpConfig { port: 15411 },
+            http: config::HttpConfig {
+                port: 15411,
+                ..Default::default()
+            },
             rate_limiter: None,
             ..Default::default()
         };

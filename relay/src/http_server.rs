@@ -28,9 +28,9 @@ use tokio::{
     time::sleep,
 };
 
-const MAX_CONNECTIONS: usize = 1_024;
+use crate::config::HttpConfig;
+
 const INITIAL_REQUEST_HEADER_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_CONNECTION_AGE: Duration = Duration::from_secs(5 * 60);
 const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_secs(1);
 const HTTP1_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
@@ -48,10 +48,16 @@ struct Limits {
 
 impl Default for Limits {
     fn default() -> Self {
+        Self::from(&HttpConfig::default())
+    }
+}
+
+impl From<&HttpConfig> for Limits {
+    fn from(config: &HttpConfig) -> Self {
         Self {
-            max_connections: MAX_CONNECTIONS,
+            max_connections: config.max_connections,
             initial_request_header_timeout: INITIAL_REQUEST_HEADER_TIMEOUT,
-            max_connection_age: MAX_CONNECTION_AGE,
+            max_connection_age: Duration::from_secs(config.max_connection_age_seconds),
             drain_timeout: CONNECTION_DRAIN_TIMEOUT,
             http1_header_read_timeout: HTTP1_HEADER_READ_TIMEOUT,
         }
@@ -63,8 +69,12 @@ pub(crate) struct HttpServer {
 }
 
 impl HttpServer {
-    pub(crate) fn spawn(listener: TcpListener, app: Router) -> io::Result<Self> {
-        Self::spawn_with_limits(listener, app, Limits::default())
+    pub(crate) fn spawn(
+        listener: TcpListener,
+        app: Router,
+        config: &HttpConfig,
+    ) -> io::Result<Self> {
+        Self::spawn_with_limits(listener, app, Limits::from(config))
     }
 
     fn spawn_with_limits(listener: TcpListener, app: Router, limits: Limits) -> io::Result<Self> {
@@ -196,7 +206,9 @@ async fn serve_connection(
 
     tokio::select! {
         biased;
-        _ = shutdown.changed() => {}
+        _ = shutdown.changed() => {
+            tracing::debug!(%peer_address, "HTTP connection drain interrupted by server shutdown");
+        }
         result = connection.as_mut() => {
             if let Err(error) = result {
                 tracing::debug!(%error, %peer_address, "HTTP connection closed with an error while draining");

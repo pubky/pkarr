@@ -7,11 +7,14 @@ use std::{
     net::Ipv4Addr,
     path::{Path, PathBuf},
 };
+use tokio::sync::Semaphore;
 
 use crate::rate_limiting::RateLimiterConfig;
 
 pub const DEFAULT_CACHE_SIZE: usize = 1_000_000;
 pub const DEFAULT_HTTP_PORT: u16 = 6881;
+pub const DEFAULT_HTTP_MAX_CONNECTIONS: usize = 1_024;
+pub const DEFAULT_HTTP_MAX_CONNECTION_AGE_SECONDS: u64 = 5 * 60;
 pub const CACHE_DIR: &str = "pkarr-cache";
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,12 +43,18 @@ impl Default for RelayConfig {
 pub struct HttpConfig {
     #[serde(default = "default_http_port")]
     pub port: u16,
+    #[serde(default = "default_http_max_connections")]
+    pub max_connections: usize,
+    #[serde(default = "default_http_max_connection_age_seconds")]
+    pub max_connection_age_seconds: u64,
 }
 
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             port: default_http_port(),
+            max_connections: default_http_max_connections(),
+            max_connection_age_seconds: default_http_max_connection_age_seconds(),
         }
     }
 }
@@ -91,6 +100,7 @@ impl RelayConfig {
             .path
             .map(|cache_path| resolve_cache_path(cache_path, path.as_ref()))
             .transpose()?;
+        validate_http(&config.http)?;
         validate_cache_ttl(&config.cache)?;
 
         Ok(config)
@@ -99,6 +109,14 @@ impl RelayConfig {
 
 fn default_http_port() -> u16 {
     DEFAULT_HTTP_PORT
+}
+
+fn default_http_max_connections() -> usize {
+    DEFAULT_HTTP_MAX_CONNECTIONS
+}
+
+fn default_http_max_connection_age_seconds() -> u64 {
+    DEFAULT_HTTP_MAX_CONNECTION_AGE_SECONDS
 }
 
 fn default_cache_size() -> usize {
@@ -111,6 +129,24 @@ fn default_minimum_ttl() -> u32 {
 
 fn default_maximum_ttl() -> u32 {
     DEFAULT_MAXIMUM_TTL
+}
+
+fn validate_http(http: &HttpConfig) -> Result<()> {
+    anyhow::ensure!(
+        http.max_connections > 0,
+        "http.max_connections must be greater than zero"
+    );
+    anyhow::ensure!(
+        http.max_connections <= Semaphore::MAX_PERMITS,
+        "http.max_connections must be less than or equal to {}",
+        Semaphore::MAX_PERMITS
+    );
+    anyhow::ensure!(
+        http.max_connection_age_seconds > 0,
+        "http.max_connection_age_seconds must be greater than zero"
+    );
+
+    Ok(())
 }
 
 fn validate_cache_ttl(cache: &CacheConfig) -> Result<()> {
@@ -142,11 +178,62 @@ fn resolve_cache_path(cache_path: PathBuf, config_file_path: &Path) -> Result<Pa
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_cache_ttl, CacheConfig, RelayConfig};
+    use super::{
+        validate_cache_ttl, validate_http, CacheConfig, HttpConfig, RelayConfig,
+        DEFAULT_HTTP_MAX_CONNECTIONS, DEFAULT_HTTP_MAX_CONNECTION_AGE_SECONDS,
+    };
 
     #[test]
     fn default_config_enables_rate_limiter() {
         assert!(RelayConfig::default().rate_limiter.is_some());
+    }
+
+    #[test]
+    fn http_connection_limits_default_when_omitted() {
+        let config: RelayConfig = toml::from_str("[http]\nport = 1234").unwrap();
+
+        assert_eq!(config.http.max_connections, DEFAULT_HTTP_MAX_CONNECTIONS);
+        assert_eq!(
+            config.http.max_connection_age_seconds,
+            DEFAULT_HTTP_MAX_CONNECTION_AGE_SECONDS
+        );
+    }
+
+    #[test]
+    fn http_connection_limits_can_be_overridden() {
+        let config: RelayConfig =
+            toml::from_str("[http]\nmax_connections = 2048\nmax_connection_age_seconds = 600")
+                .unwrap();
+
+        assert_eq!(config.http.max_connections, 2_048);
+        assert_eq!(config.http.max_connection_age_seconds, 600);
+    }
+
+    #[test]
+    fn http_connection_limits_must_be_nonzero() {
+        let mut http = HttpConfig {
+            max_connections: 0,
+            ..Default::default()
+        };
+        assert!(validate_http(&http).is_err());
+
+        http.max_connections = 1;
+        http.max_connection_age_seconds = 0;
+        assert!(validate_http(&http).is_err());
+    }
+
+    #[test]
+    fn max_connections_must_not_exceed_semaphore_limit() {
+        let http = HttpConfig {
+            max_connections: tokio::sync::Semaphore::MAX_PERMITS + 1,
+            ..Default::default()
+        };
+
+        let error = validate_http(&http).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("http.max_connections must be less than or equal to"));
     }
 
     #[test]
