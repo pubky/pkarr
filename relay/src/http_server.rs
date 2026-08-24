@@ -131,6 +131,11 @@ async fn serve(
 
         let Ok(connection_slot) = Arc::clone(&connection_slots).try_acquire_owned() else {
             // Refuse excess connections immediately instead of allocating another task.
+            tracing::debug!(
+                %peer_address,
+                max_connections = limits.max_connections,
+                "HTTP connection refused because the connection limit was reached"
+            );
             drop(stream);
             continue;
         };
