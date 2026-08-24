@@ -25,14 +25,16 @@ mainline = { workspace = true, optional = true }
 tokio = { version = "1", features = [
     "fs",
     "macros",
+    "net",
     "rt-multi-thread",
     "signal",
+    "sync",
     "time",
 ] }
-tower-http = { version = "0.7", features = ["cors", "trace"] }
+hyper-util = { version = "0.1", features = ["server-auto", "service", "tokio"] }
+tower-http = { version = "0.7", features = ["cors", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-axum-server = "0.8"
 http = "1"
 bytes = "1"
 tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
@@ -48,6 +50,7 @@ pkarr = { path = "../pkarr", version = "8", default-features = false, features =
 ] }
 
 [dev-dependencies]
+h2 = "0.4"
 mainline = { workspace = true }
 reqwest = { workspace = true }
 
