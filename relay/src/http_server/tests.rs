@@ -13,7 +13,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 
-use super::{HttpServer, Limits};
+use super::{HttpServer, Limits, HTTP1_MAX_BUFFER_SIZE};
 
 #[tokio::test]
 async fn connection_without_request_hits_initial_request_header_timeout() {
@@ -125,6 +125,25 @@ async fn incomplete_http1_headers_hit_header_timeout() {
         .await
         .expect("incomplete headers should time out")
         .unwrap();
+}
+
+#[tokio::test]
+async fn oversized_http1_headers_are_rejected() {
+    let server = TestServer::spawn(test_limits());
+    let mut stream = TcpStream::connect(server.address).await.unwrap();
+    let oversized_header = "a".repeat(HTTP1_MAX_BUFFER_SIZE);
+    let request =
+        format!("GET / HTTP/1.1\r\nHost: localhost\r\nX-Large: {oversized_header}\r\n\r\n");
+
+    stream.write_all(request.as_bytes()).await.unwrap();
+
+    let mut response = Vec::new();
+    timeout(Duration::from_secs(1), stream.read_to_end(&mut response))
+        .await
+        .expect("oversized HTTP/1 headers should be rejected promptly")
+        .unwrap();
+
+    assert!(response.starts_with(b"HTTP/1.1 431"));
 }
 
 #[tokio::test]

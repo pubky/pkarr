@@ -34,6 +34,7 @@ const INITIAL_REQUEST_HEADER_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_secs(1);
 const HTTP1_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const HTTP1_MAX_BUFFER_SIZE: usize = 16 * 1024;
 const HTTP2_MAX_CONCURRENT_STREAMS: u32 = 100;
 const HTTP2_MAX_HEADER_LIST_SIZE: u32 = 16 * 1024;
 
@@ -102,7 +103,8 @@ async fn serve(
     builder
         .http1()
         .timer(TokioTimer::new())
-        .header_read_timeout(limits.http1_header_read_timeout);
+        .header_read_timeout(limits.http1_header_read_timeout)
+        .max_buf_size(HTTP1_MAX_BUFFER_SIZE);
     builder
         .http2()
         .max_concurrent_streams(HTTP2_MAX_CONCURRENT_STREAMS)
