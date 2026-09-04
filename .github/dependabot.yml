@@ -33,3 +33,20 @@ updates:
           npm-dependencies:
               patterns:
                   - "*"
+
+    # GitHub Actions used by the workflows
+    - package-ecosystem: "github-actions"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+          day: "tuesday"
+          time: "08:00"
+      commit-message:
+          prefix: "ci"
+      rebase-strategy: "auto"
+      cooldown:
+          default-days: 7
+      groups:
+          github-actions:
+              patterns:
+                  - "*"
