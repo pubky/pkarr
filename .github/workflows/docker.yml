@@ -22,7 +22,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: pubky/ci-workflows/.github/actions/docker/build_and_push@main
+        uses: pubky/ci-workflows/.github/actions/docker/build_and_push@e6d3b38b5ebfa97b86595cb44f3a86695e473b09 # v1.0.0
         with:
           registry: registry-1.docker.io/synonymsoft
           context: .
