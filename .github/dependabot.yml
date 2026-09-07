@@ -10,6 +10,8 @@ updates:
           interval: "weekly"
           day: "tuesday"
           time: "08:00"
+      cooldown:
+        default-days: 7
       commit-message:
           prefix: "deps"
       rebase-strategy: "auto"
@@ -26,6 +28,8 @@ updates:
       directory: "/bindings/js/pkg"
       schedule:
           interval: "monthly"
+      cooldown:
+        default-days: 7
       commit-message:
           prefix: "deps"
       rebase-strategy: "auto"
