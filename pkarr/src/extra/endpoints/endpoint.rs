@@ -135,22 +135,27 @@ impl Endpoint {
     /// or, if the target is ".", return the [RData::A] or [RData::AAAA] records
     /// from the endpoint's [SignedPacket], if available.
     pub fn to_socket_addrs(&self) -> Vec<SocketAddr> {
+        self.try_to_socket_addrs().unwrap_or_default()
+    }
+
+    /// Returns socket addresses, preserving ICANN DNS lookup errors.
+    pub fn try_to_socket_addrs(&self) -> std::io::Result<Vec<SocketAddr>> {
         if self.target == "." {
             let port = self.port;
 
-            return self
+            return Ok(self
                 .addrs
                 .iter()
                 .map(|addr| SocketAddr::from((*addr, port)))
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>());
         }
 
         if cfg!(target_arch = "wasm32") {
-            vec![]
+            Ok(vec![])
         } else {
             format!("{}:{}", self.target, self.port)
                 .to_socket_addrs()
-                .map_or(vec![], |v| v.collect::<Vec<_>>())
+                .map(|v| v.collect::<Vec<_>>())
         }
     }
 

@@ -7,7 +7,7 @@ pub use endpoint::Endpoint;
 use futures_lite::{pin, Stream, StreamExt};
 use genawaiter::sync::Gen;
 
-use crate::{PublicKey, ResolvePolicy};
+use crate::{errors::ResolveError, PublicKey, ResolvePolicy};
 
 impl crate::Client {
     /// Returns an async stream of [HTTPS][crate::dns::rdata::RData::HTTPS] [Endpoint]s
@@ -69,15 +69,34 @@ impl crate::Client {
         qname: &'a str,
         https: bool,
     ) -> impl Stream<Item = Endpoint> + 'a {
+        self.try_resolve_endpoints(qname, https)
+            .filter_map(Result::ok)
+    }
+
+    /// Resolves HTTPS (`https = true`) or SVCB endpoints, preserving lookup errors.
+    ///
+    /// A failed alias yields an error, then resolution continues with the remaining
+    /// alternatives. Consumers should keep polling if they can use another endpoint.
+    pub fn try_resolve_endpoints<'a>(
+        &'a self,
+        qname: &'a str,
+        https: bool,
+    ) -> impl Stream<Item = Result<Endpoint, ResolveError>> + 'a {
         Gen::new(|co| async move {
             let mut depth = 0;
             let mut stack: Vec<Endpoint> = Vec::new();
 
             // Initialize the stack with endpoints from the starting domain.
             if let Ok(tld) = PublicKey::try_from(qname) {
-                if let Ok(signed_packet) = self.resolve(&tld, ResolvePolicy::CacheFirst).await {
-                    depth += 1;
-                    stack.extend(Endpoint::parse(&signed_packet, qname, https));
+                match self.resolve(&tld, ResolvePolicy::CacheFirst).await {
+                    Ok(signed_packet) => {
+                        depth += 1;
+                        stack.extend(Endpoint::parse(&signed_packet, qname, https));
+                    }
+                    Err(error) => {
+                        co.yield_(Err(error)).await;
+                        return;
+                    }
                 }
             }
 
@@ -98,10 +117,11 @@ impl crate::Client {
 
                             stack.extend(endpoints);
                         }
-                        _ => break, // Stop on resolution failure or recursion depth exceeded.
+                        Err(error) => co.yield_(Err(error)).await,
+                        _ => continue,
                     },
                     // Yield if the domain is not pointing to another Pkarr TLD domain.
-                    Err(_) => co.yield_(next).await,
+                    Err(_) => co.yield_(Ok(next)).await,
                 }
             }
         })
@@ -128,11 +148,127 @@ mod tests {
     use crate::{PublicKey, SignedPacket};
     use mainline::Testnet;
 
+    use super::*;
+    use crate::{Cache, ClientBuilder, InMemoryCache};
     use std::future::Future;
     use std::net::{IpAddr, Ipv4Addr};
     use std::pin::Pin;
     use std::str::FromStr;
     use std::time::Duration;
+    use std::{num::NonZeroUsize, sync::Arc};
+
+    fn cached_client_builder(packets: &[SignedPacket]) -> ClientBuilder {
+        let cache = Arc::new(InMemoryCache::new(NonZeroUsize::new(8).unwrap()));
+        for packet in packets {
+            cache.put(&packet.public_key().into(), packet);
+        }
+        let mut builder = Client::builder();
+        builder
+            .no_dht()
+            .relays(&["http://127.0.0.1:0"])
+            .unwrap()
+            .cache(cache);
+        builder
+    }
+
+    #[tokio::test]
+    async fn fallible_resolution_preserves_lookup_error() {
+        let client = cached_client_builder(&[]).build().unwrap();
+        let key = Keypair::random().public_key();
+        let expected = client
+            .resolve(&key, ResolvePolicy::CacheFirst)
+            .await
+            .unwrap_err();
+        let name = key.to_string();
+        let stream = client.try_resolve_endpoints(&name, true);
+        pin!(stream);
+        assert_eq!(stream.next().await.unwrap().unwrap_err(), expected);
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn failed_alias_does_not_hide_alternative_endpoint() {
+        let key = Keypair::random();
+        let missing = Keypair::random().public_key().to_string();
+        let packet = SignedPacket::builder()
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(1, missing.as_str().try_into().unwrap()),
+                3600,
+            )
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(2, "example.com".try_into().unwrap()),
+                3600,
+            )
+            .sign(&key)
+            .unwrap();
+        let client = cached_client_builder(&[packet]).build().unwrap();
+        let name = key.public_key().to_string();
+        let stream = client.try_resolve_endpoints(&name, true);
+        pin!(stream);
+        assert!(stream.next().await.unwrap().is_err());
+        assert_eq!(
+            stream.next().await.unwrap().unwrap().domain(),
+            Some("example.com")
+        );
+        assert!(stream.next().await.is_none());
+        assert_eq!(
+            client.resolve_https_endpoint(&name).await.unwrap().domain(),
+            Some("example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn recursion_limit_does_not_hide_alternative_endpoint() {
+        let key = Keypair::random();
+        let alias = Keypair::random();
+        let alias_name = alias.public_key().to_string();
+        let packet = SignedPacket::builder()
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(1, alias_name.as_str().try_into().unwrap()),
+                3600,
+            )
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(2, "example.com".try_into().unwrap()),
+                3600,
+            )
+            .sign(&key)
+            .unwrap();
+        let alias_packet = SignedPacket::builder()
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(1, "alias.example".try_into().unwrap()),
+                3600,
+            )
+            .sign(&alias)
+            .unwrap();
+        let client = cached_client_builder(&[packet, alias_packet])
+            .max_recursion_depth(1)
+            .build()
+            .unwrap();
+        assert_eq!(
+            client
+                .resolve_https_endpoint(&key.public_key().to_string())
+                .await
+                .unwrap()
+                .domain(),
+            Some("example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn fallible_resolution_distinguishes_empty_record() {
+        let key = Keypair::random();
+        let packet = SignedPacket::builder().sign(&key).unwrap();
+        let client = cached_client_builder(&[packet]).build().unwrap();
+        let name = key.public_key().to_string();
+        let stream = client.try_resolve_endpoints(&name, true);
+        pin!(stream);
+        assert!(stream.next().await.is_none());
+    }
 
     fn generate_subtree(
         client: Client,
