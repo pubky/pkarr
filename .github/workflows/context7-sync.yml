@@ -9,47 +9,6 @@ permissions: {}
 
 jobs:
   refresh-context7:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger Context7 Index Rebuild
-        env:
-          CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ -z "${CONTEXT7_API_KEY:-}" ]; then
-            echo "CONTEXT7_API_KEY secret is not set" >&2
-            exit 1
-          fi
-
-          response_file="$(mktemp)"
-          trap 'rm -f "$response_file"' EXIT
-
-          http_code="$(
-            curl --silent --show-error \
-              --retry 3 --retry-delay 5 \
-              --connect-timeout 10 --max-time 60 \
-              --output "$response_file" \
-              --write-out "%{http_code}" \
-              --request POST "https://context7.com/api/v1/refresh" \
-              --header "Authorization: Bearer ${CONTEXT7_API_KEY}" \
-              --header "Content-Type: application/json" \
-              --data "{\"libraryName\": \"/${{ github.repository }}\"}"
-          )"
-          response="$(cat "$response_file")"
-
-          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-            echo "$response"
-            exit 0
-          fi
-
-          if printf "%s" "$response" | grep -Eq '"error"[[:space:]]*:[[:space:]]*"too-early"'; then
-            echo "::notice::Context7 refresh skipped because the library was refreshed too recently."
-            echo "$response"
-            exit 0
-          fi
-
-          echo "Context7 refresh failed with HTTP $http_code:" >&2
-          echo "$response" >&2
-          exit 1
+    uses: pubky/ci-workflows/.github/workflows/context7-sync.yml@main
+    secrets:
+      CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
