@@ -100,8 +100,9 @@ impl<'a> ResolveResultAccumulator<'a> {
     /// the selected valid packet. With cache-first constraints, an expired
     /// packet may be returned when no fresh candidate exists so the client can
     /// update its cache before returning [`ResolveError::NotFound`] to its caller.
-    /// If every usable response was empty or covered by the floor, returns
-    /// [`ResolveError::NotFound`].
+    /// Without a packet, operational errors take precedence over empty responses.
+    /// Returns [`ResolveError::NotFound`] only when all responses were empty or
+    /// covered by the floor and no backend failed.
     pub(super) fn into_result(self) -> Result<SignedPacket, ResolveError> {
         let packet = self.fresh_candidate.or(self.most_recent);
 
@@ -110,7 +111,7 @@ impl<'a> ResolveResultAccumulator<'a> {
             (Some(seq), Some(packet)) if packet.timestamp().as_u64() as i64 >= seq => Ok(packet),
             (Some(seq), _) => Err(ResolveError::InvalidSignedPacket { seq }),
             (None, None) => {
-                if self.empty_responses > 0 {
+                if self.empty_responses > 0 && self.errors.is_empty() {
                     Err(ResolveError::NotFound)
                 } else {
                     Err(most_common_error(self.errors))
@@ -168,9 +169,69 @@ fn most_recent_packet(most_recent: Option<SignedPacket>, packet: SignedPacket) -
 #[cfg(test)]
 mod tests {
     use ntimestamp::Timestamp;
+    use rstest::rstest;
 
     use super::*;
     use crate::Keypair;
+
+    #[rstest]
+    #[case::empty(vec![], ResolveError::UnexpectedResponses)]
+    #[case::all_not_found(
+        vec![ResolveError::NotFound, ResolveError::NotFound],
+        ResolveError::NotFound
+    )]
+    #[case::not_found_then_failure(
+        vec![ResolveError::NotFound, ResolveError::NoResponses],
+        ResolveError::NoResponses
+    )]
+    #[case::failure_then_not_found(
+        vec![ResolveError::NoResponses, ResolveError::NotFound],
+        ResolveError::NoResponses
+    )]
+    #[case::unexpected_response(
+        vec![ResolveError::NotFound, ResolveError::UnexpectedResponses],
+        ResolveError::UnexpectedResponses
+    )]
+    #[case::invalid_packet(
+        vec![ResolveError::NotFound, ResolveError::InvalidSignedPacket { seq: 10 }],
+        ResolveError::InvalidSignedPacket { seq: 10 }
+    )]
+    fn into_result_preserves_resolution_errors(
+        #[case] errors: Vec<ResolveError>,
+        #[case] expected: ResolveError,
+    ) {
+        let mut accumulator = ResolveResultAccumulator::default();
+        for error in errors {
+            accumulator.record_result(Err(error));
+        }
+
+        assert_eq!(accumulator.into_result(), Err(expected));
+    }
+
+    #[test]
+    fn into_result_preserves_packet_despite_empty_and_failed_responses() {
+        let packet = SignedPacket::builder().sign(&Keypair::random()).unwrap();
+        let mut accumulator = ResolveResultAccumulator::default();
+        accumulator.record_result(Err(ResolveError::NotFound));
+        accumulator.record_result(Ok(packet.clone()));
+        accumulator.record_result(Err(ResolveError::NoResponses));
+
+        assert_eq!(accumulator.into_result(), Ok(packet));
+    }
+
+    #[test]
+    fn into_result_preserves_failure_when_another_response_is_covered_by_cache() {
+        let cached = SignedPacket::builder()
+            .timestamp(Timestamp::from(10))
+            .sign(&Keypair::random())
+            .unwrap();
+        let mut accumulator =
+            ResolveResultAccumulator::new(Some(CacheContext::new(Some(&cached), 0, 0)));
+        accumulator.record_result(Err(ResolveError::InvalidSignedPacket { seq: 10 }));
+        accumulator.record_result(Err(ResolveError::NoResponses));
+
+        assert_eq!(accumulator.into_result(), Err(ResolveError::NoResponses));
+    }
 
     #[test]
     fn record_result_waits_for_packet_above_cache_floor() {
