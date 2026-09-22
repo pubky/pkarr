@@ -15,7 +15,7 @@ struct Cli {
     /// Resolve from DHT only, Relays only, or default to both.
     #[arg(value_enum)]
     mode: Option<Mode>,
-    /// List of relays (only valid if mode is 'relays')
+    /// List of relays (valid if mode is 'relays' or 'both')
     #[arg(requires = "mode")]
     relays: Option<Vec<String>>,
 }
@@ -43,18 +43,17 @@ async fn main() -> anyhow::Result<()> {
 
     let mut builder = Client::builder();
 
+    if let Some(relays) = cli.relays {
+        builder.relays(&relays).unwrap();
+    }
     match cli.mode.unwrap_or(Mode::Both) {
         Mode::Dht => {
             builder.no_relays();
         }
         Mode::Relays => {
             builder.no_dht();
-
-            if let Some(relays) = cli.relays {
-                builder.relays(&relays).unwrap();
-            }
         }
-        _ => {}
+        Mode::Both => (),
     }
 
     let client = builder.build()?;

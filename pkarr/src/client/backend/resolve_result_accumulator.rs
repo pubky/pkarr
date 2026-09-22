@@ -137,19 +137,12 @@ fn compare_errors(left: &ResolveError, right: &ResolveError) -> Ordering {
         ResolveError::NoResponses => 1,
         ResolveError::NoDhtNodesQueried => 2,
         ResolveError::NoUsableResponses => 3,
-        ResolveError::NotFound => 4,
-        ResolveError::InvalidSignedPacket { .. } => 5,
+        ResolveError::NotFound | ResolveError::InvalidSignedPacket { .. } => {
+            unreachable!("separately accumulated resolve error")
+        }
     };
 
-    priority(left)
-        .cmp(&priority(right))
-        .then_with(|| match (left, right) {
-            (
-                ResolveError::InvalidSignedPacket { seq: left_seq },
-                ResolveError::InvalidSignedPacket { seq: right_seq },
-            ) => left_seq.cmp(right_seq),
-            _ => Ordering::Equal,
-        })
+    priority(left).cmp(&priority(right))
 }
 
 fn most_recent_packet(most_recent: Option<SignedPacket>, packet: SignedPacket) -> SignedPacket {
@@ -270,5 +263,14 @@ mod tests {
             accumulator.into_result(),
             Err(ResolveError::NoUsableResponses)
         );
+    }
+
+    #[test]
+    fn into_result_prefers_not_found_over_operational_errors() {
+        let mut accumulator = ResolveResultAccumulator::default();
+        accumulator.record_result(Err(ResolveError::NotFound));
+        accumulator.record_result(Err(ResolveError::NoResponses));
+
+        assert_eq!(accumulator.into_result(), Err(ResolveError::NotFound));
     }
 }

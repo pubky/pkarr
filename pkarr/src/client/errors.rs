@@ -48,8 +48,8 @@ pub enum PublishError {
     #[error("found a more recent SignedPacket")]
     NotMostRecent,
 
-    /// All responses were unexpected; check debug logs.
-    #[error("all responses were unexpected, check debug logs")]
+    /// All responses were unexpected.
+    #[error("all responses were unexpected")]
     UnexpectedResponses,
 }
 
@@ -79,8 +79,8 @@ pub enum ResolveError {
         seq: i64,
     },
 
-    /// All responses were unexpected; check debug logs.
-    #[error("all responses were unexpected, check debug logs")]
+    /// All responses were unexpected.
+    #[error("all responses were unexpected")]
     UnexpectedResponses,
 }
 
