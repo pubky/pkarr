@@ -1,6 +1,4 @@
 target/
-/result
-/.direnv
 .claude/
 .vscode/
 pkarr-cache
