@@ -23,6 +23,15 @@ macro_rules! debug {
     };
 }
 
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        #[cfg(target_arch = "wasm32")]
+        log::warn!($($arg)*);
+        #[cfg(not(target_arch = "wasm32"))]
+        tracing::warn!($($arg)*);
+    };
+}
+
 /// Single-relay HTTP client.
 #[derive(Clone, Debug)]
 pub struct RelayClient {
@@ -75,6 +84,7 @@ impl RelayClient {
     /// malformed stored-node count header.
     pub async fn publish(&self, packet: &SignedPacket) -> Result<StoredNodeCount, RelayError> {
         let url = self.build_url(&packet.public_key(), None);
+        let relay_origin = relay_origin(&url);
 
         let response = self
             .client
@@ -88,12 +98,12 @@ impl RelayClient {
 
         if status.is_success() {
             let stored_on = extract_dht_stored_nodes(&response)?;
-            debug!("Successfully published to {url}");
+            debug!("Successfully published to {relay_origin}, stored on {stored_on} nodes");
             return Ok(stored_on);
         }
 
         let text = response.text().await.unwrap_or_default();
-        debug!("Got error response for PUT {url} {status} {text}");
+        warn!("Got error response for PUT {relay_origin} {status} {text}");
 
         Err(RelayError::from_status(status))
     }
@@ -116,16 +126,19 @@ impl RelayClient {
         newer_than: Option<Timestamp>,
     ) -> Result<SignedPacket, RelayError> {
         let url = self.build_url(key, Some(policy));
+        let relay_origin = relay_origin(&url);
         let bypass_cache = policy == ResolvePolicy::NetworkOnly;
 
         let mut response = self
-            .send_resolve_request(&url, bypass_cache, newer_than)
+            .send_resolve_request(&url, policy, bypass_cache, newer_than)
             .await?;
 
         // A stale HTTP cache can produce impossible 304 responses or empty
         // successful responses. Retry once with cache bypass headers.
         if should_retry_with_cache_bypass(&response, newer_than.as_ref()) {
-            response = self.send_resolve_request(&url, true, newer_than).await?;
+            response = self
+                .send_resolve_request(&url, policy, true, newer_than)
+                .await?;
         }
 
         let status = response.status();
@@ -147,7 +160,7 @@ impl RelayClient {
 
         if status.is_client_error() || status.is_server_error() {
             let text = response.text().await.unwrap_or_default();
-            debug!("Got error response for GET {url} {status} {text}");
+            warn!("Got error response for GET {relay_origin} with {policy}: {status} {text}");
 
             return Err(RelayError::from_status(status));
         }
@@ -172,9 +185,11 @@ impl RelayClient {
     async fn send_resolve_request(
         &self,
         url: &Url,
+        policy: ResolvePolicy,
         bypass_cache: bool,
         newer_than: Option<Timestamp>,
     ) -> Result<Response, RelayError> {
+        let relay_origin = relay_origin(url);
         let mut request = self.client.get(url.clone()).timeout(self.timeout);
 
         if bypass_cache {
@@ -185,7 +200,18 @@ impl RelayClient {
             request = request.header(header::IF_MODIFIED_SINCE, newer_than.format_http_date());
         }
 
-        request.send().await.map_err(RelayError::from_reqwest)
+        let response = request.send().await.map_err(|error| {
+            let error = RelayError::from_reqwest(error);
+            warn!("Relay resolve request to {relay_origin} with {policy} failed: {error}");
+            error
+        })?;
+
+        debug!(
+            "Got relay response for GET {relay_origin} with {policy}: {}",
+            response.status()
+        );
+
+        Ok(response)
     }
 
     fn build_url(&self, public_key: &PublicKey, policy: Option<ResolvePolicy>) -> Url {
@@ -205,6 +231,10 @@ impl RelayClient {
 
         url
     }
+}
+
+fn relay_origin(url: &Url) -> String {
+    url.origin().ascii_serialization()
 }
 
 /// Relay-client error.
@@ -412,6 +442,16 @@ mod tests {
     fn test_client(base_url: Url) -> RelayClient {
         let client = Client::builder().build().unwrap();
         RelayClient::new(base_url, client, TIMEOUT).unwrap()
+    }
+
+    #[test]
+    fn relay_origin_omits_credentials_path_and_query() {
+        let url = Url::parse(
+            "https://username:password@example.com:8443/relay/key?token=secret&policy=cache-only",
+        )
+        .unwrap();
+
+        assert_eq!(relay_origin(&url), "https://example.com:8443");
     }
 
     #[test]
