@@ -23,6 +23,15 @@ macro_rules! debug {
     };
 }
 
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        #[cfg(target_arch = "wasm32")]
+        log::warn!($($arg)*);
+        #[cfg(not(target_arch = "wasm32"))]
+        tracing::warn!($($arg)*);
+    };
+}
+
 /// Single-relay HTTP client.
 #[derive(Clone, Debug)]
 pub struct RelayClient {
@@ -89,12 +98,12 @@ impl RelayClient {
 
         if status.is_success() {
             let stored_on = extract_dht_stored_nodes(&response)?;
-            debug!("Successfully published to {relay_origin}");
+            debug!("Successfully published to {relay_origin}, stored on {stored_on} nodes");
             return Ok(stored_on);
         }
 
         let text = response.text().await.unwrap_or_default();
-        debug!("Got error response for PUT {relay_origin} {status} {text}");
+        warn!("Got error response for PUT {relay_origin} {status} {text}");
 
         Err(RelayError::from_status(status))
     }
@@ -121,13 +130,15 @@ impl RelayClient {
         let bypass_cache = policy == ResolvePolicy::NetworkOnly;
 
         let mut response = self
-            .send_resolve_request(&url, bypass_cache, newer_than)
+            .send_resolve_request(&url, policy, bypass_cache, newer_than)
             .await?;
 
         // A stale HTTP cache can produce impossible 304 responses or empty
         // successful responses. Retry once with cache bypass headers.
         if should_retry_with_cache_bypass(&response, newer_than.as_ref()) {
-            response = self.send_resolve_request(&url, true, newer_than).await?;
+            response = self
+                .send_resolve_request(&url, policy, true, newer_than)
+                .await?;
         }
 
         let status = response.status();
@@ -149,7 +160,7 @@ impl RelayClient {
 
         if status.is_client_error() || status.is_server_error() {
             let text = response.text().await.unwrap_or_default();
-            debug!("Got error response for GET {relay_origin} {status} {text}");
+            warn!("Got error response for GET {relay_origin} with {policy}: {status} {text}");
 
             return Err(RelayError::from_status(status));
         }
@@ -174,6 +185,7 @@ impl RelayClient {
     async fn send_resolve_request(
         &self,
         url: &Url,
+        policy: ResolvePolicy,
         bypass_cache: bool,
         newer_than: Option<Timestamp>,
     ) -> Result<Response, RelayError> {
@@ -190,12 +202,12 @@ impl RelayClient {
 
         let response = request.send().await.map_err(|error| {
             let error = RelayError::from_reqwest(error);
-            debug!("Relay resolve request to {relay_origin} failed: {error}");
+            warn!("Relay resolve request to {relay_origin} with {policy} failed: {error}");
             error
         })?;
 
         debug!(
-            "Got relay response for GET {relay_origin}: {}",
+            "Got relay response for GET {relay_origin} with {policy}: {}",
             response.status()
         );
 
