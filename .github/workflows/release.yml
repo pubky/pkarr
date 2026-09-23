@@ -1,0 +1,189 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.versions.outputs.prerelease }}
+      relay_version: ${{ steps.versions.outputs.relay_version }}
+      npm_version: ${{ steps.versions.outputs.npm_version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Validate release versions
+        id: versions
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          SEMVER_REGEX="^([0-9]+)\.([0-9]+)\.([0-9]+)(-([0-9A-Za-z.-]+))?(\+([0-9A-Za-z.-]+))?$"
+          if [[ ! "$VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Tag '$GITHUB_REF_NAME' has an invalid semver version"
+            exit 1
+          fi
+
+          PKARR_VERSION=$(cargo pkgid -p pkarr | sed 's/.*#//;s/.*@//')
+          RELAY_VERSION=$(cargo pkgid -p pkarr-relay | sed 's/.*#//;s/.*@//')
+          NPM_VERSION=$(node -p "require('./bindings/js/pkg/package.json').version")
+          if [[ "$PKARR_VERSION" != "$VERSION" ]]; then
+            echo "::error::Tag version $VERSION does not match pkarr $PKARR_VERSION"
+            exit 1
+          fi
+          if [[ "$NPM_VERSION" != "$VERSION" ]]; then
+            echo "::error::Tag version $VERSION does not match npm package $NPM_VERSION"
+            exit 1
+          fi
+
+          VERSION_WITHOUT_METADATA="${VERSION%%+*}"
+          PRERELEASE=false
+          if [[ "$VERSION_WITHOUT_METADATA" == *-* ]]; then
+            PRERELEASE=true
+          fi
+
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "relay_version=$RELAY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_version=$NPM_VERSION" >> "$GITHUB_OUTPUT"
+
+  build-artifacts:
+    name: Build release binaries
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Install cross
+        run: cargo install cross --locked --git https://github.com/cross-rs/cross --rev 51f46f296253d8122c927c5bb933e3c4f27cc317
+      - name: Build artifacts
+        run: .scripts/build-relay-artifacts.sh
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: pkarr-relay-release-artifacts
+          path: target/github-release/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: [validate, build-artifacts]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Generate changelog
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.ref_name }}
+          excludeTypes: ""
+          useGitmojis: false
+      - name: Add package versions to release notes
+        env:
+          CHANGELOG: ${{ steps.changelog.outputs.changes }}
+          RELAY_VERSION: ${{ needs.validate.outputs.relay_version }}
+          NPM_VERSION: ${{ needs.validate.outputs.npm_version }}
+        run: |
+          {
+            printf '## Package versions\n\n'
+            printf -- '- pkarr: %s\n' "${GITHUB_REF_NAME#v}"
+            printf -- '- pkarr-relay: %s\n' "$RELAY_VERSION"
+            printf -- '- @synonymdev/pkarr: %s\n\n' "$NPM_VERSION"
+            printf '%s\n' "$CHANGELOG"
+          } > release-notes.md
+      - uses: actions/download-artifact@v8
+        with:
+          name: pkarr-relay-release-artifacts
+          path: artifacts
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-notes.md
+          files: artifacts/*
+          prerelease: ${{ needs.validate.outputs.prerelease == 'true' }}
+
+  publish-pkarr:
+    name: Publish pkarr to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish pkarr
+        run: cargo publish -p pkarr --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  publish-relay:
+    name: Publish pkarr-relay to crates.io
+    needs: publish-pkarr
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish pkarr-relay
+        run: cargo publish -p pkarr-relay --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  publish-npm:
+    name: Publish to npm
+    needs: [validate, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11.11.1
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build and publish npm package
+        working-directory: bindings/js/pkg
+        env:
+          NPM_TAG: ${{ needs.validate.outputs.prerelease == 'true' && 'next' || 'latest' }}
+        run: |
+          npm run build
+          npm publish --provenance --access public --tag "$NPM_TAG"
