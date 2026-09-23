@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "pkarr", "relay", "bindings/js",
+  "pkarr", "relay", "bindings/js", "tcp-client-addr",
 ]
 
 resolver = "3"

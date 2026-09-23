@@ -1,0 +1,16 @@
+[package]
+name = "tcp-client-addr"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Identify TCP clients directly or via trusted PROXY protocol peers"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+ipnet = "2.11"
+ppp = "=2.3.0"
+thiserror = "1"
+tokio = { version = "1", features = ["io-util", "net", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["io-util", "net", "macros", "rt", "time"] }

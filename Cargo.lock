@@ -1828,6 +1828,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppp"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a7a2049cd2570bd67bf0228e86bf850f8ceb5190a345c471d03a909da6049e0"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2626,6 +2635,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "tcp-client-addr"
+version = "0.1.0"
+dependencies = [
+ "ipnet",
+ "ppp",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
