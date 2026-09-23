@@ -6,6 +6,7 @@ use tracing::info;
 use pkarr_relay::Relay;
 
 #[derive(Parser, Debug)]
+#[command(version)]
 struct Cli {
     /// Path to config file
     #[clap(short, long)]
