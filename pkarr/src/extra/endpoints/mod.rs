@@ -239,7 +239,7 @@ mod tests {
                 config.bind_address = Some(Ipv4Addr::LOCALHOST);
                 config
             })
-            .request_timeout(Duration::from_millis(200))
+            .dht_request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();
 
@@ -263,7 +263,7 @@ mod tests {
                 config.bind_address = Some(Ipv4Addr::LOCALHOST);
                 config
             })
-            .request_timeout(Duration::from_millis(20))
+            .dht_request_timeout(Duration::from_millis(20))
             .build()
             .unwrap();
 
@@ -284,7 +284,7 @@ mod tests {
                 config.bind_address = Some(Ipv4Addr::LOCALHOST);
                 config
             })
-            .request_timeout(Duration::from_millis(100))
+            .dht_request_timeout(Duration::from_millis(100))
             .max_recursion_depth(3)
             .build()
             .unwrap();
@@ -306,7 +306,7 @@ mod tests {
                 config.bind_address = Some(Ipv4Addr::LOCALHOST);
                 config
             })
-            .request_timeout(Duration::from_millis(200))
+            .dht_request_timeout(Duration::from_millis(200))
             .build()
             .unwrap();
 

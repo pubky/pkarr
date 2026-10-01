@@ -52,8 +52,8 @@ console.log('Records:', resolved?.records ?? 'No packet found');
 ```javascript
 const { Client, ResolvePolicy } = require('@synonymdev/pkarr');
 
-const client = new Client();                          // Default relays and 30s timeout
-const customClient = new Client(relays, timeout);     // Custom configuration
+const client = new Client(); // Default relays and 30s timeout
+const customClient = new Client(relays, timeoutMs);   // Custom configuration
 
 const storedNodeCount = await client.publish(packet); // Minimum known DHT node count
 const cached = await client.resolve(publicKey, ResolvePolicy.CacheOnly);

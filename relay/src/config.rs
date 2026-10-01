@@ -59,10 +59,27 @@ impl Default for HttpConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MainlineConfig {
     pub port: Option<u16>,
     pub public_ip: Option<Ipv4Addr>,
+    /// Maximum duration of an individual DHT request, in seconds.
+    #[serde(default = "default_mainline_request_timeout_seconds")]
+    pub request_timeout_seconds: u64,
+}
+
+impl Default for MainlineConfig {
+    fn default() -> Self {
+        Self {
+            port: None,
+            public_ip: None,
+            request_timeout_seconds: default_mainline_request_timeout_seconds(),
+        }
+    }
+}
+
+fn default_mainline_request_timeout_seconds() -> u64 {
+    2
 }
 
 #[derive(Serialize, Deserialize, Debug)]

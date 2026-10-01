@@ -35,7 +35,9 @@ impl Client {
         #[cfg(relays)]
         let relay = config
             .relays
-            .map(|relays| Backend::relay(relays, config.request_timeout, config.reqwest_client))
+            .map(|relays| {
+                Backend::relay(relays, config.relay_request_timeout, config.reqwest_client)
+            })
             .transpose()?;
         #[cfg(not(relays))]
         let relay: Option<Backend> = None;

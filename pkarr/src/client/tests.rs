@@ -39,9 +39,13 @@ pub(crate) fn builder(
         });
 
     if std::env::var("CI").is_ok() {
-        builder.request_timeout(Duration::from_millis(1000));
+        builder
+            .dht_request_timeout(Duration::from_millis(1000))
+            .relay_request_timeout(Duration::from_millis(1000));
     } else {
-        builder.request_timeout(Duration::from_millis(500));
+        builder
+            .dht_request_timeout(Duration::from_millis(500))
+            .relay_request_timeout(Duration::from_millis(500));
     }
 
     match networks {
@@ -367,7 +371,7 @@ async fn relay_publish_waits_past_first_error() {
 
     let client = Client::builder()
         .no_default_network()
-        .request_timeout(Duration::from_secs(1))
+        .relay_request_timeout(Duration::from_secs(1))
         .relays(&[failed_relay, successful_relay])
         .unwrap()
         .build()
@@ -563,7 +567,7 @@ async fn cache_only_relay_result_is_cached() {
     let relay = spawn_packet_relay(packet.clone());
     let client = Client::builder()
         .no_default_network()
-        .request_timeout(Duration::from_secs(1))
+        .relay_request_timeout(Duration::from_secs(1))
         .relays(&[relay])
         .unwrap()
         .build()
@@ -604,7 +608,7 @@ async fn relay_most_recent_resolve_aggregates_all_relays() {
 
     let client = Client::builder()
         .no_default_network()
-        .request_timeout(Duration::from_secs(1))
+        .relay_request_timeout(Duration::from_secs(1))
         .relays(&[older_relay, newer_relay])
         .unwrap()
         .build()
@@ -649,7 +653,7 @@ async fn cache_first_waits_for_relay_packet_above_cache_floor() {
     let client = Client::builder()
         .no_default_network()
         .maximum_ttl(30)
-        .request_timeout(Duration::from_secs(1))
+        .relay_request_timeout(Duration::from_secs(1))
         .relays(&[below_floor_relay, above_floor_relay])
         .unwrap()
         .build()
@@ -688,7 +692,7 @@ async fn cache_first_caches_newer_expired_relay_packet() {
     let client = Client::builder()
         .no_default_network()
         .maximum_ttl(30)
-        .request_timeout(Duration::from_secs(1))
+        .relay_request_timeout(Duration::from_secs(1))
         .relays(&[relay])
         .unwrap()
         .build()
@@ -738,7 +742,7 @@ async fn cache_first_waits_for_fresh_relay_after_expired_response() {
     let client = Client::builder()
         .no_default_network()
         .maximum_ttl(30)
-        .request_timeout(Duration::from_secs(1))
+        .relay_request_timeout(Duration::from_secs(1))
         .relays(&[expired_relay, fresh_relay])
         .unwrap()
         .build()
@@ -930,7 +934,7 @@ async fn relay_publish_rejects_conflicting_relay_quorum() {
 
     let client = Client::builder()
         .no_default_network()
-        .request_timeout(Duration::from_secs(1))
+        .relay_request_timeout(Duration::from_secs(1))
         .relays(&[success, conflict1, conflict2])
         .unwrap()
         .build()
@@ -957,7 +961,8 @@ async fn combined_publish_does_not_mask_relay_concurrency_error() {
             config.bind_address = Some(Ipv4Addr::LOCALHOST);
             config
         })
-        .request_timeout(Duration::from_millis(200))
+        .dht_request_timeout(Duration::from_millis(200))
+        .relay_request_timeout(Duration::from_millis(200))
         .relays(&[relay])
         .unwrap()
         .build()
@@ -984,7 +989,7 @@ async fn combined_publish_does_not_mask_dht_not_most_recent_after_relay_success(
             config.bind_address = Some(Ipv4Addr::LOCALHOST);
             config
         })
-        .request_timeout(Duration::from_millis(200))
+        .dht_request_timeout(Duration::from_millis(200))
         .build()
         .unwrap();
 
@@ -995,7 +1000,8 @@ async fn combined_publish_does_not_mask_dht_not_most_recent_after_relay_success(
             config.bind_address = Some(Ipv4Addr::LOCALHOST);
             config
         })
-        .request_timeout(Duration::from_millis(200))
+        .dht_request_timeout(Duration::from_millis(200))
+        .relay_request_timeout(Duration::from_millis(200))
         .relays(&[relay])
         .unwrap()
         .build()
@@ -1267,7 +1273,7 @@ async fn regression_relay_timeout_stack_overflow() {
 
     let client = Client::builder()
         .no_dht()
-        .request_timeout(Duration::from_millis(100))
+        .relay_request_timeout(Duration::from_millis(100))
         .build()
         .unwrap();
 

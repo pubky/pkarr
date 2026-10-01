@@ -62,7 +62,7 @@ impl Client {
             .map_err(|e| {
                 ClientError::ConfigurationError(format!("Invalid relay configuration: {e}"))
             })?
-            .request_timeout(timeout)
+            .relay_request_timeout(timeout)
             .build()
             .map_err(|e| ClientError::ConfigurationError(format!("Failed to build client: {e}")))?;
 
