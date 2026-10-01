@@ -141,13 +141,27 @@ use pkarr::Client;
 use std::time::Duration;
 
 let client = Client::builder()
-    .request_timeout(Duration::from_secs(5))
+    .dht_request_timeout(Duration::from_secs(2))
+    .relay_request_timeout(Duration::from_secs(5))
     .build()?;
 ```
 
-The timeout applies to both DHT and relay requests. A custom `reqwest::Client`
-can configure relay HTTP behavior such as proxies or default headers, while
-Pkarr continues to apply `request_timeout` to each request:
+DHT peer requests default to 2 seconds. Relay HTTP requests default to 5 seconds
+to allow time for the relay's DHT lookup and HTTP transport. The DHT timeout
+applies to each peer request, rather than the entire DHT operation.
+
+`DEFAULT_REQUEST_TIMEOUT` is deprecated. Use `DEFAULT_DHT_REQUEST_TIMEOUT`
+for DHT peer requests or `DEFAULT_RELAY_REQUEST_TIMEOUT` for relay HTTP
+requests. The legacy constant remains available and equals the relay default.
+
+The `request_timeout` builder method is also deprecated. Use
+`dht_request_timeout` and `relay_request_timeout` to configure the backends
+separately. To preserve a shared custom timeout, call both setters with the
+same duration. The legacy method remains available and sets both timeouts;
+later setters take precedence for the backend they configure.
+
+A custom `reqwest::Client` can configure relay HTTP behavior such as proxies or
+default headers, while Pkarr applies `relay_request_timeout` to each request:
 
 ```rust
 use pkarr::Client;
@@ -160,7 +174,7 @@ let http_client = reqwest::Client::builder()
 let client = Client::builder()
     .no_dht()
     .reqwest_client(http_client)
-    .request_timeout(Duration::from_secs(5))
+    .relay_request_timeout(Duration::from_secs(5))
     .build()?;
 ```
 

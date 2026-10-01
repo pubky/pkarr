@@ -47,7 +47,7 @@ impl Default for DhtConfig {
             public_ip: None,
             bootstrap: None,
             bind_address: None,
-            request_timeout: crate::DEFAULT_REQUEST_TIMEOUT,
+            request_timeout: crate::DEFAULT_DHT_REQUEST_TIMEOUT,
             request_filter: None,
         }
     }

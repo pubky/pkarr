@@ -5,6 +5,9 @@ port = 6881
 
 # Internal Mainline node configurations
 [mainline]
+# Maximum duration of an individual DHT request, in seconds. Defaults to 2.
+# This does not limit the total duration of a DHT operation.
+request_timeout_seconds = 2
 # Port to run the internal Mainline DHT node on.
 port = 6881
 # Known public IPv4 address used to generate a BEP 42 secure node ID.

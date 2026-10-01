@@ -14,8 +14,13 @@ use crate::{errors::BuildError, Client};
 #[cfg(feature = "endpoints")]
 pub const DEFAULT_MAX_RECURSION_DEPTH: u8 = 7;
 
-/// Default request timeout for DHT and relay requests.
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+/// Default timeout for an individual DHT peer request.
+pub const DEFAULT_DHT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+/// Default timeout for a relay HTTP request, including its DHT lookup.
+pub const DEFAULT_RELAY_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// Legacy timeout constant, retained for compatibility.
+#[deprecated(note = "use DEFAULT_DHT_REQUEST_TIMEOUT or DEFAULT_RELAY_REQUEST_TIMEOUT instead")]
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = DEFAULT_RELAY_REQUEST_TIMEOUT;
 
 /// Configuration used to build a [`Client`].
 #[derive(Clone)]
@@ -48,12 +53,10 @@ pub(crate) struct Config {
     #[cfg(relays)]
     pub reqwest_client: Option<reqwest::Client>,
 
-    /// Timeout for DHT and relay requests.
-    ///
-    /// A longer timeout allows requests more time to complete before they are considered failed.
-    ///
-    /// Defaults to [`DEFAULT_REQUEST_TIMEOUT`].
-    pub request_timeout: Duration,
+    /// Timeout used when creating or recreating the DHT configuration.
+    pub dht_request_timeout: Duration,
+    /// Timeout for each relay HTTP request.
+    pub relay_request_timeout: Duration,
 
     #[cfg(feature = "endpoints")]
     pub max_recursion_depth: u8,
@@ -68,7 +71,7 @@ impl Default for Config {
             cache: None,
 
             #[cfg(dht)]
-            dht: Some(make_dht_config(DEFAULT_REQUEST_TIMEOUT)),
+            dht: Some(make_dht_config(DEFAULT_DHT_REQUEST_TIMEOUT)),
             #[cfg(dht)]
             dht_report_policy: crate::dht::ReportPolicy::mainnet(),
 
@@ -84,7 +87,8 @@ impl Default for Config {
             #[cfg(relays)]
             reqwest_client: None,
 
-            request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            dht_request_timeout: DEFAULT_DHT_REQUEST_TIMEOUT,
+            relay_request_timeout: DEFAULT_RELAY_REQUEST_TIMEOUT,
 
             #[cfg(feature = "endpoints")]
             max_recursion_depth: DEFAULT_MAX_RECURSION_DEPTH,
@@ -117,7 +121,8 @@ impl std::fmt::Debug for Config {
         #[cfg(relays)]
         debug_struct.field("reqwest_client", &self.reqwest_client);
 
-        debug_struct.field("request_timeout", &self.request_timeout);
+        debug_struct.field("dht_request_timeout", &self.dht_request_timeout);
+        debug_struct.field("relay_request_timeout", &self.relay_request_timeout);
 
         debug_struct.finish()
     }
@@ -158,13 +163,9 @@ impl ClientBuilder {
     where
         F: FnOnce(&mut DhtConfig) -> &mut DhtConfig,
     {
-        if self.0.dht.is_none() {
-            self.0.dht = Some(make_dht_config(self.0.request_timeout));
-        }
-
-        if let Some(ref mut builder) = self.0.dht {
-            f(builder);
-        };
+        let timeout = self.0.dht_request_timeout;
+        let config = self.0.dht.get_or_insert_with(|| make_dht_config(timeout));
+        f(config);
 
         self
     }
@@ -301,7 +302,7 @@ impl ClientBuilder {
 
     /// Set a custom [`reqwest::Client`] for relay HTTP requests.
     ///
-    /// The client's request timeout still comes from [`Self::request_timeout`],
+    /// The client's request timeout still comes from [`Self::relay_request_timeout`],
     /// because relay request timeouts are applied per request for native and
     /// WASM targets.
     #[cfg(relays)]
@@ -311,17 +312,37 @@ impl ClientBuilder {
         self
     }
 
-    /// Set the maximum timeout for DHT and relay requests.
+    /// Set the timeout for both DHT peer requests and relay HTTP requests.
     ///
-    /// Useful for testing not-found responses when you want to reach the timeout
-    /// sooner than the default of [`DEFAULT_REQUEST_TIMEOUT`].
+    /// Later calls to the backend-specific timeout setters override only that
+    /// backend. This method overrides both earlier backend-specific settings.
+    #[deprecated(note = "use dht_request_timeout and relay_request_timeout instead")]
     pub fn request_timeout(&mut self, timeout: Duration) -> &mut Self {
-        self.0.request_timeout = timeout;
+        self.dht_request_timeout(timeout);
+        self.relay_request_timeout(timeout);
+        self
+    }
+
+    /// Set the timeout for individual DHT peer requests.
+    ///
+    /// Defaults to [`DEFAULT_DHT_REQUEST_TIMEOUT`]. This does not bound the
+    /// total duration of a DHT operation or enable a disabled DHT backend.
+    /// The value is also used if the DHT configuration is recreated later.
+    pub fn dht_request_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.0.dht_request_timeout = timeout;
         #[cfg(dht)]
         if let Some(config) = self.0.dht.as_mut() {
             config.request_timeout = timeout;
         }
+        self
+    }
 
+    /// Set the timeout for each relay HTTP request, including its DHT lookup.
+    ///
+    /// Defaults to [`DEFAULT_RELAY_REQUEST_TIMEOUT`]. This does not enable a
+    /// disabled relay backend.
+    pub fn relay_request_timeout(&mut self, timeout: Duration) -> &mut Self {
+        self.0.relay_request_timeout = timeout;
         self
     }
 
@@ -409,18 +430,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_dht_timeout_matches_client_timeout() {
+    fn default_backend_timeouts_are_independent() {
         let config = Config::default();
         let dht_config = config
             .dht
             .as_ref()
             .expect("dht should be enabled by default");
 
-        assert_eq!(config.request_timeout, DEFAULT_REQUEST_TIMEOUT);
-        assert_eq!(dht_config.request_timeout, DEFAULT_REQUEST_TIMEOUT);
+        assert_eq!(config.relay_request_timeout, Duration::from_secs(5));
+        assert_eq!(dht_config.request_timeout, Duration::from_secs(2));
+        assert_eq!(DhtConfig::default().request_timeout, Duration::from_secs(2));
     }
 
     #[test]
+    #[allow(deprecated)] // Verify compatibility of the legacy setter.
     fn recreated_dht_config_uses_current_client_timeout() {
         let timeout = Duration::from_secs(5);
         let mut builder = Client::builder();
@@ -437,6 +460,49 @@ mod tests {
             .expect("dht config should be recreated");
 
         assert_eq!(dht_config.request_timeout, timeout);
+    }
+
+    #[test]
+    #[allow(deprecated)] // Verify precedence of the legacy setter.
+    fn backend_timeout_setters_override_only_their_backend() {
+        let mut builder = Client::builder();
+        builder
+            .request_timeout(Duration::from_secs(9))
+            .dht_request_timeout(Duration::from_secs(3));
+        assert_eq!(builder.0.relay_request_timeout, Duration::from_secs(9));
+        assert_eq!(
+            builder.0.dht.as_ref().unwrap().request_timeout,
+            Duration::from_secs(3)
+        );
+
+        builder.relay_request_timeout(Duration::from_secs(7));
+        assert_eq!(
+            builder.0.dht.as_ref().unwrap().request_timeout,
+            Duration::from_secs(3)
+        );
+        assert_eq!(builder.0.relay_request_timeout, Duration::from_secs(7));
+
+        builder.request_timeout(Duration::from_secs(4));
+        assert_eq!(
+            builder.0.dht.as_ref().unwrap().request_timeout,
+            Duration::from_secs(4)
+        );
+        assert_eq!(builder.0.relay_request_timeout, Duration::from_secs(4));
+    }
+
+    #[test]
+    fn disabled_dht_retains_its_timeout_without_being_enabled() {
+        let mut builder = Client::builder();
+        builder.no_dht().dht_request_timeout(Duration::from_secs(3));
+        assert!(builder.0.dht.is_none());
+
+        builder
+            .relay_request_timeout(Duration::from_secs(7))
+            .dht(|config| config);
+        assert_eq!(
+            builder.0.dht.as_ref().unwrap().request_timeout,
+            Duration::from_secs(3)
+        );
     }
 
     #[test]
@@ -464,6 +530,48 @@ mod tests {
 #[cfg(all(test, relays))]
 mod relay_tests {
     use super::*;
+
+    #[cfg(not(target_family = "wasm"))]
+    #[tokio::test]
+    async fn relay_request_uses_its_timeout_instead_of_dht_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/{key}",
+            axum::routing::put(|| async {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                axum::http::StatusCode::NO_CONTENT
+            }),
+        );
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = Client::builder()
+            .no_default_network()
+            .relays(&[format!("http://{address}")])
+            .unwrap()
+            .relay_request_timeout(Duration::from_secs(2))
+            .dht_request_timeout(Duration::from_millis(1))
+            .build()
+            .unwrap();
+        let packet = crate::SignedPacket::builder()
+            .sign(&crate::Keypair::random())
+            .unwrap();
+
+        let result = client.publish(&packet).await;
+        server.abort();
+        assert!(result.is_ok(), "relay publish failed: {result:?}");
+    }
+
+    #[test]
+    #[allow(deprecated)] // Verify compatibility for relay-only clients.
+    fn relay_only_client_keeps_independent_timeout() {
+        let mut builder = Client::builder();
+        builder.no_dht().dht_request_timeout(Duration::from_secs(1));
+        assert_eq!(builder.0.relay_request_timeout, Duration::from_secs(5));
+        builder.relay_request_timeout(Duration::from_secs(7));
+        assert_eq!(builder.0.relay_request_timeout, Duration::from_secs(7));
+        builder.request_timeout(Duration::from_secs(4));
+        assert_eq!(builder.0.relay_request_timeout, Duration::from_secs(4));
+    }
 
     #[test]
     fn custom_reqwest_client_is_stored() {

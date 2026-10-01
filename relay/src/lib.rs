@@ -317,6 +317,7 @@ fn dht_config(config: &RelayConfig) -> DhtConfig {
     let mut dht_config = DhtConfig::default();
     dht_config.port = config.mainline.port;
     dht_config.public_ip = config.mainline.public_ip;
+    dht_config.request_timeout = Duration::from_secs(config.mainline.request_timeout_seconds);
     dht_config
 }
 
@@ -426,6 +427,28 @@ mod tests {
     };
 
     use super::{dht_config, to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
+
+    #[test]
+    fn relay_dht_timeout_defaults_when_omitted() {
+        let default_config = crate::config::RelayConfig::default();
+        assert_eq!(
+            dht_config(&default_config).request_timeout,
+            Duration::from_secs(2)
+        );
+
+        for input in ["", "[mainline]\nport = 6881"] {
+            let config: crate::config::RelayConfig = toml::from_str(input).unwrap();
+            assert_eq!(dht_config(&config).request_timeout, Duration::from_secs(2));
+        }
+    }
+
+    #[test]
+    fn relay_dht_timeout_uses_configured_seconds() {
+        let config: crate::config::RelayConfig =
+            toml::from_str("[mainline]\nrequest_timeout_seconds = 7").unwrap();
+
+        assert_eq!(dht_config(&config).request_timeout, Duration::from_secs(7));
+    }
 
     #[test]
     fn relay_config_maps_public_ip_to_dht() {

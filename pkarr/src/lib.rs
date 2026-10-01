@@ -37,9 +37,15 @@ pub const DEFAULT_CACHE_SIZE: usize = 1000;
 
 // Exports
 #[cfg(client)]
+#[allow(deprecated)]
+pub use client::builder::DEFAULT_REQUEST_TIMEOUT;
+#[cfg(client)]
 pub use client::cache::{Cache, CacheKey, InMemoryCache};
 #[cfg(client)]
-pub use client::{builder::DEFAULT_REQUEST_TIMEOUT, Client, ClientBuilder};
+pub use client::{
+    builder::{DEFAULT_DHT_REQUEST_TIMEOUT, DEFAULT_RELAY_REQUEST_TIMEOUT},
+    Client, ClientBuilder,
+};
 pub use types::*;
 
 // Rexports
