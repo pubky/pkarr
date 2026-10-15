@@ -74,6 +74,9 @@ jobs:
       - name: Check all features
         run: cargo check --workspace --all-features
 
+      - name: Compile PKARR and relay without Cargo manifests
+        run: scripts/test-without-cargo-manifest.sh
+
   test:
     name: Test
     runs-on: ubuntu-latest
