@@ -2,7 +2,7 @@
 
 use crate::{Keypair, PublicKey};
 use bytes::{Bytes, BytesMut};
-use ed25519_dalek::{Signature, SignatureError};
+use ed25519_dalek::{Signature, SignatureError, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
 use self_cell::self_cell;
 use simple_dns::{
     rdata::{RData, A, AAAA, HTTPS, SVCB, TXT},
@@ -135,6 +135,12 @@ impl SignedPacketBuilder {
 
 const DOT: char = '.';
 
+// Signed packet layout: <public key><signature><timestamp><encoded DNS packet>.
+// Persistent storage adds another timestamp (last_seen) before the signed packet.
+const TIMESTAMP_LENGTH: usize = 8;
+const TIMESTAMP_OFFSET: usize = PUBLIC_KEY_LENGTH + SIGNATURE_LENGTH;
+const HEADER_LENGTH: usize = TIMESTAMP_OFFSET + TIMESTAMP_LENGTH;
+
 self_cell!(
     pub(crate) struct Inner {
         owner: Bytes,
@@ -154,18 +160,23 @@ impl Inner {
         encoded_packet: &[u8],
     ) -> Result<Self, SimpleDnsError> {
         // Create the inner bytes from <public_key><signature>timestamp><v>
-        let mut bytes = BytesMut::with_capacity(encoded_packet.len() + 104);
+        let mut bytes = BytesMut::with_capacity(encoded_packet.len() + HEADER_LENGTH);
 
         bytes.extend_from_slice(public_key.as_bytes());
         bytes.extend_from_slice(&signature.to_bytes());
         bytes.extend_from_slice(&timestamp.to_be_bytes());
         bytes.extend_from_slice(encoded_packet);
 
-        Self::try_new(bytes.into(), |bytes| Packet::parse(&bytes[104..]))
+        Self::try_from_bytes(bytes.into())
     }
 
     fn try_from_bytes(bytes: Bytes) -> Result<Self, SimpleDnsError> {
-        Inner::try_new(bytes, |bytes| Packet::parse(&bytes[104..]))
+        Inner::try_new(bytes, |bytes| {
+            let encoded_packet = bytes
+                .get(HEADER_LENGTH..)
+                .ok_or(SimpleDnsError::InsufficientData)?;
+            Packet::parse(encoded_packet)
+        })
     }
 }
 
@@ -181,7 +192,7 @@ impl SignedPacket {
     ///
     /// Calculated from the maximum size of a value in Mainline DHT's mutable values; 1000 bytes,
     /// plus the number of bytes in a Signature (64), and a [Timestamp] (8) and a public key (32).
-    pub const MAX_BYTES: u64 = 1104;
+    pub const MAX_BYTES: u64 = HEADER_LENGTH as u64 + 1000;
 
     /// Create a [SignedPacket] using a builder.
     ///
@@ -292,7 +303,7 @@ impl SignedPacket {
         public_key: &PublicKey,
         payload: &Bytes,
     ) -> Result<SignedPacket, SignedPacketVerifyError> {
-        let mut bytes = BytesMut::with_capacity(payload.len() + 32);
+        let mut bytes = BytesMut::with_capacity(payload.len() + PUBLIC_KEY_LENGTH);
 
         bytes.extend_from_slice(public_key.as_bytes());
         bytes.extend_from_slice(payload);
@@ -318,23 +329,39 @@ impl SignedPacket {
         bytes
     }
 
-    /// Deserialize [SignedPacket] from a serialized version for persistent storage using
-    /// [SignedPacket::serialize].
+    /// Restores a [SignedPacket] from bytes produced by [Self::serialize].
     ///
-    /// If deserializing the [SignedPacket::last_seen] failed, or is far in the future,
-    /// it will be unwrapped to default, i.e the UNIX_EPOCH.
+    /// Use only with trusted stored data. This method validates the public key
+    /// and DNS encoding, but does not verify the signature. To verify packets
+    /// received from a relay, use [Self::from_relay_payload].
     ///
-    /// That is useful for backwards compatibility if you
-    /// ever stored the [SignedPacket::last_seen] as Little Endian in previous versions.
+    /// [Self::last_seen] is unsigned local metadata. Values more than 60 seconds
+    /// in the future are reset to [std::time::UNIX_EPOCH] for compatibility with
+    /// older little-endian timestamps.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for truncated data, an invalid public key, or an invalid
+    /// DNS packet.
     pub fn deserialize(bytes: &[u8]) -> Result<Self, SimpleDnsError> {
-        let mut last_seen = Timestamp::try_from(&bytes[0..8]).unwrap_or_default();
+        let (last_seen, packet) = bytes
+            .split_first_chunk::<TIMESTAMP_LENGTH>()
+            .ok_or(SimpleDnsError::InsufficientData)?;
+
+        let public_key = packet
+            .first_chunk::<PUBLIC_KEY_LENGTH>()
+            .ok_or(SimpleDnsError::InsufficientData)?;
+        // Ensure public_key() can decode the stored key.
+        PublicKey::try_from(public_key).map_err(|_| SimpleDnsError::InvalidDnsPacket)?;
+
+        let mut last_seen = Timestamp::from(*last_seen);
 
         if last_seen > (Timestamp::now() + 60_000_000) {
             last_seen = Timestamp::from(0)
         }
 
-        Ok(SignedPacket {
-            inner: Inner::try_from_bytes(bytes[8..].to_owned().into())?,
+        Ok(Self {
+            inner: Inner::try_from_bytes(Bytes::copy_from_slice(packet))?,
             last_seen,
         })
     }
@@ -342,18 +369,20 @@ impl SignedPacket {
     /// Returns a slice of the serialized [SignedPacket] omitting the leading public_key,
     /// to be sent as a request/response body to or from [relays](https://github.com/pubky/pkarr/blob/main/design/relays.md).
     pub fn to_relay_payload(&self) -> Bytes {
-        self.inner.borrow_owner().slice(32..)
+        self.as_bytes().slice(PUBLIC_KEY_LENGTH..)
     }
 
     /// Returns the [PublicKey] of the signer of this [SignedPacket]
     pub fn public_key(&self) -> PublicKey {
-        PublicKey::try_from(&self.inner.borrow_owner()[0..32]).expect("SignedPacket::public_key()")
+        PublicKey::try_from(&self.as_bytes()[..PUBLIC_KEY_LENGTH])
+            .expect("SignedPacket::public_key()")
     }
 
     /// Returns the [Signature] of the the bencoded sequence number concatenated with the
     /// encoded and compressed packet, as defined in [BEP_0044](https://www.bittorrent.org/beps/bep_0044.html)
     pub fn signature(&self) -> Signature {
-        Signature::try_from(&self.inner.borrow_owner()[32..96]).expect("SignedPacket::signature()")
+        Signature::try_from(&self.as_bytes()[PUBLIC_KEY_LENGTH..TIMESTAMP_OFFSET])
+            .expect("SignedPacket::signature()")
     }
 
     /// Returns the timestamp in microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).
@@ -363,17 +392,17 @@ impl SignedPacket {
     /// but it shouldn't be used for caching for example, instead, use [Self::last_seen]
     /// which is set when you create a new packet.
     pub fn timestamp(&self) -> Timestamp {
-        let bytes = self.inner.borrow_owner();
-        let slice: [u8; 8] = bytes[96..104]
+        let bytes = self.as_bytes();
+        let slice: [u8; TIMESTAMP_LENGTH] = bytes[TIMESTAMP_OFFSET..HEADER_LENGTH]
             .try_into()
             .expect("SignedPacket::timestamp()");
 
-        u64::from_be_bytes(slice).into()
+        Timestamp::from(slice)
     }
 
     /// Returns the DNS [Packet] compressed and encoded.
     pub fn encoded_packet(&self) -> Bytes {
-        self.inner.borrow_owner().slice(104..)
+        self.as_bytes().slice(HEADER_LENGTH..)
     }
 
     /// Return the DNS [Packet].
@@ -511,7 +540,7 @@ impl SignedPacket {
     ///
     /// You can use [Self::from_relay_payload] instead if you are receiving a response from an HTTP relay.
     fn from_bytes(bytes: &Bytes) -> Result<SignedPacket, SignedPacketVerifyError> {
-        if bytes.len() < 104 {
+        if bytes.len() < HEADER_LENGTH {
             return Err(SignedPacketVerifyError::InvalidSignedPacketBytesLength(
                 bytes.len(),
             ));
@@ -519,19 +548,15 @@ impl SignedPacket {
         if (bytes.len() as u64) > SignedPacket::MAX_BYTES {
             return Err(SignedPacketVerifyError::PacketTooLarge(bytes.len()));
         }
-        let public_key = PublicKey::try_from(&bytes[..32])?;
-        let signature = Signature::from_bytes(
-            bytes[32..96]
-                .try_into()
-                .expect("SignedPacket::from_bytes(); Signature from 64 bytes"),
-        );
+        let public_key = PublicKey::try_from(&bytes[..PUBLIC_KEY_LENGTH])?;
+        let signature = Signature::try_from(&bytes[PUBLIC_KEY_LENGTH..TIMESTAMP_OFFSET])?;
         let timestamp = u64::from_be_bytes(
-            bytes[96..104]
+            bytes[TIMESTAMP_OFFSET..HEADER_LENGTH]
                 .try_into()
                 .expect("SignedPacket::from_bytes(); Timestamp from 8 bytes"),
         );
 
-        let encoded_packet = &bytes[104..];
+        let encoded_packet = &bytes[HEADER_LENGTH..];
 
         public_key.verify(&signable(timestamp, encoded_packet), &signature)?;
 
@@ -722,14 +747,24 @@ mod tests {
 
     #[test]
     fn custom_timestamp() {
-        let timestamp = Timestamp::from(42);
+        let keypair = Keypair::random();
+        for value in [0, 42, u64::MAX] {
+            let timestamp = Timestamp::from(value);
+            let packet = SignedPacket::builder()
+                .timestamp(timestamp)
+                .sign(&keypair)
+                .unwrap();
 
-        let signed_packet = SignedPacket::builder()
-            .timestamp(timestamp)
-            .sign(&Keypair::random())
-            .unwrap();
+            assert_eq!(packet.timestamp(), timestamp);
 
-        assert_eq!(signed_packet.timestamp(), timestamp);
+            let restored = SignedPacket::deserialize(&packet.serialize()).unwrap();
+            assert_eq!(restored.timestamp(), timestamp);
+
+            let verified =
+                SignedPacket::from_relay_payload(&keypair.public_key(), &packet.to_relay_payload())
+                    .unwrap();
+            assert_eq!(verified.timestamp(), timestamp);
+        }
     }
 
     #[test]
@@ -778,10 +813,14 @@ mod tests {
     fn from_too_large_bytes() {
         let keypair = Keypair::random();
 
-        let bytes = vec![0; 1073];
+        let packet_length = SignedPacket::MAX_BYTES as usize + 1;
+        let bytes = vec![0; packet_length - PUBLIC_KEY_LENGTH];
         let error = SignedPacket::from_relay_payload(&keypair.public_key(), &bytes.into());
 
-        assert!(error.is_err());
+        assert!(matches!(
+            error,
+            Err(SignedPacketVerifyError::PacketTooLarge(length)) if length == packet_length
+        ));
     }
 
     #[test]
@@ -1023,6 +1062,72 @@ mod tests {
             signed_packet.ttl(0, DEFAULT_MAXIMUM_TTL * 8),
             DEFAULT_MAXIMUM_TTL * 2
         );
+    }
+
+    #[test]
+    fn deserialize_rejects_truncated_data() {
+        let packet = SignedPacket::builder()
+            .txt("_foo".try_into().unwrap(), "hello".try_into().unwrap(), 30)
+            .sign(&Keypair::random())
+            .unwrap();
+        let bytes = packet.serialize();
+
+        for length in 0..bytes.len() {
+            let truncated = &bytes[..length];
+            assert!(
+                SignedPacket::deserialize(truncated).is_err(),
+                "accepted a truncated packet of {length} bytes"
+            );
+
+            let serialized = postcard::to_allocvec(truncated).unwrap();
+            assert!(
+                postcard::from_bytes::<SignedPacket>(&serialized).is_err(),
+                "Serde accepted a truncated packet of {length} bytes"
+            );
+        }
+
+        assert_eq!(SignedPacket::deserialize(&bytes).unwrap(), packet);
+    }
+
+    #[test]
+    fn deserialize_rejects_invalid_public_key() {
+        let packet = SignedPacket::builder().sign(&Keypair::random()).unwrap();
+        let mut bytes = packet.serialize();
+        // This encoding is not a valid Ed25519 public key.
+        bytes[TIMESTAMP_LENGTH..TIMESTAMP_LENGTH + PUBLIC_KEY_LENGTH].fill(2);
+
+        assert_eq!(
+            SignedPacket::deserialize(&bytes).unwrap_err(),
+            SimpleDnsError::InvalidDnsPacket
+        );
+    }
+
+    #[test]
+    fn deserialize_accepts_invalid_signature_but_relay_rejects_it() {
+        let keypair = Keypair::random();
+        let packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let mut bytes = packet.serialize();
+        bytes[TIMESTAMP_LENGTH + PUBLIC_KEY_LENGTH..TIMESTAMP_LENGTH + TIMESTAMP_OFFSET].fill(0xff);
+
+        let restored = SignedPacket::deserialize(&bytes).unwrap();
+        assert_eq!(restored.serialize(), bytes);
+        assert!(matches!(
+            SignedPacket::from_relay_payload(&keypair.public_key(), &restored.to_relay_payload()),
+            Err(SignedPacketVerifyError::SignatureError(_))
+        ));
+    }
+
+    #[test]
+    fn deserialize_preserves_last_seen_unless_far_in_the_future() {
+        let mut packet = SignedPacket::builder().sign(&Keypair::random()).unwrap();
+
+        for (last_seen, expected) in [(0, 0), (42, 42), (u64::MAX, 0)] {
+            packet.set_last_seen(&Timestamp::from(last_seen));
+
+            let restored = SignedPacket::deserialize(&packet.serialize()).unwrap();
+            assert_eq!(*restored.last_seen(), Timestamp::from(expected));
+            assert_eq!(restored.as_bytes(), packet.as_bytes());
+        }
     }
 
     #[test]
