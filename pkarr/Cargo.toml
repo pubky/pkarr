@@ -88,7 +88,7 @@ reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow = "1"
-postcard = { version = "1", features = ["alloc"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 reqwest = { workspace = true }
 rstest = "0.27"
 
