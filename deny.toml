@@ -10,11 +10,6 @@
 [graph]
 all-features = true
 
-[advisories]
-ignore = [
-    "RUSTSEC-2023-0089" # Tracked here https://github.com/pubky/pkarr/issues/177. No upgrade available yet.
-]
-
 [licenses]
 allow = [
     "MIT",
@@ -27,5 +22,4 @@ allow = [
     "ISC",
     "CDLA-Permissive-2.0",
     "Unlicense",
-    "OpenSSL",
 ]
