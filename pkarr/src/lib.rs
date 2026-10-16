@@ -1,12 +1,16 @@
 #![doc = include_str!("../README.md")]
 //! ## Feature flags
-#![doc = document_features::document_features!()]
+#![cfg_attr(doc, doc = document_features::document_features!())]
 //!
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
+// Used only by rustdoc to generate the feature list above.
+#[cfg(not(doc))]
+use document_features as _;
 
 // Modules
 #[cfg(client)]
