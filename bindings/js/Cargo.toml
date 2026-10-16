@@ -28,7 +28,6 @@ wasm-bindgen-futures = "0.4.50"
 
 # Dependencies needed by the WASM bindings
 simple-dns = { workspace = true }
-ntimestamp = { version = "1", features = ["full"] }
 thiserror = "2"
 url = { version = "2" }
 

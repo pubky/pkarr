@@ -4,11 +4,15 @@ mod keys;
 mod resolve_policy;
 #[cfg(feature = "signed_packet")]
 pub(crate) mod signed_packet;
+#[cfg(feature = "signed_packet")]
+mod timestamp;
 
 pub use keys::{Keypair, PublicKey};
 pub use resolve_policy::ResolvePolicy;
 #[cfg(feature = "signed_packet")]
 pub use signed_packet::{SignedPacket, SignedPacketBuilder};
+#[cfg(feature = "signed_packet")]
+pub use timestamp::Timestamp;
 
 /// Documentation alias for the number of DHT nodes that acknowledged storing a
 /// published packet.

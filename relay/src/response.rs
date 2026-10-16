@@ -53,18 +53,14 @@ impl SignedPacketResponse {
             header::CACHE_CONTROL,
             format!("public, max-age={}", self.ttl).try_into()?,
         );
-        headers.insert(
-            header::LAST_MODIFIED,
-            self.signed_packet
-                .timestamp()
-                .format_http_date()
-                .try_into()?,
-        );
+        if let Some(date) = self.signed_packet.timestamp().format_http_date() {
+            headers.insert(header::LAST_MODIFIED, date.try_into()?);
+        }
         headers.insert(
             "memento-datetime",
             self.signed_packet
                 .last_seen()
-                .format_http_date()
+                .format_http_date_saturating()
                 .try_into()?,
         );
 
@@ -105,6 +101,8 @@ fn is_not_modified(if_modified_since: Option<HttpDate>, signed_packet: &SignedPa
 
 #[cfg(test)]
 mod tests {
+    use std::time::SystemTime;
+
     use super::*;
     use pkarr::Keypair;
 
@@ -113,6 +111,31 @@ mod tests {
             .timestamp(timestamp)
             .sign(&Keypair::random())
             .unwrap()
+    }
+
+    #[tokio::test]
+    async fn out_of_range_dates_do_not_prevent_serving_the_packet() {
+        let mut packet = signed_packet(Timestamp::from(u64::MAX));
+        packet.set_last_seen(&Timestamp::from(u64::MAX));
+        let payload = packet.to_relay_payload();
+
+        let condition = "Fri, 31 Dec 9999 23:59:59 GMT".parse().unwrap();
+        let response = SignedPacketResponse::new(packet, 30, Some(condition)).into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(!response.headers().contains_key(header::LAST_MODIFIED));
+        assert_eq!(
+            response.headers()["memento-datetime"],
+            "Fri, 31 Dec 9999 23:59:59 GMT"
+        );
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "public, max-age=30"
+        );
+        let body = axum::body::to_bytes(response.into_body(), SignedPacket::MAX_BYTES as usize)
+            .await
+            .unwrap();
+        assert_eq!(body, payload);
     }
 
     #[test]
@@ -126,7 +149,7 @@ mod tests {
         );
 
         assert!(!is_not_modified(
-            Some(HttpDate::from(condition)),
+            Some(HttpDate::from(SystemTime::from(condition))),
             &signed_packet(packet_timestamp)
         ));
     }
@@ -136,7 +159,7 @@ mod tests {
         let packet_timestamp = Timestamp::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
 
         assert!(is_not_modified(
-            Some(HttpDate::from(packet_timestamp)),
+            Some(HttpDate::from(SystemTime::from(packet_timestamp))),
             &signed_packet(packet_timestamp)
         ));
     }

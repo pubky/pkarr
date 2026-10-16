@@ -267,6 +267,12 @@ async fn republish_loop(
 
 ### Updating a Published Packet
 
+`pkarr::Timestamp` stores Unix time in microseconds. `Timestamp::now()` returns
+increasing values within one process, even if the wall clock moves backward.
+It does not coordinate timestamps across processes or restarts. When updating
+an existing packet, choose a timestamp above the highest observed sequence, as
+shown below.
+
 The client does not serialize concurrent publishes for the same public key. If
 your application can build multiple different packets for one key at the same
 time, serialize the complete resolve, build, and publish sequence, for example

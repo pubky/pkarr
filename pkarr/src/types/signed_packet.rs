@@ -16,7 +16,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use ntimestamp::Timestamp;
+use crate::Timestamp;
 
 #[derive(Debug, Clone, Default)]
 /// A builder for [SignedPacket] with many convenient methods,
@@ -129,7 +129,8 @@ impl SignedPacketBuilder {
     ///
     /// Read more about how names will be normalized in [SignedPacket::new].
     pub fn sign(self, keypair: &Keypair) -> Result<SignedPacket, SignedPacketBuildError> {
-        SignedPacket::new(keypair, &self.records, self.timestamp.unwrap_or_default())
+        let timestamp = self.timestamp.unwrap_or_else(Timestamp::now);
+        SignedPacket::new(keypair, &self.records, timestamp)
     }
 }
 
@@ -284,13 +285,13 @@ impl SignedPacket {
             return Err(SignedPacketBuildError::PacketTooLarge(encoded_packet.len()));
         }
 
-        let signature = keypair.sign(&signable(timestamp.into(), &encoded_packet));
+        let signature = keypair.sign(&signable(timestamp.as_u64(), &encoded_packet));
 
         Ok(SignedPacket {
             inner: Inner::try_from_parts(
                 &keypair.public_key(),
                 &signature,
-                timestamp.into(),
+                timestamp.as_u64(),
                 &encoded_packet,
             )
             .expect("SignedPacket::new() try_from_parts should not fail"),
@@ -419,7 +420,7 @@ impl SignedPacket {
 
     /// Set the [Self::last_seen] property
     pub fn set_last_seen(&mut self, last_seen: &Timestamp) {
-        self.last_seen = last_seen.into();
+        self.last_seen = *last_seen;
     }
 
     // === Public Methods ===
@@ -568,11 +569,11 @@ impl SignedPacket {
 
     /// Useful for cloning a [SignedPacket], or cerating one from a previously checked bytes,
     /// like ones stored on disk or in a database.
-    fn from_bytes_unchecked(bytes: &Bytes, last_seen: impl Into<Timestamp>) -> SignedPacket {
+    fn from_bytes_unchecked(bytes: &Bytes, last_seen: Timestamp) -> SignedPacket {
         SignedPacket {
             inner: Inner::try_from_bytes(bytes.to_owned())
                 .expect("called SignedPacket::from_bytes_unchecked on invalid bytes"),
-            last_seen: last_seen.into(),
+            last_seen,
         }
     }
 }
@@ -636,13 +637,15 @@ impl Debug for SignedPacket {
 
 impl Display for SignedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let timestamp = self.timestamp();
+        let http_date = timestamp.format_http_date();
+        let date_label = http_date.as_deref().unwrap_or("(outside HTTP date range)");
+
         write!(
             f,
-            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {} {},\n    signature: {}\n    records:\n",
+            "SignedPacket ({}):\n    last_seen: {} seconds ago\n    timestamp: {timestamp} {date_label},\n    signature: {}\n    records:\n",
             self.public_key(),
             self.elapsed(),
-            self.timestamp(),
-            self.timestamp().format_http_date(),
             self.signature(),
         )?;
 
@@ -756,6 +759,7 @@ mod tests {
                 .unwrap();
 
             assert_eq!(packet.timestamp(), timestamp);
+            assert!(packet.to_string().contains(&timestamp.to_string()));
 
             let restored = SignedPacket::deserialize(&packet.serialize()).unwrap();
             assert_eq!(restored.timestamp(), timestamp);

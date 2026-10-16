@@ -74,6 +74,13 @@ Memento-Datetime: Fri, 8 May 2026 04:21:21 GMT
 
 `Memento-Datetime` will tell you when the packet was last observed on the DHT network.
 
+For timestamps beyond year 9999, the Rust implementation clamps
+`Memento-Datetime` and `If-Modified-Since` to `Fri, 31 Dec 9999 23:59:59 GMT`.
+It omits `Last-Modified` to avoid giving distinct out-of-range packet versions
+the same HTTP cache validator. The packet retains its full timestamp, and the
+client still checks that a returned packet is newer than the requested
+timestamp. The client ignores `Memento-Datetime` values in the future.
+
 Body is described at [Payload](#Payload) encoding section.
 
 On receiving a GET request, the relay server should:

@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use futures_buffered::FuturesUnorderedBounded;
 use futures_lite::StreamExt;
-use ntimestamp::Timestamp;
 use url::Url;
 
 use super::publish_result_accumulator::PublishResultAccumulator;
@@ -10,7 +9,7 @@ use super::resolve_result_accumulator::ResolveResultAccumulator;
 use super::{BackendResolvePolicy, CacheContext};
 use crate::client::{PublishError, ResolveError};
 use crate::relay_client::{RelayClient, RelayError};
-use crate::{PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount};
+use crate::{PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, Timestamp};
 
 #[derive(Clone, Debug)]
 pub(in crate::client) struct RelayBackend {
