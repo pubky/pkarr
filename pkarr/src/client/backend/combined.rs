@@ -87,10 +87,8 @@ fn merge_resolve_results(
 
 #[cfg(test)]
 mod tests {
-    use ntimestamp::Timestamp;
-
     use super::*;
-    use crate::Keypair;
+    use crate::{Keypair, Timestamp};
 
     fn signed_packet(timestamp: u64) -> SignedPacket {
         SignedPacket::builder()

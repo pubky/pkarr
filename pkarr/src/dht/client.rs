@@ -4,9 +4,8 @@ use mainline::{
     async_dht::{AsyncDht, GetMutableDetailed},
     Dht, MutableItem,
 };
-use ntimestamp::Timestamp;
 
-use crate::{PublicKey, SignedPacket, StoredNodeCount};
+use crate::{PublicKey, SignedPacket, StoredNodeCount, Timestamp};
 
 use super::{
     DhtConfig, DhtInfo, PublishError, ResolveError, ResolveOutcome, ResolveReport, ResolveResponse,

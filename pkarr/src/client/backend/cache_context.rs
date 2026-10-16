@@ -1,6 +1,4 @@
-use ntimestamp::Timestamp;
-
-use crate::SignedPacket;
+use crate::{SignedPacket, Timestamp};
 
 const HTTP_DATE_SECOND_MICROS: u64 = 1_000_000;
 
@@ -124,8 +122,9 @@ mod tests {
             context
                 .relay_request_lower_bound()
                 .unwrap()
-                .format_http_date(),
-            "Sun, 06 Nov 1994 08:49:36 GMT"
+                .format_http_date()
+                .as_deref(),
+            Some("Sun, 06 Nov 1994 08:49:36 GMT")
         );
     }
 

@@ -15,9 +15,7 @@ use heed::{
 
 use tracing::debug;
 
-use ntimestamp::Timestamp;
-
-use crate::{Cache, CacheKey, SignedPacket};
+use crate::{Cache, CacheKey, SignedPacket, Timestamp};
 
 const MAX_MAP_SIZE: usize = 10995116277760; // 10 TB
 const MIN_MAP_SIZE: usize = 10 * 1024 * 1024; // 10 mb

@@ -4,7 +4,7 @@ use js_sys::{Array, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 // Import DNS types for the records implementation
-use ntimestamp::Timestamp;
+use pkarr::Timestamp;
 use simple_dns::rdata::{RData, A, AAAA, HTTPS, NS, SVCB, TXT};
 use simple_dns::{Name, ResourceRecord, CLASS};
 use std::net::{Ipv4Addr, Ipv6Addr};

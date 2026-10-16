@@ -160,10 +160,8 @@ fn most_recent_packet(most_recent: Option<SignedPacket>, packet: SignedPacket) -
 
 #[cfg(test)]
 mod tests {
-    use ntimestamp::Timestamp;
-
     use super::*;
-    use crate::Keypair;
+    use crate::{Keypair, Timestamp};
 
     #[test]
     fn record_result_waits_for_packet_above_cache_floor() {

@@ -3,13 +3,12 @@
 use std::net::Ipv4Addr;
 use std::{thread, time::Duration};
 
-use ntimestamp::Timestamp;
 use pkarr_relay::Relay;
 use rstest::rstest;
 use simple_dns::rdata::SVCB;
 
 use crate::errors::{BuildError, PublishError, ResolveError};
-use crate::{Client, ClientBuilder, Keypair, ResolvePolicy, SignedPacket};
+use crate::{Client, ClientBuilder, Keypair, ResolvePolicy, SignedPacket, Timestamp};
 
 #[derive(Copy, Clone)]
 pub(crate) enum Networks {
@@ -439,7 +438,7 @@ async fn packet_relay_handler(
 
     let mut response = axum::response::Response::builder();
     if let Some(timestamp) = state.memento_datetime {
-        response = response.header("memento-datetime", timestamp.format_http_date());
+        response = response.header("memento-datetime", timestamp.format_http_date().unwrap());
     }
 
     let response = response

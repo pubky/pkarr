@@ -50,8 +50,6 @@ pub use types::*;
 
 // Rexports
 #[cfg(feature = "signed_packet")]
-pub use ntimestamp::Timestamp;
-#[cfg(feature = "signed_packet")]
 pub use simple_dns as dns;
 
 pub mod errors {

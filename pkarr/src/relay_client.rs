@@ -1,13 +1,12 @@
 //! Single-relay HTTP client.
 
 use bytes::Bytes;
-use ntimestamp::Timestamp;
 use reqwest::{header, Client, Response, StatusCode};
 use std::time::Duration;
 use url::Url;
 
 use crate::{
-    PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, PKARR_DHT_STORED_NODES,
+    PublicKey, ResolvePolicy, SignedPacket, StoredNodeCount, Timestamp, PKARR_DHT_STORED_NODES,
     PKARR_INVALID_SIGNED_PACKET_SEQ,
 };
 
@@ -196,8 +195,13 @@ impl RelayClient {
             request = request.header(header::CACHE_CONTROL, CACHE_BYPASS);
         }
 
+        // The HTTP condition is clamped to the supported date range. resolve()
+        // still checks the full timestamp against the returned packet.
         if let Some(newer_than) = newer_than {
-            request = request.header(header::IF_MODIFIED_SINCE, newer_than.format_http_date());
+            request = request.header(
+                header::IF_MODIFIED_SINCE,
+                newer_than.format_http_date_saturating(),
+            );
         }
 
         let response = request.send().await.map_err(|error| {
@@ -429,7 +433,6 @@ mod tests {
         routing::{get, put},
         Router,
     };
-    use ntimestamp::Timestamp;
     use rstest::rstest;
     use tokio::net::TcpListener;
     use url::Url;
@@ -735,7 +738,7 @@ mod tests {
     async fn resolve_sends_if_modified_since(#[case] newer_than: Timestamp) {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-        let expected_header = newer_than.format_http_date();
+        let expected_header = newer_than.format_http_date().unwrap();
         let seen_header = Arc::new(Mutex::new(None));
         let app = Router::new().route(
             &format!("/{}", keypair.public_key()),
@@ -775,6 +778,54 @@ mod tests {
             seen_header.lock().unwrap().as_deref(),
             Some(expected_header.as_str())
         );
+    }
+
+    #[tokio::test]
+    async fn resolve_filters_full_timestamps_with_clamped_http_condition() {
+        let keypair = Keypair::random();
+        let timestamp = Timestamp::from(u64::MAX - 1);
+        let packet = SignedPacket::builder()
+            .timestamp(timestamp)
+            .sign(&keypair)
+            .unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            get({
+                let payload = packet.to_relay_payload();
+                move |headers: HeaderMap| {
+                    let payload = payload.clone();
+                    async move {
+                        assert_eq!(
+                            headers[header::IF_MODIFIED_SINCE],
+                            "Fri, 31 Dec 9999 23:59:59 GMT"
+                        );
+                        payload
+                    }
+                }
+            }),
+        );
+        let client = test_client(serve(app).await);
+
+        let resolved = client
+            .resolve(
+                &keypair.public_key(),
+                ResolvePolicy::CacheOnly,
+                Some(timestamp - 1),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resolved.as_bytes(), packet.as_bytes());
+
+        for lower_bound in [timestamp, timestamp + 1] {
+            let result = client
+                .resolve(
+                    &keypair.public_key(),
+                    ResolvePolicy::CacheOnly,
+                    Some(lower_bound),
+                )
+                .await;
+            assert!(matches!(result, Err(RelayError::NotFound)));
+        }
     }
 
     #[tokio::test]
@@ -862,7 +913,7 @@ mod tests {
             &format!("/{}", keypair.public_key()),
             get({
                 let payload = signed_packet.to_relay_payload();
-                let last_seen = last_seen.format_http_date();
+                let last_seen = last_seen.format_http_date().unwrap();
 
                 move || {
                     let payload = payload.clone();
@@ -915,17 +966,19 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::near_future(Timestamp::now() + 60_000_000)]
+    #[case::clamped(Timestamp::from(u64::MAX))]
     #[tokio::test]
-    async fn resolve_ignores_future_memento_datetime() {
+    async fn resolve_ignores_future_memento_datetime(#[case] future_last_seen: Timestamp) {
         let keypair = Keypair::random();
         let signed_packet = SignedPacket::builder().sign(&keypair).unwrap();
-        let future_last_seen = Timestamp::now() + 60_000_000;
 
         let app = Router::new().route(
             &format!("/{}", keypair.public_key()),
             get({
                 let payload = signed_packet.to_relay_payload();
-                let future_last_seen = future_last_seen.format_http_date();
+                let future_last_seen = future_last_seen.format_http_date_saturating();
 
                 move || {
                     let payload = payload.clone();
