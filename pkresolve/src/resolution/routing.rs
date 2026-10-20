@@ -29,12 +29,15 @@ pub(super) fn resolution_from_packet(
     }
     let expires_at = packet_expires_at(packet)?;
     let mut candidates = Vec::with_capacity(services.len());
+    let mut has_supported_target = false;
     for (service, protocols) in services {
         if service.target.iter().next().is_some()
             && !same_name(&service.target, routing_owner.as_str())
         {
-            return Err(Error::Unsupported("alternate HTTPS target"));
+            // Unsupported targets must not suppress usable same-service routes.
+            continue;
         }
+        has_supported_target = true;
         let port = match service.get_param(3) {
             Some(SVCParam::Port(port)) => {
                 NonZeroU16::new(*port).ok_or(Error::InvalidRecord("port zero"))?
@@ -51,6 +54,9 @@ pub(super) fn resolution_from_packet(
             priority: service.priority,
             protocols,
         });
+    }
+    if !has_supported_target {
+        return Err(Error::Unsupported("alternate HTTPS target"));
     }
     if candidates.is_empty() {
         return Err(Error::NoAddresses);

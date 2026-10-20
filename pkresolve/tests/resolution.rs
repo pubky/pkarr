@@ -479,6 +479,64 @@ fn unsupported_aliases_take_precedence_over_service_records() {
 }
 
 #[test]
+fn alternate_targets_do_not_suppress_supported_routes() {
+    let alice = key(1);
+    for (direct_priority, alternate_priority) in [(1, 10), (10, 1)] {
+        let direct = route(direct_priority, 6287);
+        let mut alternate = SVCB::new(alternate_priority, name("homeserver.pubky.app"));
+        alternate.set_ipv4hint(&[u32::from(
+            "192.0.2.99".parse::<std::net::Ipv4Addr>().unwrap(),
+        )]);
+        for services in [
+            [direct.clone(), alternate.clone()],
+            [alternate.clone(), direct.clone()],
+        ] {
+            let mut builder =
+                SignedPacket::builder().address(name("."), "34.65.156.171".parse().unwrap(), TTL);
+            for svc in services {
+                builder = builder.https(name("."), svc, TTL);
+            }
+            let result = resolve(&request(&alice), &[proof(builder, &alice, 0, 0)]).unwrap();
+            assert_eq!(result.service, service(&alice));
+            assert_eq!(result.candidates.len(), 1);
+            let candidate = &result.candidates[0];
+            assert_eq!(candidate.port.get(), 6287);
+            assert_eq!(candidate.priority, direct_priority);
+            assert_eq!(
+                candidate.addresses,
+                vec!["34.65.156.171".parse::<IpAddr>().unwrap()]
+            );
+        }
+    }
+}
+
+#[test]
+fn alternate_target_addresses_do_not_supply_same_service_routes() {
+    let alice = key(1);
+    let mut alternate = SVCB::new(10, name("homeserver.pubky.app"));
+    alternate.set_ipv4hint(&[u32::from(
+        "192.0.2.99".parse::<std::net::Ipv4Addr>().unwrap(),
+    )]);
+    let builder = SignedPacket::builder().https(name("."), alternate, TTL);
+    assert!(matches!(
+        resolve(&request(&alice), &[proof(builder.clone(), &alice, 0, 0)]),
+        Err(Error::Unsupported("alternate HTTPS target"))
+    ));
+    assert!(matches!(
+        resolve(
+            &request(&alice),
+            &[proof(
+                builder.https(name("."), route(1, 6287), TTL),
+                &alice,
+                0,
+                0
+            )]
+        ),
+        Err(Error::NoAddresses)
+    ));
+}
+
+#[test]
 fn hints_supply_routes_without_granting_tls_authority() {
     let alice = key(1);
     let mut svc = route(1, 443);

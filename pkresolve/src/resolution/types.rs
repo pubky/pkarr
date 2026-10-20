@@ -6,10 +6,16 @@ use crate::{Error, ServiceName};
 
 /// Supported TCP HTTP application protocols. HTTP/3 needs a separate policy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "service-protocol",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub enum HttpProtocol {
     /// HTTP/1.1; the default HTTPS protocol when defaults are allowed.
+    #[cfg_attr(feature = "service-protocol", serde(rename = "http/1.1"))]
     Http11,
     /// HTTP/2 over TLS.
+    #[cfg_attr(feature = "service-protocol", serde(rename = "h2"))]
     Http2,
 }
 
@@ -25,15 +31,53 @@ impl HttpProtocol {
 
 /// Original service scope and client-supported protocols.
 /// Raw-key Pubky authentication is the only supported authentication mode.
+/// With `service-protocol`, supports Serde using `service`, `url_port`, and
+/// `supported_alpn` fields. Deserialization validates all fields and removes
+/// duplicate ALPNs while preserving preference order.
 #[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "service-protocol",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+#[cfg_attr(feature = "service-protocol", serde(deny_unknown_fields))]
 pub struct ResolutionRequest {
     service: ServiceName,
     url_port: NonZeroU16,
+    #[cfg_attr(
+        feature = "service-protocol",
+        serde(rename = "supported_alpn", deserialize_with = "deserialize_protocols")
+    )]
     supported_protocols: Vec<HttpProtocol>,
+}
+
+#[cfg(feature = "service-protocol")]
+fn deserialize_protocols<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<HttpProtocol>, D::Error> {
+    use serde::{de::Error as _, Deserialize};
+
+    let protocols = Vec::<HttpProtocol>::deserialize(deserializer)?;
+    normalize_protocols(protocols).map_err(D::Error::custom)
+}
+
+fn normalize_protocols(protocols: Vec<HttpProtocol>) -> Result<Vec<HttpProtocol>, Error> {
+    if protocols.is_empty() {
+        return Err(Error::InvalidRequest(
+            "at least one HTTP protocol is required",
+        ));
+    }
+    let mut unique = Vec::new();
+    for protocol in protocols {
+        if !unique.contains(&protocol) {
+            unique.push(protocol);
+        }
+    }
+    Ok(unique)
 }
 
 impl ResolutionRequest {
     /// Construct a request preserving the original port and full service name.
+    /// Remove duplicate protocols while preserving client preference order.
     ///
     /// # Errors
     /// Rejects port zero and an empty protocol list.
@@ -44,11 +88,7 @@ impl ResolutionRequest {
     ) -> Result<Self, Error> {
         let url_port =
             NonZeroU16::new(url_port).ok_or(Error::InvalidRequest("URL port must be nonzero"))?;
-        if supported_protocols.is_empty() {
-            return Err(Error::InvalidRequest(
-                "at least one HTTP protocol is required",
-            ));
-        }
+        let supported_protocols = normalize_protocols(supported_protocols)?;
         Ok(Self {
             service,
             url_port,
@@ -79,6 +119,10 @@ impl ResolutionRequest {
 
 /// One compatible route, authenticated with the destination Pubky key.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "service-protocol",
+    derive(serde::Serialize, serde::Deserialize)
+)]
 pub struct EndpointCandidate {
     /// Signed addresses and hints, deduplicated. The host chooses address order.
     pub addresses: Vec<IpAddr>,
@@ -113,6 +157,25 @@ mod tests {
     use pkarr::Keypair;
 
     use super::*;
+
+    #[test]
+    fn request_preserves_preference_order_without_duplicate_protocols() {
+        let service = Keypair::from_secret_key(&[1; 32]).to_z32().parse().unwrap();
+        let request = ResolutionRequest::new(
+            service,
+            443,
+            vec![
+                HttpProtocol::Http11,
+                HttpProtocol::Http2,
+                HttpProtocol::Http11,
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            request.supported_protocols(),
+            &[HttpProtocol::Http11, HttpProtocol::Http2]
+        );
+    }
 
     #[test]
     fn request_rejects_zero_port_and_empty_protocols() {

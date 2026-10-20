@@ -11,7 +11,8 @@ description = "Pubky endpoint resolution from signed PKARR packets"
 
 [features]
 default = []
-service-client = ["dep:base64", "dep:serde", "dep:serde_json"]
+service-protocol = ["dep:serde"]
+service-client = ["service-protocol", "dep:base64", "dep:serde_json"]
 
 [dependencies]
 base64 = { version = "0.22", optional = true }
@@ -22,6 +23,7 @@ thiserror = "2"
 
 [dev-dependencies]
 futures-lite = "2"
+serde_json = "1"
 
 [lints.rust]
 unsafe_code = "forbid"

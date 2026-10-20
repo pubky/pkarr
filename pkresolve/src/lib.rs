@@ -3,6 +3,8 @@
 //! Enable `service-client` to use `ServiceClient` for cache-first resolution
 //! and whole-bundle processing. This feature is disabled by default.
 //! The caller supplies HTTP; the library performs no network I/O.
+//! Enable `service-protocol` for shared Serde request and bundle types without
+//! the client cache. `service-client` includes this feature.
 //!
 //! Call [`derive_resolution`] with a
 //! [`PacketProvider`] backed by PKARR, a local cache, or a response bundle.
@@ -23,6 +25,8 @@ mod resolution;
 #[cfg(feature = "service-client")]
 pub mod service_client;
 mod service_name;
+#[cfg(feature = "service-protocol")]
+pub mod service_protocol;
 
 pub use error::Error;
 pub use pkarr::{PublicKey, SignedPacket};

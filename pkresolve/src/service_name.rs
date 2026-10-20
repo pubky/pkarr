@@ -8,9 +8,34 @@ use crate::{Error, PublicKey};
 /// Unicode, empty labels, and noncanonical key encodings are rejected.
 /// Underscores are allowed for names such as `_pubky.<key>`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "service-protocol", derive(serde::Deserialize))]
+#[cfg_attr(feature = "service-protocol", serde(try_from = "String"))]
 pub struct ServiceName {
     name: String,
     key: PublicKey,
+}
+
+#[cfg(feature = "service-protocol")]
+impl serde::Serialize for ServiceName {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+#[cfg(feature = "service-protocol")]
+impl From<ServiceName> for String {
+    fn from(service: ServiceName) -> Self {
+        service.name
+    }
+}
+
+#[cfg(feature = "service-protocol")]
+impl TryFrom<String> for ServiceName {
+    type Error = Error;
+
+    fn try_from(name: String) -> Result<Self, Error> {
+        name.parse()
+    }
 }
 
 impl ServiceName {

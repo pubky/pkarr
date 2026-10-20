@@ -24,6 +24,31 @@ unchanged; packets retain their native `last_seen`.
 
 See the [prototype limits](#status).
 
+## Shared service protocol
+
+Enable `service-protocol` to serialize and deserialize `ResolutionRequest` and
+`service_protocol::ResolveBundle` with Serde. The `service-client` feature
+enables it automatically; servers can enable it without the client cache.
+
+`ResolutionRequest` uses the JSON fields `service`, `url_port`, and
+`supported_alpn`. Deserialization validates the service, port, and ALPN
+preferences and removes duplicate protocols while preserving preference order.
+Invalid parameters, missing fields, and unknown fields are decoding errors.
+
+`ResolveBundle` carries the schema version, base64 packet strings, and an
+required `BundleResolution` summary. Create the summary with
+`BundleResolution::from(resolution)`. It contains the service, URL port,
+endpoint candidates, and remaining lifetime in milliseconds, measured when
+the summary is created. This lifetime excludes transport delay; it is not a
+new cache lifetime starting on receipt.
+
+Both client and server use `service_protocol::BUNDLE_SCHEMA`. Deserializing
+the bundle only checks its structure; consumers must check the schema and
+packet contents. The summary is included for convenience. Clients should
+verify it by deriving their own resolution for the original request, using
+the bundled packets as the packet source. `ServiceClient` does this rather
+than trusting the summary, with the validation limitations above.
+
 ## Packet providers
 
 Derive Pubky endpoints from a `PacketProvider`, without an HTTP stack or async
@@ -53,6 +78,10 @@ Supports same-name HTTPS ServiceMode, multiple endpoints, signed addresses and
 hints, HTTP/1.1, and HTTP/2. Aliases, CNAME routing, alternate targets, TLS
 delegation, CA TLS, ECH, and HTTP/3 are not implemented. TLS delegation records
 are ignored.
+
+Alternate-target ServiceMode records are skipped so they do not suppress
+usable same-service routes. If every protocol-compatible record has an
+alternate target, resolution returns `Unsupported("alternate HTTPS target")`.
 
 Use `resolution.service` as TLS SNI and require its raw public key for every
 candidate. Preserve the original HTTP authority. Check `resolution.expires_at`

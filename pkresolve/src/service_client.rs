@@ -10,9 +10,9 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use crate::service_protocol::{ResolveBundle, BUNDLE_SCHEMA};
 use crate::{PublicKey, Resolution, ResolutionRequest, SignedPacket};
 use base64::{engine::general_purpose::STANDARD, Engine};
-use serde::{Deserialize, Serialize};
 
 /// A response could not be decoded or prove the requested resolution.
 #[derive(Debug, thiserror::Error)]
@@ -79,7 +79,7 @@ impl ServiceClient {
         match crate::derive_resolution(&request, &self.packets) {
             Ok(resolution) => Ok(Preparation::Ready(resolution)),
             Err(crate::Error::MissingPacket(_) | crate::Error::ExpiredRecord) => {
-                let body = request_body(&request)?;
+                let body = serde_json::to_string(&request)?;
                 Ok(Preparation::Fetch(BundleRequest { request, body }))
             }
             Err(error) => Err(error.into()),
@@ -89,6 +89,9 @@ impl ServiceClient {
     /// Resolve a complete bundle for its retained original request, then cache
     /// its decoded packets. Failed responses leave the cache unchanged. Native
     /// `last_seen` values are preserved; incomplete bundles never trigger HTTP.
+    /// The required resolution summary is included for convenience. This client
+    /// derives its own routes and expiry for the original request, using the
+    /// bundled packets as its packet source rather than trusting the summary.
     ///
     /// # Errors
     /// Rejects decoding failures, duplicate keys, and unsuccessful resolution.
@@ -104,32 +107,9 @@ impl ServiceClient {
     }
 }
 
-fn request_body(request: &ResolutionRequest) -> Result<String, serde_json::Error> {
-    #[derive(Serialize)]
-    struct Request<'a> {
-        service: &'a str,
-        url_port: u16,
-        supported_alpn: Vec<&'static str>,
-    }
-    serde_json::to_string(&Request {
-        service: request.service().as_str(),
-        url_port: request.url_port(),
-        supported_alpn: request
-            .supported_protocols()
-            .iter()
-            .map(|protocol| protocol.alpn())
-            .collect(),
-    })
-}
-
 fn decode_bundle(response: &[u8]) -> Result<HashMap<PublicKey, Arc<SignedPacket>>, Error> {
-    #[derive(Deserialize)]
-    struct Bundle {
-        schema: u32,
-        packets: Vec<String>,
-    }
-    let bundle: Bundle = serde_json::from_slice(response)?;
-    if bundle.schema != 1 {
+    let bundle: ResolveBundle = serde_json::from_slice(response)?;
+    if bundle.schema != BUNDLE_SCHEMA {
         return Err(Error::UnsupportedSchema(bundle.schema));
     }
     let mut packets = HashMap::with_capacity(bundle.packets.len());
