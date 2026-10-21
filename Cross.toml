@@ -5,7 +5,7 @@
 # See https://github.com/cross-rs/cross-toolchains?tab=readme-ov-file#apple-targets
 # SDKs can be downloaded here: https://github.com/joseluisq/macosx-sdks
 # Images are uploaded to the Github Registry. Docker login required.
-# @Sev May 2025
+# @SeverinAlexB May 2025
 # --------------------------------------------------------------------------------
 
 [target.aarch64-apple-darwin]
