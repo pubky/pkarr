@@ -1,0 +1,26 @@
+[package]
+name = "pkresolve-chromium"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "C++ bindings for embedding PKResolve in Chromium"
+license = "MIT"
+repository = "https://github.com/pubky/pkarr"
+publish = false
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+pkresolve = { path = "../../pkresolve", features = ["service-client"] }
+cxx = "=1.0.194"
+
+# Chromium supplies its own CXX version and builds this source through GN.
+# Keep standalone CXX tooling outside the shared resolver workspace.
+[workspace]
+resolver = "3"
+
+[dev-dependencies]
+base64 = "0.22"
+serde_json = "1"
+pkarr = { path = "../../pkarr", version = "8.1", default-features = false, features = ["signed_packet"] }

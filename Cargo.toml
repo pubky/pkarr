@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "pkarr", "relay", "bindings/js",
+  "pkarr", "pkresolve", "relay", "bindings/js",
 ]
 
 resolver = "3"

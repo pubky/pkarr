@@ -26,6 +26,9 @@ Where we are going, this https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj
 - **[`pkarr`](./pkarr/README.md)** — The Rust library for creating and verifying
   signed DNS packets, then publishing and resolving them over the DHT or HTTP
   relays. Its README covers installation, features, and a runnable example.
+- **[`pkresolve`](./pkresolve/README.md)** — Pubky endpoint resolution from
+  signed PKARR packets, with pluggable packet providers and an optional bundle
+  client. The [Chromium bridge](./bindings/chromium/README.md) is built separately.
 - **[`pkarr-relay`](./relay/README.md)** — An HTTP-to-DHT gateway that lets
   browsers and other UDP-restricted clients publish and resolve Pkarr packets.
   Its README covers installation and configuration.

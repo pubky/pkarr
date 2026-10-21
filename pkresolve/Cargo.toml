@@ -1,0 +1,31 @@
+[package]
+name = "pkresolve"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/pubky/pkarr"
+keywords = ["pubky", "pkarr", "dns", "resolution", "tls"]
+categories = ["network-programming", "cryptography"]
+description = "Pubky endpoint resolution from signed PKARR packets"
+
+[features]
+default = []
+service-client = ["dep:base64", "dep:serde", "dep:serde_json"]
+
+[dependencies]
+base64 = { version = "0.22", optional = true }
+pkarr = { path = "../pkarr", version = "8.1", default-features = false, features = ["signed_packet"] }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = "2"
+
+[dev-dependencies]
+futures-lite = "2"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[package.metadata.docs.rs]
+all-features = true

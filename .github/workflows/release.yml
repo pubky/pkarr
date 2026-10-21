@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       prerelease: ${{ steps.versions.outputs.prerelease }}
+      pkresolve_version: ${{ steps.versions.outputs.pkresolve_version }}
       relay_version: ${{ steps.versions.outputs.relay_version }}
       npm_version: ${{ steps.versions.outputs.npm_version }}
     steps:
@@ -34,6 +35,7 @@ jobs:
           fi
 
           PKARR_VERSION=$(cargo pkgid -p pkarr | sed 's/.*#//;s/.*@//')
+          PKRESOLVE_VERSION=$(cargo pkgid -p pkresolve | sed 's/.*#//;s/.*@//')
           RELAY_VERSION=$(cargo pkgid -p pkarr-relay | sed 's/.*#//;s/.*@//')
           NPM_VERSION=$(node -p "require('./bindings/js/pkg/package.json').version")
           if [[ "$PKARR_VERSION" != "$VERSION" ]]; then
@@ -52,6 +54,7 @@ jobs:
           fi
 
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "pkresolve_version=$PKRESOLVE_VERSION" >> "$GITHUB_OUTPUT"
           echo "relay_version=$RELAY_VERSION" >> "$GITHUB_OUTPUT"
           echo "npm_version=$NPM_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -106,12 +109,14 @@ jobs:
       - name: Add package versions to release notes
         env:
           CHANGELOG: ${{ steps.changelog.outputs.changes }}
+          PKRESOLVE_VERSION: ${{ needs.validate.outputs.pkresolve_version }}
           RELAY_VERSION: ${{ needs.validate.outputs.relay_version }}
           NPM_VERSION: ${{ needs.validate.outputs.npm_version }}
         run: |
           {
             printf '## Package versions\n\n'
             printf -- '- pkarr: %s\n' "${GITHUB_REF_NAME#v}"
+            printf -- '- pkresolve: %s\n' "$PKRESOLVE_VERSION"
             printf -- '- pkarr-relay: %s\n' "$RELAY_VERSION"
             printf -- '- @synonymdev/pkarr: %s\n\n' "$NPM_VERSION"
             printf '%s\n' "$CHANGELOG"
@@ -144,9 +149,26 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
+  publish-pkresolve:
+    name: Publish pkresolve to crates.io
+    needs: publish-pkarr
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish pkresolve
+        run: cargo publish -p pkresolve --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
   publish-relay:
     name: Publish pkarr-relay to crates.io
-    needs: publish-pkarr
+    needs: publish-pkresolve
     runs-on: ubuntu-latest
     permissions:
       contents: read
