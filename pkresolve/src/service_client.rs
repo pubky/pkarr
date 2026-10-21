@@ -123,3 +123,40 @@ fn decode_bundle(response: &[u8]) -> Result<HashMap<PublicKey, Arc<SignedPacket>
     }
     Ok(packets)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, SystemTime};
+
+    use pkarr::{dns::rdata::SVCB, Keypair};
+
+    use super::*;
+    use crate::HttpProtocol;
+
+    #[test]
+    fn expired_cached_routing_failure_requests_a_fresh_bundle() {
+        let key = Keypair::from_secret_key(&[1; 32]);
+        let mut packet = SignedPacket::builder()
+            .https(
+                ".".try_into().unwrap(),
+                SVCB::new(0, ".".try_into().unwrap()),
+                60,
+            )
+            .sign(&key)
+            .unwrap();
+        packet.set_last_seen(&(SystemTime::now() - Duration::from_secs(61)).into());
+        let client = ServiceClient {
+            packets: HashMap::from([(key.public_key(), Arc::new(packet))]),
+        };
+        let request = ResolutionRequest::new(
+            key.to_z32().parse().unwrap(),
+            443,
+            vec![HttpProtocol::Http11],
+        )
+        .unwrap();
+        assert!(matches!(
+            client.prepare(request).unwrap(),
+            Preparation::Fetch(_)
+        ));
+    }
+}

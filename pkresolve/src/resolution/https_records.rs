@@ -13,8 +13,6 @@ pub(super) fn https_services<'a>(
     records: &[&'a ResourceRecord<'a>],
     supported_protocols: &[HttpProtocol],
 ) -> Result<Vec<(&'a SVCB<'a>, Vec<HttpProtocol>)>, Error> {
-    // AliasMode overrides ServiceMode before protocol filtering.
-    check_https_aliases(records)?;
     let mut services = Vec::new();
     for record in records {
         let RData::HTTPS(https) = &record.rdata else {
@@ -29,22 +27,13 @@ pub(super) fn https_services<'a>(
     Ok(services)
 }
 
-fn check_https_aliases(records: &[&ResourceRecord<'_>]) -> Result<(), Error> {
-    // RFC 9460 §2.4.1 permits mixed modes, but any AliasMode record makes
-    // ServiceMode records ignored. Following aliases is not implemented.
-    let mut aliases = records.iter().filter_map(|record| match &record.rdata {
+/// Select the first alias in signed packet order so bundle replay follows the
+/// same path. Alias parameters and all ServiceMode records are ignored.
+pub(super) fn https_alias<'a>(records: &[&'a ResourceRecord<'a>]) -> Option<&'a SVCB<'a>> {
+    records.iter().find_map(|record| match &record.rdata {
         RData::HTTPS(https) if https.0.priority == 0 => Some(&https.0),
         _ => None,
-    });
-    let Some(alias) = aliases.next() else {
-        return Ok(());
-    };
-    // Multiple aliases are permitted (§2.4.2); selecting one is unsupported.
-    // A single root-target alias indicates that the service is unavailable.
-    if aliases.next().is_none() && alias.target.iter().next().is_none() {
-        return Err(Error::ServiceUnavailable);
-    }
-    Err(Error::Unsupported("HTTPS AliasMode"))
+    })
 }
 
 fn compatible_protocols(

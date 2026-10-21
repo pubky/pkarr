@@ -89,10 +89,22 @@ The endpoint delegates routing decisions to PKResolve's implementation:
   destination service's public key.
 - Exact service scope and port handling; addresses alone do not enable a route.
 
-Routing CNAMEs, HTTPS aliases, alternate targets, CA authentication, ECH, and
+HTTPS AliasMode follows exact target names within Pubky namespaces. Every
+packet used is included in the bundle, and the earliest packet expiry limits
+the result. The original service identity is retained. Loops and chains longer
+than 32 names are rejected. Multiple aliases select the first in signed packet
+order so clients can reproduce the resolution. Alias parameters are ignored.
+
+Routing CNAMEs, public DNS alias targets, alternate ServiceMode targets,
+CA authentication, ECH, and
 HTTP/3 are unsupported. TLS delegation records are currently ignored;
 they do not change the required destination TLS key. The endpoint returns
 packets, not an HTTP redirect or proxied application content.
+
+Alternate-target HTTPS ServiceMode records are skipped when selecting routes.
+They do not prevent usable same-service records from resolving. If all
+protocol-compatible ServiceMode records use alternate targets, resolution
+returns `422` with `unsupported resolution feature: alternate HTTPS target`.
 
 Lookups use the relay's existing LMDB cache and `CacheFirst` policy, including
 its configured minimum and maximum TTLs. Cache misses and entries expired

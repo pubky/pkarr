@@ -9,7 +9,8 @@ use super::{
 
 /// Derive routes with direct raw-key TLS for the requested Pubky service.
 /// The provider supplies the validated packet and owns caching, proof collection,
-/// and I/O timeouts. The result expires with the packet's shortest record TTL.
+/// and I/O timeouts. The result expires at the earliest packet deadline in the
+/// alias chain. Traversal visits at most 32 names and rejects loops.
 /// This function calls the provider synchronously and needs no async runtime.
 /// Use [`derive_resolution_async`] for an asynchronous packet source.
 ///

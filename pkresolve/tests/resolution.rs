@@ -429,7 +429,9 @@ fn unsupported_aliases_take_precedence_over_service_records() {
     );
     assert!(matches!(
         resolve(&request(&alice), &[packet]),
-        Err(Error::Unsupported("HTTPS AliasMode"))
+        Err(Error::Unsupported(
+            "HTTPS AliasMode target outside Pubky namespace"
+        ))
     ));
     let packet = proof(
         direct_builder().https(name("."), alias.clone(), TTL),
@@ -439,7 +441,9 @@ fn unsupported_aliases_take_precedence_over_service_records() {
     );
     assert!(matches!(
         resolve(&request(&alice), &[packet]),
-        Err(Error::Unsupported("HTTPS AliasMode"))
+        Err(Error::Unsupported(
+            "HTTPS AliasMode target outside Pubky namespace"
+        ))
     ));
     let packet = proof(
         direct_builder().https(name("."), alias, TTL).https(
@@ -453,7 +457,9 @@ fn unsupported_aliases_take_precedence_over_service_records() {
     );
     assert!(matches!(
         resolve(&request(&alice), &[packet]),
-        Err(Error::Unsupported("HTTPS AliasMode"))
+        Err(Error::Unsupported(
+            "HTTPS AliasMode target outside Pubky namespace"
+        ))
     ));
     // A root-target alias disables the service even alongside ServiceMode.
     let packet = proof(
@@ -636,4 +642,151 @@ fn address_deduplication_preserves_record_and_hint_order_across_ip_families() {
         result.candidates[0].addresses.as_slice(),
         &[IpAddr::V6(ipv6), IpAddr::V4(ipv4), IpAddr::V4(hinted)]
     );
+}
+
+#[test]
+fn aliases_follow_exact_names_and_preserve_identity_port_and_earliest_expiry() {
+    let alice = key(1);
+    let bob = key(2);
+    let target = format!("edge.{}", bob.to_z32());
+    let mut alias = SVCB::new(0, name(&target));
+    alias.set_port(0); // Alias parameters must be ignored.
+    let first = proof(
+        SignedPacket::builder().https(name("_8443._https.app"), alias, 60),
+        &alice,
+        0,
+        10,
+    );
+    let second = proof(
+        SignedPacket::builder()
+            .https(name("edge"), SVCB::new(1, name(".")), TTL)
+            .address(name("edge"), "203.0.113.11".parse().unwrap(), TTL),
+        &bob,
+        0,
+        0,
+    );
+    let req = ResolutionRequest::new(
+        format!("app.{}", alice.to_z32()).parse().unwrap(),
+        8443,
+        vec![HttpProtocol::Http11],
+    )
+    .unwrap();
+    let resolution = resolve(&req, &[first, second]).unwrap();
+    assert_eq!(&resolution.service, req.service());
+    assert_eq!(resolution.url_port, 8443);
+    assert_eq!(resolution.candidates[0].port.get(), 8443);
+    assert_eq!(
+        resolution.candidates[0].addresses,
+        vec!["203.0.113.11".parse::<IpAddr>().unwrap()]
+    );
+    assert_remaining_ttl(&resolution, 50);
+}
+
+#[test]
+fn aliases_within_one_packet_override_service_records_and_detect_loops() {
+    let alice = key(1);
+    let target = format!("edge.{}", alice.to_z32());
+    let builder = direct_builder().https(name("."), SVCB::new(0, name(&target)), TTL);
+    let packet = proof(
+        builder
+            .clone()
+            .https(name("edge"), route(1, 8443), TTL)
+            .address(name("edge"), "203.0.113.11".parse().unwrap(), TTL),
+        &alice,
+        0,
+        0,
+    );
+    let resolution = resolve(&request(&alice), &[packet]).unwrap();
+    assert_eq!(resolution.candidates[0].port.get(), 8443);
+    let packet = proof(
+        builder.https(name("edge"), SVCB::new(0, name(&alice.to_z32())), TTL),
+        &alice,
+        0,
+        0,
+    );
+    assert!(matches!(
+        resolve(&request(&alice), &[packet]),
+        Err(Error::InvalidRecord("HTTPS alias loop"))
+    ));
+}
+
+#[test]
+fn alias_chains_are_bounded_and_missing_or_expired_targets_fail() {
+    let keys: Vec<_> = (1..=33).map(key).collect();
+    let mut packets: Vec<_> = keys
+        .windows(2)
+        .map(|pair| {
+            proof(
+                SignedPacket::builder().https(
+                    name("."),
+                    SVCB::new(0, name(&pair[1].to_z32())),
+                    TTL,
+                ),
+                &pair[0],
+                0,
+                0,
+            )
+        })
+        .collect();
+    assert!(matches!(
+        resolve(&request(&keys[0]), &packets[..1]),
+        Err(Error::MissingPacket(_))
+    ));
+    assert!(matches!(
+        resolve(&request(&keys[0]), &packets),
+        Err(Error::InvalidRecord("HTTPS alias chain exceeds 32 names"))
+    ));
+    packets.truncate(31);
+    packets.push(proof(direct_builder(), &keys[31], 0, 0));
+    assert!(resolve(&request(&keys[0]), &packets).is_ok());
+    packets[1].set_last_seen(&(now() - Duration::from_secs(TTL as u64 + 1)).into());
+    assert!(matches!(
+        resolve(&request(&keys[0]), &packets),
+        Err(Error::ExpiredRecord)
+    ));
+}
+
+#[test]
+fn multiple_aliases_choose_first_signed_record_for_repeatable_bundle_replay() {
+    let alice = key(1);
+    let bob = key(2);
+    let packet = proof(
+        direct_builder()
+            .https(name("."), SVCB::new(0, name(&bob.to_z32())), TTL)
+            .https(name("."), SVCB::new(0, name("unavailable.example")), TTL),
+        &alice,
+        0,
+        0,
+    );
+    let target = proof(direct_builder(), &bob, 0, 0);
+    assert!(resolve(&request(&alice), &[packet.clone(), target]).is_ok());
+    let cycle = proof(
+        SignedPacket::builder().https(name("."), SVCB::new(0, name(&alice.to_z32())), TTL),
+        &bob,
+        0,
+        0,
+    );
+    assert!(matches!(
+        resolve(&request(&alice), &[packet, cycle]),
+        Err(Error::InvalidRecord("HTTPS alias loop"))
+    ));
+}
+
+#[test]
+fn expired_packets_cannot_authorize_terminal_routing_errors() {
+    let alice = key(1);
+    let builders = [
+        // Missing routing records, explicit unavailability, and unsupported
+        // aliases must all permit a cache refresh once their evidence expires.
+        SignedPacket::builder().address(name("."), "203.0.113.10".parse().unwrap(), TTL),
+        SignedPacket::builder().https(name("."), SVCB::new(0, name(".")), TTL),
+        SignedPacket::builder().https(name("."), SVCB::new(0, name("edge.example")), TTL),
+    ];
+    for builder in builders {
+        let packet = proof(builder, &alice, 0, u64::from(TTL) + 1);
+        assert!(matches!(
+            resolve(&request(&alice), &[packet]),
+            Err(Error::ExpiredRecord)
+        ));
+    }
 }

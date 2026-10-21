@@ -75,9 +75,17 @@ point needs no executor. The async entry point awaits each packet lookup;
 dropping its future drops the pending lookup. Providers own I/O timeouts.
 
 Supports same-name HTTPS ServiceMode, multiple endpoints, signed addresses and
-hints, HTTP/1.1, and HTTP/2. Aliases, CNAME routing, alternate targets, TLS
+hints, HTTP/1.1, HTTP/2, and HTTPS AliasMode within Pubky namespaces.
+CNAME routing, public DNS alias targets, alternate ServiceMode targets, TLS
 delegation, CA TLS, ECH, and HTTP/3 are not implemented. TLS delegation records
 are ignored.
+
+AliasMode overrides ServiceMode and ignores alias parameters. Targets are exact
+names, including any port prefix; the original service identity and URL port
+remain unchanged. Traversal rejects loops and visits at most 32 names. The
+result expires at the earliest packet deadline in the chain. When multiple
+aliases exist, the first in signed packet order is selected so relay bundles
+can be replayed deterministically, rather than randomly choosing another path.
 
 Alternate-target ServiceMode records are skipped so they do not suppress
 usable same-service routes. If every protocol-compatible record has an

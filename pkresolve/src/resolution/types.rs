@@ -147,7 +147,7 @@ pub struct Resolution {
     /// Candidates sorted by ascending priority. Equal-priority order has no
     /// preference meaning; the host scheduler chooses attempt order.
     pub candidates: Vec<EndpointCandidate>,
-    /// Expiry of the packet used to derive these candidates.
+    /// Earliest expiry of all packets used to derive these candidates.
     /// The complete result may be reused until this time.
     pub expires_at: Instant,
 }

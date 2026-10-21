@@ -15,9 +15,10 @@
 //! and uses that service name as TLS SNI.
 //!
 //! Supports same-name HTTPS ServiceMode records and direct raw-key TLS using
-//! the destination Pubky key. TLS delegation records are ignored. HTTPS aliases,
-//! routing CNAMEs, alternate targets, CA TLS, certificates, ECH, and HTTP/3 are
-//! not implemented.
+//! the original Pubky key. HTTPS AliasMode can route through other Pubky names
+//! without changing that TLS identity. TLS delegation records are ignored.
+//! Public DNS alias targets, routing CNAMEs, alternate ServiceMode targets,
+//! CA TLS, certificates, ECH, and HTTP/3 are not implemented.
 
 mod error;
 mod provider;

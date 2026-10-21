@@ -22,14 +22,12 @@ impl serde::Serialize for ServiceName {
     }
 }
 
-#[cfg(feature = "service-protocol")]
 impl From<ServiceName> for String {
     fn from(service: ServiceName) -> Self {
         service.name
     }
 }
 
-#[cfg(feature = "service-protocol")]
 impl TryFrom<String> for ServiceName {
     type Error = Error;
 

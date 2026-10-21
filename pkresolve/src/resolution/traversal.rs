@@ -1,13 +1,20 @@
 //! Provider-independent traversal state and completion checks.
 
-use std::{error::Error as StdError, sync::Arc, time::Instant};
+use std::{
+    collections::HashSet,
+    error::Error as StdError,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use crate::{Error, PublicKey, ServiceName, SignedPacket};
 
 use super::{
-    routing::{https_record_name, resolution_from_packet},
+    routing::{https_record_name, route_packet, PacketRouting},
     Resolution, ResolutionRequest,
 };
+
+const MAX_ROUTING_NAMES: usize = 32;
 
 /// A traversal either yields ownership of its pending lookup or finishes.
 /// Keeping the continuation in `NeedPacket` prevents supplying another packet
@@ -18,18 +25,22 @@ pub(super) enum ResolutionStep<'a> {
 }
 
 /// Resolution state retained while the driver obtains the routing packet.
-/// Only direct routing is supported today. Delegation can add traversal state
-/// and return another `NeedPacket` from `accept_packet` without changing drivers.
+/// Alias hops retain the original request and the earliest evidence deadline.
 pub(super) struct ResolutionTraversal<'a> {
     request: &'a ResolutionRequest,
     routing_owner: ServiceName,
+    visited: HashSet<ServiceName>,
+    expires_at: Option<Instant>,
 }
 
 impl<'a> ResolutionTraversal<'a> {
     pub(super) fn start(request: &'a ResolutionRequest) -> Result<ResolutionStep<'a>, Error> {
+        let routing_owner = https_record_name(request)?;
         Ok(ResolutionStep::NeedPacket(Self {
             request,
-            routing_owner: https_record_name(request)?,
+            visited: HashSet::from([routing_owner.clone()]),
+            routing_owner,
+            expires_at: None,
         }))
     }
 
@@ -39,7 +50,7 @@ impl<'a> ResolutionTraversal<'a> {
 
     /// Consume the pending lookup and advance, including missing/error handling.
     pub(super) fn accept_packet<E>(
-        self,
+        mut self,
         packet: Result<Option<Arc<SignedPacket>>, E>,
     ) -> Result<ResolutionStep<'a>, Error>
     where
@@ -52,14 +63,64 @@ impl<'a> ResolutionTraversal<'a> {
                 source: Box::new(source),
             })?
             .ok_or_else(|| Error::MissingPacket(Box::new(key.clone())))?;
-        let resolution = resolution_from_packet(self.request, &self.routing_owner, &packet)?;
-        // Check after all lookups. Future delegation must carry the earliest
-        // evidence deadline into this result, including earlier packets.
-        if resolution.expires_at <= Instant::now() {
+        // Expired evidence cannot authorize either routes or terminal errors.
+        // Check before interpreting records so cached failures can be refreshed.
+        let packet_deadline = packet_expires_at(&packet)?;
+        let expires_at = self
+            .expires_at
+            .map_or(packet_deadline, |previous| previous.min(packet_deadline));
+        if expires_at <= Instant::now() {
             return Err(Error::ExpiredRecord);
         }
-        Ok(ResolutionStep::Complete(resolution))
+        match route_packet(self.request, &self.routing_owner, &packet)? {
+            PacketRouting::Alias(target) => {
+                if self.visited.contains(&target) {
+                    return Err(Error::InvalidRecord("HTTPS alias loop"));
+                }
+                // Bound names as well as packet owners: aliases within one
+                // packet can otherwise bypass the relay's packet budget.
+                if self.visited.len() >= MAX_ROUTING_NAMES {
+                    return Err(Error::InvalidRecord("HTTPS alias chain exceeds 32 names"));
+                }
+                self.visited.insert(target.clone());
+                self.routing_owner = target;
+                self.expires_at = Some(expires_at);
+                Ok(ResolutionStep::NeedPacket(self))
+            }
+            PacketRouting::Endpoints(candidates) => {
+                // Record processing also counts against the evidence deadline.
+                if expires_at <= Instant::now() {
+                    return Err(Error::ExpiredRecord);
+                }
+                Ok(ResolutionStep::Complete(Resolution {
+                    service: self.request.service().clone(),
+                    url_port: self.request.url_port(),
+                    candidates,
+                    expires_at,
+                }))
+            }
+        }
     }
+}
+
+/// Convert the shortest record TTL into a monotonic deadline, preserving age.
+fn packet_expires_at(packet: &SignedPacket) -> Result<Instant, Error> {
+    let ttl = packet.ttl(0, u32::MAX);
+    if ttl == 0 {
+        return Err(Error::Unsupported("zero TTL"));
+    }
+    let now = Instant::now();
+    // PKARR 8.1's expires_in() underflows for future observations. Treat clock
+    // skew as age zero, without extending reuse beyond the packet's TTL.
+    // Keep subsecond precision: rounding the age down would extend the TTL.
+    let observed_age = Duration::from_micros(
+        pkarr::Timestamp::now()
+            .as_u64()
+            .saturating_sub(packet.last_seen().as_u64()),
+    );
+    let remaining = Duration::from_secs(u64::from(ttl)).saturating_sub(observed_age);
+    now.checked_add(remaining)
+        .ok_or(Error::InvalidTime("cache deadline overflow"))
 }
 
 #[cfg(test)]

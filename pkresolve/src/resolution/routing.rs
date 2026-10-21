@@ -1,11 +1,6 @@
-//! Derive endpoint candidates and their deadline from a routing packet.
+//! Interpret exact-name routing records in a packet.
 
-use std::{
-    collections::HashSet,
-    net::IpAddr,
-    num::NonZeroU16,
-    time::{Duration, Instant},
-};
+use std::{collections::HashSet, net::IpAddr, num::NonZeroU16};
 
 use pkarr::dns::{
     rdata::{RData, SVCParam, SVCB},
@@ -14,20 +9,37 @@ use pkarr::dns::{
 
 use crate::{Error, ServiceName, SignedPacket};
 
-use super::{https_records::https_services, EndpointCandidate, Resolution, ResolutionRequest};
+use super::{
+    https_records::{https_alias, https_services},
+    EndpointCandidate, ResolutionRequest,
+};
 
-pub(super) fn resolution_from_packet(
+pub(super) enum PacketRouting {
+    Alias(ServiceName),
+    Endpoints(Vec<EndpointCandidate>),
+}
+
+pub(super) fn route_packet(
     request: &ResolutionRequest,
     routing_owner: &ServiceName,
     packet: &SignedPacket,
-) -> Result<Resolution, Error> {
+) -> Result<PacketRouting, Error> {
     let records = records(packet, routing_owner.as_str());
     check_routing_cname(&records)?;
+    if let Some(alias) = https_alias(&records) {
+        if alias.target.iter().next().is_none() {
+            return Err(Error::ServiceUnavailable);
+        }
+        let target =
+            alias.target.to_string().parse().map_err(|_| {
+                Error::Unsupported("HTTPS AliasMode target outside Pubky namespace")
+            })?;
+        return Ok(PacketRouting::Alias(target));
+    }
     let services = https_services(&records, request.supported_protocols())?;
     if services.is_empty() {
         return Err(Error::NoCompatibleEndpoint);
     }
-    let expires_at = packet_expires_at(packet)?;
     let mut candidates = Vec::with_capacity(services.len());
     let mut has_supported_target = false;
     for (service, protocols) in services {
@@ -62,12 +74,7 @@ pub(super) fn resolution_from_packet(
         return Err(Error::NoAddresses);
     }
     candidates.sort_by_key(|candidate| candidate.priority);
-    Ok(Resolution {
-        service: request.service().clone(),
-        url_port: request.url_port(),
-        candidates,
-        expires_at,
-    })
+    Ok(PacketRouting::Endpoints(candidates))
 }
 
 fn check_routing_cname(records: &[&ResourceRecord<'_>]) -> Result<(), Error> {
@@ -81,26 +88,6 @@ fn check_routing_cname(records: &[&ResourceRecord<'_>]) -> Result<(), Error> {
         return Err(Error::InvalidRecord("CNAME with other routing records"));
     }
     Err(Error::Unsupported("routing CNAME"))
-}
-
-/// Convert the shortest record TTL into a monotonic deadline, preserving age.
-fn packet_expires_at(packet: &SignedPacket) -> Result<Instant, Error> {
-    let ttl = packet.ttl(0, u32::MAX);
-    if ttl == 0 {
-        return Err(Error::Unsupported("zero TTL"));
-    }
-    let now = Instant::now();
-    // PKARR 8.1's expires_in() underflows for future observations. Treat clock
-    // skew as age zero, without extending reuse beyond the packet's TTL.
-    // Keep subsecond precision: rounding the age down would extend the TTL.
-    let observed_age = Duration::from_micros(
-        pkarr::Timestamp::now()
-            .as_u64()
-            .saturating_sub(packet.last_seen().as_u64()),
-    );
-    let remaining = Duration::from_secs(u64::from(ttl)).saturating_sub(observed_age);
-    now.checked_add(remaining)
-        .ok_or(Error::InvalidTime("cache deadline overflow"))
 }
 
 pub(super) fn https_record_name(request: &ResolutionRequest) -> Result<ServiceName, Error> {
