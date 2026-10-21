@@ -17,6 +17,7 @@ mod index;
 mod quota_config;
 mod rate_limiting;
 mod real_ip;
+mod resolve;
 mod response;
 
 use std::{
@@ -369,6 +370,7 @@ fn create_app(
             axum::routing::get(crate::handlers::get).put(crate::handlers::put),
         )
         .route("/", axum::routing::get(crate::handlers::index))
+        .route("/v1/resolve", axum::routing::post(crate::resolve::resolve))
         .with_state(state)
         .layer(DefaultBodyLimit::max(1104))
         .layer(RequestBodyDeadlineLayer::new(HTTP_REQUEST_BODY_TIMEOUT))

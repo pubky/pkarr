@@ -1,7 +1,7 @@
 //! Main Crate Error
 
 use axum::{
-    extract::rejection::{ExtensionRejection, QueryRejection},
+    extract::rejection::{ExtensionRejection, JsonRejection, QueryRejection},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
@@ -67,6 +67,30 @@ impl IntoResponse for Error {
             response.headers_mut().extend(*headers);
         }
         response
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.detail {
+            Some(detail) => write!(f, "{}: {detail}", self.status),
+            None => self.status.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<JsonRejection> for Error {
+    fn from(error: JsonRejection) -> Self {
+        let status = match &error {
+            JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
+                StatusCode::BAD_REQUEST
+            }
+            // Preserve transport errors such as 413 and 415.
+            _ => error.status(),
+        };
+        Self::new(status, error.body_text())
     }
 }
 

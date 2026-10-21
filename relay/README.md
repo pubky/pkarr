@@ -4,6 +4,9 @@ The `pkarr-relay` binary is an HTTP gateway and cache for publishing and
 resolving Pkarr packets through the Mainline DHT. See
 [how Pkarr relays work](../design/relays.md).
 
+The source build also serves [Pubky resolution bundles](../docs/relay-resolve.md)
+at `POST /v1/resolve`, using the workspace's `pkresolve` crate.
+
 ## Installation
 
 ```bash

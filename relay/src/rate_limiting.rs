@@ -29,7 +29,8 @@ pub struct RateLimiterConfig {
     /// HTTP request quota applied per normalized real IP.
     ///
     /// This is always applied before request handling to every HTTP request,
-    /// including GET, PUT, the index route, cache hits, and cache-only requests.
+    /// including GET, PUT, POST resolution, the index route, cache hits, and
+    /// cache-only requests.
     pub quota: RequestCountQuota,
     /// Optional HTTP request burst size.
     ///
@@ -53,7 +54,8 @@ pub struct RateLimiterConfig {
     /// This is separate from [`Self::quota`] and is consumed only when a request
     /// makes the relay contact the DHT: PUT publishes, GET cache misses, expired
     /// `CacheFirst` entries, and `NetworkOnly` requests. Cache hits and
-    /// `CacheOnly` requests do not consume this quota.
+    /// `CacheOnly` requests do not consume this quota. POST resolution consumes
+    /// this quota on cache misses and when the relay considers a packet expired.
     pub user_dht_quota: RequestCountQuota,
     /// Optional user-initiated DHT operation burst size.
     ///

@@ -37,6 +37,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 http = "1"
 bytes = "1"
+base64 = "0.22"
+pkresolve = { path = "../pkresolve", version = "0.1", features = ["service-protocol"] }
 tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 governor = { version = "0.10", default-features = false}
 serde = { version = "1", features = ["derive"] }
@@ -50,6 +52,10 @@ pkarr = { path = "../pkarr", version = "8.1", default-features = false, features
 ] }
 
 [dev-dependencies]
+pkresolve = { path = "../pkresolve", version = "0.1", features = ["service-client"] }
+serde_json = "1"
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
 h2 = "0.4"
 mainline = { workspace = true }
 reqwest = { workspace = true }
