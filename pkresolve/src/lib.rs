@@ -11,12 +11,12 @@
 //! For asynchronous packet sources, use [`derive_resolution_async`] with an
 //! [`AsyncPacketProvider`].
 //! Missing evidence is never a negative answer.
-//! The host authenticates every candidate with `Resolution::service.public_key()`
-//! and uses that service name as TLS SNI.
+//! The host authenticates every candidate with `Resolution::tls_public_key`
+//! and uses the original `Resolution::service` name as TLS SNI.
 //!
 //! Supports same-name HTTPS ServiceMode records and direct raw-key TLS using
-//! the original Pubky key. HTTPS AliasMode can route through other Pubky names
-//! without changing that TLS identity. TLS delegation records are ignored.
+//! the final routing owner's Pubky key. HTTPS AliasMode delegates routing and
+//! TLS authentication to that owner. Separate TLS delegation records are ignored.
 //! Public DNS alias targets, routing CNAMEs, alternate ServiceMode targets,
 //! CA TLS, certificates, ECH, and HTTP/3 are not implemented.
 

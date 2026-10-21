@@ -119,6 +119,7 @@ fn direct_route_uses_verified_key_and_preserves_original_service() {
     );
     assert_eq!(candidate.port.get(), 443);
     assert_eq!(result.service.public_key(), &alice.public_key());
+    assert_eq!(result.tls_public_key, alice.public_key());
     assert_eq!(&result.service, req.service());
     assert_eq!(result.url_port, 443);
     assert_eq!(
@@ -152,6 +153,7 @@ fn all_endpoint_ports_use_destination_key_and_ignore_tls_delegation() {
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0].port.get(), 443);
         assert_eq!(result.service.public_key(), &alice.public_key());
+        assert_eq!(result.tls_public_key, alice.public_key());
         assert_eq!(candidates[1].port.get(), 8443);
         assert_eq!(&result.service, &service(&alice));
         // TLS delegation does not change the destination key, but its record
@@ -185,6 +187,7 @@ fn scoped_services_also_use_the_destination_key() {
     assert_eq!(&scoped.service, req.service());
     let result = resolve(&request(&alice), &[packet]).unwrap();
     assert_eq!(result.service.public_key(), &alice.public_key());
+    assert_eq!(result.tls_public_key, alice.public_key());
 }
 
 #[test]
@@ -207,6 +210,7 @@ fn nondefault_url_and_connection_ports_preserve_destination_tls_key() {
     assert_eq!(result.url_port, 8443);
     assert_eq!(result.candidates[0].port.get(), 9443);
     assert_eq!(result.service.public_key(), &alice.public_key());
+    assert_eq!(result.tls_public_key, alice.public_key());
     assert_eq!(&result.service, &service(&alice));
 }
 
@@ -557,6 +561,7 @@ fn hints_supply_routes_without_granting_tls_authority() {
     );
     let result = resolve(&request(&alice), &[packet]).unwrap();
     assert_eq!(result.service.public_key(), &alice.public_key());
+    assert_eq!(result.tls_public_key, alice.public_key());
     assert_eq!(
         result.candidates[0].addresses.as_slice(),
         &["203.0.113.10".parse::<IpAddr>().unwrap()]
@@ -645,7 +650,7 @@ fn address_deduplication_preserves_record_and_hint_order_across_ip_families() {
 }
 
 #[test]
-fn aliases_follow_exact_names_and_preserve_identity_port_and_earliest_expiry() {
+fn aliases_delegate_tls_and_preserve_authority_port_and_earliest_expiry() {
     let alice = key(1);
     let bob = key(2);
     let target = format!("edge.{}", bob.to_z32());
@@ -673,6 +678,7 @@ fn aliases_follow_exact_names_and_preserve_identity_port_and_earliest_expiry() {
     .unwrap();
     let resolution = resolve(&req, &[first, second]).unwrap();
     assert_eq!(&resolution.service, req.service());
+    assert_eq!(resolution.tls_public_key, bob.public_key());
     assert_eq!(resolution.url_port, 8443);
     assert_eq!(resolution.candidates[0].port.get(), 8443);
     assert_eq!(
@@ -738,7 +744,12 @@ fn alias_chains_are_bounded_and_missing_or_expired_targets_fail() {
     ));
     packets.truncate(31);
     packets.push(proof(direct_builder(), &keys[31], 0, 0));
-    assert!(resolve(&request(&keys[0]), &packets).is_ok());
+    assert_eq!(
+        resolve(&request(&keys[0]), &packets)
+            .unwrap()
+            .tls_public_key,
+        keys[31].public_key()
+    );
     packets[1].set_last_seen(&(now() - Duration::from_secs(TTL as u64 + 1)).into());
     assert!(matches!(
         resolve(&request(&keys[0]), &packets),

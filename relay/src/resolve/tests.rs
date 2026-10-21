@@ -2,7 +2,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::NonZeroU32,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -200,8 +200,12 @@ async fn cached_bundle_round_trips_through_service_client_without_refreshing_obs
     assert_eq!(summary.service, original.service().as_str());
     assert_eq!(summary.url_port, original.url_port());
     assert_eq!(summary.candidates, resolution.candidates);
-    let valid_for_ms = summary.valid_for_ms;
-    assert!(valid_for_ms > 0 && valid_for_ms <= 270_000);
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let expiry_ms = u128::from(summary.valid_until_unix_ms);
+    assert!(expiry_ms > now_ms && expiry_ms <= now_ms + 270_000);
     assert_eq!(resolution.service, *original.service());
     assert_eq!(resolution.url_port, 8443);
     assert_eq!(resolution.candidates[0].port.get(), 8443);
@@ -659,6 +663,8 @@ async fn alias_resolution_bundles_both_cached_packets_for_client_replay() {
     assert_eq!(bundle.packets.len(), 2);
     let resolution = client.accept_bundle(fetch, &bytes).unwrap();
     assert_eq!(&resolution.service, original.service());
+    assert_eq!(resolution.tls_public_key, target.public_key());
+    assert_eq!(bundle.resolution.tls_public_key, target.to_z32());
     assert_eq!(resolution.candidates[0].port.get(), 8443);
     assert!(
         resolution

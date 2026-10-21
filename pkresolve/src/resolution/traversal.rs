@@ -94,6 +94,7 @@ impl<'a> ResolutionTraversal<'a> {
                 }
                 Ok(ResolutionStep::Complete(Resolution {
                     service: self.request.service().clone(),
+                    tls_public_key: self.routing_owner.public_key().clone(),
                     url_port: self.request.url_port(),
                     candidates,
                     expires_at,

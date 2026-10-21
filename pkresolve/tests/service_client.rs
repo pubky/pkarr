@@ -86,6 +86,7 @@ fn service_request_preserves_scope_port_and_protocol_preferences() {
 
     let response = bundle(&[packet(&key, "203.0.113.10")]);
     let resolved = client.accept_bundle(fetch, &response).unwrap();
+    assert_eq!(resolved.tls_public_key, key.public_key());
     assert_eq!(&resolved.service, original.service());
     assert_eq!(resolved.url_port, 8443);
     let Preparation::Ready(cached) = client.prepare(original).unwrap() else {
@@ -127,6 +128,7 @@ fn summary_cannot_override_routes_or_replace_packet_evidence() {
     let mut response: serde_json::Value =
         serde_json::from_slice(&bundle(&[packet(&key, "203.0.113.10")])).unwrap();
     response["resolution"] = json!({
+        "tls_public_key": other_key.to_z32(),
         "service": other_key.to_z32(),
         "url_port": 1234,
         "candidates": [{
@@ -135,7 +137,7 @@ fn summary_cannot_override_routes_or_replace_packet_evidence() {
             "priority": 0,
             "protocols": ["h2"],
         }],
-        "valid_for_ms": u64::MAX,
+        "valid_until_unix_ms": u64::MAX,
     });
     let mut client = ServiceClient::default();
     let Preparation::Fetch(fetch) = client.prepare(request(&key)).unwrap() else {
@@ -145,6 +147,7 @@ fn summary_cannot_override_routes_or_replace_packet_evidence() {
         .accept_bundle(fetch, &serde_json::to_vec(&response).unwrap())
         .unwrap();
     assert_eq!(resolved.service, *request(&key).service());
+    assert_eq!(resolved.tls_public_key, key.public_key());
     assert_eq!(resolved.url_port, 8443);
     assert_eq!(
         resolved.candidates[0].addresses[0].to_string(),

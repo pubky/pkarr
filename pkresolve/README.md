@@ -76,24 +76,27 @@ dropping its future drops the pending lookup. Providers own I/O timeouts.
 
 Supports same-name HTTPS ServiceMode, multiple endpoints, signed addresses and
 hints, HTTP/1.1, HTTP/2, and HTTPS AliasMode within Pubky namespaces.
-CNAME routing, public DNS alias targets, alternate ServiceMode targets, TLS
-delegation, CA TLS, ECH, and HTTP/3 are not implemented. TLS delegation records
-are ignored.
+CNAME routing, public DNS alias targets, alternate ServiceMode targets,
+CA TLS, ECH, and HTTP/3 are not implemented. Separate TLS delegation records
+are ignored; HTTPS AliasMode delegates both routing and TLS authentication.
 
 AliasMode overrides ServiceMode and ignores alias parameters. Targets are exact
-names, including any port prefix; the original service identity and URL port
-remain unchanged. Traversal rejects loops and visits at most 32 names. The
-result expires at the earliest packet deadline in the chain. When multiple
-aliases exist, the first in signed packet order is selected so relay bundles
+names, including any port prefix. Each alias delegates TLS authentication;
+the final routing owner supplies the required raw public key. The original
+service remains the HTTP authority and SNI, and the URL port is unchanged.
+Traversal rejects loops and visits at most 32 names. The result expires at the
+earliest packet deadline in the chain. When multiple aliases exist, the first
+in signed packet order is selected so relay bundles
 can be replayed deterministically, rather than randomly choosing another path.
 
 Alternate-target ServiceMode records are skipped so they do not suppress
 usable same-service routes. If every protocol-compatible record has an
 alternate target, resolution returns `Unsupported("alternate HTTPS target")`.
 
-Use `resolution.service` as TLS SNI and require its raw public key for every
-candidate. Preserve the original HTTP authority. Check `resolution.expires_at`
-before reuse; it follows the packet's shortest TTL, aged from `last_seen`.
+Use `resolution.service` as TLS SNI and require `resolution.tls_public_key`
+for every candidate. Preserve the original HTTP authority. Check
+`resolution.expires_at` before reuse; it follows the earliest packet deadline
+in the alias chain, using each packet's shortest TTL aged from `last_seen`.
 
 Run the direct ServiceMode example from the repository root:
 

@@ -2,7 +2,7 @@
 
 use std::{net::IpAddr, num::NonZeroU16, time::Instant};
 
-use crate::{Error, ServiceName};
+use crate::{Error, PublicKey, ServiceName};
 
 /// Supported TCP HTTP application protocols. HTTP/3 needs a separate policy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -117,7 +117,7 @@ impl ResolutionRequest {
     }
 }
 
-/// One compatible route, authenticated with the destination Pubky key.
+/// One compatible route, authenticated with the resolution's TLS public key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "service-protocol",
@@ -134,14 +134,16 @@ pub struct EndpointCandidate {
     pub protocols: Vec<HttpProtocol>,
 }
 
-/// Routes sharing the destination service's raw TLS key and a reuse deadline.
+/// Routes sharing a raw TLS key and a reuse deadline.
 /// This describes how to authenticate a peer; it does not establish TLS identity.
 #[derive(Clone, Debug)]
 pub struct Resolution {
-    /// Original service for HTTP authority and TLS SNI. Every candidate must
-    /// authenticate with exactly `service.public_key()` as its raw TLS key;
-    /// CA authentication cannot substitute for it.
+    /// Original service for HTTP authority and TLS SNI.
     pub service: ServiceName,
+    /// Required raw TLS key for every candidate. HTTPS AliasMode delegates
+    /// authentication to the final routing owner's key. Without an alias,
+    /// this is the original service's key. CA authentication cannot replace it.
+    pub tls_public_key: PublicKey,
     /// Original URL port for HTTP authority construction.
     pub url_port: u16,
     /// Candidates sorted by ascending priority. Equal-priority order has no

@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "{}; SNI {}; required raw TLS key {}",
                 std::net::SocketAddr::new(*address, candidate.port.get()),
                 result.service,
-                result.service.public_key(),
+                result.tls_public_key,
             );
         }
     }

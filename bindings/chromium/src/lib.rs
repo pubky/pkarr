@@ -43,6 +43,7 @@ pub mod ffi {
     struct Resolution {
         service: String,
         url_port: u16,
+        /// Required raw TLS key after HTTPS AliasMode delegation.
         public_key: [u8; 32],
         valid_for_ms: u64,
         candidates: Vec<EndpointCandidate>,
@@ -207,7 +208,7 @@ fn convert_resolution(resolution: pkresolve::Resolution) -> ffi::Resolution {
     ffi::Resolution {
         service: resolution.service.to_string(),
         url_port: resolution.url_port,
-        public_key: *resolution.service.public_key().as_bytes(),
+        public_key: *resolution.tls_public_key.as_bytes(),
         valid_for_ms: resolution
             .expires_at
             .saturating_duration_since(Instant::now())
@@ -237,5 +238,28 @@ fn convert_candidate(candidate: pkresolve::EndpointCandidate) -> ffi::EndpointCa
                 pkresolve::HttpProtocol::Http2 => ffi::HttpProtocol::Http2,
             })
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conversion_exports_delegated_tls_key_and_original_service() {
+        let origin = pkarr::Keypair::from_secret_key(&[1; 32]);
+        let delegate = pkarr::Keypair::from_secret_key(&[2; 32]);
+        let resolution = pkresolve::Resolution {
+            service: origin.to_z32().parse().unwrap(),
+            tls_public_key: delegate.public_key(),
+            url_port: 8443,
+            candidates: Vec::new(),
+            expires_at: Instant::now(),
+        };
+
+        let converted = convert_resolution(resolution);
+        assert_eq!(converted.service, origin.to_z32());
+        assert_eq!(converted.public_key, *delegate.public_key().as_bytes());
+        assert_eq!(converted.url_port, 8443);
     }
 }

@@ -23,7 +23,8 @@ is waiting to be cancelled. Rust exposes no HTTP interface or polling API.
 
 Chromium also owns destination connections. Use the resolved service as SNI,
 preserve the original HTTP authority, and require possession of the destination
-raw Ed25519 key.
+raw Ed25519 key. HTTPS AliasMode delegates this key to the final routing
+owner; the service name remains the original HTTP authority and SNI.
 
 Sample the monotonic clock before calling `prepare()` for a cached result, or
 `accept_bundle()` for a fetched result. Add the returned `valid_for_ms` to that

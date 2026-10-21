@@ -8,7 +8,7 @@ use pkresolve::{
     EndpointCandidate, HttpProtocol, Resolution, ResolutionRequest,
 };
 use serde_json::{json, Value};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 fn request() -> Value {
     json!({
@@ -85,9 +85,10 @@ fn bundle_preserves_wire_format_and_ignores_unknown_fields() {
         "packets": ["first", "second"],
         "resolution": {
             "service": request()["service"],
+            "tls_public_key": Keypair::from_secret_key(&[1; 32]).to_z32(),
             "url_port": 8443,
             "candidates": [],
-            "valid_for_ms": 0,
+            "valid_until_unix_ms": 0,
         },
     });
     let mut input = original.clone();
@@ -100,10 +101,11 @@ fn bundle_preserves_wire_format_and_ignores_unknown_fields() {
 }
 
 #[test]
-fn summary_encodes_routes_and_clamps_expired_lifetime_to_zero() {
+fn summary_encodes_routes_tls_key_and_expiry() {
     let request: ResolutionRequest = serde_json::from_value(request()).unwrap();
     let resolution = Resolution {
         service: request.service().clone(),
+        tls_public_key: Keypair::from_secret_key(&[2; 32]).public_key(),
         url_port: request.url_port(),
         candidates: vec![EndpointCandidate {
             addresses: vec![
@@ -116,12 +118,18 @@ fn summary_encodes_routes_and_clamps_expired_lifetime_to_zero() {
         }],
         expires_at: Instant::now() - Duration::from_secs(1),
     };
+    let before = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     let summary = BundleResolution::from(resolution);
+    assert!(u128::from(summary.valid_until_unix_ms) <= before);
     let json = serde_json::to_value(&summary).unwrap();
     assert_eq!(
         json,
         json!({
             "service": request.service().as_str(),
+            "tls_public_key": Keypair::from_secret_key(&[2; 32]).to_z32(),
             "url_port": 8443,
             "candidates": [{
                 "addresses": ["203.0.113.10", "2001:db8::1"],
@@ -129,7 +137,7 @@ fn summary_encodes_routes_and_clamps_expired_lifetime_to_zero() {
                 "priority": 1,
                 "protocols": ["h2", "http/1.1"],
             }],
-            "valid_for_ms": 0,
+            "valid_until_unix_ms": summary.valid_until_unix_ms,
         })
     );
     let decoded: BundleResolution = serde_json::from_value(json).unwrap();

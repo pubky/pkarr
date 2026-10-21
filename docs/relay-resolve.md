@@ -40,6 +40,7 @@ A successful response has status `200`, content type `application/json`, and
   "packets": ["<base64-encoded native signed packet>"],
   "resolution": {
     "service": "app.<key>",
+    "tls_public_key": "<final-routing-owner-key>",
     "url_port": 443,
     "candidates": [
       {
@@ -49,7 +50,7 @@ A successful response has status `200`, content type `application/json`, and
         "protocols": ["h2", "http/1.1"]
       }
     ],
-    "valid_for_ms": 270000
+    "valid_until_unix_ms": 1792584270000
   }
 }
 ```
@@ -62,10 +63,10 @@ advance its observation time.
 
 `resolution` is the relay's computed result, included for convenience. It
 contains the original service and URL port, candidates in priority order, and
-the remaining lifetime when the summary was created, rounded down to
-milliseconds. `valid_for_ms` does not account for transport delay and must not
-be restarted on receipt. The process-local `Resolution::expires_at` timestamp
-is not sent.
+the absolute expiry as `valid_until_unix_ms` (Unix milliseconds, rounded down).
+This timestamp uses the relay's wall clock, so interpreting it depends on
+clock agreement. Network delay does not restart its lifetime. The process-local
+`Resolution::expires_at` monotonic timestamp is not sent.
 
 The `resolution` field is required and included for convenience. Clients should
 verify it by deriving their own resolution for the original request, using
@@ -86,20 +87,21 @@ The endpoint delegates routing decisions to PKResolve's implementation:
 
 - Same-name HTTPS ServiceMode records, with signed addresses or address hints.
 - HTTP/1.1 and HTTP/2, with direct raw-key TLS authentication using the
-  destination service's public key.
+  final routing owner's public key.
 - Exact service scope and port handling; addresses alone do not enable a route.
 
 HTTPS AliasMode follows exact target names within Pubky namespaces. Every
 packet used is included in the bundle, and the earliest packet expiry limits
-the result. The original service identity is retained. Loops and chains longer
-than 32 names are rejected. Multiple aliases select the first in signed packet
-order so clients can reproduce the resolution. Alias parameters are ignored.
+the result. Aliases delegate TLS authentication to the final routing owner,
+reported as `tls_public_key`. The original HTTP authority and SNI are retained.
+Loops and chains longer than 32 names are rejected. Multiple aliases select
+the first in signed packet order so clients can reproduce the resolution. Alias parameters are ignored.
 
 Routing CNAMEs, public DNS alias targets, alternate ServiceMode targets,
-CA authentication, ECH, and
-HTTP/3 are unsupported. TLS delegation records are currently ignored;
-they do not change the required destination TLS key. The endpoint returns
-packets, not an HTTP redirect or proxied application content.
+CA authentication, ECH, and HTTP/3 are unsupported. Separate TLS delegation
+records are ignored; they do not change the key selected by HTTPS alias
+traversal. The endpoint returns packets, not an HTTP redirect or proxied
+application content.
 
 Alternate-target HTTPS ServiceMode records are skipped when selecting routes.
 They do not prevent usable same-service records from resolving. If all
