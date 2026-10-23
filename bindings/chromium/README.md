@@ -15,13 +15,16 @@ Create a Rust client with `new_client()` and keep it on one Chromium sequence.
    `/v1/resolve` endpoint using Chromium's network stack. Retain the preparation
    until the response arrives.
 4. On HTTP success, pass the same preparation and complete response bytes to
-   `accept_bundle()`. Rust derives endpoints before updating the cache.
+   `accept_bundle()`. Rust verifies packet signatures and derives endpoints
+   before updating the cache.
 
 The request JSON contains `service`, `url_port`, and `supported_alpn`. The
 schema-1 response requires `packets` and a `resolution` summary. Packets are
 standard base64 of native `SignedPacket::serialize()` bytes, including their
 original `last_seen`. Bundles can contain multiple packets in any order, with
 one packet per owner. Incomplete bundles fail without another HTTP fetch.
+Signature verification covers the publication timestamp and DNS contents;
+`last_seen` is preserved unsigned metadata, not proof of freshness.
 
 The summary contains `service`, `url_port`, `tls_public_key`, `candidates`, and
 `valid_until_unix_ms` (absolute Unix milliseconds). It is included for
@@ -52,37 +55,141 @@ untrusted bundles.
 
 ## Build inside Chromium
 
-[Chromium recommends CXX for Rust/C++ integration][chromium-ffi].
+[Chromium recommends CXX for Rust/C++ integration][chromium-ffi]. Place this
+repository at `//third_party/pkarr`. [BUILD.gn](BUILD.gn) builds `:pkarr`,
+`:pkresolve`, and `:bridge` from this checkout. Do not vendor a second published
+PKARR crate or keep a replacement `//third_party/rust/pkarr/v8:lib` target.
+Update any direct users of that old label to
+`//third_party/pkarr/bindings/chromium:pkarr`.
 
-1. Place this repository at `//third_party/pkarr`.
-2. Vendor these dependencies with Chromium's `gnrt` workflow and generate their
-   GN targets:
+### Prepare external Rust dependencies
 
-   ```toml
-   [dependencies]
-   thiserror = "2"
-   base64 = "0.22"
-   serde = { version = "1", features = ["derive"] }
-   serde_json = "1"
+Merge this fragment into Chromium's
+`third_party/rust/chromium_crates_io/Cargo.toml`. Extend existing entries rather
+than defining them twice; preserve features required by other Chromium users.
+These version requirements match the packet and resolver Cargo manifests.
+Chromium's Cargo lockfile pins the resolved external dependency versions.
 
-   [dependencies.pkarr]
-   version = "8.1"
-   default-features = false
-   features = ["signed_packet"]
-   ```
+```toml
+[dependencies]
+base32 = "0.5"
+base64 = "0.22"
+bytes = "1"
+document-features = "0.2"
+ed25519-dalek = { version = "3", default-features = false }
+getrandom = { version = "0.4", default-features = false }
+httpdate = "1"
+self_cell = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+simple-dns = "0.12"
+thiserror = "2"
+```
 
-3. Add `//third_party/pkarr/bindings/chromium:bridge` to the C++ caller's `deps`.
-4. Include the generated header:
+Merge the following entries into
+`third_party/rust/chromium_crates_io/gnrt_config.toml`. For existing tables,
+add missing fields and append to lists; preserve existing safety classifications,
+shipping restrictions, visibility entries, and `allow_unsafe` settings. The
+`sandbox` and `shipped = false` entries below retain the prototype's restrictions;
+they are not approval to ship these dependencies in Chromium.
 
-   ```cpp
-   #include "third_party/pkarr/bindings/chromium/src/lib.rs.h"
-   ```
+```toml
+[crate.base32]
+group = "sandbox"
+shipped = false
+allow_first_party_usage = false
+extra_input_roots = ["../README.md"]
+[crate.base32.extra_kv]
+allow_unsafe = false
+visibility = ["//third_party/pkarr/bindings/chromium:pkarr"]
 
-[BUILD.gn](BUILD.gn) defines library and bridge targets.
+[crate.document-features]
+group = "sandbox"
+shipped = false
+allow_first_party_usage = false
+[crate.document-features.extra_kv]
+allow_unsafe = false
+visibility = ["//third_party/pkarr/bindings/chromium:pkarr"]
+
+[crate.ed25519-dalek]
+group = "sandbox"
+shipped = false
+allow_first_party_usage = false
+[crate.ed25519-dalek.extra_kv]
+allow_unsafe = false
+visibility = ["//third_party/pkarr/bindings/chromium:pkarr"]
+
+[crate.httpdate]
+group = "sandbox"
+shipped = false
+allow_first_party_usage = false
+[crate.httpdate.extra_kv]
+allow_unsafe = false
+visibility = ["//third_party/pkarr/bindings/chromium:pkarr"]
+
+[crate.self_cell]
+group = "sandbox"
+shipped = false
+allow_first_party_usage = false
+[crate.self_cell.extra_kv]
+allow_unsafe = true
+visibility = ["//third_party/pkarr/bindings/chromium:pkarr"]
+
+[crate.simple-dns]
+group = "sandbox"
+shipped = false
+allow_first_party_usage = false
+extra_input_roots = ["../README.md"]
+[crate.simple-dns.extra_kv]
+allow_unsafe = false
+visibility = ["//third_party/pkarr/bindings/chromium:pkarr"]
+
+# getrandom already has Chromium policy and input settings. Add this field
+# to its existing extra_kv table without replacing the other fields.
+[crate.getrandom.extra_kv]
+visibility = ["//third_party/pkarr/bindings/chromium:pkarr"]
+```
+
+The narrow visibility additions let the packet target use crates otherwise
+restricted to `//third_party/rust/*`. The remaining dependencies retain their
+existing visibility. Additional `README.md` inputs cover dependency
+`include_str!` calls; the upstream PKARR target separately declares its own
+`pkarr/README.md` input.
+
+Run Chromium's dependency tooling from the Chromium source directory:
+
+```sh
+python3 tools/crates/run_gnrt.py vendor
+python3 tools/crates/run_gnrt.py gen
+```
+
+Use the toolchain required by your Chromium revision. Inspect the generated
+GN diff: keep existing restrictions and ensure the restricted crates expose
+only the additional `:pkarr` consumer. Do not hand-edit generated build files.
+
+### Connect the bridge
+
+Add `//third_party/pkarr/bindings/chromium:bridge` to the C++ caller's `deps`
+and include the generated header:
+
+```cpp
+#include "third_party/pkarr/bindings/chromium/src/lib.rs.h"
+```
+
 Chromium supplies matching CXX runtime and generator versions through
-`cxx_bindings`.
-The resolver target explicitly enables both `service-client` and
-`service-protocol` and lists `service_protocol.rs` among its sources.
+`cxx_bindings`; do not substitute the standalone generator in a GN build.
+The standalone Cargo workspace has its own CXX pin.
+
+The packet target enables only `signed_packet`, leaving networking disabled.
+GN does not run `pkarr/build.rs`: on native targets this feature selection
+leaves the `wasm_browser`, `client`, `dht`, and `relays` aliases false. Revisit
+the source list, dependencies, and aliases before changing that feature set.
+The target uses third-party warning settings and omits Chromium's prelude,
+while retaining its injected allocator dependency.
+
+Cargo expands feature dependencies automatically. GN requires explicit
+features: the resolver target enables both `service-client` and
+`service-protocol` and includes `service_protocol.rs` in its source list.
 
 ## Run tests
 

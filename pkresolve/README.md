@@ -108,9 +108,12 @@ cargo run -p pkresolve --example resolve_pubky --offline
 
 ## Status
 
-Prototype. The bundle client calls `SignedPacket::deserialize()`, which parses
-stored packets without verifying their signatures. Do not accept untrusted
-bundles until signature verification is implemented.
+Prototype. The bundle client deserializes each packet and explicitly verifies
+its signature before deriving routes or caching any packets. Verification
+authenticates the publication timestamp and DNS contents against the packet's
+public key. It does not authenticate `last_seen`, which remains unsigned relay
+observation metadata used to calculate freshness. A valid signature alone
+does not prove freshness or prevent replay.
 
 Known client cache limitations:
 

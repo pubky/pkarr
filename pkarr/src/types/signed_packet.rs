@@ -333,8 +333,9 @@ impl SignedPacket {
     /// Restores a [SignedPacket] from bytes produced by [Self::serialize].
     ///
     /// Use only with trusted stored data. This method validates the public key
-    /// and DNS encoding, but does not verify the signature. To verify packets
-    /// received from a relay, use [Self::from_relay_payload].
+    /// and DNS encoding, but does not verify the signature. Call
+    /// [Self::verify_signature] on the result before trusting signed content.
+    /// For relay wire payloads, use [Self::from_relay_payload].
     ///
     /// [Self::last_seen] is unsigned local metadata. Values more than 60 seconds
     /// in the future are reset to [std::time::UNIX_EPOCH] for compatibility with
@@ -384,6 +385,21 @@ impl SignedPacket {
     pub fn signature(&self) -> Signature {
         Signature::try_from(&self.as_bytes()[PUBLIC_KEY_LENGTH..TIMESTAMP_OFFSET])
             .expect("SignedPacket::signature()")
+    }
+
+    /// Verify the signature over the publication timestamp and encoded DNS packet.
+    ///
+    /// This does not authenticate or change the unsigned [`Self::last_seen`]
+    /// observation time, and does not establish freshness.
+    ///
+    /// # Errors
+    /// Returns an error if the signature does not match the packet's public key.
+    pub fn verify_signature(&self) -> Result<(), SignedPacketVerifyError> {
+        self.public_key().verify(
+            &signable(self.timestamp().as_u64(), &self.encoded_packet()),
+            &self.signature(),
+        )?;
+        Ok(())
     }
 
     /// Returns the timestamp in microseconds since the [UNIX_EPOCH](std::time::UNIX_EPOCH).

@@ -2,6 +2,45 @@
 # listed in README.md with gnrt before adding this target.
 import("//build/rust/rust_static_library.gni")
 
+rust_static_library("pkarr") {
+  allow_unsafe = true
+
+  # Match gnrt's third-party warning policy. Chromium injects an allocator
+  # crate that upstream's unused_crate_dependencies lint does not reference.
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  no_chromium_prelude = true
+  crate_name = "pkarr"
+  crate_root = "../../pkarr/src/lib.rs"
+  edition = "2021"
+
+  # GN does not run build.rs. On native Chromium targets, signed_packet leaves
+  # wasm_browser, client, dht, and relays aliases false. Revisit this if
+  # enabling networking features or targeting WASM; Cargo expands those
+  # dependencies.
+  features = [ "signed_packet" ]
+  sources = [
+    "../../pkarr/src/lib.rs",
+    "../../pkarr/src/types/keys.rs",
+    "../../pkarr/src/types/mod.rs",
+    "../../pkarr/src/types/resolve_policy.rs",
+    "../../pkarr/src/types/signed_packet.rs",
+    "../../pkarr/src/types/timestamp.rs",
+  ]
+  inputs = [ "../../pkarr/README.md" ]
+  deps = [
+    "//third_party/rust/base32/v0_5:lib",
+    "//third_party/rust/bytes/v1:lib",
+    "//third_party/rust/document_features/v0_2:lib",
+    "//third_party/rust/ed25519_dalek/v3:lib",
+    "//third_party/rust/getrandom/v0_4:lib",
+    "//third_party/rust/httpdate/v1:lib",
+    "//third_party/rust/self_cell/v1:lib",
+    "//third_party/rust/serde/v1:lib",
+    "//third_party/rust/simple_dns/v0_12:lib",
+    "//third_party/rust/thiserror/v2:lib",
+  ]
+}
+
 rust_static_library("pkresolve") {
   crate_name = "pkresolve"
   crate_root = "../../pkresolve/src/lib.rs"
@@ -25,8 +64,8 @@ rust_static_library("pkresolve") {
     "../../pkresolve/src/service_protocol.rs",
   ]
   deps = [
+    ":pkarr",
     "//third_party/rust/base64/v0_22:lib",
-    "//third_party/rust/pkarr/v8:lib",
     "//third_party/rust/serde/v1:lib",
     "//third_party/rust/serde_json/v1:lib",
     "//third_party/rust/thiserror/v2:lib",
@@ -45,8 +84,8 @@ rust_static_library("bridge") {
   build_native_rust_unit_tests = true
   unit_test_target = "pkresolve_chromium_unittests"
   test_deps = [
+    ":pkarr",
     "//third_party/rust/base64/v0_22:lib",
-    "//third_party/rust/pkarr/v8:lib",
     "//third_party/rust/serde_json/v1:lib",
   ]
 }

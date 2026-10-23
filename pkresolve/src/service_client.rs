@@ -4,9 +4,8 @@
 //!
 //! Call [`ServiceClient::prepare`], fetch a bundle when needed, then call
 //! [`ServiceClient::accept_bundle`]. The client owns protocol handling and caching.
-//! Packet validation belongs to PKARR's native `SignedPacket::deserialize()`.
-//! The current PKARR decoder still needs upstream fixes before untrusted
-//! service responses can be accepted safely.
+//! Packets are deserialized and their signatures verified before resolution.
+//! The unsigned `last_seen` metadata is preserved, not authenticated.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -27,6 +26,9 @@ pub enum Error {
     /// PKARR could not deserialize a packet.
     #[error("invalid signed packet: {0}")]
     Packet(#[from] pkarr::dns::SimpleDnsError),
+    /// A decoded packet's signature does not authenticate its signed contents.
+    #[error("packet signature verification failed: {0}")]
+    Verification(#[from] pkarr::errors::SignedPacketVerifyError),
     /// The response uses a different protocol revision.
     #[error("unsupported bundle schema: {0}")]
     UnsupportedSchema(u32),
@@ -87,14 +89,14 @@ impl ServiceClient {
     }
 
     /// Resolve a complete bundle for its retained original request, then cache
-    /// its decoded packets. Failed responses leave the cache unchanged. Native
+    /// its verified packets. Failed responses leave the cache unchanged. Native
     /// `last_seen` values are preserved; incomplete bundles never trigger HTTP.
     /// The required resolution summary is included for convenience. This client
     /// derives its own routes and expiry for the original request, using the
     /// bundled packets as its packet source rather than trusting the summary.
     ///
     /// # Errors
-    /// Rejects decoding failures, duplicate keys, and unsuccessful resolution.
+    /// Rejects decoding or signature failures, duplicate keys, and unsuccessful resolution.
     pub fn accept_bundle(
         &mut self,
         bundle_request: BundleRequest,
@@ -116,6 +118,7 @@ fn decode_bundle(response: &[u8]) -> Result<HashMap<PublicKey, Arc<SignedPacket>
     for encoded in bundle.packets {
         let bytes = STANDARD.decode(encoded)?;
         let packet = SignedPacket::deserialize(&bytes)?;
+        packet.verify_signature()?;
         let key = packet.public_key();
         if packets.insert(key.clone(), Arc::new(packet)).is_some() {
             return Err(Error::DuplicatePacket(key.to_string()));

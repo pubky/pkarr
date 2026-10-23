@@ -236,3 +236,93 @@ fn duplicate_packets_leave_previously_cached_routes_unchanged() {
     };
     assert_eq!(cached.candidates, accepted.candidates);
 }
+
+#[test]
+fn tampered_packets_leave_existing_cache_unchanged() {
+    let key = Keypair::from_secret_key(&[1; 32]);
+    let other = Keypair::from_secret_key(&[2; 32]);
+    let replacement = packet(&key, "203.0.113.20");
+    let signed = packet(&other, "203.0.113.30");
+    // Native layout: observation(8), key(32), signature(64), timestamp(8), DNS.
+    // The last DNS byte is part of the final A record's address.
+    for offset in [8, 40, 104, signed.serialize().len() - 1] {
+        let mut client = ServiceClient::default();
+        let Preparation::Fetch(first) = client.prepare(request(&key)).unwrap() else {
+            panic!("expected initial fetch");
+        };
+        let Preparation::Fetch(pending) = client.prepare(request(&key)).unwrap() else {
+            panic!("expected pending fetch");
+        };
+        let accepted = client
+            .accept_bundle(first, &bundle(&[packet(&key, "203.0.113.10")]))
+            .unwrap();
+        let mut response: ResolveBundle =
+            serde_json::from_slice(&bundle(&[replacement.clone(), signed.clone()])).unwrap();
+        let mut bytes = signed.serialize();
+        if offset == 8 {
+            bytes[8..40]
+                .copy_from_slice(Keypair::from_secret_key(&[3; 32]).public_key().as_bytes());
+        } else {
+            bytes[offset] ^= 1;
+        }
+        response.packets[1] = STANDARD.encode(bytes);
+        assert!(
+            matches!(
+                client.accept_bundle(pending, &serde_json::to_vec(&response).unwrap()),
+                Err(Error::Verification(_))
+            ),
+            "tampering at byte {offset} must fail verification"
+        );
+        let Preparation::Ready(cached) = client.prepare(request(&key)).unwrap() else {
+            panic!("failed response must preserve cache");
+        };
+        assert_eq!(cached.candidates, accepted.candidates);
+        assert!(matches!(
+            client.prepare(request(&other)).unwrap(),
+            Preparation::Fetch(_)
+        ));
+    }
+}
+
+#[test]
+fn signature_verification_preserves_unsigned_observation_time() {
+    use std::time::{Duration, Instant, SystemTime};
+
+    let key = Keypair::from_secret_key(&[1; 32]);
+    let mut signed = packet(&key, "203.0.113.10");
+    let signature = signed.signature();
+    signed.set_last_seen(&(SystemTime::now() - Duration::from_secs(120)).into());
+    let restored = SignedPacket::deserialize(&signed.serialize()).unwrap();
+    restored.verify_signature().unwrap();
+    assert_eq!(restored.signature(), signature);
+    assert_eq!(restored.last_seen(), signed.last_seen());
+
+    let mut client = ServiceClient::default();
+    let Preparation::Fetch(fetch) = client.prepare(request(&key)).unwrap() else {
+        panic!("expected fetch");
+    };
+    let resolved = client.accept_bundle(fetch, &bundle(&[signed])).unwrap();
+    let remaining = resolved
+        .expires_at
+        .saturating_duration_since(Instant::now());
+    assert!(!remaining.is_zero());
+    assert!(remaining <= Duration::from_secs(180));
+}
+
+#[test]
+fn truncated_native_packets_are_rejected_without_panicking() {
+    let key = Keypair::from_secret_key(&[1; 32]);
+    let signed = packet(&key, "203.0.113.10");
+    let bytes = signed.serialize();
+    let mut response: ResolveBundle = serde_json::from_slice(&bundle(&[signed])).unwrap();
+    for length in 0..bytes.len() {
+        let mut client = ServiceClient::default();
+        let Preparation::Fetch(fetch) = client.prepare(request(&key)).unwrap() else {
+            panic!("expected fetch");
+        };
+        response.packets[0] = STANDARD.encode(&bytes[..length]);
+        assert!(client
+            .accept_bundle(fetch, &serde_json::to_vec(&response).unwrap())
+            .is_err());
+    }
+}
