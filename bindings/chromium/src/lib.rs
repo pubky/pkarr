@@ -244,6 +244,125 @@ fn convert_candidate(candidate: pkresolve::EndpointCandidate) -> ffi::EndpointCa
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        collections::HashMap,
+        sync::Arc,
+        time::{Duration, SystemTime},
+    };
+
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use pkarr::{SignedPacket, dns::Name, dns::rdata::SVCB};
+    use pkresolve::service_protocol::{BUNDLE_SCHEMA, ResolveBundle};
+
+    #[test]
+    fn alias_bundle_derives_routes_and_tls_key_preserves_age_and_reuses_cache() {
+        let key = pkarr::Keypair::from_secret_key(&[3; 32]);
+        let delegate = pkarr::Keypair::from_secret_key(&[5; 32]);
+        let service = format!("app.{}", key.to_z32());
+        let target = delegate.to_z32();
+        let mut alias = SignedPacket::builder()
+            .https(
+                Name::new_unchecked("_8443._https.app"),
+                SVCB::new(0, Name::new_unchecked(&target)),
+                60,
+            )
+            .sign(&key)
+            .unwrap();
+        // The alias is the limiting packet, and receipt must not refresh its age.
+        alias.set_last_seen(&(SystemTime::now() - Duration::from_secs(20)).into());
+        let root = Name::new_unchecked(".");
+        let mut route = SVCB::new(1, root.clone());
+        route.set_port(9443);
+        let packet = SignedPacket::builder()
+            .https(root.clone(), route, 120)
+            .address(root, "203.0.113.10".parse().unwrap(), 120)
+            .sign(&delegate)
+            .unwrap();
+        let mut client = new_client();
+        let preparation = client.prepare(&service, 8443, &[ffi::HttpProtocol::Http11]);
+        assert!(preparation.needs_bundle());
+        let request: ResolutionRequest = serde_json::from_str(preparation.request_body()).unwrap();
+        assert_eq!(request.service().to_string(), service);
+        assert_eq!(request.url_port(), 8443);
+        assert_eq!(
+            request.supported_protocols(),
+            [pkresolve::HttpProtocol::Http11]
+        );
+        // Bundle order is irrelevant; the delegate can precede the origin.
+        let packets = vec![
+            STANDARD.encode(packet.serialize()),
+            STANDARD.encode(alias.serialize()),
+        ];
+        let provider = HashMap::from([
+            (key.public_key(), Arc::new(alias)),
+            (delegate.public_key(), Arc::new(packet)),
+        ]);
+        let mut bundle = ResolveBundle {
+            schema: BUNDLE_SCHEMA,
+            packets,
+            resolution: pkresolve::derive_resolution(&request, &provider)
+                .unwrap()
+                .into(),
+        };
+        // The summary is required but is not authoritative for any result field.
+        bundle.resolution.service = "untrusted.example".into();
+        bundle.resolution.url_port = 80;
+        bundle.resolution.tls_public_key = key.to_z32();
+        bundle.resolution.candidates.clear();
+        bundle.resolution.valid_until_unix_ms = u64::MAX;
+        let response = client.accept_bundle(preparation, &serde_json::to_vec(&bundle).unwrap());
+        assert!(
+            response.status.code == ffi::StatusCode::Ok,
+            "{}",
+            response.status.message
+        );
+        let resolution = response.resolution;
+        assert_eq!(resolution.service, service);
+        assert_eq!(resolution.url_port, 8443);
+        assert_eq!(resolution.public_key, *delegate.public_key().as_bytes());
+        assert!(resolution.valid_for_ms > 0 && resolution.valid_for_ms <= 40_000);
+        assert_eq!(resolution.candidates.len(), 1);
+        let candidate = &resolution.candidates[0];
+        assert_eq!(candidate.addresses, ["203.0.113.10"]);
+        assert_eq!(candidate.port, 9443);
+        assert_eq!(candidate.priority, 1);
+        assert_eq!(candidate.protocols.len(), 1);
+        assert!(candidate.protocols[0] == ffi::HttpProtocol::Http11);
+
+        let cached = client.prepare(&service, 8443, &[ffi::HttpProtocol::Http11]);
+        assert!(!cached.needs_bundle());
+        assert!(cached.request_body().is_empty());
+        let cached = prepared_result(cached);
+        assert!(cached.status.code == ffi::StatusCode::Ok);
+        assert_eq!(
+            cached.resolution.candidates[0].addresses,
+            candidate.addresses
+        );
+        assert_eq!(cached.resolution.service, service);
+        assert_eq!(cached.resolution.url_port, 8443);
+        assert_eq!(
+            cached.resolution.public_key,
+            *delegate.public_key().as_bytes()
+        );
+        assert_eq!(cached.resolution.candidates[0].port, 9443);
+        assert!(cached.resolution.valid_for_ms <= resolution.valid_for_ms);
+    }
+
+    #[test]
+    fn malformed_bundle_returns_error_without_populating_cache() {
+        let service = pkarr::Keypair::from_secret_key(&[4; 32]).to_z32();
+        let mut client = new_client();
+        let preparation = client.prepare(&service, 443, &[ffi::HttpProtocol::Http11]);
+        let response = client.accept_bundle(preparation, b"not JSON");
+        assert!(response.status.code == ffi::StatusCode::InvalidBundle);
+        assert!(!response.status.message.is_empty());
+        assert!(response.resolution.candidates.is_empty());
+        assert!(
+            client
+                .prepare(&service, 443, &[ffi::HttpProtocol::Http11])
+                .needs_bundle()
+        );
+    }
 
     #[test]
     fn conversion_exports_delegated_tls_key_and_original_service() {

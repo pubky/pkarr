@@ -6,7 +6,10 @@ rust_static_library("pkresolve") {
   crate_name = "pkresolve"
   crate_root = "../../pkresolve/src/lib.rs"
   edition = "2021"
-  features = [ "service-client" ]
+  features = [
+    "service-client",
+    "service-protocol",
+  ]
   sources = [
     "../../pkresolve/src/error.rs",
     "../../pkresolve/src/lib.rs",
@@ -19,6 +22,7 @@ rust_static_library("pkresolve") {
     "../../pkresolve/src/resolution/types.rs",
     "../../pkresolve/src/service_client.rs",
     "../../pkresolve/src/service_name.rs",
+    "../../pkresolve/src/service_protocol.rs",
   ]
   deps = [
     "//third_party/rust/base64/v0_22:lib",
@@ -38,4 +42,11 @@ rust_static_library("bridge") {
   sources = [ "src/lib.rs" ]
   cxx_bindings = [ "src/lib.rs" ]
   deps = [ ":pkresolve" ]
+  build_native_rust_unit_tests = true
+  unit_test_target = "pkresolve_chromium_unittests"
+  test_deps = [
+    "//third_party/rust/base64/v0_22:lib",
+    "//third_party/rust/pkarr/v8:lib",
+    "//third_party/rust/serde_json/v1:lib",
+  ]
 }

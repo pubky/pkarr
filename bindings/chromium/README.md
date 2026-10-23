@@ -17,6 +17,17 @@ Create a Rust client with `new_client()` and keep it on one Chromium sequence.
 4. On HTTP success, pass the same preparation and complete response bytes to
    `accept_bundle()`. Rust derives endpoints before updating the cache.
 
+The request JSON contains `service`, `url_port`, and `supported_alpn`. The
+schema-1 response requires `packets` and a `resolution` summary. Packets are
+standard base64 of native `SignedPacket::serialize()` bytes, including their
+original `last_seen`. Bundles can contain multiple packets in any order, with
+one packet per owner. Incomplete bundles fail without another HTTP fetch.
+
+The summary contains `service`, `url_port`, `tls_public_key`, `candidates`, and
+`valid_until_unix_ms` (absolute Unix milliseconds). It is included for
+convenience: the client derives its own result from the bundled packets and
+the retained request. Failed bundle acceptance leaves the cache unchanged.
+
 Chromium handles HTTPS certificate checks, HTTP errors, cancellation, and
 caller lifetime. An HTTP failure discards the preparation; no Rust operation
 is waiting to be cancelled. Rust exposes no HTTP interface or polling API.
@@ -25,11 +36,17 @@ Chromium also owns destination connections. Use the resolved service as SNI,
 preserve the original HTTP authority, and require possession of the destination
 raw Ed25519 key. HTTPS AliasMode delegates this key to the final routing
 owner; the service name remains the original HTTP authority and SNI.
+The bridge exports the delegated key as `Resolution.public_key`, a 32-byte
+array. `url_port` remains the original URL port; each candidate's `port` is
+the connection port and can differ.
 
 Sample the monotonic clock before calling `prepare()` for a cached result, or
 `accept_bundle()` for a fetched result. Add the returned `valid_for_ms` to that
 sample to obtain a reuse deadline. Copying results or crossing IPC must not
-extend it. The bundle validation limits in the
+extend it. This duration comes from the locally derived monotonic deadline,
+not the summary's `valid_until_unix_ms`. It uses the earliest packet deadline
+in the alias chain, retaining the age recorded in each packet's `last_seen`.
+The bundle validation limits in the
 [resolver status](../../pkresolve/README.md#status) still apply before accepting
 untrusted bundles.
 
@@ -64,6 +81,35 @@ untrusted bundles.
 [BUILD.gn](BUILD.gn) defines library and bridge targets.
 Chromium supplies matching CXX runtime and generator versions through
 `cxx_bindings`.
+The resolver target explicitly enables both `service-client` and
+`service-protocol` and lists `service_protocol.rs` among its sources.
+
+## Run tests
+
+Run the bridge's Rust tests from this repository:
+
+```sh
+cargo test --manifest-path bindings/chromium/Cargo.toml
+```
+
+The tests cover endpoint conversion, a two-packet AliasMode chain with a
+delegated TLS key, distinct URL and connection ports, preserved packet age,
+cache reuse, and malformed-bundle rejection without caching. The alias test
+also supplies an incorrect summary to check that the bridge derives its
+result from packets and the original request. They call the Rust operations
+exposed by the bridge; they do not exercise a C++ caller or TLS connections.
+
+After placing this checkout in Chromium and vendoring its dependencies, build
+the same tests through GN to check Chromium's feature and dependency settings.
+From the Chromium source directory, using your configured output directory:
+
+```sh
+autoninja -C out/Default pkresolve_chromium_unittests
+out/Default/pkresolve_chromium_unittests
+```
+
+Cargo enables transitive features automatically; GN requires them to be listed
+explicitly. Passing the Cargo tests alone does not validate the GN build.
 
 ## Build the standalone C++ example
 

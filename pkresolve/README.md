@@ -35,12 +35,14 @@ enables it automatically; servers can enable it without the client cache.
 preferences and removes duplicate protocols while preserving preference order.
 Invalid parameters, missing fields, and unknown fields are decoding errors.
 
-`ResolveBundle` carries the schema version, base64 packet strings, and an
+`ResolveBundle` carries the schema version, base64 packet strings, and a
 required `BundleResolution` summary. Create the summary with
 `BundleResolution::from(resolution)`. It contains the service, URL port,
-endpoint candidates, and remaining lifetime in milliseconds, measured when
-the summary is created. This lifetime excludes transport delay; it is not a
-new cache lifetime starting on receipt.
+delegated TLS public key, endpoint candidates, and `valid_until_unix_ms`, an
+absolute expiry in Unix milliseconds. This expiry uses the relay's wall clock;
+interpreting it depends on clock agreement. Clients derive their own monotonic
+deadline from the bundled packets rather than starting a new lifetime on
+receipt.
 
 Both client and server use `service_protocol::BUNDLE_SCHEMA`. Deserializing
 the bundle only checks its structure; consumers must check the schema and
