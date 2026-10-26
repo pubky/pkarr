@@ -3,6 +3,19 @@
 
 version: 2
 updates:
+    # Base images in the root Dockerfile
+    - package-ecosystem: "docker"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+          day: "tuesday"
+          time: "08:00"
+      cooldown:
+          default-days: 7
+      commit-message:
+          prefix: "deps"
+      rebase-strategy: "auto"
+
     # Cargo dependencies for all workspace members
     - package-ecosystem: "cargo"
       directory: "/"

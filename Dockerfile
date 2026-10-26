@@ -1,7 +1,7 @@
 # ========================
 # Build Stage
 # ========================
-FROM rust:alpine3.23 AS builder
+FROM rust:alpine3.24 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \
@@ -28,7 +28,7 @@ RUN strip target/release/pkarr-relay
 # ========================
 # Runtime Stage
 # ========================
-FROM alpine:3.20
+FROM alpine:3.24
 
 # Install runtime dependencies (only ca-certificates)
 RUN apk add --no-cache ca-certificates
