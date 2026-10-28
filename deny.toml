@@ -5,10 +5,14 @@
 # https://github.com/EmbarkStudios/cargo-deny/blob/main/deny.template.toml
 #
 # Install locally: cargo install --locked cargo-deny
-# Run locally: cargo deny check advisories licenses sources
+# Run locally: cargo deny check advisories bans licenses sources
 
 [graph]
 all-features = true
+
+[bans]
+# Allow multiple versions required by different dependencies.
+multiple-versions = "allow"
 
 [licenses]
 allow = [

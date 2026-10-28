@@ -55,8 +55,8 @@ jobs:
 
       - uses: taiki-e/install-action@cargo-deny
 
-      - name: Check licenses, sources, and advisories
-        run: cargo deny check sources licenses advisories
+      - name: Check licenses, sources, advisories, and bans
+        run: cargo deny check sources licenses advisories bans
 
   check:
     name: Check
