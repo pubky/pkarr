@@ -6,6 +6,10 @@ In UDP-less environments (like web browsers, virtual machines, containers and fi
 
 Public relays need to setup cors headers.
 
+The Rust and WASM relay clients report unsuccessful requests using the HTTP
+status and protocol headers. They do not read or log error response bodies.
+Diagnostic logs include the relay origin, operation, and status.
+
 ### PUT 
 
 #### Request

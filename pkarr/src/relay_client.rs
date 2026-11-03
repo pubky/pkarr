@@ -101,8 +101,9 @@ impl RelayClient {
             return Ok(stored_on);
         }
 
-        let text = response.text().await.unwrap_or_default();
-        warn!("Got error response for PUT {relay_origin} {status} {text}");
+        // Error bodies are untrusted and unnecessary for status-based errors.
+        // Do not read them, even for diagnostics: they may be arbitrarily large.
+        warn!("Got error response for PUT {relay_origin} {status}");
 
         Err(RelayError::from_status(status))
     }
@@ -158,8 +159,8 @@ impl RelayClient {
         }
 
         if status.is_client_error() || status.is_server_error() {
-            let text = response.text().await.unwrap_or_default();
-            warn!("Got error response for GET {relay_origin} with {policy}: {status} {text}");
+            // As with PUT, report the status without reading the error body.
+            warn!("Got error response for GET {relay_origin} with {policy}: {status}");
 
             return Err(RelayError::from_status(status));
         }
@@ -445,6 +446,55 @@ mod tests {
     fn test_client(base_url: Url) -> RelayClient {
         let client = Client::builder().build().unwrap();
         RelayClient::new(base_url, client, TIMEOUT).unwrap()
+    }
+
+    #[rstest]
+    #[case::rate_limited(HttpStatusCode::TOO_MANY_REQUESTS)]
+    #[case::unavailable(HttpStatusCode::SERVICE_UNAVAILABLE)]
+    #[case::unexpected(HttpStatusCode::INTERNAL_SERVER_ERROR)]
+    #[tokio::test]
+    async fn errors_return_without_waiting_for_response_body(
+        #[case] status: HttpStatusCode,
+        #[values(false, true)] publish: bool,
+        #[values(false, true)] content_length: bool,
+    ) {
+        let keypair = Keypair::random();
+        let packet = SignedPacket::builder().sign(&keypair).unwrap();
+        let app = Router::new().route(
+            &format!("/{}", keypair.public_key()),
+            axum::routing::any(move || async move {
+                // Send headers immediately but never finish the body. Cover both
+                // chunked responses and an advertised oversized body.
+                let body = axum::body::Body::from_stream(futures_lite::stream::pending::<
+                    Result<Bytes, std::io::Error>,
+                >());
+                let mut response = axum::http::Response::builder().status(status);
+                if content_length {
+                    response = response.header(header::CONTENT_LENGTH, 1_000_000_000);
+                }
+                response.body(body).unwrap()
+            }),
+        );
+        let client =
+            RelayClient::new(serve(app).await, Client::new(), Duration::from_secs(30)).unwrap();
+
+        let error = tokio::time::timeout(Duration::from_secs(2), async {
+            if publish {
+                client.publish(&packet).await.unwrap_err()
+            } else {
+                client
+                    .resolve(&keypair.public_key(), ResolvePolicy::CacheOnly, None)
+                    .await
+                    .unwrap_err()
+            }
+        })
+        .await
+        .expect("status errors must not wait for the response body");
+
+        assert_eq!(
+            error.to_string(),
+            RelayError::from_status(status).to_string()
+        );
     }
 
     #[test]
