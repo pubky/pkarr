@@ -1,6 +1,6 @@
 [package]
 name = "pkarr"
-version = "8.1.0"
+version = "9.0.0"
 rust-version = "1.85"
 authors = [
   "Nuh <nuh@nuh.dev>",
