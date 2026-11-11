@@ -794,6 +794,21 @@ mod tests {
     }
 
     #[test]
+    fn signing_preserves_literal_backslashes() {
+        let keypair = Keypair::random();
+        // This is raw label data, not a DNS presentation escape. It must
+        // remain one backslash even if simple-dns changes its Display format.
+        let name = Name::new_unchecked(r"foo\bar");
+        let packet = SignedPacket::builder()
+            .a(name, Ipv4Addr::LOCALHOST, 60)
+            .sign(&keypair)
+            .unwrap();
+
+        let record = packet.all_resource_records().next().unwrap();
+        assert_eq!(record.name.get_labels()[0].as_ref(), br"foo\bar");
+    }
+
+    #[test]
     fn sign_verify() {
         let keypair = Keypair::random();
 
