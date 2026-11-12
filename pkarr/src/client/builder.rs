@@ -294,6 +294,15 @@ impl ClientBuilder {
     /// Set a custom implementation of [`Cache`].
     ///
     /// A cache with a capacity of `0` is treated as disabled.
+    ///
+    /// Cache comparisons and writes are serialized within one client and its
+    /// clones. Independently built clients sharing this cache have separate
+    /// locks, and direct calls to [`Cache::put`] bypass those locks.
+    ///
+    /// If these writers can run concurrently, coordinate their operations in
+    /// application code or use a cache whose `put` atomically preserves packet
+    /// ordering and only advances `last_seen` for identical packets. The built-in
+    /// caches do not enforce these ordering guarantees themselves.
     pub fn cache(&mut self, cache: Arc<dyn Cache>) -> &mut Self {
         self.0.cache = Some(cache);
 
