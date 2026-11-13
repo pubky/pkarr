@@ -29,6 +29,10 @@ pub enum ResolvePolicy {
     /// sequence, and invalid DHT mutable items at or below that sequence are
     /// treated as stale rather than returned.
     ///
+    /// The floor is the cached packet observed when this lookup starts.
+    /// Concurrent cache updates do not change that comparison point, so a
+    /// result can be older than a packet another lookup has since cached.
+    ///
     /// This is the default policy for normal application resolution. It never
     /// returns expired packets. Expired network responses remain eligible for
     /// cache updates, but do not stop pending attempts for a fresh response.

@@ -30,6 +30,23 @@ impl From<crate::PublicKey> for CacheKey {
 }
 
 /// A cache for [`SignedPacket`]s used by a Pkarr [`crate::Client`].
+///
+/// # Security responsibilities
+///
+/// The client trusts cached packets without rechecking their signatures or
+/// their association with the requested key. Implementations must store and
+/// return only valid signed packets under the [`CacheKey`] derived from each
+/// packet's public key. Callers writing directly to the cache must supply
+/// validated packets and matching keys; the built-in caches do not validate
+/// these inputs.
+///
+/// Persistent implementations must protect stored data from untrusted writes.
+/// [`SignedPacket::deserialize`] restores trusted data without verifying its
+/// signature; successful deserialization alone does not establish authenticity.
+///
+/// Concurrent writers must follow the coordination requirements documented by
+/// [`crate::ClientBuilder::cache`]. Thread-safe individual reads and writes do
+/// not make a comparison followed by a write atomic.
 pub trait Cache: Debug + Send + Sync + DynClone {
     /// Returns the maximum number of [`SignedPacket`]s allowed in this cache.
     fn capacity(&self) -> usize {
