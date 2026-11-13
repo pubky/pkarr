@@ -19,13 +19,6 @@ type IpAddrRateLimiter = RateLimiter<IpAddr, DashMapStateStore<IpAddr>, QuantaCl
 #[serde(deny_unknown_fields)]
 /// Configurations for rate limitng.
 pub struct RateLimiterConfig {
-    /// Enable rate limit based on headers commonly used by reverse proxies.
-    ///
-    /// Uses headers commonly used by reverse proxies to extract the original IP address,
-    /// falling back to the connection's peer IP address.
-    /// <https://docs.rs/tower_governor/latest/tower_governor/key_extractor/struct.SmartIpKeyExtractor.html>
-    pub behind_proxy: bool,
-
     /// HTTP request quota applied per normalized real IP.
     ///
     /// This is always applied before request handling to every HTTP request,
@@ -69,7 +62,6 @@ impl Default for RateLimiterConfig {
             time_unit: TimeUnit::Second,
         };
         Self {
-            behind_proxy: false,
             quota: default_quota.clone(),
             burst: None,
             dht_quota: default_quota.clone(),
@@ -248,7 +240,6 @@ mod tests {
     fn rate_limiter_config_deserializes_new_quota_fields() {
         let config: RateLimiterConfig = toml::from_str(
             r#"
-behind_proxy = false
 quota = "7r/s"
 burst = 13
 dht_quota = "11r/s"
@@ -271,7 +262,6 @@ user_dht_burst = 5
     fn omitted_bursts_default_to_quota_rate() {
         let config: RateLimiterConfig = toml::from_str(
             r#"
-behind_proxy = false
 quota = "7r/s"
 dht_quota = "11r/s"
 user_dht_quota = "3r/m"
@@ -309,7 +299,6 @@ user_dht_quota = "3r/m"
     fn zero_burst_is_rejected() {
         let err = toml::from_str::<RateLimiterConfig>(
             r#"
-behind_proxy = false
 quota = "7r/s"
 burst = 0
 dht_quota = "11r/s"
@@ -322,10 +311,20 @@ user_dht_quota = "3r/m"
     }
 
     #[test]
+    fn legacy_behind_proxy_is_rejected_instead_of_silently_changing_identity() {
+        for value in [false, true] {
+            let config = format!(
+                "behind_proxy = {value}\nquota = '2r/s'\ndht_quota = '2r/s'\nuser_dht_quota = '2r/s'"
+            );
+            let error = toml::from_str::<RateLimiterConfig>(&config).unwrap_err();
+            assert!(error.to_string().contains("unknown field `behind_proxy`"));
+        }
+    }
+
+    #[test]
     fn legacy_rate_limiter_fields_are_rejected() {
         let err = toml::from_str::<RateLimiterConfig>(
             r#"
-behind_proxy = false
 per_second = 7
 burst_size = 13
 "#,

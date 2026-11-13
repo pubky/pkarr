@@ -36,6 +36,7 @@ tower-http = { version = "0.7", features = ["cors", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 http = "1"
+ipnet = { version = "2", features = ["serde"] }
 bytes = "1"
 tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 governor = { version = "0.10", default-features = false}

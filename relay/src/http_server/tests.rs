@@ -335,10 +335,19 @@ impl TestServer {
     }
 
     fn spawn_with_app(limits: Limits, app: Router) -> Self {
+        Self::spawn_with_identity(limits, app, crate::ClientIdentityConfig::default())
+    }
+
+    fn spawn_with_identity(
+        limits: Limits,
+        app: Router,
+        identity: crate::ClientIdentityConfig,
+    ) -> Self {
+        let identity = crate::real_ip::ClientIdentity::from_config(identity).unwrap();
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         listener.set_nonblocking(true).unwrap();
         let address = listener.local_addr().unwrap();
-        let server = HttpServer::spawn_with_limits(listener, app, limits).unwrap();
+        let server = HttpServer::spawn(listener, app, limits, identity).unwrap();
 
         Self { address, server }
     }
@@ -370,4 +379,237 @@ async fn wait_for_disconnect(stream: &mut TcpStream) -> io::Result<()> {
             Err(error) => return Err(error),
         }
     }
+}
+
+fn header_identity(network: &str) -> crate::ClientIdentityConfig {
+    crate::ClientIdentityConfig::HttpHeader {
+        header: "X-Real-IP".into(),
+        trusted_proxies: vec![network.parse().unwrap()],
+    }
+}
+
+fn identity_app() -> Router {
+    Router::new().route(
+        "/",
+        axum::routing::get(
+            |axum::Extension(ip): axum::Extension<crate::real_ip::RealIp>| async move {
+                ip.0.to_string()
+            },
+        ),
+    )
+}
+
+#[tokio::test]
+async fn untrusted_proxy_is_disconnected_before_sending_http() {
+    let server = TestServer::spawn_with_identity(
+        Limits {
+            initial_request_header_timeout: Duration::from_secs(30),
+            max_connection_age: Duration::from_secs(30),
+            ..test_limits()
+        },
+        identity_app(),
+        header_identity("192.0.2.0/24"),
+    );
+    let mut stream = TcpStream::connect(server.address).await.unwrap();
+    timeout(Duration::from_secs(1), wait_for_disconnect(&mut stream))
+        .await
+        .expect("untrusted peer should be rejected without waiting for HTTP bytes")
+        .unwrap();
+}
+
+#[tokio::test]
+async fn direct_identity_ignores_forwarding_headers() {
+    let server = TestServer::spawn_with_app(test_limits(), identity_app());
+    let response = reqwest::Client::new()
+        .get(format!("http://{}/", server.address))
+        .header("x-real-ip", "198.51.100.1")
+        .header("x-forwarded-for", "198.51.100.2")
+        .header("forwarded", "for=198.51.100.3")
+        .header("cf-connecting-ip", "198.51.100.4")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.text().await.unwrap(), "127.0.0.1");
+}
+
+#[tokio::test]
+async fn header_identity_is_required_on_all_routes_without_rate_limits() {
+    let server = TestServer::spawn_with_identity(
+        test_limits(),
+        identity_app(),
+        header_identity("127.0.0.1/32"),
+    );
+    let client = reqwest::Client::new();
+    for path in ["/", "/missing"] {
+        for values in [
+            vec![],
+            vec![""],
+            vec!["garbage"],
+            vec!["é"],
+            vec!["198.51.100.1:80"],
+            vec!["[2001:db8::1]:80"],
+            vec!["[2001:db8::1]"],
+            vec!["198.51.100.1, 198.51.100.2"],
+            vec!["198.51.100.1", "198.51.100.1"],
+        ] {
+            let mut request = client
+                .get(format!("http://{}{path}", server.address))
+                .header("x-forwarded-for", "198.51.100.1")
+                .header("cf-connecting-ip", "198.51.100.1");
+            for value in &values {
+                request = request.header("x-real-ip", *value);
+            }
+            let response = request.send().await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{path}: {values:?}"
+            );
+            let _ = response.bytes().await.unwrap();
+        }
+    }
+    for (ip, canonical_ip) in [
+        ("198.51.100.1", "198.51.100.1"),
+        ("2001:db8::1", "2001:db8::1"),
+        ("::ffff:198.51.100.1", "198.51.100.1"),
+    ] {
+        let response = client
+            .get(format!("http://{}/", server.address))
+            .header("x-real-ip", ip)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.text().await.unwrap(), canonical_ip);
+    }
+}
+
+#[tokio::test]
+async fn header_identity_is_required_before_cors_preflights() {
+    let server = TestServer::spawn_with_identity(
+        test_limits(),
+        identity_app().layer(crate::cors_layer()),
+        header_identity("127.0.0.1/32"),
+    );
+    let client = reqwest::Client::new();
+    for (ip, expected) in [
+        (None, StatusCode::BAD_REQUEST),
+        (Some("invalid"), StatusCode::BAD_REQUEST),
+        (Some("198.51.100.1"), StatusCode::OK),
+    ] {
+        let mut request = client
+            .request(http::Method::OPTIONS, format!("http://{}/", server.address))
+            .header("origin", "https://example.com")
+            .header("access-control-request-method", "GET");
+        if let Some(ip) = ip {
+            request = request.header("x-real-ip", ip);
+        }
+        let response = request.send().await.unwrap();
+        assert_eq!(response.status(), expected);
+        if expected == StatusCode::OK {
+            assert_eq!(
+                response.headers()["access-control-allow-origin"],
+                "https://example.com"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn header_identity_is_resolved_for_each_http1_request_before_rate_limiting() {
+    let config = crate::RateLimiterConfig {
+        quota: "1r/h".parse().unwrap(),
+        ..Default::default()
+    };
+    let limiter = crate::rate_limiting::IpRateLimiter::new(&config)
+        .await
+        .unwrap();
+    let server = TestServer::spawn_with_identity(
+        test_limits(),
+        limiter.layer(identity_app()),
+        header_identity("127.0.0.1/32"),
+    );
+    let mut stream = TcpStream::connect(server.address).await.unwrap();
+    // One proxy connection carries several clients, including a mapped IPv4 alias.
+    let mut requests = String::new();
+    for header in [
+        "X-Real-IP: 198.51.100.1\r\n",
+        "",
+        "X-Real-IP: invalid\r\n",
+        "X-Real-IP: ::ffff:198.51.100.1\r\n",
+        "X-Real-IP: 2001:db8::1\r\n",
+    ] {
+        requests.push_str(&format!(
+            "GET / HTTP/1.1\r\nHost: localhost\r\n{header}\r\n"
+        ));
+    }
+    requests.push_str(
+        "GET / HTTP/1.1\r\nHost: localhost\r\nX-Real-IP: 2001:db8::1\r\nConnection: close\r\n\r\n",
+    );
+    stream.write_all(requests.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    timeout(Duration::from_secs(1), stream.read_to_string(&mut response))
+        .await
+        .unwrap()
+        .unwrap();
+    let statuses: Vec<_> = response
+        .split("HTTP/1.1 ")
+        .skip(1)
+        .map(|line| line.split_whitespace().next().unwrap())
+        .collect();
+    assert_eq!(
+        statuses,
+        ["200", "400", "400", "429", "200", "429"],
+        "{response}"
+    );
+}
+
+#[tokio::test]
+async fn header_identity_is_resolved_for_each_http2_stream() {
+    let config = crate::RateLimiterConfig {
+        quota: "1r/h".parse().unwrap(),
+        ..Default::default()
+    };
+    let limiter = crate::rate_limiting::IpRateLimiter::new(&config)
+        .await
+        .unwrap();
+    let server = TestServer::spawn_with_identity(
+        test_limits(),
+        limiter.layer(identity_app()),
+        header_identity("127.0.0.1/32"),
+    );
+    let stream = TcpStream::connect(server.address).await.unwrap();
+    let (mut client, connection) = h2::client::handshake(stream).await.unwrap();
+    let connection_task = tokio::spawn(connection);
+    for (ip, expected) in [
+        (Some("198.51.100.1"), StatusCode::OK),
+        (None, StatusCode::BAD_REQUEST),
+        (Some("invalid"), StatusCode::BAD_REQUEST),
+        (Some("::ffff:198.51.100.1"), StatusCode::TOO_MANY_REQUESTS),
+        (Some("2001:db8::1"), StatusCode::OK),
+        (Some("2001:db8::1"), StatusCode::TOO_MANY_REQUESTS),
+    ] {
+        let mut request = http::Request::get(format!("http://{}/", server.address));
+        if let Some(ip) = ip {
+            request = request.header("x-real-ip", ip);
+        }
+        let (response, _) = client
+            .send_request(request.body(()).unwrap(), true)
+            .unwrap();
+        assert_eq!(
+            timeout(Duration::from_secs(1), response)
+                .await
+                .unwrap()
+                .unwrap()
+                .status(),
+            expected
+        );
+    }
+    server.server.shutdown();
+    timeout(Duration::from_secs(1), connection_task)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
 }
