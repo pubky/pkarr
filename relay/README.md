@@ -39,7 +39,9 @@ pkarr-relay --config ./config.toml
 
 Without `cache.path`, the relay creates a new cache in a temporary directory on
 each run. Configure a stable path if the cache should survive restarts. The
-example file also documents DHT, TTL, and rate-limit settings.
+example file also documents DHT, TTL, and rate-limit settings. For client IP
+configuration behind a reverse proxy or Cloudflare Tunnel, see
+[relay deployment](../docs/relay-deployment.md).
 
 Configure logging with a tracing filter:
 

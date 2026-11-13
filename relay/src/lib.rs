@@ -42,7 +42,11 @@ use url::Url;
 use config::{RelayConfig, CACHE_DIR};
 use dht_service::DhtService;
 use http_server::HttpServer;
+use real_ip::ClientIdentity;
 
+pub use config::ClientIdentityConfig;
+/// IP network used in [`ClientIdentityConfig::HttpHeader::trusted_proxies`].
+pub use ipnet::IpNet;
 pub use quota_config::{RequestCountQuota, TimeUnit};
 pub use rate_limiting::RateLimiterConfig;
 
@@ -60,6 +64,30 @@ impl RelayBuilder {
     pub fn http_port(&mut self, port: u16) -> &mut Self {
         self.config.http.port = port;
 
+        self
+    }
+
+    /// Set how HTTP requests identify clients for IP-based rate limits.
+    ///
+    /// Defaults to the TCP peer address. Header mode requires a nonempty proxy
+    /// allowlist and exactly one valid client IP header on every request,
+    /// including when rate limiting is disabled. Invalid settings fail at startup.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use pkarr_relay::{ClientIdentityConfig, IpNet, Relay};
+    ///
+    /// let proxy: IpNet = "127.0.0.1/32".parse()?;
+    /// let mut builder = Relay::builder();
+    /// builder.client_identity(ClientIdentityConfig::HttpHeader {
+    ///     header: "X-Real-IP".into(),
+    ///     trusted_proxies: vec![proxy],
+    /// });
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn client_identity(&mut self, identity: ClientIdentityConfig) -> &mut Self {
+        self.config.http.client_identity = identity;
         self
     }
 
@@ -171,6 +199,8 @@ impl Relay {
         report_policy: ReportPolicy,
     ) -> anyhow::Result<Self> {
         tracing::debug!(?config, "Pkarr server config");
+        let http_limits = http_server::Limits::from(&config.http);
+        let identity = ClientIdentity::from_config(config.http.client_identity)?;
 
         let cache_path = config
             .cache
@@ -208,8 +238,8 @@ impl Relay {
             rate_limiters.user_dht,
         );
         let state = AppState { dht };
-        let app = create_app(state, rate_limiters.http, rate_limiters.behind_proxy);
-        let http_server = HttpServer::spawn(listener, app, &config.http)?;
+        let app = create_app(state, rate_limiters.http);
+        let http_server = HttpServer::spawn(listener, app, http_limits, identity)?;
 
         Ok(Relay {
             http_server,
@@ -324,7 +354,6 @@ fn dht_config(config: &RelayConfig) -> DhtConfig {
 struct RateLimiters {
     http: Option<rate_limiting::IpRateLimiter>,
     user_dht: Option<rate_limiting::UserDhtRateLimiter>,
-    behind_proxy: bool,
 }
 
 async fn build_rate_limiters(
@@ -335,7 +364,6 @@ async fn build_rate_limiters(
         return Ok(RateLimiters {
             http: None,
             user_dht: None,
-            behind_proxy: false,
         });
     };
 
@@ -354,15 +382,10 @@ async fn build_rate_limiters(
     Ok(RateLimiters {
         http: Some(http),
         user_dht: Some(user_dht),
-        behind_proxy: rate_limiter_config.behind_proxy,
     })
 }
 
-fn create_app(
-    state: AppState,
-    rate_limiter: Option<rate_limiting::IpRateLimiter>,
-    behind_proxy: bool,
-) -> Router {
+fn create_app(state: AppState, rate_limiter: Option<rate_limiting::IpRateLimiter>) -> Router {
     let mut router = Router::new()
         .route(
             "/{key}",
@@ -376,9 +399,7 @@ fn create_app(
         .layer(TraceLayer::new_for_http());
 
     if let Some(rate_limiter) = rate_limiter {
-        router = rate_limiter
-            .layer(router)
-            .layer(real_ip::middleware(behind_proxy));
+        router = rate_limiter.layer(router);
     }
 
     router
@@ -558,15 +579,88 @@ public_ip = "203.0.113.10"
         relay.shutdown();
     }
 
+    #[tokio::test]
+    async fn trusted_header_controls_user_dht_rate_limits() {
+        let testnet = mainline::Testnet::builder(2).build().unwrap();
+        let relay = run_rate_limited_relay_with_identity(
+            &testnet,
+            crate::ClientIdentityConfig::HttpHeader {
+                header: "CF-Connecting-IP".into(),
+                trusted_proxies: vec!["127.0.0.1/32".parse().unwrap()],
+            },
+        )
+        .await;
+        let http = reqwest::Client::new();
+        for (ip, expected) in [
+            ("198.51.100.1", StatusCode::NO_CONTENT),
+            ("::ffff:198.51.100.1", StatusCode::TOO_MANY_REQUESTS),
+            ("2001:db8::1", StatusCode::NO_CONTENT),
+            ("2001:db8::1", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let keypair = Keypair::random();
+            let response = http
+                .put(
+                    relay
+                        .local_url()
+                        .join(&keypair.public_key().to_string())
+                        .unwrap(),
+                )
+                .header("cf-connecting-ip", ip)
+                .body(signed_packet(&keypair).to_relay_payload())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "{ip}");
+            let _ = response.bytes().await.unwrap();
+        }
+        relay.shutdown();
+    }
+
+    #[tokio::test]
+    async fn builder_rejects_invalid_identity_before_starting_relay() {
+        for (header, trusted_proxies, invalid_field) in [
+            ("X-Real-IP", vec![], "trusted_proxies"),
+            ("", vec!["127.0.0.1/32"], "header"),
+            ("bad header", vec!["127.0.0.1/32"], "header"),
+            ("bad:header", vec!["127.0.0.1/32"], "header"),
+        ] {
+            let mut builder = Relay::builder();
+            builder.client_identity(crate::ClientIdentityConfig::HttpHeader {
+                header: header.into(),
+                trusted_proxies: trusted_proxies
+                    .into_iter()
+                    .map(|network| network.parse().unwrap())
+                    .collect(),
+            });
+            let result = unsafe { builder.run().await };
+            match result {
+                Err(error) => assert!(error
+                    .to_string()
+                    .contains(&format!("http.client_identity.{invalid_field}"))),
+                Ok(relay) => {
+                    relay.shutdown();
+                    panic!("invalid client identity must fail at startup");
+                }
+            }
+        }
+    }
+
     async fn run_rate_limited_relay(testnet: &mainline::Testnet) -> Relay {
+        run_rate_limited_relay_with_identity(testnet, crate::ClientIdentityConfig::default()).await
+    }
+
+    async fn run_rate_limited_relay_with_identity(
+        testnet: &mainline::Testnet,
+        identity: crate::ClientIdentityConfig,
+    ) -> Relay {
         let storage = std::env::temp_dir().join(format!("pkarr-relay-{}", Timestamp::now()));
         let mut builder = Relay::builder();
         builder
             .cache_size(10)
+            .client_identity(identity)
             .http_port(0)
             .storage(storage)
             .rate_limiter_config(RateLimiterConfig {
-                behind_proxy: false,
                 quota: "60r/s".parse::<RequestCountQuota>().unwrap(),
                 burst: NonZeroU32::new(100),
                 dht_quota: "60r/s".parse::<RequestCountQuota>().unwrap(),

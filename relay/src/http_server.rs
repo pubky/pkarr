@@ -28,7 +28,7 @@ use tokio::{
     time::sleep,
 };
 
-use crate::config::HttpConfig;
+use crate::{config::HttpConfig, real_ip::ClientIdentity};
 
 const INITIAL_REQUEST_HEADER_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -39,7 +39,7 @@ const HTTP2_MAX_CONCURRENT_STREAMS: u32 = 100;
 const HTTP2_MAX_HEADER_LIST_SIZE: u32 = 16 * 1024;
 
 #[derive(Clone, Copy)]
-struct Limits {
+pub(crate) struct Limits {
     max_connections: usize,
     initial_request_header_timeout: Duration,
     max_connection_age: Duration,
@@ -73,16 +73,15 @@ impl HttpServer {
     pub(crate) fn spawn(
         listener: TcpListener,
         app: Router,
-        config: &HttpConfig,
+        limits: Limits,
+        identity: ClientIdentity,
     ) -> io::Result<Self> {
-        Self::spawn_with_limits(listener, app, Limits::from(config))
-    }
-
-    fn spawn_with_limits(listener: TcpListener, app: Router, limits: Limits) -> io::Result<Self> {
+        // Identity is mandatory even when rate limiting is disabled.
+        let app = identity.layer(app);
         let listener = tokio::net::TcpListener::from_std(listener)?;
         let (shutdown, shutdown_receiver) = watch::channel(());
 
-        tokio::spawn(serve(listener, app, limits, shutdown_receiver));
+        tokio::spawn(serve(listener, app, limits, identity, shutdown_receiver));
 
         Ok(Self { shutdown })
     }
@@ -96,6 +95,7 @@ async fn serve(
     listener: tokio::net::TcpListener,
     app: Router,
     limits: Limits,
+    identity: ClientIdentity,
     mut shutdown: watch::Receiver<()>,
 ) {
     let connection_slots = Arc::new(Semaphore::new(limits.max_connections));
@@ -130,6 +130,12 @@ async fn serve(
                 continue;
             }
         };
+
+        if !identity.trusts_peer(peer_address.ip()) {
+            tracing::debug!(%peer_address, "HTTP connection refused from untrusted header proxy");
+            drop(stream);
+            continue;
+        }
 
         let Ok(connection_slot) = Arc::clone(&connection_slots).try_acquire_owned() else {
             // Refuse excess connections immediately instead of allocating another task.
