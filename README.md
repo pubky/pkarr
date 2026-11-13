@@ -20,6 +20,7 @@ Where we are going, this https://o4dksfbqk85ogzdb5osziw6befigbuxmuxkuxq8434q89uj
 | **[API Reference](https://docs.rs/pkarr/latest/pkarr/)** | Full Rust API documentation |
 | **[Examples](./pkarr/examples/README.md)** | Code samples |
 | **[Specifications](./design/README.md)** | Protocol design documents |
+| **[Security contract](./SECURITY_CONTRACT.md)** | Security guarantees, conditions, and responsibilities |
 
 ## Crates and Packages
 
