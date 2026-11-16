@@ -1,6 +1,7 @@
 //! Configuration for Pkarr relay
 
 use anyhow::{Context, Result};
+use ipnet::IpNet;
 use pkarr::{DEFAULT_MAXIMUM_TTL, DEFAULT_MINIMUM_TTL};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -41,6 +42,8 @@ impl Default for RelayConfig {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HttpConfig {
+    #[serde(default)]
+    pub client_identity: ClientIdentityConfig,
     #[serde(default = "default_http_port")]
     pub port: u16,
     #[serde(default = "default_http_max_connections")]
@@ -52,10 +55,38 @@ pub struct HttpConfig {
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
+            client_identity: ClientIdentityConfig::default(),
             port: default_http_port(),
             max_connections: default_http_max_connections(),
             max_connection_age_seconds: default_http_max_connection_age_seconds(),
         }
+    }
+}
+
+/// Determines which client IP is used for HTTP and user DHT rate limits.
+///
+/// Additional identity modes may be added in future releases.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClientIdentityConfig {
+    /// Use the TCP peer address and ignore forwarding headers (the default).
+    // Keep this a struct variant so Serde rejects fields for header mode.
+    Direct {},
+    /// Require a single-IP header on every request from a trusted proxy.
+    HttpHeader {
+        /// Header the proxy overwrites with a bare IPv4 or IPv6 address.
+        header: String,
+        /// Immediate TCP peer networks allowed to supply client addresses.
+        ///
+        /// Must be nonempty. Other peers are disconnected before HTTP parsing.
+        trusted_proxies: Vec<IpNet>,
+    },
+}
+
+impl Default for ClientIdentityConfig {
+    fn default() -> Self {
+        Self::Direct {}
     }
 }
 
@@ -199,6 +230,44 @@ mod tests {
         validate_cache_ttl, validate_http, CacheConfig, HttpConfig, RelayConfig,
         DEFAULT_HTTP_MAX_CONNECTIONS, DEFAULT_HTTP_MAX_CONNECTION_AGE_SECONDS,
     };
+
+    #[test]
+    fn client_identity_defaults_to_direct_and_round_trips() {
+        use super::ClientIdentityConfig;
+        for input in ["", "[http]\nport = 1234"] {
+            let config: RelayConfig = toml::from_str(input).unwrap();
+            assert_eq!(config.http.client_identity, ClientIdentityConfig::Direct {});
+        }
+        let config: RelayConfig = toml::from_str(
+            r#"[http.client_identity]
+mode = "http_header"
+header = "X-Real-IP"
+trusted_proxies = ["127.0.0.1/32", "::1/128"]"#,
+        )
+        .unwrap();
+        validate_http(&config.http).unwrap();
+        let encoded = toml::to_string(&config.http.client_identity).unwrap();
+        assert_eq!(
+            toml::from_str::<ClientIdentityConfig>(&encoded).unwrap(),
+            config.http.client_identity
+        );
+    }
+
+    #[test]
+    fn invalid_client_identity_schema_is_rejected() {
+        for identity in [
+            "mode = 'http_header'\nheader = 'X-Real-IP'",
+            "mode = 'http_header'\ntrusted_proxies = ['127.0.0.1/32']",
+            "mode = 'http_header'\nheader = 'X-Real-IP'\ntrusted_proxies = ['invalid']",
+            "mode = 'direct'\nheader = 'X-Real-IP'",
+            "mode = 'direct'\ntrusted_proxies = ['127.0.0.1/32']",
+            "mode = 'proxy_protocol'",
+            "mode = 'http_header'\nheader = 'X-Real-IP'\ntrusted_proxies = ['127.0.0.1/32']\nextra = true",
+        ] {
+            let parsed = toml::from_str::<RelayConfig>(&format!("[http.client_identity]\n{identity}"));
+            assert!(parsed.is_err(), "{identity}");
+        }
+    }
 
     #[test]
     fn default_config_enables_rate_limiter() {
