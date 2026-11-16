@@ -45,6 +45,16 @@ jobs:
           cd ./bindings/js/pkg
           npm run build
 
+      - name: Check npm package version
+        run: |
+          node bindings/js/pkg/test/version.js
+          PKARR_VERSION=$(cargo pkgid -p pkarr | sed 's/.*#//;s/.*@//')
+          NPM_VERSION=$(node -p "require('./bindings/js/pkg/package.json').version")
+          if [[ "$NPM_VERSION" != "$PKARR_VERSION" ]]; then
+            echo "::error::npm package version $NPM_VERSION does not match pkarr $PKARR_VERSION"
+            exit 1
+          fi
+
       - name: Run JS tests
         run: |
           cd ./bindings/js/pkg

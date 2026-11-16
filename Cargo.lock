@@ -1688,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "pkarr-js"
-version = "8.0.0"
+version = "9.0.0"
 dependencies = [
  "cfg_aliases",
  "console_error_panic_hook",
