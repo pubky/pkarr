@@ -35,13 +35,8 @@ jobs:
 
           PKARR_VERSION=$(cargo pkgid -p pkarr | sed 's/.*#//;s/.*@//')
           RELAY_VERSION=$(cargo pkgid -p pkarr-relay | sed 's/.*#//;s/.*@//')
-          NPM_VERSION=$(node -p "require('./bindings/js/pkg/package.json').version")
           if [[ "$PKARR_VERSION" != "$VERSION" ]]; then
             echo "::error::Tag version $VERSION does not match pkarr $PKARR_VERSION"
-            exit 1
-          fi
-          if [[ "$NPM_VERSION" != "$VERSION" ]]; then
-            echo "::error::Tag version $VERSION does not match npm package $NPM_VERSION"
             exit 1
           fi
 
@@ -53,7 +48,7 @@ jobs:
 
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
           echo "relay_version=$RELAY_VERSION" >> "$GITHUB_OUTPUT"
-          echo "npm_version=$NPM_VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_version=$PKARR_VERSION" >> "$GITHUB_OUTPUT"
 
   build-artifacts:
     name: Build release binaries
@@ -184,6 +179,12 @@ jobs:
         working-directory: bindings/js/pkg
         env:
           NPM_TAG: ${{ needs.validate.outputs.prerelease == 'true' && 'next' || 'latest' }}
+          EXPECTED_VERSION: ${{ needs.validate.outputs.npm_version }}
         run: |
           npm run build
+          NPM_VERSION=$(node -p "require('./package.json').version")
+          if [[ "$NPM_VERSION" != "$EXPECTED_VERSION" ]]; then
+            echo "::error::Built npm version $NPM_VERSION does not match $EXPECTED_VERSION"
+            exit 1
+          fi
           npm publish --provenance --access public --tag "$NPM_TAG"

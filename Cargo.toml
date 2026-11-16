@@ -5,6 +5,9 @@ members = [
 
 resolver = "3"
 
+[workspace.package]
+version = "9.0.0"
+
 [workspace.dependencies]
 mainline = { version = "8", default-features = false, features = ["async"] }
 # rustls feature is needed for reqwest to work with HTTPS.
