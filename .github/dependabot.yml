@@ -43,6 +43,8 @@ updates:
       # Cover both direct and transitive deps
       allow:
         - dependency-type: "all"
+      ignore:
+        - dependency-name: "simple-dns"
       groups:
           # Cargo classifies 0.x -> 0.(x+1) and 0.0.x patch updates as major.
           cargo-minor-and-patch:
