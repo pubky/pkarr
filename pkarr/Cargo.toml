@@ -99,7 +99,7 @@ clap = { version = "4", features = ["derive"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 axum = "0.8"
-axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.9", features = ["tls-rustls-no-provider"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [target.wasm32-unknown-unknown.dev-dependencies]
