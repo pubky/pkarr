@@ -373,11 +373,8 @@ async fn build_rate_limiters(
     let user_dht = rate_limiting::UserDhtRateLimiter::new(rate_limiter_config)
         .await
         .map_err(|e| anyhow!("Failed to build UserDhtRateLimiter: {e}"))?;
-    let dht = rate_limiting::DhtRateLimiter::new(rate_limiter_config)
-        .await
+    rate_limiting::DhtRateLimiter::install(dht_config, rate_limiter_config)
         .map_err(|e| anyhow!("Failed to build DhtRateLimiter: {e}"))?;
-
-    dht_config.request_filter = Some(Arc::new(dht));
 
     Ok(RateLimiters {
         http: Some(http),
@@ -448,6 +445,43 @@ mod tests {
     };
 
     use super::{dht_config, to_socket_address_v4, RateLimiterConfig, Relay, RequestCountQuota};
+
+    #[tokio::test]
+    async fn relay_applies_configured_peer_filter_before_dht_quota() {
+        use std::{net::SocketAddrV4, sync::Arc};
+
+        #[derive(Debug)]
+        struct AllowPeer(SocketAddrV4);
+
+        impl pkarr::dht::RequestFilter for AllowPeer {
+            fn allow_request(&self, from: SocketAddrV4) -> bool {
+                from == self.0
+            }
+        }
+
+        let allowed = "127.0.0.1:10001".parse().unwrap();
+        let denied = "127.0.0.1:10002".parse().unwrap();
+        let mut builder = Relay::builder();
+        builder.dht(|config| {
+            config.request_filter = Some(Arc::new(AllowPeer(allowed)));
+            config
+        });
+        builder.rate_limiter_config(RateLimiterConfig {
+            dht_quota: "1r/h".parse().unwrap(),
+            ..Default::default()
+        });
+
+        super::build_rate_limiters(builder.config.rate_limiter.as_ref(), &mut builder.dht)
+            .await
+            .unwrap();
+        let filter = builder.dht.request_filter.unwrap();
+        assert!(!filter.allow_request(denied));
+        assert!(
+            filter.allow_request(allowed),
+            "denial consumed the shared IP quota"
+        );
+        assert!(!filter.allow_request(allowed));
+    }
 
     #[test]
     fn relay_dht_timeout_defaults_when_omitted() {
