@@ -8,6 +8,13 @@ The default mode, `direct`, uses the TCP peer address and ignores forwarding
 headers. Behind a reverse proxy, all visitors share that proxy's IP-based
 limits.
 
+## Filter incoming DHT requests
+
+If you embed the relay in a Rust application, you can set
+`DhtConfig::request_filter` through `RelayBuilder::dht`. When rate limiting
+is enabled, the relay checks this filter first. Only requests the filter
+allows count against the peer IP's `dht_quota`.
+
 ## Configure a trusted proxy
 
 To preserve individual client IPs, configure your proxy to overwrite a header

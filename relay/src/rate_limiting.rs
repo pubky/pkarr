@@ -9,6 +9,7 @@ use governor::{
     state::keyed::DashMapStateStore,
     RateLimiter,
 };
+use pkarr::dht::{DhtConfig, RequestFilter};
 use serde::{Deserialize, Serialize};
 use tower_governor::governor::{GovernorConfig, GovernorConfigBuilder};
 use tower_governor::GovernorLayer;
@@ -32,8 +33,8 @@ pub struct RateLimiterConfig {
 
     /// Incoming DHT request quota applied per DHT peer IP.
     ///
-    /// This is enforced by the internal Mainline DHT node before handling
-    /// requests from other DHT peers.
+    /// The Mainline DHT node enforces this quota before handling a request.
+    /// Requests rejected by [`DhtConfig::request_filter`] consume no quota.
     pub dht_quota: RequestCountQuota,
     /// Optional incoming DHT request burst size.
     ///
@@ -121,33 +122,37 @@ impl IpAddrLimiter {
         Self { governor_limiter }
     }
 
-    fn is_allowed(&self, ip: &IpAddr) -> bool {
+    fn try_consume_quota(&self, ip: &IpAddr) -> bool {
         self.governor_limiter.check_key(ip).is_ok()
     }
 }
 
-#[derive(Debug, Clone)]
-/// A rate limiter for incoming DHT requests keyed by peer IP.
+/// Applies the configured peer filter before charging the peer's IP quota.
+#[derive(Debug)]
 pub struct DhtRateLimiter {
+    peer_filter: Option<Arc<dyn RequestFilter>>,
     limiter: IpAddrLimiter,
 }
 
 impl DhtRateLimiter {
-    /// Create a [DhtRateLimiter].
-    ///
-    /// This spawns a background task to clean up the rate limiting cache.
-    pub async fn new(config: &RateLimiterConfig) -> Result<Self, String> {
+    /// Wrap the DHT's existing request filter with the configured quota.
+    pub fn install(dht: &mut DhtConfig, config: &RateLimiterConfig) -> Result<(), String> {
         let quota = config.dht_quota.to_governor_quota(config.dht_burst)?;
-
-        Ok(Self {
+        let peer_filter = dht.request_filter.take();
+        dht.request_filter = Some(Arc::new(Self {
+            peer_filter,
             limiter: IpAddrLimiter::new("DHT", quota),
-        })
+        }));
+        Ok(())
     }
 }
 
-impl pkarr::dht::RequestFilter for DhtRateLimiter {
+impl RequestFilter for DhtRateLimiter {
     fn allow_request(&self, from: std::net::SocketAddrV4) -> bool {
-        self.limiter.is_allowed(&IpAddr::from(*from.ip()))
+        match &self.peer_filter {
+            Some(filter) if !filter.allow_request(from) => false,
+            _ => self.limiter.try_consume_quota(&IpAddr::V4(*from.ip())),
+        }
     }
 }
 
@@ -173,7 +178,7 @@ impl UserDhtRateLimiter {
 
     /// Check if the IP is allowed to initiate more DHT operations.
     pub fn is_limited(&self, ip: &IpAddr) -> bool {
-        !self.limiter.is_allowed(ip)
+        !self.limiter.try_consume_quota(ip)
     }
 }
 
@@ -223,17 +228,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dht_limiter_implements_request_filter() {
-        fn assert_request_filter<T: pkarr::dht::RequestFilter>() {}
-        assert_request_filter::<DhtRateLimiter>();
-
+    async fn dht_quota_applies_without_a_peer_filter() {
+        let mut dht = pkarr::dht::DhtConfig::default();
         let config = RateLimiterConfig {
-            dht_quota: "60r/s".parse::<RequestCountQuota>().unwrap(),
-            dht_burst: NonZeroU32::new(1),
+            dht_quota: "1r/h".parse().unwrap(),
             ..Default::default()
         };
+        DhtRateLimiter::install(&mut dht, &config).unwrap();
 
-        DhtRateLimiter::new(&config).await.unwrap();
+        let filter = dht.request_filter.unwrap();
+        let peer = "127.0.0.1:6881".parse().unwrap();
+        assert!(filter.allow_request(peer));
+        assert!(!filter.allow_request(peer));
     }
 
     #[test]
