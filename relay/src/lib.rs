@@ -20,7 +20,7 @@ mod real_ip;
 mod response;
 
 use std::{
-    net::{SocketAddr, SocketAddrV4, TcpListener, ToSocketAddrs},
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -60,6 +60,14 @@ pub struct RelayBuilder {
 }
 
 impl RelayBuilder {
+    fn from_config(config: RelayConfig) -> Self {
+        Self {
+            dht: dht_config(&config),
+            config,
+            report_policy: ReportPolicy::mainnet(),
+        }
+    }
+
     /// Set the port for the HTTP endpoint.
     pub fn http_port(&mut self, port: u16) -> &mut Self {
         self.config.http.port = port;
@@ -162,42 +170,11 @@ impl RelayBuilder {
     /// This method is marked as unsafe because it uses `LmdbCache`, which can lead to
     /// undefined behavior if the lock file is corrupted or improperly handled.
     pub async unsafe fn run(self) -> anyhow::Result<Relay> {
-        unsafe { Relay::run_with_dht(self.config, self.dht, self.report_policy) }.await
-    }
-}
-
-/// A running instance of a Pkarr relay server.
-///
-/// This struct represents a running relay server and provides methods to interact with it,
-/// such as retrieving the server's address or shutting it down.
-pub struct Relay {
-    http_server: HttpServer,
-    relay_address: SocketAddr,
-}
-
-impl Relay {
-    /// Run a Pkarr relay with the provided configuration.
-    ///
-    /// # Safety
-    /// This method is marked as unsafe because it uses `LmdbCache`, which can lead to
-    /// undefined behavior if the lock file is corrupted or improperly handled.
-    ///
-    /// # Arguments
-    /// * `config` - The configuration for the relay.
-    ///
-    /// # Returns
-    /// A `Result` containing the `Relay` instance or an error.
-    async unsafe fn run(config: RelayConfig) -> anyhow::Result<Self> {
-        let dht_config = dht_config(&config);
-
-        unsafe { Self::run_with_dht(config, dht_config, ReportPolicy::mainnet()) }.await
+        unsafe { self.run_with_http_bind(Ipv4Addr::UNSPECIFIED).await }
     }
 
-    async unsafe fn run_with_dht(
-        config: RelayConfig,
-        mut dht_config: DhtConfig,
-        report_policy: ReportPolicy,
-    ) -> anyhow::Result<Self> {
+    async unsafe fn run_with_http_bind(mut self, http_bind_ip: Ipv4Addr) -> anyhow::Result<Relay> {
+        let config = self.config;
         tracing::debug!(?config, "Pkarr server config");
         let http_limits = http_server::Limits::from(&config.http);
         let identity = ClientIdentity::from_config(config.http.client_identity)?;
@@ -214,11 +191,11 @@ impl Relay {
         let cache = Arc::new(LmdbCache::open(&cache_path, config.cache.size)?);
 
         let rate_limiters =
-            build_rate_limiters(config.rate_limiter.as_ref(), &mut dht_config).await?;
+            build_rate_limiters(config.rate_limiter.as_ref(), &mut self.dht).await?;
 
-        let dht_client = DhtClient::build(dht_config)?;
+        let dht_client = DhtClient::build(self.dht)?;
 
-        let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], config.http.port)))?;
+        let listener = TcpListener::bind((http_bind_ip, config.http.port))?;
         // Tokio requires a non-blocking listener when converting from std.
         listener.set_nonblocking(true)?;
 
@@ -234,7 +211,7 @@ impl Relay {
             config.cache.maximum_ttl,
             cache,
             dht_client,
-            report_policy,
+            self.report_policy,
             rate_limiters.user_dht,
         );
         let state = AppState { dht };
@@ -246,14 +223,18 @@ impl Relay {
             relay_address,
         })
     }
+}
 
+/// A running instance of a Pkarr relay server.
+pub struct Relay {
+    http_server: HttpServer,
+    relay_address: SocketAddr,
+}
+
+impl Relay {
     /// Create a builder for running a [Relay]
     pub fn builder() -> RelayBuilder {
-        RelayBuilder {
-            config: Default::default(),
-            dht: dht_config(&RelayConfig::default()),
-            report_policy: ReportPolicy::mainnet(),
-        }
+        RelayBuilder::from_config(RelayConfig::default())
     }
 
     /// Run a [Relay] with a configuration file path.
@@ -264,7 +245,8 @@ impl Relay {
     pub async unsafe fn run_with_config_file(
         config_path: impl AsRef<Path>,
     ) -> anyhow::Result<Self> {
-        unsafe { Self::run(RelayConfig::load(config_path).await?) }.await
+        let config = RelayConfig::load(config_path).await?;
+        unsafe { RelayBuilder::from_config(config).run().await }
     }
 
     /// Run an ephemeral Pkarr relay on a random port number for testing purposes.
@@ -276,25 +258,27 @@ impl Relay {
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
     /// because the possible Undefined Behavior (UB) if the lock file is broken.
     pub async fn run_test<T: ToSocketAddrs>(bootstrap: &[T]) -> anyhow::Result<Self> {
-        let config = RelayConfig {
-            http: config::HttpConfig {
-                port: 0,
-                ..Default::default()
-            },
-            rate_limiter: None,
-            ..Default::default()
-        };
-
-        let mut dht_config = dht_config(&config);
-        dht_config.bootstrap = Some(to_socket_address_v4(bootstrap));
-        dht_config.request_timeout = Duration::from_millis(100);
-        dht_config.server_mode = true;
-        dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
-
-        Ok(unsafe { Self::run_with_dht(config, dht_config, ReportPolicy::testnet()).await? })
+        Self::run_test_on_port(bootstrap, 0).await
     }
 
-    /// Run a Pkarr relay in a Testnet mode (on port 15411).
+    async fn run_test_on_port<T: ToSocketAddrs>(
+        bootstrap: &[T],
+        http_port: u16,
+    ) -> anyhow::Result<Self> {
+        let mut builder = Self::builder();
+        builder
+            .http_port(http_port)
+            .disable_rate_limiter()
+            .report_policy(ReportPolicy::testnet())
+            .request_timeout(Duration::from_millis(100));
+        builder.dht.bootstrap = Some(to_socket_address_v4(bootstrap));
+        builder.dht.server_mode = true;
+        builder.dht.bind_address = Some(Ipv4Addr::LOCALHOST);
+
+        unsafe { builder.run_with_http_bind(Ipv4Addr::LOCALHOST).await }
+    }
+
+    /// Run a Pkarr testnet relay with HTTP bound to `127.0.0.1:15411`.
     ///
     /// # Safety
     /// Homeserver uses LMDB, opening which is marked [unsafe](https://docs.rs/heed/latest/heed/struct.EnvOpenOptions.html#safety-1),
@@ -308,22 +292,7 @@ impl Relay {
             Box::leak(Box::new(node));
         }
 
-        let config = RelayConfig {
-            http: config::HttpConfig {
-                port: 15411,
-                ..Default::default()
-            },
-            rate_limiter: None,
-            ..Default::default()
-        };
-
-        let mut dht_config = dht_config(&config);
-        dht_config.bootstrap = Some(to_socket_address_v4(&testnet.bootstrap));
-        dht_config.request_timeout = Duration::from_millis(100);
-        dht_config.server_mode = true;
-        dht_config.bind_address = Some(std::net::Ipv4Addr::LOCALHOST);
-
-        Self::run_with_dht(config, dht_config, ReportPolicy::testnet()).await
+        Self::run_test_on_port(&testnet.bootstrap, 15411).await
     }
 
     /// Returns the HTTP socket address of the relay.
@@ -481,6 +450,17 @@ mod tests {
             "denial consumed the shared IP quota"
         );
         assert!(!filter.allow_request(allowed));
+    }
+
+    #[tokio::test]
+    async fn run_test_binds_http_to_loopback() {
+        let relay = Relay::run_test::<std::net::SocketAddrV4>(&[])
+            .await
+            .unwrap();
+        let address = relay.relay_address();
+        assert_eq!(address.ip(), Ipv4Addr::LOCALHOST);
+        assert_ne!(address.port(), 0);
+        relay.shutdown();
     }
 
     #[test]

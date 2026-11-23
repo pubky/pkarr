@@ -14,9 +14,9 @@ async function runIntegrationTests() {
         // Test 1: Basic publish and resolve workflow
         //console.log('\t- Basic publish and resolve workflow');
         
-        const localRelay = ['http://0.0.0.0:15411'];
+        const localRelays = ['http://127.0.0.1:15411'];
         const timeoutMs = 10000; // 10 seconds
-        const client = new Client(localRelay, timeoutMs);
+        const client = new Client(localRelays, timeoutMs);
 
         const {builder, keypair} = newFixture();
         const publicKey = keypair.publicKey();
@@ -81,8 +81,7 @@ async function runIntegrationTests() {
         
         // Test 3: Custom relay configuration
         //console.log('\t- Custom relay configuration');
-        const customRelays = ['http://0.0.0.0:15411'];
-        const customClient = new Client(customRelays, 10000);
+        const customClient = new Client(localRelays, timeoutMs);
         
         const {builder: builder3, keypair: keypair3} = newFixture();
         builder3.addTxtRecord("_custom", "relay-test=true", 3600);
