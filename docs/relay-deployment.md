@@ -15,6 +15,14 @@ If you embed the relay in a Rust application, you can set
 is enabled, the relay checks this filter first. Only requests the filter
 allows count against the peer IP's `dht_quota`.
 
+## Test relay addresses
+
+`Relay::run_test` is available by default. It binds HTTP to `127.0.0.1` on
+an ephemeral port. Use `relay.relay_address()` to get the assigned address.
+
+Enable the `testnet` Cargo feature on `pkarr-relay` to use the `--testnet`
+CLI option or `Relay::run_testnet`. Both serve HTTP at `127.0.0.1:15411`.
+
 ## Configure a trusted proxy
 
 To preserve individual client IPs, configure your proxy to overwrite a header
