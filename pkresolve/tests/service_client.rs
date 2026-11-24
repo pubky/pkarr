@@ -122,6 +122,32 @@ fn missing_or_null_summary_is_rejected_without_populating_cache() {
 }
 
 #[test]
+fn error_bundles_must_verify_and_cannot_cache_resolvable_routes() {
+    let key = Keypair::from_secret_key(&[1; 32]);
+    let signed = packet(&key, "203.0.113.10");
+    let mut response: serde_json::Value =
+        serde_json::from_slice(&bundle(std::slice::from_ref(&signed))).unwrap();
+    response["error"] = json!({"status": 504, "message": "resolution timed out"});
+    let mut client = ServiceClient::default();
+    let mut replay = |response: &serde_json::Value| {
+        let Preparation::Fetch(fetch) = client.prepare(request(&key)).unwrap() else {
+            panic!("an error bundle must not populate the cache");
+        };
+        client
+            .accept_bundle(fetch, &serde_json::to_vec(response).unwrap())
+            .unwrap_err()
+    };
+    assert!(matches!(replay(&response), Error::Json(_)));
+    response.as_object_mut().unwrap().remove("resolution");
+    assert!(matches!(replay(&response), Error::ConflictingOutcome(_)));
+
+    let mut bytes = signed.serialize().to_vec();
+    *bytes.last_mut().unwrap() ^= 1;
+    response["packets"] = json!([STANDARD.encode(bytes)]);
+    assert!(matches!(replay(&response), Error::Verification(_)));
+}
+
+#[test]
 fn summary_cannot_override_routes_or_replace_packet_evidence() {
     let key = Keypair::from_secret_key(&[1; 32]);
     let other_key = Keypair::from_secret_key(&[2; 32]);

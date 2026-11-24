@@ -3,7 +3,8 @@
 `POST /v1/resolve` returns a packet bundle for a Pubky service. It uses
 the workspace's [pkresolve crate](../pkresolve/README.md) and matches its
 `ServiceClient` wire format. Both serialize `pkresolve::ResolutionRequest`
-directly and use `pkresolve::service_protocol::ResolveBundle` for responses.
+directly. The shared response types are `ResolveBundle` for success and
+`ResolveErrorBundle` for failures that carry packets.
 
 ## Request
 
@@ -55,7 +56,7 @@ A successful response has status `200`, content type `application/json`, and
 }
 ```
 
-The bundle contains every owner packet requested by the resolver, once per
+The bundle contains every owner packet obtained by the resolver, once per
 key. Each string is standard base64 of `SignedPacket::serialize()`, including
 its original `last_seen` timestamp. Packet order has no meaning. This is not
 the raw payload returned by `GET /{key}`. Serving a cached packet does not
@@ -68,18 +69,12 @@ This timestamp uses the relay's wall clock, so interpreting it depends on
 clock agreement. Network delay does not restart its lifetime. The process-local
 `Resolution::expires_at` monotonic timestamp is not sent.
 
-The `resolution` field is required and included for convenience. Clients should
-verify it by deriving their own resolution for the original request, using
-the bundled packets as the packet source. `ServiceClient` derives routes and
-expiry this way rather than trusting the relay's summary. Bundles with a
-missing or null `resolution` are rejected.
-
 Use `ServiceClient::prepare` to construct the request and retain the returned
-`BundleRequest`. Pass it and the response bytes to
-`ServiceClient::accept_bundle` to derive endpoint candidates. The
-client's native packet decoder does not verify signatures; consumers must
-verify signatures separately before trusting responses from an untrusted
-relay. A successful resolution also does not authenticate the remote TLS peer.
+`BundleRequest`. For a JSON bundle, pass it and the response bytes to
+`ServiceClient::accept_bundle`, including on a non-success HTTP status. The
+client verifies every packet signature and replays the original request using
+only the bundled packets. It derives its own routes and expiry. The host
+still authenticates the TLS peer when it connects.
 
 ## Supported behavior
 
@@ -124,13 +119,35 @@ only when a lookup contacts the DHT. Resolution has a 30-second deadline after
 body parsing, in addition to the existing 30-second request body deadline.
 Each traversal may request up to 32 distinct owner keys, bounding lookup work
 and bundle size. Failed lookups count toward this limit. Repeated lookups of
-the same key return the same result without consuming another slot. The relay
-can collect multiple packets; the PKResolve implementation currently requests
-only one and still has the routing limitations described above.
+the same key return the same result without consuming another slot.
 
 ## Errors
 
-Failures return a non-success status and, when available, a plain-text reason:
+If resolution fails after the relay obtains a packet, the response keeps the
+HTTP error status and diagnostic headers. The body is JSON with
+`Cache-Control: no-store`. For example, a relay that resolves an alias and
+times out fetching its target returns HTTP 504 with this body.
+
+```json
+{
+  "schema": 1,
+  "packets": ["<base64-encoded signed alias packet>"],
+  "error": { "status": 504, "message": "resolution timed out" }
+}
+```
+
+An error bundle includes each packet obtained before the failure and uses
+`error` in place of `resolution`. If replay reaches a signed record that
+disables the service, the client returns its own `ServiceUnavailable` error.
+If replay needs another packet, `IncompleteBundle` identifies its owner and
+carries the relay's diagnostic. The signed alias establishes which owner to
+look up next. Only the relay reports the timeout. The unsigned `last_seen`
+observation and the client's clock also affect expiry checks.
+
+Failed bundles leave the client cache unchanged. If the relay obtains no
+packets, the response uses the ordinary HTTP error body, which may be empty.
+
+### HTTP status codes
 
 - `400`: malformed JSON, invalid field types, missing or unknown fields,
   invalid service name or port, empty protocol list, or unsupported ALPN.

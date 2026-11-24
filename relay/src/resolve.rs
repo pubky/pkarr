@@ -8,7 +8,10 @@ use axum::{
     Extension, Json,
 };
 use http::{header::CACHE_CONTROL, StatusCode};
-use pkresolve::ResolutionRequest;
+use pkresolve::{
+    service_protocol::{RelayDiagnostic, ResolveBundle, ResolveErrorBundle, BUNDLE_SCHEMA},
+    ResolutionRequest,
+};
 use tokio::time::timeout;
 
 use crate::{error::Error, real_ip::RealIp, AppState};
@@ -27,17 +30,47 @@ pub(crate) async fn resolve(
     let Json(request) = request?;
     let provider = RelayPacketProvider::new(&state.dht, real_ip.map(|extension| extension.0));
 
-    let resolution = timeout(
+    let result = match timeout(
         RESOLUTION_TIMEOUT,
         pkresolve::derive_resolution_async(&request, &provider),
     )
     .await
-    .map_err(|_| Error::new(StatusCode::GATEWAY_TIMEOUT, "resolution timed out"))?
-    .map_err(resolution_error)?;
+    {
+        Ok(result) => result.map_err(resolution_error),
+        Err(_) => Err(Error::new(
+            StatusCode::GATEWAY_TIMEOUT,
+            "resolution timed out",
+        )),
+    };
 
-    let bundle = provider.into_bundle(resolution)?;
-    // Reuse is governed by signed record TTLs in the client, not HTTP caches.
-    Ok(([(CACHE_CONTROL, "no-store")], Json(bundle)))
+    let packets = provider.into_packets();
+    let response = match result {
+        Ok(resolution) => Json(ResolveBundle {
+            schema: BUNDLE_SCHEMA,
+            packets,
+            resolution: resolution.into(),
+        })
+        .into_response(),
+        Err(error) if packets.is_empty() => return Err(error),
+        Err(error) => {
+            let (status, headers, detail) = error.into_parts();
+            let bundle = ResolveErrorBundle {
+                schema: BUNDLE_SCHEMA,
+                packets,
+                error: RelayDiagnostic {
+                    status: status.as_u16(),
+                    message: detail.unwrap_or_else(|| {
+                        status
+                            .canonical_reason()
+                            .unwrap_or("Resolution failed")
+                            .to_owned()
+                    }),
+                },
+            };
+            (status, headers, Json(bundle)).into_response()
+        }
+    };
+    Ok(([(CACHE_CONTROL, "no-store")], response))
 }
 
 fn resolution_error(error: pkresolve::Error) -> Error {

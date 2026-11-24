@@ -9,7 +9,7 @@
 
 use std::{collections::HashMap, sync::Arc};
 
-use crate::service_protocol::{ResolveBundle, BUNDLE_SCHEMA};
+use crate::service_protocol::{BundleResolution, RelayDiagnostic, BUNDLE_SCHEMA};
 use crate::{PublicKey, Resolution, ResolutionRequest, SignedPacket};
 use base64::{engine::general_purpose::STANDARD, Engine};
 
@@ -38,6 +38,17 @@ pub enum Error {
     /// The bundle is incomplete, expired, or cannot resolve the original request.
     #[error("bundle resolution failed: {0}")]
     Resolution(#[from] crate::Error),
+    /// Replay reached an owner whose packet the relay did not supply.
+    #[error("incomplete bundle: missing packet for {key} (relay reported HTTP {}: {})", relay.status, relay.message)]
+    IncompleteBundle {
+        /// Next owner required by local traversal of the original request.
+        key: Box<PublicKey>,
+        /// Unauthenticated explanation from the relay.
+        relay: RelayDiagnostic,
+    },
+    /// Local replay succeeded despite the relay reporting a failure.
+    #[error("error bundle resolves successfully (relay reported HTTP {}: {})", .0.status, .0.message)]
+    ConflictingOutcome(RelayDiagnostic),
 }
 
 /// Result of checking the local cache for an original request.
@@ -88,34 +99,58 @@ impl ServiceClient {
         }
     }
 
-    /// Resolve a complete bundle for its retained original request, then cache
-    /// its verified packets. Failed responses leave the cache unchanged. Native
-    /// `last_seen` values are preserved; incomplete bundles never trigger HTTP.
-    /// The required resolution summary is included for convenience. This client
-    /// derives its own routes and expiry for the original request, using the
-    /// bundled packets as its packet source rather than trusting the summary.
+    /// Verify and replay a success or error bundle for its retained request.
+    /// Only a successfully replayed success bundle populates the cache.
+    /// Native `last_seen` values are preserved. Replay uses only the supplied
+    /// packets and performs no I/O.
     ///
     /// # Errors
-    /// Rejects decoding or signature failures, duplicate keys, and unsuccessful resolution.
+    /// Returns local resolution errors. If an error bundle is missing a
+    /// required packet, [`Error::IncompleteBundle`] also carries the relay's
+    /// diagnostic. A locally successful replay of an error bundle conflicts
+    /// with the reported outcome.
     pub fn accept_bundle(
         &mut self,
         bundle_request: BundleRequest,
         response: &[u8],
     ) -> Result<Resolution, Error> {
-        let packets = decode_bundle(response)?;
-        let resolution = crate::derive_resolution(&bundle_request.request, &packets)?;
+        let bundle: IncomingBundle = serde_json::from_slice(response)?;
+        if bundle.schema != BUNDLE_SCHEMA {
+            return Err(Error::UnsupportedSchema(bundle.schema));
+        }
+        if bundle.resolution.is_some() == bundle.error.is_some() {
+            return Err(Error::Json(serde::de::Error::custom(
+                "expected exactly one of resolution or error",
+            )));
+        }
+        let packets = verify_packets(bundle.packets)?;
+        let result = crate::derive_resolution(&bundle_request.request, &packets);
+        let resolution = match (result, bundle.error) {
+            (Err(crate::Error::MissingPacket(key)), Some(relay)) => {
+                return Err(Error::IncompleteBundle { key, relay });
+            }
+            (Err(error), _) => return Err(error.into()),
+            (Ok(_), Some(relay)) => return Err(Error::ConflictingOutcome(relay)),
+            (Ok(resolution), None) => resolution,
+        };
         self.packets.extend(packets);
         Ok(resolution)
     }
 }
 
-fn decode_bundle(response: &[u8]) -> Result<HashMap<PublicKey, Arc<SignedPacket>>, Error> {
-    let bundle: ResolveBundle = serde_json::from_slice(response)?;
-    if bundle.schema != BUNDLE_SCHEMA {
-        return Err(Error::UnsupportedSchema(bundle.schema));
-    }
-    let mut packets = HashMap::with_capacity(bundle.packets.len());
-    for encoded in bundle.packets {
+#[derive(serde::Deserialize)]
+struct IncomingBundle {
+    schema: u32,
+    packets: Vec<String>,
+    resolution: Option<BundleResolution>,
+    error: Option<RelayDiagnostic>,
+}
+
+fn verify_packets(
+    encoded_packets: Vec<String>,
+) -> Result<HashMap<PublicKey, Arc<SignedPacket>>, Error> {
+    let mut packets = HashMap::with_capacity(encoded_packets.len());
+    for encoded in encoded_packets {
         let bytes = STANDARD.decode(encoded)?;
         let packet = SignedPacket::deserialize(&bytes)?;
         packet.verify_signature()?;

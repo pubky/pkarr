@@ -5,10 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use http::StatusCode;
 use pkarr::{PublicKey, ResolvePolicy, SignedPacket};
-use pkresolve::{
-    service_protocol::{ResolveBundle, BUNDLE_SCHEMA},
-    AsyncPacketProvider, Resolution,
-};
+use pkresolve::AsyncPacketProvider;
 use tokio::sync::Mutex;
 
 use crate::{dht_service::DhtService, error::Error, real_ip::RealIp};
@@ -33,19 +30,14 @@ impl<'a> RelayPacketProvider<'a> {
         }
     }
 
-    pub(super) fn into_bundle(self, resolution: Resolution) -> Result<ResolveBundle, Error> {
-        let lookups = self.lookups.into_inner();
-        let mut packets = Vec::with_capacity(lookups.len());
-        for lookup in lookups.into_values() {
-            // Never turn a failed lookup into a partial success.
-            let packet = lookup?;
-            packets.push(STANDARD.encode(packet.serialize()));
-        }
-        Ok(ResolveBundle {
-            schema: BUNDLE_SCHEMA,
-            packets,
-            resolution: resolution.into(),
-        })
+    /// Include completed packet fetches even when a later lookup failed or timed out.
+    pub(super) fn into_packets(self) -> Vec<String> {
+        self.lookups
+            .into_inner()
+            .into_values()
+            .filter_map(Result::ok)
+            .map(|packet| STANDARD.encode(packet.serialize()))
+            .collect()
     }
 }
 

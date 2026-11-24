@@ -24,6 +24,7 @@ pub mod ffi {
         ServiceUnavailable,
         NoCompatibleEndpoint,
         NoAddresses,
+        IncompleteBundle,
     }
 
     struct Status {
@@ -199,6 +200,7 @@ fn error_response(error: ServiceError) -> ffi::ResolveResponse {
             ffi::StatusCode::NoCompatibleEndpoint
         }
         ServiceError::Resolution(Error::NoAddresses) => ffi::StatusCode::NoAddresses,
+        ServiceError::IncompleteBundle { .. } => ffi::StatusCode::IncompleteBundle,
         _ => ffi::StatusCode::InvalidBundle,
     };
     failure(code, error.to_string())

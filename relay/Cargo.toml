@@ -52,6 +52,7 @@ pkarr = { path = "../pkarr", version = "8.1", default-features = false, features
 ] }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
 pkresolve = { path = "../pkresolve", version = "0.1", features = ["service-client"] }
 serde_json = "1"
 tempfile = "3"

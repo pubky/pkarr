@@ -23,8 +23,8 @@ use pkarr::{
     Cache, CacheKey, Keypair, SignedPacket, Timestamp,
 };
 use pkresolve::{
-    service_client::Preparation,
-    service_protocol::{ResolveBundle, BUNDLE_SCHEMA},
+    service_client::{Error as ClientError, Preparation},
+    service_protocol::{ResolveBundle, ResolveErrorBundle, BUNDLE_SCHEMA},
     AsyncPacketProvider, HttpProtocol, ResolutionRequest, ServiceClient,
 };
 use serde_json::{json, Value};
@@ -246,10 +246,10 @@ async fn expired_signed_ttl_does_not_override_relay_minimum_ttl() {
 
     let response = relay.post(body(&keypair).to_string()).await;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-    assert_eq!(
-        to_bytes(response.into_body(), 4096).await.unwrap(),
-        "expired record"
-    );
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let bundle: ResolveErrorBundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(bundle.error.message, "expired record");
+    assert_eq!(bundle.packets, [STANDARD.encode(packet.serialize())]);
     let cached = relay
         .cache
         .get(&CacheKey::from(&keypair.public_key()))
@@ -316,6 +316,10 @@ async fn absent_packet_and_incompatible_service_are_distinct_failures() {
     let keypair = Keypair::random();
     let response = relay.post(body(&keypair).to_string()).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert!(to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap()
+        .is_empty());
 
     // An address alone cannot authorize a route without HTTPS ServiceMode.
     let address_only = SignedPacket::builder()
@@ -329,10 +333,10 @@ async fn absent_packet_and_incompatible_service_are_distinct_failures() {
     relay.cache(&address_only);
     let response = relay.post(body(&keypair).to_string()).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-    assert_eq!(
-        to_bytes(response.into_body(), 4096).await.unwrap(),
-        "no compatible endpoint"
-    );
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let bundle: ResolveErrorBundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(bundle.error.message, "no compatible endpoint");
+    assert_eq!(bundle.packets, [STANDARD.encode(address_only.serialize())]);
 }
 
 #[tokio::test]
@@ -377,7 +381,7 @@ async fn direct_service_with_alternate_fallback_returns_bundle() {
 }
 
 #[tokio::test]
-async fn unsupported_routing_does_not_return_a_bundle() {
+async fn unsupported_routing_returns_the_signed_alias() {
     let relay = TestRelay::new(None).await;
     let keypair = Keypair::random();
     let alias = SignedPacket::builder()
@@ -389,10 +393,11 @@ async fn unsupported_routing_does_not_return_a_bundle() {
         .sign(&keypair)
         .unwrap();
     relay.cache(&alias);
-    assert_eq!(
-        relay.post(body(&keypair).to_string()).await.status(),
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
+    let response = relay.post(body(&keypair).to_string()).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let bundle: ResolveErrorBundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(bundle.packets, [STANDARD.encode(alias.serialize())]);
 }
 
 #[tokio::test]
@@ -494,7 +499,11 @@ async fn multiple_owners_use_shared_cache_and_produce_one_bundle() {
     let resolution = pkresolve::derive_resolution_async(&request(&cached_owner), &provider)
         .await
         .unwrap();
-    let bundle = provider.into_bundle(resolution).unwrap();
+    let bundle = ResolveBundle {
+        schema: BUNDLE_SCHEMA,
+        packets: provider.into_packets(),
+        resolution: resolution.into(),
+    };
     assert_eq!(bundle.packets.len(), 2);
     for packet in [&cached, &network] {
         assert!(bundle
@@ -547,15 +556,10 @@ async fn traversal_retains_original_versions_while_new_requests_see_cache_update
         .unwrap()
         .unwrap();
     assert!(Arc::ptr_eq(&first, &repeated));
-    let resolution = pkresolve::derive_resolution_async(&request(&first_owner), &provider)
-        .await
-        .unwrap();
-    let bundle = provider.into_bundle(resolution).unwrap();
-    assert_eq!(bundle.packets.len(), 2);
-    assert!(bundle
-        .packets
-        .contains(&STANDARD.encode(original.serialize())));
-    assert!(!bundle.packets.contains(&STANDARD.encode(newer.serialize())));
+    let packets = provider.into_packets();
+    assert_eq!(packets.len(), 2);
+    assert!(packets.contains(&STANDARD.encode(original.serialize())));
+    assert!(!packets.contains(&STANDARD.encode(newer.serialize())));
 
     let next_request = RelayPacketProvider::new(&relay.service, None);
     let latest = next_request
@@ -567,7 +571,7 @@ async fn traversal_retains_original_versions_while_new_requests_see_cache_update
 }
 
 #[tokio::test]
-async fn failed_lookup_is_retained_and_prevents_partial_bundle() {
+async fn failed_lookup_is_retained_alongside_collected_packets() {
     let relay = TestRelay::new(Some(RateLimiterConfig {
         user_dht_quota: "1r/h".parse().unwrap(),
         user_dht_burst: NonZeroU32::new(1),
@@ -575,7 +579,8 @@ async fn failed_lookup_is_retained_and_prevents_partial_bundle() {
     }))
     .await;
     let cached_owner = Keypair::random();
-    relay.cache(&packet(&cached_owner, 300));
+    let cached_packet = packet(&cached_owner, 300);
+    relay.cache(&cached_packet);
     let provider =
         RelayPacketProvider::new(&relay.service, Some(RealIp(Ipv4Addr::LOCALHOST.into())));
     provider
@@ -587,16 +592,9 @@ async fn failed_lookup_is_retained_and_prevents_partial_bundle() {
         let error = provider.get_packet(&missing).await.unwrap_err();
         assert_eq!(error.into_response().status(), StatusCode::NOT_FOUND);
     }
-    let resolution = pkresolve::derive_resolution_async(&request(&cached_owner), &provider)
-        .await
-        .unwrap();
     assert_eq!(
-        provider
-            .into_bundle(resolution)
-            .unwrap_err()
-            .into_response()
-            .status(),
-        StatusCode::NOT_FOUND
+        provider.into_packets(),
+        [STANDARD.encode(cached_packet.serialize())]
     );
 }
 
@@ -635,20 +633,24 @@ async fn owner_limit_allows_repeated_keys_and_rejects_new_owners() {
     );
 }
 
-#[tokio::test]
-async fn alias_resolution_bundles_both_cached_packets_for_client_replay() {
-    let relay = TestRelay::new(None).await;
-    let origin = Keypair::random();
-    let target = Keypair::random();
+fn alias_packet(origin: &Keypair, target: &Keypair) -> SignedPacket {
     let target_name = format!("_8443._https.app.{}", target.to_z32());
-    let alias = SignedPacket::builder()
+    SignedPacket::builder()
         .https(
             "_8443._https.app".try_into().unwrap(),
             SVCB::new(0, target_name.as_str().try_into().unwrap()),
             60,
         )
-        .sign(&origin)
-        .unwrap();
+        .sign(origin)
+        .unwrap()
+}
+
+#[tokio::test]
+async fn alias_resolution_bundles_both_cached_packets_for_client_replay() {
+    let relay = TestRelay::new(None).await;
+    let origin = Keypair::random();
+    let target = Keypair::random();
+    let alias = alias_packet(&origin, &target);
     relay.cache(&alias);
     relay.cache(&packet(&target, 300));
     let mut client = ServiceClient::default();
@@ -675,5 +677,133 @@ async fn alias_resolution_bundles_both_cached_packets_for_client_replay() {
     assert!(matches!(
         client.prepare(original).unwrap(),
         Preparation::Ready(_)
+    ));
+}
+
+#[tokio::test]
+async fn missing_alias_target_returns_partial_evidence_and_relay_diagnostic() {
+    let relay = TestRelay::new(None).await;
+    let origin = Keypair::random();
+    let target = Keypair::random();
+    let alias = alias_packet(&origin, &target);
+    relay.cache(&alias);
+    let mut client = ServiceClient::default();
+    let original = request(&origin);
+    let Preparation::Fetch(fetch) = client.prepare(original.clone()).unwrap() else {
+        panic!("expected a fetch");
+    };
+
+    let response = relay.post(fetch.body().to_owned()).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(response.headers()[CONTENT_TYPE], "application/json");
+    assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let bundle: ResolveErrorBundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(bundle.schema, BUNDLE_SCHEMA);
+    assert_eq!(bundle.packets, [STANDARD.encode(alias.serialize())]);
+
+    // A separate request fills the target cache while the origin request is
+    // outstanding. Replaying the partial response must still need that owner.
+    relay.cache(&packet(&target, 300));
+    let Preparation::Fetch(target_fetch) = client.prepare(request(&target)).unwrap() else {
+        panic!("expected a target fetch");
+    };
+    let target_response = relay.post(target_fetch.body().to_owned()).await;
+    let target_bytes = to_bytes(target_response.into_body(), 4096).await.unwrap();
+    client.accept_bundle(target_fetch, &target_bytes).unwrap();
+
+    assert!(matches!(client.accept_bundle(fetch, &bytes),
+        Err(ClientError::IncompleteBundle { key, relay }) if *key == target.public_key()
+            && relay.status == 404 && !relay.message.is_empty()
+    ));
+    assert!(matches!(
+        client.prepare(original).unwrap(),
+        Preparation::Fetch(_)
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn resolution_timeout_returns_the_packets_collected_before_cancellation() {
+    // Keep the target lookup pending while the runtime advances to the deadline.
+    let silent_node = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let mut config = DhtConfig::default();
+    config.bootstrap = Some(to_socket_address_v4(&[silent_node.local_addr().unwrap()]));
+    config.bind_address = Some(Ipv4Addr::LOCALHOST);
+    config.request_timeout = Duration::from_secs(120);
+    let storage = tempfile::tempdir().unwrap();
+    let cache = Arc::new(unsafe { LmdbCache::open(storage.path(), 20).unwrap() });
+    let origin = Keypair::random();
+    let target = Keypair::random();
+    let alias = alias_packet(&origin, &target);
+    cache.put(&CacheKey::from(&origin.public_key()), &alias);
+    let dht = DhtService::new(
+        300,
+        86400,
+        cache,
+        DhtClient::build(config).unwrap(),
+        ReportPolicy::testnet(),
+        None,
+    );
+
+    let response = super::resolve(
+        axum::extract::State(AppState { dht }),
+        None,
+        Ok(axum::Json(request(&origin))),
+    )
+    .await
+    .unwrap()
+    .into_response();
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let bundle: ResolveErrorBundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(bundle.error.status, 504);
+    assert_eq!(bundle.error.message, "resolution timed out");
+    assert_eq!(bundle.packets, [STANDARD.encode(alias.serialize())]);
+}
+
+#[tokio::test]
+async fn disabled_alias_target_is_reproduced_from_both_signed_packets() {
+    let relay = TestRelay::new(None).await;
+    let origin = Keypair::random();
+    let target = Keypair::random();
+    let alias = alias_packet(&origin, &target);
+    let disabled = SignedPacket::builder()
+        .https(
+            "_8443._https.app".try_into().unwrap(),
+            SVCB::new(0, ".".try_into().unwrap()),
+            300,
+        )
+        .sign(&target)
+        .unwrap();
+    relay.cache(&alias);
+    relay.cache(&disabled);
+    let mut client = ServiceClient::default();
+    let original = request(&origin);
+    let Preparation::Fetch(fetch) = client.prepare(original.clone()).unwrap() else {
+        panic!("expected a fetch");
+    };
+
+    let response = relay.post(fetch.body().to_owned()).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
+    let mut bundle: ResolveErrorBundle = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(bundle.error.status, 422);
+    assert_eq!(bundle.packets.len(), 2);
+    for packet in [alias, disabled] {
+        assert!(bundle
+            .packets
+            .contains(&STANDARD.encode(packet.serialize())));
+    }
+    // The same signed records determine the result even if the relay misreports it.
+    bundle.error.message = "no addresses".into();
+    assert!(matches!(
+        client.accept_bundle(fetch, &serde_json::to_vec(&bundle).unwrap()),
+        Err(ClientError::Resolution(
+            pkresolve::Error::ServiceUnavailable
+        ))
+    ));
+    assert!(matches!(
+        client.prepare(original).unwrap(),
+        Preparation::Fetch(_)
     ));
 }

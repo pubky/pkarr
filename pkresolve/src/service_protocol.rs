@@ -28,6 +28,26 @@ pub struct ResolveBundle {
     pub resolution: BundleResolution,
 }
 
+/// Response when resolution fails after the relay has obtained a packet.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResolveErrorBundle {
+    /// Same protocol version as a successful [`ResolveBundle`].
+    pub schema: u32,
+    /// Packets obtained before failure, encoded as in [`ResolveBundle::packets`].
+    pub packets: Vec<String>,
+    /// The relay's account of the failure. Clients replay the packets locally.
+    pub error: RelayDiagnostic,
+}
+
+/// Unauthenticated diagnostic supplied by the relay.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RelayDiagnostic {
+    /// HTTP status reported by the relay.
+    pub status: u16,
+    /// Human-readable reason for the failure.
+    pub message: String,
+}
+
 /// Serializable snapshot of a relay's resolution result.
 /// The local monotonic deadline in [`Resolution`] cannot be sent across hosts.
 /// This summary is informational; it does not authenticate routes or TLS keys.

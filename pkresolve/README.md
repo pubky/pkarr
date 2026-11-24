@@ -4,6 +4,9 @@ Pubky endpoint resolution from signed PKARR packets. This workspace crate
 depends on `pkarr` for packet types and parsing. Packet providers own network
 I/O; the resolver has no HTTP stack or async runtime dependency.
 
+For a map of the crate and a worked alias example, see
+[How pkresolve resolves a service](../docs/pkresolve.md).
+
 Imported from `pubky/pkresolve` at commit
 `96e6ec73d3bc021e1f4a799f3a5b4db4bc9b30d2`. The MIT license and copyright
 are preserved in [LICENSE](LICENSE).
@@ -18,9 +21,10 @@ pkresolve = { path = "path/to/pkarr/pkresolve", features = ["service-client"] }
 ```
 
 Call `prepare(request)` to obtain cached endpoints or a `BundleRequest`.
-Send its JSON body to `/v1/resolve` using your HTTP stack, then pass the retained
-request and response bytes to `accept_bundle()`. Failed bundles leave the cache
-unchanged; packets retain their native `last_seen`.
+POST its JSON body to `/v1/resolve`. Pass the retained request and response
+bytes to `accept_bundle()` for both success and error bundles. Handle HTTP
+errors without a bundle in your HTTP stack. Only successful resolution adds
+packets to the cache. Packets retain their original `last_seen`.
 
 See the [prototype limits](#status).
 
@@ -44,12 +48,15 @@ interpreting it depends on clock agreement. Clients derive their own monotonic
 deadline from the bundled packets rather than starting a new lifetime on
 receipt.
 
-Both client and server use `service_protocol::BUNDLE_SCHEMA`. Deserializing
-the bundle only checks its structure; consumers must check the schema and
-packet contents. The summary is included for convenience. Clients should
-verify it by deriving their own resolution for the original request, using
-the bundled packets as the packet source. `ServiceClient` does this rather
-than trusting the summary, with the validation limitations above.
+`ResolveErrorBundle` carries the same schema and packet encoding. Its
+`error` field contains the relay's HTTP status and diagnostic message.
+When decoding either type directly, check `service_protocol::BUNDLE_SCHEMA`
+and verify the packet signatures before replay.
+`ServiceClient` verifies signatures and replays the retained request with
+the bundled packets. A signed routing failure returns the locally derived
+error. If a packet is missing, `IncompleteBundle` identifies the next owner
+and carries the relay's diagnostic. For HTTP examples, see the
+[relay protocol](../docs/relay-resolve.md#errors).
 
 ## Packet providers
 

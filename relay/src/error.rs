@@ -25,6 +25,14 @@ impl Default for Error {
 }
 
 impl Error {
+    pub(crate) fn into_parts(self) -> (StatusCode, HeaderMap, Option<String>) {
+        (
+            self.status,
+            self.headers.map(|headers| *headers).unwrap_or_default(),
+            self.detail,
+        )
+    }
+
     pub fn with_status(status: StatusCode) -> Error {
         Self {
             status,

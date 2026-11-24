@@ -14,14 +14,17 @@ Create a Rust client with `new_client()` and keep it on one Chromium sequence.
 3. Otherwise, copy `request_body()` and POST it to the configured HTTPS
    `/v1/resolve` endpoint using Chromium's network stack. Retain the preparation
    until the response arrives.
-4. On HTTP success, pass the same preparation and complete response bytes to
-   `accept_bundle()`. Rust verifies packet signatures and derives endpoints
-   before updating the cache.
+4. For a JSON bundle, pass the same preparation and complete response bytes
+   to `accept_bundle()`, including on HTTP errors. Rust verifies all packet
+   signatures and replays the request. An incomplete error bundle returns
+   `IncompleteBundle` with the missing owner and relay diagnostic in the
+   status message.
 
 The request JSON contains `service`, `url_port`, and `supported_alpn`. The
-schema-1 response requires `packets` and a `resolution` summary. Packets are
-standard base64 of native `SignedPacket::serialize()` bytes, including their
-original `last_seen`. Bundles can contain multiple packets in any order, with
+schema-1 response carries `packets` and either a `resolution` summary or an
+`error` diagnostic. Packets are standard base64 of native
+`SignedPacket::serialize()` bytes, including their original `last_seen`.
+Bundles can contain multiple packets in any order, with
 one packet per owner. Incomplete bundles fail without another HTTP fetch.
 Signature verification covers the publication timestamp and DNS contents;
 `last_seen` is preserved unsigned metadata, not proof of freshness.
@@ -32,8 +35,8 @@ convenience: the client derives its own result from the bundled packets and
 the retained request. Failed bundle acceptance leaves the cache unchanged.
 
 Chromium handles HTTPS certificate checks, HTTP errors, cancellation, and
-caller lifetime. An HTTP failure discards the preparation; no Rust operation
-is waiting to be cancelled. Rust exposes no HTTP interface or polling API.
+caller lifetime. Discard the preparation on a transport failure or an HTTP
+error without a bundle. Rust exposes no HTTP interface or polling API.
 
 Chromium also owns destination connections. Use the resolved service as SNI,
 preserve the original HTTP authority, and require possession of the destination
